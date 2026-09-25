@@ -3556,6 +3556,18 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 - Des zones floues sur l'écran de l'hôte (panneau du son et du réseau, barres de titre, barre des tâches), qui restent après la fin de la session et même ZyrDesk quitté. Parsec ne le fait pas. Le défaut date d'avant le nouveau moteur. La piste est la définition ou l'échelle de l'écran de l'hôte, changées pour la session puis remises : à confirmer avec l'échelle de l'hôte, un essai en « Résolution : Hôte » et son journal.
 - Jamais essayés sur ces deux PC : la souris en mode jeu, les touches du mode Immersif, les invites d'administration et l'écran verrouillé, le son avec PC-SAV comme hôte, la reprise après une coupure du réseau.
 
+## D225. L'hôte répondait depuis l'adresse où la connexion était arrivée, quelle que soit la route (2026-09-25, pendant MZ)
+
+**Ce qui se voyait.** Par le compte, une session sur deux ne s'ouvrait pas du premier coup entre PC-SAV et PC-ACCUEIL, sur le même réseau : quinze secondes d'attente, puis « n'a répondu ni en direct ni par le relais ». Le défaut datait d'avant le nouveau moteur. Les sondes, elles, passaient dans les deux sens, par toutes les routes.
+
+**Ce que les deux journaux ont montré.** Sur huit essais, la session échoue chaque fois que l'hôte a choisi l'IPv6 pour répondre (six fois), et s'ouvre chaque fois qu'il a choisi l'IPv4 (deux fois). Pendant les échecs, l'hôte reçoit bien la demande et y répond, mais pas un seul paquet de sa réponse n'arrive chez le client : les 56 reçus sont tous des sondes. Des pings de 100 et de 1250 octets passent en IPv6 dans le même sens : ce n'était donc ni la taille ni le réseau.
+
+**La cause.** QUIC, côté serveur, retient l'adresse de cet ordinateur où le premier paquet de la connexion est arrivé, et demande au système d'envoyer toute la suite depuis celle-là. L'aiguilleur change de route sous la connexion sans qu'elle le sache ([D119](#d119-le-chemin-se-choisit-sous-quic--quinn-reste-laiguilleur-migre-iroh-est-écarté-2026-09-02-clôture-du-réexamen-prévu-par-d13)) : la demande du client arrivait par l'IPv4, première route qu'il avait élue, pendant que l'hôte avait élu l'IPv6 pour répondre. Il demandait alors au système d'envoyer vers une adresse IPv6 depuis une adresse IPv4, ce qui est impossible, et Windows jetait chaque paquet sans rien dire. Le client réessayait, l'hôte répondait à nouveau par la même impasse, jusqu'à l'abandon. Le relais n'était pas touché, parce qu'il ignore cette adresse.
+
+**La correction.** Les paquets de la connexion partent par la route élue depuis l'adresse que le système choisit pour elle, exactement comme les sondes, et plus jamais depuis celle que QUIC a retenue. C'est aussi l'adresse que l'ordinateur d'en face a apprise des sondes, donc celle qu'il reconnaît. Un essai le garde : il échouait avant la correction.
+
+**Ce que ça explique peut-être aussi.** Une session déjà ouverte dont l'hôte change de route vers l'autre famille d'adresses tombait dans la même impasse. Des sessions coupées sans raison claire, avant cette date, pouvaient venir de là.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

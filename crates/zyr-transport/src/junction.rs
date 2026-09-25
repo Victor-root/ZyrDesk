@@ -304,7 +304,6 @@ struct Held {
     contents: Vec<u8>,
     segment_size: Option<usize>,
     ecn: Option<EcnCodepoint>,
-    src_ip: Option<IpAddr>,
 }
 
 /// The relay branch held for one far computer, and the task reading it.
@@ -898,7 +897,6 @@ impl Expected {
             contents: transmit.contents.to_vec(),
             segment_size: transmit.segment_size,
             ecn: transmit.ecn,
-            src_ip: transmit.src_ip,
         });
     }
 }
@@ -1269,6 +1267,32 @@ impl Inner {
         went.is_ok()
     }
 
+    /// Sends what the transport has for a card by a direct road.
+    ///
+    /// From the address this computer leaves by towards that road, as its
+    /// probes do, and never from the one the transport names. That one is
+    /// where the connection's first packet came in, kept for good, while
+    /// the road may have moved since, even to the other family: a host
+    /// first reached over IPv4 and answering by an IPv6 road asked the
+    /// system for the impossible, which dropped every packet without a
+    /// word, and the session never opened. Leaving as the probes leave is
+    /// also leaving from the address the far computer knows this one by.
+    fn send_direct(
+        &self,
+        through: SocketAddr,
+        contents: &[u8],
+        segment_size: Option<usize>,
+        ecn: Option<EcnCodepoint>,
+    ) -> io::Result<()> {
+        self.socket.try_send(&Transmit {
+            destination: self.outward(through),
+            ecn,
+            contents,
+            segment_size,
+            src_ip: None,
+        })
+    }
+
     /// Sends one datagram of ours by that road, whichever it is. Says
     /// whether it left this computer.
     fn send_by(&self, road: Through, contents: &[u8]) -> bool {
@@ -1550,13 +1574,7 @@ impl Inner {
     fn send_held(&self, road: Through, held: &Held) {
         match road {
             Through::Direct(through) => {
-                let _ = self.socket.try_send(&Transmit {
-                    destination: self.outward(through),
-                    ecn: held.ecn,
-                    contents: &held.contents,
-                    segment_size: held.segment_size,
-                    src_ip: held.src_ip,
-                });
+                let _ = self.send_direct(through, &held.contents, held.segment_size, held.ecn);
             }
             Through::Relay(_) => {
                 for packet in packets(&held.contents, held.segment_size) {
@@ -1848,13 +1866,12 @@ impl AsyncUdpSocket for Junction {
             }
         };
         match road {
-            Through::Direct(through) => self.inner.socket.try_send(&Transmit {
-                destination: self.inner.outward(through),
-                ecn: transmit.ecn,
-                contents: transmit.contents,
-                segment_size: transmit.segment_size,
-                src_ip: transmit.src_ip,
-            }),
+            Through::Direct(through) => self.inner.send_direct(
+                through,
+                transmit.contents,
+                transmit.segment_size,
+                transmit.ecn,
+            ),
             // A relay carries one packet at a time: what the system
             // would have sent as one buffer goes over as the packets it
             // holds.
@@ -2190,6 +2207,53 @@ mod tests {
         let connected = connecting.await.unwrap().unwrap();
         assert_eq!(connected.remote_address(), pair.host_card);
         assert_eq!(accepted.remote_address(), pair.client_card);
+    }
+
+    #[tokio::test]
+    async fn a_packet_for_a_card_leaves_from_wherever_its_road_does() {
+        let pair = pair();
+        // What the transport of a host names as the address to leave
+        // from: the one its connection first came in on. Here, one this
+        // computer does not even have, which the system refuses as
+        // silently as it refuses one of the wrong family.
+        let first_came_in_on = Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)));
+        let packet = [0x40u8; 64];
+        let send = || {
+            pair.host
+                .try_send(&Transmit {
+                    destination: pair.client_card,
+                    ecn: None,
+                    contents: &packet,
+                    segment_size: None,
+                    src_ip: first_came_in_on,
+                })
+                .unwrap();
+        };
+        // Held while no road is known, then sent by the first one.
+        send();
+        pair.host
+            .add_candidates(pair.client_card, [pair.client.local_address().unwrap()]);
+        // And by the road once it is there.
+        tokio::time::timeout(PATIENCE, async {
+            while pair.host.road(pair.client_card).is_none() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("aucune route");
+        send();
+
+        let arrived = || {
+            let inner = &pair.client.inner;
+            inner.arrived.load(Ordering::Relaxed) - inner.ours.load(Ordering::Relaxed)
+        };
+        tokio::time::timeout(PATIENCE, async {
+            while arrived() < 2 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("les paquets ne sont jamais arrivés");
     }
 
     #[tokio::test(flavor = "multi_thread")]
