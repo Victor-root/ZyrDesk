@@ -277,21 +277,59 @@ struct Counts {
     skipped: u64,
     draw_failed: u64,
     streams: u64,
-    /// Time from drawing to the packets being handed over, this interval.
-    work_us: u64,
-    work_max_us: u64,
-    worked: u64,
+    /// From drawing to the packets being handed over, this interval.
+    work: Spent,
+    /// Its three parts: drawing into the encoder's frame, encoding until
+    /// the encoder has nothing more, and cutting and handing the packets.
+    drawing: Spent,
+    encoding: Spent,
+    sending: Spent,
+}
+
+/// Time spent on one part of the work of a picture, this interval.
+#[derive(Debug, Default)]
+struct Spent {
+    total: Duration,
+    most: Duration,
+    times: u32,
+}
+
+impl Spent {
+    fn add(&mut self, took: Duration) {
+        self.total += took;
+        self.most = self.most.max(took);
+        self.times += 1;
+    }
+}
+
+impl std::fmt::Display for Spent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let average = self.total.checked_div(self.times).unwrap_or_default();
+        write!(
+            f,
+            "{:.2} ms on average, {:.2} ms at most",
+            average.as_secs_f64() * 1000.0,
+            self.most.as_secs_f64() * 1000.0
+        )
+    }
 }
 
 impl Counts {
+    /// The times start again for the next interval; the counts go on.
+    fn next_interval(&mut self) {
+        self.work = Spent::default();
+        self.drawing = Spent::default();
+        self.encoding = Spent::default();
+        self.sending = Spent::default();
+    }
+
     fn said(&self) -> String {
-        let average = self.work_us.checked_div(self.worked).unwrap_or(0);
         format!(
             "pictures: {} captured, {} pointer only, {} replaced while held, {} sent fresh, \
              {} repeats, {} key frames, {} recovers ({} for older streams), {} bytes in {} \
              datagrams, {} dropped on a full link, {} too large, {} left out until a key \
-             frame, {} not drawn, {} streams; draw and encode {:.2} ms on average, {:.2} ms at \
-             most",
+             frame, {} not drawn, {} streams; draw and encode {} (drawing {}, encoding {}, \
+             sending {})",
             self.captured,
             self.pointer_only,
             self.held_replaced,
@@ -307,8 +345,10 @@ impl Counts {
             self.skipped,
             self.draw_failed,
             self.streams,
-            average as f64 / 1000.0,
-            self.work_max_us as f64 / 1000.0,
+            self.work,
+            self.drawing,
+            self.encoding,
+            self.sending,
         )
     }
 }
@@ -406,9 +446,7 @@ impl Pipeline {
             let now = Instant::now();
             if now >= report {
                 self.shared.log.debug(|| self.counts.said());
-                self.counts.work_us = 0;
-                self.counts.work_max_us = 0;
-                self.counts.worked = 0;
+                self.counts.next_interval();
                 report = now + REPORT_EVERY;
             }
         }
@@ -980,11 +1018,14 @@ impl Pipeline {
                 return;
             }
         };
+        let drawn = Instant::now();
         let key = streaming.keys.take(started);
         if let Err(e) = encoding.encoder.encode(frame, key) {
             self.encoder_failed(&e.to_string());
             return;
         }
+        let mut encoded = drawn.elapsed();
+        let mut sent = Duration::ZERO;
         let captured = match going {
             Going::Fresh(at) => {
                 self.counts.fresh += 1;
@@ -1002,7 +1043,11 @@ impl Pipeline {
             let Some(encoding) = &mut streaming.encoding else {
                 return;
             };
-            let packet = match encoding.encoder.receive() {
+            let asked = Instant::now();
+            let received = encoding.encoder.receive();
+            let sent_at = Instant::now();
+            encoded += sent_at - asked;
+            let packet = match received {
                 Ok(Some(packet)) => packet,
                 Ok(None) => break,
                 Err(e) => {
@@ -1010,7 +1055,6 @@ impl Pipeline {
                     return;
                 }
             };
-            let sent_at = Instant::now();
             if packet.key {
                 self.counts.keys += 1;
                 streaming.keys.made(started);
@@ -1049,6 +1093,7 @@ impl Pipeline {
                         "frame {frame} could not be sent ({unsaid} more unsaid): {e}"
                     ));
                 }
+                sent += sent_at.elapsed();
                 continue;
             }
             let datagrams = packets.len() as u64;
@@ -1070,11 +1115,12 @@ impl Pipeline {
                 }
                 Sent::Closed => {}
             }
+            sent += sent_at.elapsed();
         }
-        let worked = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
-        self.counts.work_us += worked;
-        self.counts.work_max_us = self.counts.work_max_us.max(worked);
-        self.counts.worked += 1;
+        self.counts.work.add(started.elapsed());
+        self.counts.drawing.add(drawn - started);
+        self.counts.encoding.add(encoded);
+        self.counts.sending.add(sent);
     }
 
     /// Tells the player the screen has not changed since the last frame
