@@ -52,7 +52,7 @@ impl TestLog {
     }
 
     /// The lines written so far that hold `words`.
-    fn lines_with(&self, words: &str) -> Vec<String> {
+    pub(crate) fn lines_with(&self, words: &str) -> Vec<String> {
         std::fs::read_to_string(&self.path)
             .expect("the test's log")
             .lines()

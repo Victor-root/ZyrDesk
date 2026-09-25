@@ -46,6 +46,7 @@ use crate::picture::{Mapping, Rect, Size, picture_size, placement};
 use crate::session::{self, Event};
 use crate::sound::OPUS_BITRATE;
 use crate::throttle::Throttle;
+use crate::timeline::{self, Left, Picture, Timeline};
 
 /// Fewest milliseconds between two key frames.
 pub(crate) const KEY_FLOOR: Duration = Duration::from_millis(100);
@@ -376,10 +377,12 @@ struct Pipeline {
     oversized: Throttle,
     /// Key frames asked for that the encoder did not make.
     unkeyed: Throttle,
+    timeline: Timeline,
 }
 
 impl Pipeline {
     fn new(screen: Box<dyn Screen>, shared: Shared) -> Self {
+        let timeline = Timeline::new(&shared.log);
         Self {
             screen,
             shared,
@@ -396,6 +399,7 @@ impl Pipeline {
             crowded: Throttle::new(REPORT_EVERY),
             oversized: Throttle::new(REPORT_EVERY),
             unkeyed: Throttle::new(REPORT_EVERY),
+            timeline,
         }
     }
 
@@ -444,12 +448,14 @@ impl Pipeline {
                 None => {}
             }
             let now = Instant::now();
+            self.timeline.look(now);
             if now >= report {
                 self.shared.log.debug(|| self.counts.said());
                 self.counts.next_interval();
                 report = now + REPORT_EVERY;
             }
         }
+        self.timeline.write();
         self.shared.log.write(&self.counts.said());
     }
 
@@ -910,16 +916,26 @@ impl Pipeline {
         let Some(streaming) = &mut self.streaming else {
             return;
         };
+        // When what falls due was due, to say how late it goes.
+        let due_at = streaming.cadence.next_wakeup();
         if let Some(due) = streaming.cadence.due(now) {
-            let going = match due {
-                Due::EmitHeld => streaming.held.take().unwrap_or(Going::Repeat),
-                Due::Repeat => Going::Repeat,
+            let late = due_at.map_or(Duration::ZERO, |at| now.saturating_duration_since(at));
+            let (going, held) = match due {
+                Due::EmitHeld => {
+                    self.timeline.due(timeline::Due::Held, late, now);
+                    (streaming.held.take().unwrap_or(Going::Repeat), true)
+                }
+                Due::Repeat => {
+                    self.timeline.due(timeline::Due::Repeat, late, now);
+                    (Going::Repeat, false)
+                }
                 Due::Still => {
+                    self.timeline.due(timeline::Due::Still, late, now);
                     self.still();
                     return;
                 }
             };
-            self.emit(going);
+            self.emit(going, held);
             return;
         }
         // A key frame asked for goes at once: whatever the screen has, or
@@ -941,13 +957,18 @@ impl Pipeline {
         };
         let draw_pointer = streaming.wanted.draw_pointer;
         match self.screen.wait(until) {
-            Ok(Captured::Image { at }) => self.captured(Going::Fresh(at), at),
+            Ok(Captured::Image { at }) => {
+                self.timeline.captured(at, Instant::now());
+                self.captured(Going::Fresh(at), at);
+            }
             Ok(Captured::Pointer) if draw_pointer => {
                 let at = Instant::now();
+                self.timeline.captured(at, at);
                 self.captured(Going::Fresh(at), at);
             }
             Ok(Captured::Pointer) => {
                 self.counts.pointer_only += 1;
+                self.timeline.pointer_only(Instant::now());
                 if key_now {
                     self.captured(Going::Repeat, now);
                 }
@@ -979,7 +1000,7 @@ impl Pipeline {
         match streaming.cadence.on_captured(at) {
             Now::Emit => {
                 streaming.held = None;
-                self.emit(going);
+                self.emit(going, false);
             }
             Now::Hold => {
                 if streaming.held.replace(going).is_some() {
@@ -989,8 +1010,9 @@ impl Pipeline {
         }
     }
 
-    /// Draws, encodes and sends one picture.
-    fn emit(&mut self, going: Going) {
+    /// Draws, encodes and sends one picture; `held` when the cadence
+    /// held it back until now.
+    fn emit(&mut self, going: Going, held: bool) {
         let started = Instant::now();
         let Some(streaming) = &mut self.streaming else {
             return;
@@ -1004,6 +1026,7 @@ impl Pipeline {
         // that its own key frames come in their time.
         if encoding.holed && streaming.keys.waiting(started) {
             self.counts.skipped += 1;
+            self.timeline.skipped(started);
             return;
         }
         let drawing = Drawing {
@@ -1101,9 +1124,27 @@ impl Pipeline {
                 Sent::Queued => {
                     self.counts.bytes += packet.data.len() as u64;
                     self.counts.datagrams += datagrams;
+                    self.timeline.left(Picture {
+                        stream: encoding.stream,
+                        frame,
+                        left: match (going, held) {
+                            (Going::Repeat, _) => Left::Repeat,
+                            (Going::Fresh(_), true) => Left::Held,
+                            (Going::Fresh(_), false) => Left::Fresh,
+                        },
+                        key: packet.key,
+                        captured,
+                        started,
+                        drawn,
+                        encoded: sent_at,
+                        handed: Instant::now(),
+                        bytes: packet.data.len(),
+                        datagrams: datagrams as usize,
+                    });
                 }
                 Sent::Crowded => {
                     self.counts.crowded += 1;
+                    self.timeline.crowded(sent_at);
                     encoding.holed = true;
                     streaming.keys.ask();
                     if let Some(unsaid) = self.crowded.allow(sent_at) {
@@ -1358,13 +1399,13 @@ mod tests {
         let first = Instant::now();
         // The stream opens on a key frame, and the next picture finds the
         // link full: a hole.
-        pipeline.emit(Going::Repeat);
-        pipeline.emit(Going::Repeat);
+        pipeline.emit(Going::Repeat, false);
+        pipeline.emit(Going::Repeat, false);
         assert_eq!(pipeline.counts.crowded, 1);
-        assert!(key(&link.try_recv().unwrap()));
+        assert!(key(&link.try_recv().unwrap().packets));
         // Within the floor of the key frame just sent, the link has room
         // again, and nothing goes: the player could decode none of it.
-        pipeline.emit(Going::Repeat);
+        pipeline.emit(Going::Repeat, false);
         assert!(
             Instant::now() < first + KEY_FLOOR,
             "too slow to test within the floor"
@@ -1374,9 +1415,9 @@ mod tests {
         // Past the floor, the key frame that closes the hole, and the
         // stream goes on from it.
         thread::sleep(KEY_FLOOR);
-        pipeline.emit(Going::Repeat);
-        assert!(key(&link.try_recv().unwrap()));
-        pipeline.emit(Going::Repeat);
-        assert!(!key(&link.try_recv().unwrap()));
+        pipeline.emit(Going::Repeat, false);
+        assert!(key(&link.try_recv().unwrap().packets));
+        pipeline.emit(Going::Repeat, false);
+        assert!(!key(&link.try_recv().unwrap().packets));
     }
 }

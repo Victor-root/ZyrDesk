@@ -18,6 +18,7 @@
 use std::io;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
+use std::time::Instant;
 
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc as queue;
@@ -31,6 +32,7 @@ use zyr_proto::log::Log;
 use crate::clock::HostClock;
 use crate::input;
 use crate::session::{self, Asked, Event, Heard};
+use crate::timeline::Written;
 
 /// Pictures waiting for the link at most: a few frames, more than any
 /// burst of the encoder, far less than a second.
@@ -46,8 +48,14 @@ const SPARE_BUFFERS: usize = 2;
 #[derive(Clone)]
 pub(crate) struct Outbox {
     reliable: queue::UnboundedSender<(Channel, Vec<u8>)>,
-    video: queue::Sender<Packets>,
+    video: queue::Sender<Handed>,
     audio: queue::Sender<Vec<u8>>,
+}
+
+/// A picture's datagrams in the link's queue, and when they got there.
+pub(crate) struct Handed {
+    pub(crate) at: Instant,
+    pub(crate) packets: Packets,
 }
 
 /// What became of a packet handed to the link.
@@ -74,7 +82,10 @@ impl Outbox {
     }
 
     pub(crate) fn video(&self, packets: Packets) -> Sent {
-        sent(self.video.try_send(packets))
+        sent(self.video.try_send(Handed {
+            at: Instant::now(),
+            packets,
+        }))
     }
 
     pub(crate) fn audio(&self, datagram: Vec<u8>) -> Sent {
@@ -107,7 +118,7 @@ impl Spares {
 /// An outbox with no link behind it, whose pictures the test takes from
 /// a queue of `room` frames; messages and sound are dropped.
 #[cfg(test)]
-pub(crate) fn detached(room: usize) -> (Outbox, Spares, queue::Receiver<Packets>) {
+pub(crate) fn detached(room: usize) -> (Outbox, Spares, queue::Receiver<Handed>) {
     let (reliable, _) = queue::unbounded_channel();
     let (video, pictures) = queue::channel(room);
     let (audio, _) = queue::channel(AUDIO_QUEUE);
@@ -160,12 +171,14 @@ pub(crate) fn start(
     let events = handlers.events.clone();
     let thread = session::spawn("link", events, move || {
         let (reader, writer) = link.split();
+        let mut written = Written::new(&log);
         let ended = runtime.block_on(async {
             tokio::select! {
                 ended = read(reader, &handlers, &pongs, clock, &log) => ended,
-                ended = write(writer, queues) => ended,
+                ended = write(writer, queues, &mut written) => ended,
             }
         });
+        written.write();
         if let Some(e) = &ended {
             log.write(&format!("link failed: {e}"));
         }
@@ -261,14 +274,19 @@ fn pass_on(
 struct Queues {
     reliable: queue::UnboundedReceiver<(Channel, Vec<u8>)>,
     pongs: queue::UnboundedReceiver<Vec<u8>>,
-    video: queue::Receiver<Packets>,
+    video: queue::Receiver<Handed>,
     audio: queue::Receiver<Vec<u8>>,
     spares: mpsc::SyncSender<Packets>,
 }
 
 /// Writes what the others hand in, until none of them is left: `None`
-/// then, the error if the link failed.
-async fn write(mut writer: LinkWriter, mut queues: Queues) -> Option<String> {
+/// then, the error if the link failed. What each picture waited and took
+/// goes to `written`.
+async fn write(
+    mut writer: LinkWriter,
+    mut queues: Queues,
+    written_down: &mut Written,
+) -> Option<String> {
     loop {
         let written = tokio::select! {
             biased;
@@ -278,14 +296,18 @@ async fn write(mut writer: LinkWriter, mut queues: Queues) -> Option<String> {
             },
             Some(pong) = queues.pongs.recv() => writer.send(Channel::Control, &pong).await,
             Some(datagram) = queues.audio.recv() => writer.send(Channel::Audio, &datagram).await,
-            Some(packets) = queues.video.recv() => {
+            Some(Handed { at, packets }) = queues.video.recv() => {
+                let started = Instant::now();
                 let mut written = Ok(());
+                let mut bytes = 0;
                 for datagram in packets.iter() {
+                    bytes += datagram.len();
                     written = writer.send(Channel::Video, datagram).await;
                     if written.is_err() {
                         break;
                     }
                 }
+                written_down.picture(at, started, Instant::now(), packets.len(), bytes);
                 // Never waits: with enough spares already, or the
                 // pipeline gone, the buffer is freed.
                 let _ = queues.spares.try_send(packets);

@@ -48,6 +48,7 @@ mod pointer;
 mod session;
 mod sound;
 mod throttle;
+mod timeline;
 
 #[cfg(test)]
 mod end_to_end;

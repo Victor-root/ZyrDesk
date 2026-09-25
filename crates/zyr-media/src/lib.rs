@@ -14,6 +14,7 @@ pub mod input;
 pub mod pace;
 pub mod service;
 pub mod stats;
+pub mod trace;
 pub mod video;
 
 #[cfg(test)]
