@@ -3187,8 +3187,11 @@ dependencies = [
  "windows-core",
  "zyr-codec",
  "zyr-control",
+ "zyr-host",
  "zyr-media",
  "zyr-proto",
+ "zyr-transport",
+ "zyr-tunnel",
 ]
 
 [[package]]

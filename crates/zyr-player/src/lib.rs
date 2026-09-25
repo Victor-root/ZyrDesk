@@ -167,8 +167,10 @@ impl Player {
         Self::start_with(ff, link_name, wanted, surface, log, events)
     }
 
-    /// [`Player::start`] with FFmpeg already loaded.
-    pub(crate) fn start_with(
+    /// [`Player::start`] with FFmpeg already loaded, from wherever the
+    /// caller found it: the end-to-end tests load a build made for the
+    /// system they run on, where `vendor/ffmpeg` holds Windows' alone.
+    pub fn start_with(
         ff: Arc<Ffmpeg>,
         link_name: &str,
         wanted: Wanted,
