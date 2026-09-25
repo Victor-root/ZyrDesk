@@ -3531,6 +3531,31 @@ Sunshine, Moonlight, leurs patchs, leurs sous-modules, leurs compilations, leurs
 
 Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.md) ; ce qui reste à mesurer avant de dire chaque étape faite est dans [ROADMAP.md](ROADMAP.md), jalon MZ.
 
+## D224. Le premier essai sur deux vrais ordinateurs (2026-09-25, pendant MZ)
+
+**Ce qui a été essayé.** Le moteur de [D223](#d223-le-moteur-zyrdesk-est-construit-2026-09-25-pendant-mz), sur le réseau local, entre PC-SAV (GTX 1660 Ti) et PC-ACCUEIL (GT 440), dans les deux sens.
+
+**Ce qui marche du premier coup.**
+
+- La session s'ouvre : la première image arrive 354 à 541 ms après le clic. Victor la ressent en une à deux secondes, contre six à huit avec les anciens moteurs.
+- PC-SAV hôte : 8 ms de la capture à l'affichage, dont 6,9 ms chez l'hôte, et aucune perte.
+- Le codec se négocie comme prévu : la GT 440 ne sait pas décoder le H.265, donc la session part en H.264. Quand la GT 440 est l'hôte, son encodeur est trop ancien, et le moteur passe tout seul à x264.
+- L'écran filmé change en pleine session sans rien relancer.
+
+**Six défauts trouvés et corrigés.**
+
+1. *Le plein écran quitté, l'image gardait sa taille.* Le cadre de la fenêtre était remis après sa place : la taille ne changeait pas, Windows ne prévenait pas, et l'image restait aussi grande que l'intérieur sans cadre. Le cadre est maintenant remis avant la place, et l'intérieur remesuré ensuite. Ce défaut n'existait pas avec l'ancien lecteur, qui se mesurait lui-même.
+2. *Un faux « trop tard » au début de chaque session.* Le témoin du lien comptait les images remplacées pendant que l'affichage se préparait, et calculait un pourcentage sur trois images : 27 %. Ces images-là ne comptent plus, et la part n'est donnée qu'à partir de trente images décodées dans la seconde.
+3. *Un faux « image figée » en mode Économe.* Un écran immobile n'envoie rien en Économe, et le client prenait ce silence pour une image figée. L'hôte dit maintenant dix fois par seconde que l'écran n'a pas bougé depuis la dernière image envoyée ; le client ne s'y fie que s'il a bien cette image-là.
+4. *64 images par seconde dans une session à 60, en Fluide.* Un écran qui change un peu moins vite que la cadence recevait une répétition juste avant chaque nouvelle image, et les deux partaient. Répétitions et vraies images se partagent désormais une seule cadence : une vraie image part toujours tout de suite, mais prend la place de la répétition suivante ([MOTEUR.md](MOTEUR.md), section 3).
+5. *6,6 ms en moyenne et jusqu'à 26 ms pour dessiner et encoder une image sur la GTX 1660 Ti*, là où l'encodeur NVIDIA devrait en prendre deux ou trois. Pas encore corrigé, faute de savoir où part le temps : la ligne de comptes de l'hôte le découpe maintenant en dessin, encodage et envoi. Le prochain journal le dira.
+6. *Deux lignes du journal.* libopus disait à chaque fin de session qu'une tranche était restée dans sa file ; l'encodeur est maintenant vidé avant d'être fermé. Et trois lignes parlaient encore d'une vue web qui n'existe plus.
+
+**Ce qui reste à regarder.**
+
+- Des zones floues sur l'écran de l'hôte (panneau du son et du réseau, barres de titre, barre des tâches), qui restent après la fin de la session et même ZyrDesk quitté. Parsec ne le fait pas. Le défaut date d'avant le nouveau moteur. La piste est la définition ou l'échelle de l'écran de l'hôte, changées pour la session puis remises : à confirmer avec l'échelle de l'hôte, un essai en « Résolution : Hôte » et son journal.
+- Jamais essayés sur ces deux PC : la souris en mode jeu, les touches du mode Immersif, les invites d'administration et l'écran verrouillé, le son avec PC-SAV comme hôte, la reprise après une coupure du réseau.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
