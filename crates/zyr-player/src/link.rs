@@ -94,6 +94,8 @@ pub struct Parts {
     pub clock: Clock,
     pub tally: Arc<Mutex<Tally>>,
     pub tallies: Arc<Mutex<Tallies>>,
+    /// Where the codecs the engine can encode are kept once it says.
+    pub encodable: Arc<Mutex<Option<CodecSet>>>,
     pub events: Arc<Events>,
     /// Held for as long as the session lasts: the stats thread stops when
     /// it goes.
@@ -160,6 +162,7 @@ struct Session {
     clock: Clock,
     tally: Arc<Mutex<Tally>>,
     tallies: Arc<Mutex<Tallies>>,
+    encodable: Arc<Mutex<Option<CodecSet>>>,
     events: Arc<Events>,
     hushed: Hushed,
     log: Log,
@@ -184,6 +187,7 @@ async fn session(link: Link, parts: Parts) {
         clock,
         tally,
         tallies,
+        encodable,
         events,
         stats_stop,
         log,
@@ -207,6 +211,7 @@ async fn session(link: Link, parts: Parts) {
         clock,
         tally,
         tallies,
+        encodable,
         events,
         hushed: Hushed::default(),
         log,
@@ -318,11 +323,14 @@ impl Session {
                 encodable,
                 display_width,
                 display_height,
-            } => self.log.write(&format!(
-                "the engine answers in version {version}, encodes {}, films a screen of \
-                 {display_width}x{display_height}",
-                names(encodable)
-            )),
+            } => {
+                self.log.write(&format!(
+                    "the engine answers in version {version}, encodes {}, films a screen of \
+                     {display_width}x{display_height}",
+                    names(encodable)
+                ));
+                *lock(&self.encodable) = Some(encodable);
+            }
             ToPlayer::Streaming {
                 stream,
                 codec,

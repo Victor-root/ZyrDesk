@@ -41,7 +41,6 @@ impl Muted {
         self.0.store(muted, Ordering::Relaxed);
     }
 
-    #[cfg(windows)]
     pub fn get(&self) -> bool {
         self.0.load(Ordering::Relaxed)
     }

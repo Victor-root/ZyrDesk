@@ -264,6 +264,17 @@ fn a_whole_session_plays_and_ends_when_asked() {
             height: HEIGHT
         }
     );
+    // What the engine can encode is kept from its welcome, which comes
+    // before the stream: the window strikes out the others.
+    assert_eq!(
+        player.encodable(),
+        Some(CodecSet::empty().with(VideoCodec::H264))
+    );
+    // And silence is read back as it was set.
+    assert!(!player.muted());
+    player.set_muted(true);
+    assert!(player.muted());
+    player.set_muted(false);
     engine.frame(
         Channel::Service,
         service::ToPlayer::Tunnel {

@@ -44,7 +44,7 @@ use zyr_proto::log::Log;
 
 pub use present::Rect;
 pub use tallies::{LinkTallies, PictureTallies, SoundTallies, Tallies};
-pub use zyr_media::codec::{CodecChoice, VideoCodec};
+pub use zyr_media::codec::{CodecChoice, CodecSet, VideoCodec};
 pub use zyr_media::control::Wanted;
 pub use zyr_media::input::{Button, InputEvent};
 pub use zyr_media::stats::Measures;
@@ -148,6 +148,7 @@ struct Shared {
     tallies: Arc<Mutex<Tallies>>,
     rect: Arc<Mutex<Option<Rect>>>,
     muted: Arc<Muted>,
+    encodable: Arc<Mutex<Option<CodecSet>>>,
 }
 
 impl Player {
@@ -190,6 +191,7 @@ impl Player {
         let rect = Arc::new(Mutex::new(None));
         let size = Arc::new(Mutex::new(None));
         let muted = Arc::new(Muted::default());
+        let encodable = Arc::new(Mutex::new(None));
         let (orders, orders_in) = unbounded_channel();
         let (inner, inner_in) = unbounded_channel();
         let (video, video_in) = sync_channel(VIDEO_WAITING);
@@ -209,6 +211,7 @@ impl Player {
             clock,
             tally: Arc::clone(&tally),
             tallies: Arc::clone(&tallies),
+            encodable: Arc::clone(&encodable),
             events: Arc::clone(&events),
             stats_stop,
             log: player_log.clone(),
@@ -255,6 +258,7 @@ impl Player {
                 tallies,
                 rect,
                 muted,
+                encodable,
             }),
         })
     }
@@ -370,6 +374,16 @@ impl Player {
 
     pub fn set_muted(&self, muted: bool) {
         self.shared.muted.set(muted);
+    }
+
+    /// Whether the sound is silenced here, as last set.
+    pub fn muted(&self) -> bool {
+        self.shared.muted.get()
+    }
+
+    /// The codecs the engine said it can encode, once it has said.
+    pub fn encodable(&self) -> Option<CodecSet> {
+        *lock(&self.shared.encodable)
     }
 
     /// The measures as they stood at the last tick of the timer.
