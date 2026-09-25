@@ -742,6 +742,9 @@ impl Pipeline {
         let Some(streaming) = &mut self.streaming else {
             return;
         };
+        // A stream opens on a key frame, whenever the last one of the
+        // stream before went.
+        streaming.keys = KeyFrames::default();
         streaming.keys.ask();
         streaming.encoding = Some(encoding);
         self.place();

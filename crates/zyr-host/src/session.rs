@@ -371,7 +371,8 @@ impl Engine {
         }
     }
 
-    /// Tells the player why the session cannot go on.
+    /// Tells the player why the session cannot go on, and the service,
+    /// for its journal.
     fn fail(&mut self, kind: NoticeKind, text: String) -> Ending {
         self.outbox.player(&ToPlayer::Notice {
             kind,
@@ -380,6 +381,8 @@ impl Engine {
         self.outbox.player(&ToPlayer::Bye {
             reason: ByeReason::Fatal,
         });
+        self.outbox
+            .service(&ToService::Trouble { text: text.clone() });
         Ending::Failed(text)
     }
 

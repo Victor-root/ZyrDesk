@@ -767,5 +767,13 @@ async fn a_player_of_another_version_is_told_and_let_go() {
         })
         .await;
     assert_eq!(reason, ByeReason::Fatal);
+    // The service journals why.
+    let trouble = far
+        .until(|said| match said {
+            Said::Service(ToService::Trouble { text }) => Some(text.clone()),
+            _ => None,
+        })
+        .await;
+    assert!(trouble.contains("version"), "{trouble}");
     assert!(matches!(far.ended(), Ending::Failed(_)));
 }
