@@ -1,6 +1,0 @@
-[submodule "engines/sunshine"]
-	path = engines/sunshine
-	url = https://github.com/Victor-root/ZyrDesk-Sunshine
-[submodule "engines/moonlight-qt"]
-	path = engines/moonlight-qt
-	url = https://github.com/Victor-root/ZyrDesk-Moonlight

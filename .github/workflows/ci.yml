@@ -22,10 +22,7 @@ jobs:
     name: Format et analyse statique
     runs-on: ubuntu-latest
     steps:
-      # The engines are large submodules, useless here.
       - uses: actions/checkout@v6
-        with:
-          submodules: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -42,8 +39,6 @@ jobs:
         os: [windows-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v6
-        with:
-          submodules: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # Without --no-fail-fast, cargo stops at the first failing test
@@ -58,8 +53,6 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          submodules: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # NSIS is no longer provided by the runner's Windows image, and its

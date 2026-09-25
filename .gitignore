@@ -1,7 +1,3 @@
 /target
 /data
 packaging/windows/*.exe
-
-# Trace laissée par l'installation de Qt, que la procédure de compilation
-# des moteurs sur sa propre machine fait passer par ici.
-/aqtinstall.log

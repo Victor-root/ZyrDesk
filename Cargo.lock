@@ -3131,24 +3131,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zyr-engine-client"
-version = "0.1.0"
-dependencies = [
- "windows-sys 0.61.2",
- "zyr-proto",
-]
-
-[[package]]
-name = "zyr-engine-host"
-version = "0.1.0"
-dependencies = [
- "base64 0.23.1",
- "serde_json",
- "ureq",
- "zyr-proto",
-]
-
-[[package]]
 name = "zyr-host"
 version = "0.1.0"
 dependencies = [
