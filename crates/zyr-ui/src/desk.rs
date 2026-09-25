@@ -65,11 +65,6 @@ pub struct Standing {
     pub ecn: bool,
     /// Whether the door listens on the product's own port.
     pub fixed_port: bool,
-    /// Whether this computer keeps sending a still screen at the full
-    /// rate when somebody is watching it.
-    pub steady_rate: bool,
-    /// How it takes the pictures it serves.
-    pub capture: String,
     /// Whether this computer answers from the moment it powers on,
     /// before anybody has signed in.
     pub at_boot: bool,
@@ -95,8 +90,6 @@ impl Standing {
             trusting: false,
             ecn: true,
             fixed_port: true,
-            steady_rate: zyr_proto::session::Serving::default().steady_rate,
-            capture: zyr_proto::session::Serving::default().capture.to_string(),
             at_boot: false,
             ways: 0,
             service_build: String::new(),
@@ -325,24 +318,6 @@ pub async fn set_fixed_port(on: bool) -> Result<(), String> {
     }
 }
 
-/// Changes how this computer makes the pictures it serves.
-///
-/// A host setting and not a session one: it changes nothing about a
-/// session opened from here, and everything about one opened towards
-/// here. The engine reads both when it starts, so the service stops it
-/// and starts it again, which ends a session in progress towards this
-/// computer.
-pub async fn set_serving(steady_rate: bool, capture: String) -> Result<(), String> {
-    let serving = zyr_proto::session::Serving {
-        steady_rate,
-        capture: capture.parse()?,
-    };
-    match service::ask(&Request::ServeLike { serving }).await? {
-        Answer::Done => Ok(()),
-        other => Err(service::unexpected(other)),
-    }
-}
-
 /// Decides whether ZyrDesk comes back on its own with Windows.
 ///
 /// Two things at once, deliberately, because they are one thing to the
@@ -508,8 +483,6 @@ async fn asked() -> Result<Standing, String> {
             trusting: standing.trusting,
             ecn: standing.ecn,
             fixed_port: standing.fixed_port,
-            steady_rate: standing.serving.steady_rate,
-            capture: standing.serving.capture.to_string(),
             at_boot: standing.at_boot,
             ways: standing.ways,
             service_build: standing.build,

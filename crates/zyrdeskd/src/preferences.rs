@@ -22,7 +22,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use zyr_proto::session::{Preferred, Serving};
+use zyr_proto::session::Preferred;
 use zyr_transport::Marking;
 
 /// Keys, in the order they are written.
@@ -34,8 +34,6 @@ const CODEC: &str = "codec";
 const DISPLAY: &str = "display";
 const ABSOLUTE_MOUSE: &str = "absolute_mouse";
 const STATS_OVERLAY: &str = "stats_overlay";
-const STEADY_RATE: &str = "steady_rate";
-const CAPTURE: &str = "capture";
 const MUTE_FAR_SPEAKERS: &str = "mute_far_speakers";
 const SYSTEM_KEYS: &str = "system_keys";
 const SHARED_CLIPBOARD: &str = "shared_clipboard";
@@ -53,8 +51,6 @@ pub struct Preferences {
     pub trust_local_network: bool,
     /// What a session opened from this computer looks like.
     pub preferred: Preferred,
-    /// How this computer makes the pictures it serves to others.
-    pub serving: Serving,
     /// Whether the tunnel's packets leave with their congestion mark.
     ///
     /// A switch for comparing two runs and nothing else: sessions between
@@ -86,7 +82,6 @@ impl Default for Preferences {
             remote_access: true,
             trust_local_network: true,
             preferred: Preferred::default(),
-            serving: Serving::default(),
             ecn: true,
             fixed_port: true,
         }
@@ -155,15 +150,6 @@ impl Remembered {
 
     pub fn set_preferred(&self, preferred: Preferred) -> io::Result<()> {
         self.change(|preferences| preferences.preferred = preferred)
-    }
-
-    /// How this computer makes the pictures it serves.
-    pub fn serving(&self) -> Serving {
-        self.read().serving
-    }
-
-    pub fn set_serving(&self, serving: Serving) -> io::Result<()> {
-        self.change(|preferences| preferences.serving = serving)
     }
 
     /// How this computer speaks on the wire: the two switches of the
@@ -254,21 +240,12 @@ fn rendered(preferences: Preferences) -> String {
          # Demander à l'ordinateur d'en face de réenvoyer son écran à\n\
          # pleine cadence même quand rien ne bouge : pointeur plus fluide\n\
          # là-bas, mais une image complète encodée soixante fois par\n\
-         # seconde pour rien. Son moteur le lit à son démarrage.\n\
+         # seconde pour rien.\n\
          {STEADY_FAR_RATE} = {}\n\
          # Les deux ordinateurs partagent un seul presse-papiers le temps\n\
          # de la session : ce qui est copié sur l'un se colle sur l'autre,\n\
-         # texte comme image. Rien n'en passe par les moteurs.\n\
+         # texte comme image. Rien n'en passe par le moteur.\n\
          {SHARED_CLIPBOARD} = {}\n\
-         \n\
-         # Ce que cet ordinateur fait quand c'est LUI qu'on regarde.\n\
-         # Renvoyer un écran immobile à pleine cadence : plus fluide, mais\n\
-         # une image complète encodée soixante fois par seconde pour rien.\n\
-         {STEADY_RATE} = {}\n\
-         # Façon de capturer l'écran : ddx voit les invites administrateur\n\
-         # et l'écran de connexion, wgc est plus rapide sur certaines\n\
-         # machines et ne les voit pas.\n\
-         {CAPTURE} = {}\n\
          \n\
          # Essais réseau, à changer sur les DEUX ordinateurs, depuis la\n\
          # fenêtre (Réglages). Changés ici à la main, ils ne sont relus\n\
@@ -293,8 +270,6 @@ fn rendered(preferences: Preferences) -> String {
         yes_no(preferred.system_keys),
         yes_no(preferred.steady_far_rate),
         yes_no(preferred.shared_clipboard),
-        yes_no(preferences.serving.steady_rate),
-        preferences.serving.capture,
         yes_no(preferences.ecn),
         yes_no(preferences.fixed_port),
     )
@@ -355,14 +330,6 @@ fn parsed(text: &str) -> Preferences {
             DISPLAY => preferred.display_mode = value.parse().unwrap_or_default(),
             ABSOLUTE_MOUSE => preferred.absolute_mouse = told(value, preferred.absolute_mouse),
             STATS_OVERLAY => preferred.stats_overlay = told(value, preferred.stats_overlay),
-            STEADY_RATE => {
-                preferences.serving.steady_rate = told(value, preferences.serving.steady_rate);
-            }
-            CAPTURE => {
-                if let Ok(how) = value.parse() {
-                    preferences.serving.capture = how;
-                }
-            }
             MUTE_FAR_SPEAKERS => {
                 preferred.mute_far_speakers = told(value, preferred.mute_far_speakers);
             }
@@ -385,7 +352,7 @@ fn parsed(text: &str) -> Preferences {
 mod tests {
     use super::*;
 
-    use zyr_proto::session::{Asked, Capture, Codec, DisplayMode};
+    use zyr_proto::session::{Asked, Codec, DisplayMode};
 
     fn temporary_file(what: &str) -> std::path::PathBuf {
         let folder = std::env::temp_dir().join(format!(
@@ -411,10 +378,6 @@ mod tests {
                 system_keys: false,
                 steady_far_rate: false,
                 shared_clipboard: false,
-            },
-            serving: Serving {
-                steady_rate: false,
-                capture: Capture::Windows,
             },
             ecn: true,
             fixed_port: true,
@@ -448,7 +411,6 @@ mod tests {
         let remembered = Remembered::at(path.clone());
 
         remembered.set_preferred(chosen().preferred).unwrap();
-        remembered.set_serving(chosen().serving).unwrap();
         remembered.set_remote_access(false).unwrap();
         remembered.set_trust_local_network(false).unwrap();
 
@@ -467,7 +429,6 @@ mod tests {
         let path = temporary_file("relance");
         let remembered = Remembered::at(path.clone());
         remembered.set_preferred(chosen().preferred).unwrap();
-        remembered.set_serving(chosen().serving).unwrap();
         remembered
             .set_remote_access(chosen().remote_access)
             .unwrap();
@@ -535,8 +496,6 @@ mod tests {
         assert!(rendered.contains("asked = 2560x1440"), "{rendered}");
         assert!(rendered.contains("bitrate = 15000"), "{rendered}");
         assert!(rendered.contains("codec = HEVC"), "{rendered}");
-        assert!(rendered.contains("steady_rate = no"), "{rendered}");
-        assert!(rendered.contains("capture = wgc"), "{rendered}");
         assert!(rendered.contains("mute_far_speakers = yes"), "{rendered}");
         assert_eq!(parsed(&rendered), chosen());
     }

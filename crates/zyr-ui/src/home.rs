@@ -361,7 +361,6 @@ enum Toggle {
     Access,
     Trust,
     AtBoot,
-    SteadyRate,
     Sound,
     Stats,
     /// The two network trial switches: marking the packets, and
@@ -375,7 +374,6 @@ enum Toggle {
 #[derive(Clone, Copy, PartialEq)]
 enum Pick {
     Theme,
-    Capture,
     Codec,
     Display,
     Mouse,
@@ -444,7 +442,6 @@ impl Toggle {
             Toggle::Access => seen.machine.as_ref().is_some_and(|said| said.wanted),
             Toggle::Trust => seen.machine.as_ref().is_some_and(|said| said.trusting),
             Toggle::AtBoot => seen.machine.as_ref().is_some_and(|said| said.at_boot),
-            Toggle::SteadyRate => seen.machine.as_ref().is_some_and(|said| said.steady_rate),
             Toggle::Marking => seen.machine.as_ref().is_some_and(|said| said.ecn),
             Toggle::FixedPort => seen.machine.as_ref().is_some_and(|said| said.fixed_port),
             Toggle::Sound => seen
@@ -483,7 +480,6 @@ impl Pick {
     fn words(self) -> Vec<&'static str> {
         match self {
             Pick::Theme => Choice::ALL.iter().map(|choice| choice.word()).collect(),
-            Pick::Capture => vec!["Compatible", "Rapide"],
             Pick::Codec => vec!["Auto", "H.264", "HEVC", "AV1"],
             Pick::Display => vec!["Plein écran", "Fenêtre"],
             Pick::Mouse => vec!["Bureau", "Jeu"],
@@ -496,7 +492,6 @@ impl Pick {
     fn values(self) -> Vec<&'static str> {
         match self {
             Pick::Theme | Pick::SignUp => Vec::new(),
-            Pick::Capture => vec!["ddx", "wgc"],
             Pick::Codec => vec!["auto", "H.264", "HEVC", "AV1"],
             Pick::Display => vec!["fullscreen", "windowed"],
             Pick::Mouse => vec!["desktop", "game"],
@@ -513,7 +508,6 @@ impl Pick {
                     .position(|choice| *choice == crate::theme::chosen());
             }
             Pick::SignUp => return Some(usize::from(state.sign_up)),
-            Pick::Capture => seen.machine.as_ref()?.capture.clone(),
             Pick::Codec => seen.settings.as_ref()?.codec.clone(),
             Pick::Display => seen.settings.as_ref()?.display.clone(),
             Pick::Mouse => {
@@ -528,10 +522,6 @@ impl Pick {
     fn enabled(self, seen: &Seen) -> bool {
         match self {
             Pick::Theme | Pick::SignUp => true,
-            Pick::Capture => seen
-                .machine
-                .as_ref()
-                .is_some_and(|said| said.unreachable.is_none()),
             _ => seen.settings.is_some(),
         }
     }
@@ -598,22 +588,6 @@ const SETTINGS: &[Element] = &[
         caption: "Ceux qui s'annoncent sur ce réseau peuvent joindre celui-ci sans rien à \
                   recopier. Ne concerne que le réseau local.",
         control: Control::Switch(Toggle::Trust),
-    }),
-    Element::Setting(Setting {
-        label: "Renvoyer un écran immobile",
-        caption: "Quand quelqu'un regarde cet ordinateur : réenvoyer l'écran à pleine cadence \
-                  même quand rien ne bouge dessus. Le pointeur est plus fluide, mais c'est une \
-                  image complète encodée soixante fois par seconde pour rien. À couper si cet \
-                  ordinateur n'arrive pas à suivre.",
-        control: Control::Switch(Toggle::SteadyRate),
-    }),
-    Element::Setting(Setting {
-        label: "Façon de filmer l'écran",
-        caption: "La façon dont cet ordinateur prend ses images quand quelqu'un le regarde. \
-                  « Compatible » voit aussi les demandes de mot de passe administrateur et \
-                  l'écran de connexion. « Rapide » va plus vite sur certaines machines, et ne \
-                  les voit pas : elles apparaissent alors comme un écran noir.",
-        control: Control::Segments(Pick::Capture),
     }),
     Element::Setting(Setting {
         label: "Démarrer avec Windows",
@@ -4751,25 +4725,12 @@ fn push(app: &App, button: Toggle) {
 
     let app = app.clone();
     crate::app::spawn(async move {
-        let serve = || async {
-            let said = crate::desk::standing().await;
-            crate::desk::set_serving(
-                if button == Toggle::SteadyRate {
-                    wanted
-                } else {
-                    said.steady_rate
-                },
-                said.capture,
-            )
-            .await
-        };
         let target = match button {
             Toggle::Access => crate::desk::set_hosting(wanted).await,
             Toggle::Trust => crate::desk::set_trust(wanted).await,
             Toggle::AtBoot => crate::desk::set_at_boot(wanted).await,
             Toggle::Marking => crate::desk::set_ecn(wanted).await,
             Toggle::FixedPort => crate::desk::set_fixed_port(wanted).await,
-            Toggle::SteadyRate => serve().await,
             Toggle::Sound | Toggle::Stats => {
                 write_the_settings(|chosen| {
                     if button == Toggle::Sound {
@@ -4815,21 +4776,13 @@ fn pick(app: &App, target: Pick, rank: usize) {
     };
     let app = app.clone();
     crate::app::spawn(async move {
-        // This one does not describe what is asked of the others but what
-        // this computer does when it is the one being watched: it does
-        // not go through the same settings.
-        let done = if target == Pick::Capture {
-            let said = crate::desk::standing().await;
-            crate::desk::set_serving(said.steady_rate, value.to_string()).await
-        } else {
-            write_the_settings(|chosen| match target {
-                Pick::Codec => chosen.codec = value.parse().unwrap_or(chosen.codec),
-                Pick::Display => chosen.display = value.parse().unwrap_or(chosen.display),
-                Pick::Mouse => chosen.absolute_mouse = value == "desktop",
-                _ => {}
-            })
-            .await
-        };
+        let done = write_the_settings(|chosen| match target {
+            Pick::Codec => chosen.codec = value.parse().unwrap_or(chosen.codec),
+            Pick::Display => chosen.display = value.parse().unwrap_or(chosen.display),
+            Pick::Mouse => chosen.absolute_mouse = value == "desktop",
+            _ => {}
+        })
+        .await;
         if let Err(reason) = done {
             say_the_trouble(&app, &reason);
         }

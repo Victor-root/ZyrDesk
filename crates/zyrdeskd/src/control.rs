@@ -428,7 +428,6 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 ecn: answering.machine.remembered.read().ecn,
                 fixed_port: answering.machine.remembered.read().fixed_port,
                 at_boot: at_boot(),
-                serving: answering.machine.remembered.serving(),
                 ways: answering.machine.ways.count(),
             })
         }
@@ -534,19 +533,6 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                     } else {
                         "remote access turned off"
                     });
-                    Answer::Done
-                }
-                Err(reason) => Answer::Refused(reason),
-            }
-        }
-        Request::ServeLike { serving } => {
-            match kept(answering.machine.remembered.set_serving(serving)) {
-                Ok(()) => {
-                    answering.log.write(&format!(
-                        "this computer will serve with a steady rate {} and {} capture",
-                        if serving.steady_rate { "on" } else { "off" },
-                        serving.capture
-                    ));
                     Answer::Done
                 }
                 Err(reason) => Answer::Refused(reason),
