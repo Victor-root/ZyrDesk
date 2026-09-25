@@ -1641,7 +1641,7 @@ login_attempts_per_minute = 1000
             })
             .await;
         let refused = laptop.account.rendezvous(&pc_device).await.unwrap_err();
-        assert!(refused.contains("moteur hôte absent"), "{refused}");
+        assert!(refused.contains("FFmpeg absent"), "{refused}");
         // And there is no longer any point going through the server to
         // reach it: what is known of it otherwise is all that is left.
         assert_eq!(

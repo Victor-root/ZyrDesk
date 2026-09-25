@@ -18,7 +18,7 @@
 //! of them looks stuck.
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use zyr_codec::Ffmpeg;
@@ -330,25 +330,28 @@ pub fn open(
     told: &mut dyn FnMut(Step),
     still_wanted: &dyn Fn() -> bool,
 ) -> Result<Opened, Error> {
-    // First, and before anything is asked of anybody: without FFmpeg the
-    // player has nothing to decode with, and a far computer woken for a
-    // picture that can never be shown is a far computer disturbed for
-    // nothing.
-    let missing = Ffmpeg::missing_from(&paths::ffmpeg_dir());
-    if !missing.is_empty() {
-        return Err(Error::EngineMissing(missing));
-    }
-    opened_on(CHANNEL, wanted, told, still_wanted)
+    opened_on(&paths::ffmpeg_dir(), CHANNEL, wanted, told, still_wanted)
 }
 
-/// The same, through the service listening on `channel`: the product's
-/// own, or one a test stands in for it.
+/// The same, with FFmpeg looked for in `ffmpeg` and through the service
+/// listening on `channel`: the product's own, or ones a test stands in
+/// for.
 fn opened_on(
+    ffmpeg: &Path,
     channel: &str,
     wanted: &Wanted,
     told: &mut dyn FnMut(Step),
     still_wanted: &dyn Fn() -> bool,
 ) -> Result<Opened, Error> {
+    // First, and before anything is asked of anybody: without FFmpeg the
+    // player has nothing to decode with, and a far computer woken for a
+    // picture that can never be shown is a far computer disturbed for
+    // nothing.
+    let missing = Ffmpeg::missing_from(ffmpeg);
+    if !missing.is_empty() {
+        return Err(Error::EngineMissing(missing));
+    }
+
     let (mut driving, link) =
         Driving::towards(channel, wanted, still_wanted).map_err(|gone| gone.or(Error::Service))?;
     told(Step::Reached);
@@ -423,6 +426,11 @@ fn opened_on(
 /// The service, and the way it holds for a session.
 ///
 /// The way goes back to the service when this is dropped.
+///
+/// [`Driving::hold`] is called, and this dropped, on a plain thread and
+/// never inside an async task: what they ask of the service is waited for
+/// on a runtime of this guard's own, and tokio refuses to wait that way on
+/// a thread already running one.
 pub struct Driving {
     runtime: tokio::runtime::Runtime,
     service: Service,
@@ -672,31 +680,71 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_missing_ffmpeg_is_reported_before_anything_is_attempted() {
-        // Nothing else can be checked without the service; what matters
-        // here is that the check comes first, since everything after it
-        // asks the far computer to change something.
-        if Ffmpeg::missing_from(&paths::ffmpeg_dir()).is_empty() {
-            return;
+    /// A folder holding FFmpeg, as far as looking for it goes: empty
+    /// files under the names its libraries are opened by. Gone with the
+    /// test.
+    struct FfmpegHere(PathBuf);
+
+    impl FfmpegHere {
+        fn new(what: &str) -> Self {
+            let folder = std::env::temp_dir()
+                .join(format!("zyr-session-ffmpeg-{}-{what}", std::process::id()));
+            std::fs::create_dir_all(&folder).expect("dossier d'essai");
+            for file in Ffmpeg::missing_from(&folder) {
+                std::fs::write(file, b"").expect("fichier d'essai");
+            }
+            Self(folder)
         }
+    }
+
+    impl Drop for FfmpegHere {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn a_missing_ffmpeg_is_reported_before_anything_is_asked() {
+        // Checked first, since everything after it asks the far computer
+        // to change something: the service stands ready, and hears
+        // nothing at all.
+        let (channel, asked) = a_service("sans-ffmpeg", willing);
+        let nowhere = std::env::temp_dir().join(format!(
+            "zyr-session-ffmpeg-{}-nulle-part",
+            std::process::id()
+        ));
         let mut steps = Vec::new();
-        let outcome = open(&wanted(), &mut |step| steps.push(step), &|| true);
+        let outcome = opened_on(
+            &nowhere,
+            &channel,
+            &wanted(),
+            &mut |step| steps.push(step),
+            &|| true,
+        );
         assert!(
-            matches!(&outcome, Err(Error::EngineMissing(files)) if !files.is_empty()),
+            matches!(&outcome, Err(Error::EngineMissing(files))
+                if !files.is_empty() && files.iter().all(|file| file.starts_with(&nowhere))),
             "{:?}",
             outcome.err()
         );
         assert!(steps.is_empty(), "{steps:?}");
+        assert!(asked.lock().unwrap().is_empty(), "{asked:?}");
     }
 
     #[test]
     fn an_opening_tells_the_far_computer_what_it_wants_in_order() {
         let (channel, asked) = a_service("ordre", willing);
+        let ffmpeg = FfmpegHere::new("ordre");
         let wanted = wanted();
         let mut steps = Vec::new();
-        let opened = opened_on(&channel, &wanted, &mut |step| steps.push(step), &|| true)
-            .expect("une voie ouverte");
+        let opened = opened_on(
+            &ffmpeg.0,
+            &channel,
+            &wanted,
+            &mut |step| steps.push(step),
+            &|| true,
+        )
+        .expect("une voie ouverte");
 
         assert_eq!(opened.link, r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1");
         // The size the far computer said wins over the one asked for, and
@@ -774,11 +822,13 @@ mod tests {
     #[test]
     fn a_session_that_leaves_the_far_screen_alone_asks_for_none_and_takes_its_size() {
         let (channel, asked) = a_service("sans-ecran", willing);
+        let ffmpeg = FfmpegHere::new("sans-ecran");
         let wanted = Wanted {
             wants_a_screen_over_there: false,
             ..wanted()
         };
-        let opened = opened_on(&channel, &wanted, &mut |_| {}, &|| true).expect("ouverte");
+        let opened =
+            opened_on(&ffmpeg.0, &channel, &wanted, &mut |_| {}, &|| true).expect("ouverte");
         assert_eq!(
             (opened.settings.width, opened.settings.height),
             (2560, 1440)
@@ -799,8 +849,15 @@ mod tests {
                 "192.168.1.20 n'a pas répondu en 15 secondes".to_string(),
             ))
         });
+        let ffmpeg = FfmpegHere::new("refus");
         let mut steps = Vec::new();
-        let outcome = opened_on(&channel, &wanted(), &mut |step| steps.push(step), &|| true);
+        let outcome = opened_on(
+            &ffmpeg.0,
+            &channel,
+            &wanted(),
+            &mut |step| steps.push(step),
+            &|| true,
+        );
         assert!(
             matches!(&outcome, Err(Error::Service(reason)) if reason.contains("n'a pas répondu")),
             "{:?}",
@@ -815,8 +872,10 @@ mod tests {
         // way was open by then, and is released rather than left to the
         // service's patience.
         let (channel, asked) = a_service("lachee-apres", willing);
+        let ffmpeg = FfmpegHere::new("lachee-apres");
         let reached = std::sync::atomic::AtomicBool::new(false);
         let outcome = opened_on(
+            &ffmpeg.0,
             &channel,
             &wanted(),
             &mut |step| {

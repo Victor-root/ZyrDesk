@@ -8,13 +8,13 @@
 //! which of them Windows called the main one.
 //!
 //! That is a promise this product makes and keeps itself. The host engine
-//! offers to do it and cannot be trusted with it: it puts back an
-//! arrangement it noted at its own start, it gives up when something else
-//! has moved a screen in the meantime, and what it does when it gives up
-//! is switch every screen it can find back on. A screen its owner had
-//! deliberately turned off came back at every start, and one that was on
-//! stayed off. So the engine is told to leave the screens alone entirely,
-//! and this file is what notes them and what puts them back.
+//! it used to run offered to do it and could not be trusted with it: it
+//! put back an arrangement it noted at its own start, it gave up when
+//! something else had moved a screen in the meantime, and what it did when
+//! it gave up was switch every screen it could find back on. A screen its
+//! owner had deliberately turned off came back at every start, and one
+//! that was on stayed off. So nothing but this file notes the screens and
+//! puts them back; the engine only ever lists them and films them.
 //!
 //! # Where this runs
 //!

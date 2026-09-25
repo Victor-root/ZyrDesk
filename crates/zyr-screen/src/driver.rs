@@ -3,9 +3,8 @@
 //! One trait, and everything on the far side of it is one file. What is
 //! on this side never learns the make of the driver: it hands over a
 //! folder of files, a folder to live in, and a list of sizes, and gets
-//! back whether anything changed. That is the same shape the engines are
-//! held at, and for the same reason: a driver that has to be swapped
-//! later should cost one new file and nothing else.
+//! back whether anything changed. A driver that has to be swapped later
+//! should cost one new file and nothing else.
 
 use std::fmt;
 use std::path::Path;

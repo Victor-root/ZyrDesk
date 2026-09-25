@@ -8,10 +8,10 @@
 //! engine records is the mix Windows hands to the sound card, copied
 //! before the card applies its own mute.
 //!
-//! The engines' own answer to this is a second sound card that no cable
-//! leads to, published by somebody else and installed behind the
-//! person's back. Nothing of the sort is needed here, and nothing of the
-//! sort is installed.
+//! The usual answer to this is a second sound card that no cable leads
+//! to, published by somebody else and installed behind the person's
+//! back. Nothing of the sort is needed here, and nothing of the sort is
+//! installed.
 //!
 //! # What is owed
 //!

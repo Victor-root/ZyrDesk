@@ -32,6 +32,11 @@ const EVERY: Duration = Duration::from_secs(1);
 /// has not said it by then is not going to, and the command ends anyway.
 const STOPPING_TAKES: Duration = Duration::from_secs(3);
 
+/// What this command ends with when a second Ctrl+C will not wait: 128
+/// and the number of the interrupt signal, the code a shell gives a
+/// program Ctrl+C stopped.
+const STOPPED_AT_ONCE: i32 = 130;
+
 #[derive(ClapArgs)]
 pub struct Args {
     /// Address of the remote computer
@@ -153,7 +158,6 @@ fn watch(
     let mut stopped_at: Option<Instant> = None;
     loop {
         if stopped_at.is_none() && interrupted.load(Ordering::Relaxed) {
-            println!("Arrêt demandé.");
             player.stop();
             stopped_at = Some(Instant::now());
         }
@@ -222,7 +226,15 @@ fn ended(ending: Option<Ending>, journal: &std::path::Path) -> ExitCode {
     }
 }
 
-/// Sets `interrupted` when Ctrl+C is pressed.
+/// Sets `interrupted` at the first Ctrl+C, and ends the program at the
+/// second.
+///
+/// The first lets go of the opening where it stands, or stops the
+/// player, and waits for that to be over: giving the way back waits for
+/// the service to finish whatever it was asking the far computer, which
+/// can take seconds. Pressed again, it is somebody who will not wait, and
+/// nothing is lost by obliging: the service closes a way nobody uses on
+/// its own.
 ///
 /// On a thread and a small runtime of their own: the rest of this command
 /// waits on the session and never on a runtime.
@@ -233,9 +245,15 @@ fn on_ctrl_c(interrupted: Arc<AtomicBool>) -> std::io::Result<()> {
     std::thread::Builder::new()
         .name("zyr-cli-ctrl-c".to_string())
         .spawn(move || {
-            if runtime.block_on(tokio::signal::ctrl_c()).is_ok() {
-                interrupted.store(true, Ordering::Relaxed);
-            }
+            runtime.block_on(async {
+                while tokio::signal::ctrl_c().await.is_ok() {
+                    if interrupted.swap(true, Ordering::Relaxed) {
+                        eprintln!("Arrêt immédiat.");
+                        std::process::exit(STOPPED_AT_ONCE);
+                    }
+                    println!("Arrêt demandé. Ctrl+C à nouveau pour quitter sans attendre.");
+                }
+            });
         })?;
     Ok(())
 }

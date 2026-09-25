@@ -23,8 +23,7 @@
 //! [`Driver`], in one file. This crate's own code knows a hardware
 //! identifier, a folder of files and a list of sizes, and nothing else.
 //! Swapping the driver for another means writing one more file next to
-//! [`mtt`], not touching anything here or anywhere else in the product,
-//! which is the same border the engines are held behind.
+//! [`mtt`], not touching anything here or anywhere else in the product.
 
 pub mod arrangement;
 pub mod driver;
@@ -210,9 +209,9 @@ pub fn wake_up(driver: &dyn Driver, home: &Path, wanted: Mode) -> Result<Done, T
     // session was served a screen born at the smallest size offered, and
     // it took a second rearrangement of the whole desktop to put it
     // right. On a machine with several screens that second rearrangement
-    // lands while the engine is already reconfiguring them, and the two
-    // undo each other. Born at the size that was asked for, there is
-    // nothing left to change.
+    // landed while the engine of the time was already reconfiguring them,
+    // and the two undid each other. Born at the size that was asked for,
+    // there is nothing left to change.
     let mut modes: Vec<Mode> = vec![wanted];
     modes.extend(
         ALWAYS_OFFERED
@@ -234,10 +233,9 @@ pub fn wake_up(driver: &dyn Driver, home: &Path, wanted: Mode) -> Result<Done, T
             // from starting a device long before that device is a screen
             // anybody can capture: the desktop is rebuilt around it
             // afterwards, and nothing says when. The session asking is
-            // told the screen is ready and starts its engine on that
-            // word, so answering early is telling it to capture a screen
-            // that is not there yet, which is a session opening onto
-            // nothing.
+            // told the screen is ready and has it filmed on that word,
+            // so answering early is telling it to capture a screen that
+            // is not there yet, which is a session opening onto nothing.
             done.step(match settled(before) {
                 Some(waited) => format!("virtual screen on the desktop after {waited} ms"),
                 None => format!(
@@ -294,12 +292,13 @@ fn settled(before: usize) -> Option<u128> {
 /// does not keep a screen its owner never asked for.
 ///
 /// It waits for the desktop to stop changing first, and that wait is the
-/// point of this whole function. A session ending is the far engine
-/// putting back the screens it had switched off for it, and the
-/// arrangement it puts back is the one that had this screen in it. Taking
-/// the screen away while it is halfway through leaves it restoring a
-/// screen that no longer exists: it gives up, switches every screen it
-/// can find back on to be safe, and the person at this computer finds
+/// point of this whole function. A session ending is the desk going home,
+/// and taking the screen away while Windows is still rearranging the
+/// desktop pulls it out from under a restore that is still running. That
+/// was learnt from the host engine this product used to run, which put
+/// the screens back itself: halfway through, it found itself restoring a
+/// screen that no longer existed, gave up, switched every screen it could
+/// find back on to be safe, and the person at this computer found
 /// monitors they had switched off themselves lit up again. Waiting costs
 /// a few seconds nobody is looking at.
 ///
@@ -345,16 +344,15 @@ pub fn go_to_sleep(driver: &dyn Driver, still_nobody: &dyn Fn() -> bool) -> Resu
 /// How long the desktop is given to stop changing, and how still it has
 /// to be before it counts as settled.
 ///
-/// The long one covers a far engine putting several screens back one at a
-/// time, which is the slowest thing that happens here. The short one is
-/// what says it has finished.
+/// The long one covers several screens being put back one at a time,
+/// which is the slowest thing that happens here. The short one is what
+/// says it has finished.
 ///
 /// What is watched is the machine's screens arriving and leaving, so a
-/// screen the engine merely moves or switches off through the display
-/// configuration goes by unseen. The short wait is therefore worth
-/// something in its own right and not only as a measurement: it is the
-/// moment given to a restore to run before ours is taken away from
-/// under it.
+/// screen merely moved or switched off through the display configuration
+/// goes by unseen. The short wait is therefore worth something in its own
+/// right and not only as a measurement: it is the moment given to a
+/// restore to run before ours is taken away from under it.
 #[cfg(windows)]
 const SETTLING: std::time::Duration = std::time::Duration::from_secs(10);
 #[cfg(windows)]

@@ -130,7 +130,8 @@ pub enum Access {
     Ready,
     /// Remote access is wanted and the engine is on its way.
     Starting,
-    /// Remote access is wanted and the engine is missing.
+    /// Remote access is wanted and FFmpeg, which its engine encodes with,
+    /// is missing.
     EngineMissing,
     /// Remote access is wanted and the engine keeps falling over.
     EngineWontStand,
@@ -144,7 +145,7 @@ impl Access {
             Access::Off => "accès distant désactivé",
             Access::Ready => "prêt à être contrôlé",
             Access::Starting => "démarrage en cours",
-            Access::EngineMissing => "moteur hôte absent",
+            Access::EngineMissing => "FFmpeg absent",
             Access::EngineWontStand => "le moteur hôte ne tient pas",
         }
     }
