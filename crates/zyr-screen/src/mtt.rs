@@ -208,6 +208,13 @@ fn settings_file(modes: &[Mode]) -> String {
     // a screen that quietly turns up in ten bits or in a colour shape
     // the encoder has to convert costs a session either sharpness or
     // time, with nothing to show where it went.
+    //
+    // The pointer most of all. Left to its default, the driver carries
+    // none, so Windows paints it into every picture of this screen, and
+    // the capture receives it already in the pixels: a session in the
+    // desktop mouse mode then shows two, its own and this one a round
+    // trip behind. Carried by the driver, it stays out of the picture and
+    // the capture is handed it apart, as with any real screen.
     out.push_str(
         "\x20   </resolutions>\n\
          \x20   <colour>\n\
@@ -215,6 +222,9 @@ fn settings_file(modes: &[Mode]) -> String {
          \x20       <HDRPlus>false</HDRPlus>\n\
          \x20       <ColourFormat>RGB</ColourFormat>\n\
          \x20   </colour>\n\
+         \x20   <cursor>\n\
+         \x20       <HardwareCursor>true</HardwareCursor>\n\
+         \x20   </cursor>\n\
          \x20   <logging>\n\
          \x20       <logging>true</logging>\n\
          \x20       <debuglogging>false</debuglogging>\n\
@@ -273,6 +283,15 @@ mod tests {
         assert_ne!(
             settings_file(&modes),
             settings_file(&[Mode::new(2560, 1440, 120)])
+        );
+    }
+
+    #[test]
+    fn the_pointer_stays_out_of_the_picture() {
+        let written = settings_file(&[Mode::new(1920, 1200, 60)]);
+        assert!(
+            written.contains("<HardwareCursor>true</HardwareCursor>"),
+            "{written}"
         );
     }
 

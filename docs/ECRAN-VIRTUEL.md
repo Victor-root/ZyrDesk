@@ -185,6 +185,17 @@ mesurer son écran ou parce qu'une taille a été choisie à la main, reçoit
 celui que Windows recommande pour cette taille-là : cette taille n'est
 l'écran de personne, il n'y a donc rien à copier.
 
+## Le curseur
+
+Le pilote est prié de porter lui-même le curseur de son écran, comme le
+fait une carte graphique pour un vrai écran. Laissé à son réglage par
+défaut, il n'en porte aucun : Windows dessine alors le curseur dans
+chaque image de l'écran poussé, la capture le reçoit déjà dans les
+pixels, et une session en souris « Bureau » montre deux curseurs, le
+sien et celui d'en face, un aller-retour en retard. Porté par le pilote,
+il reste hors de l'image et la capture le reçoit à part
+([D226](DECISIONS.md)).
+
 ## La frontière dans le code
 
 Un pilote qu'il faudra remplacer un jour doit coûter un fichier.

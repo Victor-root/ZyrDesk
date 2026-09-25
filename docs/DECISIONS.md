@@ -3568,6 +3568,16 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce que ça explique peut-être aussi.** Une session déjà ouverte dont l'hôte change de route vers l'autre famille d'adresses tombait dans la même impasse. Des sessions coupées sans raison claire, avant cette date, pouvaient venir de là.
 
+## D226. Sur l'écran virtuel, le curseur d'en face était dans l'image (2026-09-25, pendant MZ)
+
+**Ce qui se voyait.** En souris « Bureau », depuis l'ordinateur portable vers PC-SAV, le curseur d'en face apparaissait dans l'image à côté de celui d'ici, alors que [D150](#d150-en-mode-bureau-le-curseur-est-dessiné-ici-2026-09-05-pendant-m6) et [D157](#d157-le-curseur-des-deux-bouts-cesse-de-passer-par-des-touches-2026-09-06-pendant-m6) l'avaient retiré.
+
+**Ce que les journaux ont montré.** Le portable demande 1920x1200, que l'écran de PC-SAV ne sait pas afficher : la session filmait donc l'écran virtuel. Le moteur hôte n'avait bien pas dessiné de curseur (« pointer not drawn »). Mais sur 433 images capturées, Windows n'a jamais signalé un mouvement du curseur à part de l'image, alors que les sessions sur un vrai écran en comptent des centaines ou des milliers (182 pour 5 images sur PC-ACCUEIL). Le curseur était donc déjà dans les pixels quand le moteur les recevait.
+
+**La cause.** Le pilote de l'écran virtuel sait porter lui-même un curseur, comme une carte graphique pour un vrai écran, mais il ne le fait que si on le lui dit, et notre fichier de réglages ne le disait pas. Sans curseur porté par le pilote, Windows le dessine dans chaque image de cet écran, et aucun réglage de capture ne l'en retire. Le cas n'avait jamais été couvert, pas plus avant la migration : ce qu'avaient réglé D150 et D157 concernait les vrais écrans.
+
+**La correction.** Le fichier de réglages de l'écran virtuel demande désormais au pilote de porter le curseur. Le curseur reste hors de l'image, et la capture le reçoit à part, comme pour un vrai écran. Le réglage est lu à chaque réveil de l'écran, donc dès la prochaine session. Un essai garde la ligne dans le fichier ([ECRAN-VIRTUEL.md](ECRAN-VIRTUEL.md), section « Le curseur »).
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
