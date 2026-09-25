@@ -15,6 +15,16 @@
 //! period on that grid. Repeats never hold a capture back: the 7/8 rule
 //! counts captured images only.
 //!
+//! Repeats and captures share one allowance of `fps` pictures a second,
+//! a slot per period. A capture never waits for its slot: it goes at once
+//! and takes the next one free, even if a repeat has just taken the one
+//! before. A repeat only goes in a slot left free. A screen changing a
+//! little less often than the rate asked, a 50 fps video in a 60 fps
+//! session, is then not sent twice per change, repeated just before each
+//! new image and again with it. The slots taken ahead never run more than
+//! two periods past the last capture, so that a burst from a faster
+//! screen does not silence the repeats once it stops.
+//!
 //! Without `steady`, a still screen sends nothing, and the player is
 //! told instead, every [`STILL_EVERY`], that the picture it has is still
 //! the screen: a player that hears nothing for a while takes the picture
@@ -59,6 +69,8 @@ pub struct Cadence {
     /// When the last picture went, captured or repeated.
     last_sent: Option<Instant>,
     holding: bool,
+    /// The first slot of the allowance still free.
+    next_slot: Option<Instant>,
     next_repeat: Option<Instant>,
     next_still: Option<Instant>,
 }
@@ -72,6 +84,7 @@ impl Cadence {
             captured_sent: None,
             last_sent: None,
             holding: false,
+            next_slot: None,
             next_repeat: None,
             next_still: None,
         }
@@ -79,6 +92,8 @@ impl Cadence {
 
     pub fn set_fps(&mut self, fps: u32) {
         self.period = period_of(fps);
+        // Counted in periods of the old rate.
+        self.next_slot = None;
         self.restart_idle();
     }
 
@@ -122,7 +137,8 @@ impl Cadence {
         // the points it missed rather than sending them in a burst. What
         // is left of a period is below a second, so it fits in u64.
         let into = (now - at).as_nanos() % self.period.as_nanos();
-        self.next_repeat = now.checked_add(self.period - Duration::from_nanos(into as u64));
+        self.next_slot = now.checked_add(self.period - Duration::from_nanos(into as u64));
+        self.next_repeat = self.next_slot;
         Some(Due::Repeat)
     }
 
@@ -147,6 +163,11 @@ impl Cadence {
         self.captured_sent = Some(at);
         self.last_sent = Some(at);
         self.holding = false;
+        let taken = self.next_slot.map_or(at, |free| free.max(at));
+        self.next_slot = taken.checked_add(self.period).map(|free| {
+            at.checked_add(self.period * 2)
+                .map_or(free, |most| free.min(most))
+        });
         self.restart_idle();
     }
 
@@ -155,7 +176,8 @@ impl Cadence {
     fn restart_idle(&mut self) {
         self.next_repeat = self
             .last_sent
-            .and_then(|at| at.checked_add(self.period + self.period / 8));
+            .and_then(|at| at.checked_add(self.period + self.period / 8))
+            .map(|after| self.next_slot.map_or(after, |free| free.max(after)));
         self.next_still = self.last_sent.and_then(|at| at.checked_add(STILL_EVERY));
     }
 }
@@ -322,23 +344,84 @@ mod tests {
     }
 
     #[test]
-    fn a_capture_right_after_a_repeat_goes_at_once() {
+    fn a_capture_right_after_a_repeat_goes_at_once_and_takes_the_next_slot() {
         let period = Duration::from_secs(1) / 60;
         let repeat = period + period / 8;
         let captures = [Duration::ZERO, repeat + us(500)];
         let mut cadence = Cadence::new(60, true);
-        let sent = run(&mut cadence, &captures, repeat * 2);
+        let sent = run(&mut cadence, &captures, repeat + period * 2);
+        // The capture went at once, in the slot after the repeat's: the
+        // next repeat waits for the one after that.
         assert_eq!(
-            &sent[..3],
-            &[
+            sent,
+            [
                 (Duration::ZERO, Sent::Captured),
                 (repeat, Sent::Repeat),
                 (repeat + us(500), Sent::Captured),
+                (repeat + period * 2, Sent::Repeat),
             ]
         );
-        // The grid starts again from that capture: on the old one, a
-        // repeat would have gone a period after the first.
-        assert_eq!(sent.len(), 3);
+    }
+
+    #[test]
+    fn a_screen_changing_below_the_rate_is_never_sent_beyond_it() {
+        let period = Duration::from_secs(1) / 60;
+        let mut noise = Noise::new(53);
+        let sources = [
+            source(Duration::from_secs(1) / 50, 10, Duration::ZERO, &mut noise),
+            source(Duration::from_secs(1) / 55, 10, us(1_000), &mut noise),
+            source(Duration::from_secs(1) / 30, 10, us(2_000), &mut noise),
+            {
+                let mut at = Duration::ZERO;
+                (0..400)
+                    .map(|_| {
+                        at += period + us(noise.below(2 * period.as_micros() as usize) as u64);
+                        at
+                    })
+                    .collect()
+            },
+        ];
+        for captures in &sources {
+            let mut cadence = Cadence::new(60, true);
+            let until = *captures.last().unwrap() + period;
+            let sent = run(&mut cadence, captures, until);
+            let fresh: Vec<_> = sent
+                .iter()
+                .filter(|(_, what)| *what != Sent::Repeat)
+                .collect();
+            assert_eq!(fresh.len(), captures.len());
+            for ((at, what), capture) in fresh.iter().zip(captures) {
+                assert_eq!((*at, *what), (*capture, Sent::Captured));
+            }
+            for (n, (start, _)) in sent.iter().enumerate() {
+                let within = sent[n..]
+                    .iter()
+                    .take_while(|(at, _)| *at < *start + Duration::from_secs(1))
+                    .count();
+                assert!(
+                    within <= 61,
+                    "{within} pictures in the second from {start:?}"
+                );
+            }
+            assert!(sent.iter().any(|(_, what)| *what == Sent::Repeat));
+        }
+    }
+
+    #[test]
+    fn repeats_come_back_soon_after_a_faster_screen_stops() {
+        let period = Duration::from_secs(1) / 60;
+        let captures = source(
+            Duration::from_secs(1) / 144,
+            10,
+            Duration::ZERO,
+            &mut Noise::new(54),
+        );
+        let last = *captures.last().unwrap();
+        let mut cadence = Cadence::new(60, true);
+        let sent = run(&mut cadence, &captures, last + period * 3);
+        let (at, what) = sent.last().unwrap();
+        assert_eq!(*what, Sent::Repeat);
+        assert!(*at - sent[sent.len() - 2].0 <= period * 2, "{sent:?}");
     }
 
     #[test]
