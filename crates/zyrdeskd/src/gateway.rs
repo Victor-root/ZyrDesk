@@ -1,10 +1,9 @@
 //! The tunnel end the service holds.
 //!
 //! This is the one door open on this computer. Everything a session
-//! needs goes through it: the engine's seven ports are multiplexed into
-//! a single encrypted connection. That is what lets the engine close
-//! back onto the local machine, where nothing on the network can reach
-//! it, and what leaves a single rule to write in a firewall.
+//! needs goes through it, in a single encrypted connection: that is what
+//! leaves a single rule to write in a firewall, and an engine that never
+//! opens a socket at all.
 //!
 //! Who may come in is decided by fingerprint. Three things put a
 //! fingerprint on that list: it was written down, its owner announced
@@ -16,35 +15,44 @@
 //! filesystem on every platform. A ticket wakes the reading at once: the
 //! computer it presents knocks a moment later.
 //!
-//! The door also answers for the engine on ZyrDesk's own channel: the
-//! far computer hands over the code its engine is waiting for, and it is
-//! passed on here. That is the whole of what replaced a code shown on
-//! one screen and typed on the other.
+//! Each session that comes through brings its own engine up. It is asked
+//! for with the first word of the session, and started then in the
+//! session that owns the screen, as this very program, on a local link
+//! only the system may open; the tunnel then carries that link to the
+//! far computer. When the session ends the link is let go of, the engine
+//! lets go of whatever it held and goes, and what is left of it is taken
+//! with the job it was started in.
+
+// Outside Windows nothing calls this module: the service does not exist
+// there. Its logic has nothing platform-specific about it and stays
+// compiled and tested everywhere.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Duration;
 
 use tokio::runtime::Handle;
+use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinHandle, JoinSet};
-use zyr_engine_host::Credentials;
-use zyr_engine_host::api::{Asked, EngineApi};
-use zyr_engine_host::config::minimum_fps_target;
+use zyr_control::link::{Access, Link, LinkListener};
+use zyr_media::service::{ToEngine, ToService};
 use zyr_proto::log::Log;
-use zyr_proto::net::{EnginePorts, TUNNEL_PORT};
+use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
-use zyr_proto::session::{Serving, WantedScreen};
+use zyr_proto::session::WantedScreen;
 use zyr_proto::sifting::Sifting;
 use zyr_transport::junction::{Aloud, Say};
 use zyr_transport::{
-    AllowedPeers, EndpointError, Fingerprint, Identity, Junction, Knocking, Media, MediaProfile,
-    TunnelEndpoint, authorized, is_card,
+    AllowedPeers, Bytes, Connection, EndpointError, Fingerprint, Identity, Junction, Knocking,
+    Media, TunnelEndpoint, authorized, is_card,
 };
-use zyr_tunnel::{Answers, Tunnel, nudge};
+use zyr_tunnel::{Answers, ServiceSide, Tunnel, aside, nudge, service_channel};
 
+use crate::engine::{Engine, Film};
 use crate::machine::{Door, Machine};
 use crate::said::{self, Said};
 
@@ -58,213 +66,78 @@ const SESSION_WATCH: Duration = Duration::from_secs(2);
 /// other one is.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
-/// Where the engine listens, and the only place the tunnel hands it
-/// anything.
-const ENGINE: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
-
 /// How often the list of authorised devices is worked out again.
 const AUTHORIZED_REFRESH: Duration = Duration::from_secs(5);
 
-/// How long a pairing code is offered to the local engine.
+/// How long an engine just started is given to reach its link.
 ///
-/// The far computer starts its own engine and then hands the code over,
-/// so the two arrive within a hair of each other and in no fixed order.
-/// The engine refuses a code as long as nobody is asking it for one, so
-/// it is offered again until somebody is.
-const PAIRING_PATIENCE: Duration = Duration::from_secs(10);
+/// Starting a program in another session and having it open a pipe
+/// takes a fraction of a second; past this, it is not coming, and the
+/// far computer is told so rather than left waiting.
+const ENGINE_PATIENCE: Duration = Duration::from_secs(10);
 
-/// Pause between two offers.
-const PAIRING_RETRY: Duration = Duration::from_millis(200);
-
-/// The screen the engine is filming right now, under its own name for
-/// it.
+/// How long an engine whose link has closed is given to go by itself.
 ///
-/// Shared between the door, which can move it while the engine runs, and
-/// the watch that holds the engine, which starts that engine over when
-/// what it is filming is not what should be filmed. One answer in one
-/// place: two would be an engine that starts over for ever, or one that
-/// never does.
-pub type Filming = Arc<Mutex<Option<String>>>;
+/// What it does in that time is let go of every key and button it was
+/// holding down for the far computer, which is the one thing that must
+/// not be skipped: taken before, it would leave a key held on this
+/// computer. Past this, it is taken with the job it was started in.
+const ENGINE_GOES: Duration = Duration::from_secs(2);
 
-/// How the engine is serving right now.
-///
-/// Shared for the same reason as the screen above, and between the same
-/// two: the door moves the rate a still screen is served at while the
-/// engine runs, and the watch that holds the engine starts it over when
-/// how it serves is not how it should. The way the screen is captured is
-/// in here too, and that one nothing moves in a running engine.
-pub type ServingNow = Arc<Mutex<Serving>>;
+/// How long the door waits, when it closes, for every session to let its
+/// engine go.
+const CLOSING_PATIENCE: Duration = Duration::from_secs(3);
 
-/// The local engine, as the tunnel has to see it.
-pub struct AtHand {
-    pub ports: EnginePorts,
-    pub credentials: Credentials,
-    /// Whether it was started filming the screen this computer grows for
-    /// itself rather than one of its own.
-    ///
-    /// Decided before the engine started, because that is the one moment
-    /// it reads which screen to film, and carried here because a session
-    /// only borrows that screen where the engine is already looking at
-    /// it. Borrowing it otherwise would move somebody's desktop onto a
-    /// screen nobody is filming.
-    pub films_the_grown_screen: bool,
-    /// Where the engine writes down the screens it can see.
-    ///
-    /// The one authority on what this computer's screens are called: the
-    /// identifier is a digest the engine alone computes, and working it
-    /// out again here would be a copy that is wrong on the first machine
-    /// nobody tested.
-    pub engine_log: PathBuf,
-    /// Which screen the engine is filming, starting with the one it was
-    /// aimed at.
-    ///
-    /// Carried rather than asked for again: what a session wants is
-    /// written down the instant it asks, and comparing the ask against
-    /// the note would answer « you have it » to a session whose engine is
-    /// not there yet. Shared, because asking the engine to film another
-    /// screen moves it without anything starting over.
-    pub filming: Filming,
-    /// How the engine is serving, starting with how it was started.
-    ///
-    /// Carried for the same reason as the screen above, and shared for
-    /// the same reason: asking the engine to serve a still screen
-    /// otherwise moves it without anything starting over.
-    pub serving: ServingNow,
+/// Starts the engine of one session, told the link it is to serve it on.
+pub trait Launcher: Send + Sync {
+    /// Called where blocking is allowed: starting a program in another
+    /// session waits on Windows.
+    fn launch(&self, link: &str) -> io::Result<Box<dyn Launched>>;
 }
 
-/// The local engine, and the one thing a far computer may ask of it.
+/// An engine started, for as long as it is held: letting go of it
+/// without waiting takes it.
+pub trait Launched: Send {
+    /// The process, as the system numbers it: what the other end of the
+    /// engine's link has to be.
+    fn process(&self) -> u32;
+
+    /// Waits at most that long for it to go by itself, and says with
+    /// which code. Nothing when it had to be taken.
+    fn let_go(self: Box<Self>, within: Duration) -> io::Result<Option<u32>>;
+}
+
+/// Where no engine can be started, which is everywhere but Windows: the
+/// engine films a Windows screen.
+#[cfg(not(windows))]
+pub struct NotHere;
+
+#[cfg(not(windows))]
+impl Launcher for NotHere {
+    fn launch(&self, _link: &str) -> io::Result<Box<dyn Launched>> {
+        Err(io::Error::other(
+            "le moteur ne tourne que sous Windows, où il filme l'écran",
+        ))
+    }
+}
+
+/// One session coming through the door, as its own channel answers for
+/// this computer.
 struct Attending {
-    ports: EnginePorts,
-    api: Arc<EngineApi>,
-    /// Whether the engine is filming the screen this computer grew.
-    films_the_grown_screen: bool,
-    /// Where the engine writes down the screens it can see, which is
-    /// where the list this computer offers is read from.
-    engine_log: PathBuf,
-    /// Which screen the engine is filming.
-    filming: Filming,
-    /// How it is serving right now.
-    serving: ServingNow,
     /// The sessions coming through this door, so what one of them asks
     /// of this computer outlives the asking.
     sessions: Arc<Sessions>,
-    /// This computer, for the two asks that are about it rather than
-    /// about a session: how its own engine serves, and its journal.
+    /// This computer, for the asks that are about it rather than about
+    /// the session: its journal, its screens.
     machine: Machine,
     /// This computer's fingerprint, which its journal opens on.
     fingerprint: Fingerprint,
-    /// Whether the engine was last asked to draw this computer's own
-    /// pointer, as one, or nought, or two for « nobody has said yet ».
-    ///
-    /// It decides what the journal says and never what the engine is
-    /// asked: a session says this at every turn of its watch, on
-    /// purpose, and the engine is told every time.
-    pointer_drawn: AtomicU8,
-    /// Which handing over of a pairing code is the one in hand.
-    ///
-    /// A code goes on being offered for a while after it has been taken,
-    /// because the engine only takes one while somebody is asking for
-    /// one and this computer cannot see when that starts. That insisting
-    /// has to stop the moment another code is handed over: the engine
-    /// takes whichever code arrives while a pairing waits for one, so an
-    /// offer left over from an attempt already given up is taken for the
-    /// new attempt's, and that attempt then fails on a code it never
-    /// chose. Which is a pairing that goes wrong once in a while, works
-    /// on the next try, and leaves nothing behind saying why.
-    offering: Arc<AtomicU64>,
+    /// The engine serving this session, once there is one.
+    engine: Arc<Engine>,
     log: Log,
 }
 
 impl Answers for Attending {
-    fn engine(&self) -> EnginePorts {
-        self.ports
-    }
-
-    /// What an opening session will be served, told to the tunnel.
-    ///
-    /// Nothing is asked of the engine here: the two engines settle the
-    /// rate between themselves a moment later. What changes is the window
-    /// this computer holds open, which the line about what was carried
-    /// then reports for the whole of the session.
-    fn a_session_is_opening(&self, serving: MediaProfile) {
-        self.machine.door.media().serving(serving);
-        self.log.write(&format!(
-            "a session opening here asks to be served at {} kbps, {} images a second, and this \
-             computer's tunnel is held open for that",
-            serving.bits_per_second / 1_000,
-            serving.frames_per_second
-        ));
-    }
-
-    /// Offers the far computer's code to the engine, and keeps offering
-    /// it after answering.
-    ///
-    /// The engine only takes a code while a client is asking it for one,
-    /// and reports success either way (`patches/MANIFEST.md`). The far
-    /// engine was started before the code was sent, but started is not
-    /// yet asking: a code offered in that gap is swallowed with a
-    /// straight face, and stopping there left the real request, arriving
-    /// a moment later, waiting for a code nobody would offer again. So
-    /// the first successful offer answers the caller, and the offering
-    /// goes on quietly for the rest of the patience: offering a code
-    /// nobody is waiting for does nothing, which is exactly why it is
-    /// safe to insist.
-    ///
-    /// Safe, that is, for as long as this code is the one wanted. The
-    /// engine takes whichever code arrives while a pairing waits for
-    /// one, and it never says which: an offer left over from an attempt
-    /// that has been given up would be taken for the next attempt's, and
-    /// that attempt would then fail on a code it never chose. So a new
-    /// handing over stops the one before it, here and in the thread that
-    /// insists, and the journal says so: only the last code offered is
-    /// ever offered again.
-    fn hand_over_the_code(&self, pin: &str, name: &str) -> Result<(), String> {
-        let mine = self.offering.fetch_add(1, Ordering::SeqCst) + 1;
-        let overtaken = || self.offering.load(Ordering::SeqCst) != mine;
-        let asked = Instant::now();
-        let deadline = asked + PAIRING_PATIENCE;
-        loop {
-            let refused = match self.api.submit_pin(pin, name) {
-                Ok(()) => break,
-                Err(e) => e.to_string(),
-            };
-            if overtaken() {
-                let overtaken = "another pairing started while this code was being offered";
-                self.log
-                    .write(&format!("pairing given up for {name}: {overtaken}"));
-                return Err(overtaken.to_string());
-            }
-            if Instant::now() >= deadline {
-                self.log
-                    .write(&format!("pairing refused to {name}: {refused}"));
-                return Err(refused);
-            }
-            std::thread::sleep(PAIRING_RETRY);
-        }
-        // How long it took is the whole difference between an engine
-        // that was not asking yet and one that never asked at all, and
-        // it cannot be told apart afterwards without this.
-        self.log.write(&format!(
-            "pairing code offered to the engine for {name}, taken after {} ms",
-            asked.elapsed().as_millis()
-        ));
-
-        let api = self.api.clone();
-        let offering = self.offering.clone();
-        let pin = pin.to_string();
-        let name = name.to_string();
-        std::thread::spawn(move || {
-            while Instant::now() < deadline {
-                std::thread::sleep(PAIRING_RETRY);
-                if offering.load(Ordering::SeqCst) != mine {
-                    return;
-                }
-                let _ = api.submit_pin(&pin, &name);
-            }
-        });
-        Ok(())
-    }
-
     /// Presses Ctrl+Alt+Suppr on this computer, for the far one.
     ///
     /// It goes nowhere near the engine, and could not: the way an engine
@@ -350,9 +223,12 @@ impl Answers for Attending {
     /// out.
     ///
     /// The screen this computer grew for itself is the exception on both
-    /// counts, and it is for the machine that has no screen at all: there
-    /// is no desk to write down, nothing to give back, and it is woken
-    /// from here rather than from the session on screen.
+    /// counts. It is woken from here rather than from the session on
+    /// screen, and this session's engine is told to film it: on a
+    /// computer with no screen at all, because there is nothing else to
+    /// film; and on one whose own screens draw nothing larger than
+    /// themselves, whose desktop moves onto it for the length of the
+    /// session.
     ///
     /// A refusal is written down rather than swallowed, and the session
     /// goes on anyway at the other end: a computer that will not take the
@@ -381,17 +257,10 @@ impl Answers for Attending {
         // nothing in between ever put the desk back, and a 4K host went on
         // serving 1920x1200 of itself for the rest of the evening.
         //
-        // Asked of no other session first, and that is a change. It used
-        // to be done only while nothing else was open, so as never to pull
-        // the desk from under somebody else; but a session closing and the
-        // next one opening in the same second are counted together for as
-        // long as the first takes to be shown out, and the switch lands in
-        // exactly that second. It came out a coin toss: the same three
-        // clicks worked one evening and did nothing the next. A session
-        // that asks for this computer's own screen gets this computer's
-        // own screen, and what that costs a second viewer is a picture
-        // changing size, against a first viewer served the wrong screen
-        // altogether. That the two can even overlap is [O1], still open.
+        // Asked of no other session first. A session that asks for this
+        // computer's own screen gets this computer's own screen, and what
+        // that costs a second viewer is a picture changing size, against a
+        // first viewer served the wrong screen altogether.
         if wanted.is_none() && !crate::screen::noted_before().is_empty() {
             self.log.write(
                 "this session wants this computer's own screen, so the desk an earlier one took is \
@@ -405,13 +274,10 @@ impl Answers for Attending {
                     .log
                     .write(&format!("this computer's desk was left as it was: {e}")),
             }
-            // And the grown screen goes with it, in that order. A desk
+            // And the grown screen goes with it, in that order: a desk
             // that had been moved onto it leaves it standing there empty,
-            // and the engine on such a computer is aimed at it: left
-            // awake, it would film an empty screen and this session would
-            // be served a bare wallpaper instead of the desktop it asked
-            // for. Asleep, the engine falls back to a real screen, which
-            // is exactly what this session wants.
+            // and a session served from it would be served a bare
+            // wallpaper instead of the desktop it asked for.
             self.put_the_grown_screen_away();
         }
         match hold_the_desk_for(wanted) {
@@ -419,7 +285,7 @@ impl Answers for Attending {
             // is the note the errand writes, and never the asking: a
             // session that wanted this computer's own screen leaves
             // nothing behind to put back, and claiming otherwise has the
-            // watch below announce a desk coming home that never left.
+            // watch announce a desk coming home that never left.
             Ok(took) => {
                 self.sessions
                     .desk_held
@@ -439,9 +305,7 @@ impl Answers for Attending {
         // The screen this computer grows for itself is woken from here
         // rather than from the session on screen: starting a display
         // device is administrator work, which a service has and a
-        // signed-in person may not. The engine is already aimed at it,
-        // that having been settled when it started, which is the one
-        // moment it reads which screen to film.
+        // signed-in person may not.
         //
         // Two computers need it, and they need different things of it. One
         // has nothing plugged in at all, so the grown screen is the only
@@ -456,31 +320,11 @@ impl Answers for Attending {
                     "no screen is plugged into this computer, so the one it grew for itself is \
                      woken for this session",
                 );
-                self.wake_the_one_it_grew(screen)
-                    .map(|()| (screen.wide, screen.high))
+                self.wake_the_one_it_grew(screen).map(|()| {
+                    self.film_the_grown_screen();
+                    (screen.wide, screen.high)
+                })
             }
-            Some(screen)
-                if self.films_the_grown_screen && showing != Some((screen.wide, screen.high)) =>
-            {
-                self.log.write(
-                    "this computer's own screens draw nothing larger than themselves, so the one \
-                     it grew is woken at the size asked for and the desktop moves onto it",
-                );
-                self.wake_the_one_it_grew(screen)
-                    .and_then(|()| self.move_the_desktop_onto_it(screen))
-            }
-            // The same computer, its engine not aimed there. Which screen
-            // an engine films is settled when it starts and never again,
-            // and the restart that would settle it right may only happen
-            // while nobody is watching: a session arriving in the seconds
-            // before that restart was served the size its own panel can
-            // draw and never the size it asked for, and only the session
-            // after it came out right. A 16:10 laptop asking a host whose
-            // panel is 1920x1080 is exactly that, and it was a coin toss
-            // on the timing. The engine has a door for being told to film
-            // another screen where it stands, the very one the menu uses
-            // to change screens mid-session, so this session asks through
-            // it rather than paying for the second it arrived in.
             Some(screen)
                 if showing != Some((screen.wide, screen.high))
                     && crate::screen::the_main_screen_is_stuck() =>
@@ -489,6 +333,13 @@ impl Answers for Attending {
             }
             _ => None,
         };
+        if grown.is_none()
+            && let Err(e) = self.engine.no_longer_the_grown_screen()
+        {
+            self.log.write(&format!(
+                "this session's engine could not be told to film this computer's own screen: {e}"
+            ));
+        }
         // What this computer ends up showing, read from what the session
         // on screen just wrote down rather than worked out here: what was
         // asked for and what Windows did are two different things, and a
@@ -503,156 +354,6 @@ impl Answers for Attending {
                 .to_string(),
         });
         Ok(showing)
-    }
-
-    /// Sets whether this computer resends a still screen at full rate,
-    /// because a session asked.
-    ///
-    /// Written down first, because the note is what the next engine will
-    /// read, and then asked of the engine that is running: it changes the
-    /// floor it keeps up where it stands, which costs it a new encoder and
-    /// costs the session watching it nothing at all. How the running
-    /// engine serves is moved with it, so the watch that holds that engine
-    /// sees nothing to start over for.
-    ///
-    /// One road still ends in a restart, and the answer says so: an engine
-    /// that cannot be asked, which is one of an older build or one that
-    /// has stopped answering. The note then differs from how the engine
-    /// serves, the watch starts it over, and starting over takes this very
-    /// tunnel with it, so the session that asked is told to wait and come
-    /// back rather than left to find out from a way that broke under it.
-    ///
-    /// Doing nothing at all when it already serves that way, which is the
-    /// ordinary case: every session asks, and almost none of them changes
-    /// anything.
-    fn serve_steady(&self, rate: bool) -> Result<zyr_tunnel::Settled, String> {
-        let mut serving = self.machine.remembered.serving();
-        if serving.steady_rate != rate {
-            serving.steady_rate = rate;
-            self.machine.remembered.set_serving(serving).map_err(|e| {
-                let refused = e.to_string();
-                self.log.write(&format!(
-                    "the rate this computer serves at is unchanged: {refused}"
-                ));
-                refused
-            })?;
-        }
-        // Weighed against how the engine serves **now**, and never against
-        // the note that may have just been written: the note is what the
-        // next engine will read, and answering from it would tell a session
-        // it has what it asked for while the engine that is running still
-        // serves the other way. Read and let go of before anything is
-        // asked of the engine, like the screen below and for the same
-        // reason.
-        let served = *self.serving.lock().expect("façon de servir");
-        if served.steady_rate == rate {
-            return Ok(zyr_tunnel::Settled::Already);
-        }
-        let asked = Asked {
-            minimum_fps_target: Some(minimum_fps_target(rate)),
-            ..Asked::default()
-        };
-        match self.api.serve_as_asked(&asked) {
-            Ok(()) => {
-                self.serving.lock().expect("façon de servir").steady_rate = rate;
-                self.log.write(&format!(
-                    "a session asked this computer to {} resending a still screen, and its engine \
-                     is changing floor where it stands",
-                    if rate { "start" } else { "stop" }
-                ));
-                Ok(zyr_tunnel::Settled::Already)
-            }
-            Err(refused) => {
-                self.log.write(&format!(
-                    "a session asked this computer to {} resending a still screen, and its engine \
-                     could not be asked to change floor ({refused}), so it starts over instead",
-                    if rate { "start" } else { "stop" }
-                ));
-                Ok(zyr_tunnel::Settled::StartingOver)
-            }
-        }
-    }
-
-    /// Serves the session's picture at that rate from now on.
-    ///
-    /// Asked of the engine that runs, which costs it a new encoder and
-    /// costs the session nothing: the rate was negotiated when the stream
-    /// started, and that being the one road the engines had, a change of
-    /// it used to be the picture stopped and started. Nothing is written
-    /// down, because there is nothing to write: a rate is asked of the
-    /// stream that runs, and the next one announces its own.
-    ///
-    /// A refusal is an engine that cannot be asked, and it is said rather
-    /// than swallowed: the far end then opens its picture again, which is
-    /// what every change of rate cost before this existed.
-    ///
-    /// The tunnel is told first, and whatever the engine then answers: a
-    /// window sized for the old rate would strangle the new one, and one
-    /// left wide by an engine that refused costs nothing at all.
-    fn serve_at(&self, kbps: u32) -> Result<(), String> {
-        self.machine
-            .door
-            .media()
-            .serving_at(u64::from(kbps) * 1_000);
-        let asked = Asked {
-            bitrate_kbps: Some(kbps),
-            ..Asked::default()
-        };
-        self.api.serve_as_asked(&asked).map_err(|e| {
-            let refused = e.to_string();
-            self.log.write(&format!(
-                "a session asked to be served at {kbps} kbps, and this computer's engine could \
-                 not be asked ({refused})"
-            ));
-            refused
-        })?;
-        self.log.write(&format!(
-            "a session asked to be served at {kbps} kbps, and this computer's engine is changing \
-             rate where it stands"
-        ));
-        Ok(())
-    }
-
-    /// Draws this computer's own pointer into the picture, or stops.
-    ///
-    /// Said by the session at every turn of its watch and not only when
-    /// it changes, so nothing here has to be remembered: the engine is
-    /// told what is wanted, and what it was doing before does not come
-    /// into it. Asking for what is already the case costs the engine one
-    /// comparison, which is why it is safe to say it over and over.
-    ///
-    /// Nothing is put back at the end of a session, and nothing needs
-    /// to be. A session that opens says what it wants, and gets it,
-    /// whatever became of the one before.
-    fn draw_the_pointer(&self, drawn: bool) -> Result<(), String> {
-        // Asked of the engine every time, and written down only when it
-        // is news. The session says this at every turn of its watch, so
-        // that a far engine left another way by whoever watched it
-        // before is put right within the second; a line each time would
-        // be one a second, and would drown every other line of every
-        // session.
-        let news = self.pointer_drawn.swap(u8::from(drawn), Ordering::Relaxed) != u8::from(drawn);
-        let asked = Asked {
-            draw_the_pointer: Some(drawn),
-            ..Asked::default()
-        };
-        let said = if drawn { "to draw" } else { "not to draw" };
-        self.api.serve_as_asked(&asked).map_err(|e| {
-            let refused = e.to_string();
-            if news {
-                self.log.write(&format!(
-                    "a session asked this computer {said} its own pointer into the picture, and \
-                     its engine could not be asked ({refused})"
-                ));
-            }
-            refused
-        })?;
-        if news {
-            self.log.write(&format!(
-                "a session asked this computer {said} its own pointer into the picture"
-            ));
-        }
-        Ok(())
     }
 
     /// Hands this computer's journal over, whole.
@@ -719,29 +420,6 @@ impl Answers for Attending {
         Err(reason)
     }
 
-    /// Says which pictures this computer's engine can make.
-    ///
-    /// Read from what that engine wrote down when it started, and never
-    /// worked out here: the engine tries every encoder the machine might
-    /// have and writes down the ones that answered, so it is the one
-    /// authority on what this graphics card can do. A copy of its
-    /// reasoning would be wrong on the first machine nobody tested.
-    ///
-    /// Nothing read is « it has not said », which the far end shows as no
-    /// opinion rather than as a machine that can encode nothing.
-    fn codecs(&self) -> Result<String, String> {
-        let named = what_this_engine_can_encode();
-        self.log.write(&format!(
-            "a session asked what this computer can encode: {}",
-            if named.is_empty() {
-                "its engine has not said".to_string()
-            } else {
-                named.clone()
-            }
-        ));
-        Ok(named)
-    }
-
     /// Says what shape this computer's pointer has right now.
     ///
     /// Nothing is written down about it, here or anywhere: it is asked
@@ -754,24 +432,22 @@ impl Answers for Attending {
 
     /// Says which screens this computer is showing on.
     ///
-    /// Read from what the engine wrote down when it started, like the
-    /// codecs just above and for the same reason: the identifier a screen
-    /// is asked for by is a digest that engine alone computes, and a copy
-    /// of that recipe that drifts by one byte names nothing at all.
+    /// Read from what this session's engine said when it started and
+    /// whenever its screens changed: it is the one that films them, and
+    /// the names it gives them are the ones it will be asked for.
     ///
-    /// A computer filmed on the screen it grows for itself offers none of
-    /// this. It has no screen of its own to choose between, which is the
-    /// whole reason it grows one, and offering the grown one would offer
-    /// the very screen the session is already being served from.
+    /// A session served from the screen this computer grows for itself is
+    /// offered none of this. There is no screen of its own to choose
+    /// between, which is the whole reason it grows one.
     fn screens(&self) -> Result<String, String> {
-        if self.films_the_grown_screen {
+        if self.engine.films_the_grown_screen() {
             self.log.write(
-                "a session asked which screens this computer has: it is filmed on the screen it \
+                "a session asked which screens this computer has: it is served from the screen it \
                  grew for itself, so there is none to choose between",
             );
             return Ok(String::new());
         }
-        let screens = crate::screen::on_this_computer(&self.engine_log);
+        let screens = self.engine.screens();
         self.log.write(&format!(
             "a session asked which screens this computer has: {}",
             if screens.is_empty() {
@@ -787,79 +463,38 @@ impl Answers for Attending {
         Ok(zyr_proto::session::far_screens_written(&screens))
     }
 
-    /// Serves this computer's picture from that screen from now on.
+    /// Serves this session's picture from that screen from now on.
     ///
-    /// Written down first, because the note is what the next engine will
-    /// read, and then asked of the engine that is running: it changes the
-    /// screen it films where it stands, which costs it the same
-    /// reinitialization of its capture as a desktop switch, and costs the
-    /// session watching it nothing at all. Nobody restarts, nobody
-    /// reconnects, and the picture is on the other screen within the
-    /// second.
+    /// Asked of the engine that runs, which changes the screen it films
+    /// where it stands: nobody restarts, nobody reconnects, and the
+    /// picture is on the other screen within the second.
     ///
-    /// Two roads still end in a restart, and the answer says so: an engine
-    /// that cannot be asked, which is one of an older build or one that
-    /// has stopped answering, and a computer whose main screen has never
-    /// been named, which is one that has never finished starting an
-    /// engine. Starting over takes this very tunnel with it, so the
-    /// session that asked is told to wait and come back rather than left
-    /// to find out from a way that broke under it.
-    ///
-    /// Doing nothing at all when it is already the screen being filmed,
-    /// which is the ordinary case: every session asks, and almost none of
-    /// them changes anything.
-    fn film_this_screen(&self, id: Option<String>) -> Result<zyr_tunnel::Settled, String> {
-        // A computer filmed on the screen it grew has one screen to give
-        // and no choice to offer; a session asking for its main screen is
-        // asking for what it is already getting.
-        if self.films_the_grown_screen {
-            return Ok(zyr_tunnel::Settled::Already);
+    /// A session served from the screen this computer grew has one screen
+    /// to give and no choice to offer; asking for its main screen is
+    /// asking for what it is already getting.
+    fn film_this_screen(&self, id: Option<String>) -> Result<(), String> {
+        if self.engine.films_the_grown_screen() {
+            return Ok(());
         }
-        crate::screen::film_this_screen(id.as_deref()).map_err(|refused| {
+        let named = id
+            .clone()
+            .unwrap_or_else(|| "this computer's main screen".to_string());
+        let wanted = match id {
+            Some(id) => Film::This(id),
+            None => Film::Main,
+        };
+        self.engine.film(wanted).map_err(|refused| {
             self.log.write(&format!(
-                "the screen this computer is served from is unchanged: {refused}"
+                "a session asked to be served from {named}, and its engine could not be told: \
+                 {refused}"
             ));
             refused
         })?;
-        // Weighed against the screen the engine is filming **now**, and
-        // never against the note that was just written: the note is what
-        // the next engine will read, and answering from it would tell a
-        // session it has what it asked for while the engine that is
-        // running is still on the other screen.
-        let should_be = crate::screen::the_screen_to_film();
-        // Read and let go of before anything is asked of the engine: the
-        // watch that holds that engine reads this too, and a lock held
-        // across a question asked over a socket is that watch standing
-        // still for as long as the answer takes.
-        let filming = self.filming.lock().expect("écran filmé").clone();
-        if should_be == filming {
-            return Ok(zyr_tunnel::Settled::Already);
-        }
-        let named = id.as_deref().unwrap_or("this computer's main screen");
-        if let Some(screen) = should_be.clone() {
-            let asked = Asked {
-                display: Some(screen),
-                ..Asked::default()
-            };
-            match self.api.serve_as_asked(&asked) {
-                Ok(()) => {
-                    *self.filming.lock().expect("écran filmé") = should_be;
-                    self.log.write(&format!(
-                        "a session asked to be served from {named}, and this computer's engine is \
-                         changing screen where it stands"
-                    ));
-                    return Ok(zyr_tunnel::Settled::Already);
-                }
-                Err(refused) => self.log.write(&format!(
-                    "this computer's engine could not be asked to change screen ({refused}), so \
-                     it starts over instead"
-                )),
-            }
-        }
         self.log.write(&format!(
-            "a session asked to be served from {named}, so this computer's engine starts over"
+            "a session asked to be served from {named}, and its engine changes screen where it \
+             stands"
         ));
-        Ok(zyr_tunnel::Settled::StartingOver)
+        Ok(())
     }
 
     /// Takes what was copied on the far computer, and hands back what was
@@ -945,16 +580,6 @@ impl Answers for Attending {
     }
 }
 
-/// What the local engine wrote down about its own encoders, in the
-/// product's own spelling.
-fn what_this_engine_can_encode() -> String {
-    zyr_engine_host::encoders::found_for(&paths::logs_dir())
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 impl Attending {
     /// Wakes the screen this computer grew, at that size, saying what
     /// came of it.
@@ -975,87 +600,38 @@ impl Attending {
         }
     }
 
-    /// Moves this session onto the screen this computer grew, its engine
-    /// having been started aimed at one of its own.
+    /// Moves this session onto the screen this computer grew, its own
+    /// screens drawing nothing larger than themselves.
     ///
     /// Three steps, and each undone when the next will not go: the screen
     /// is woken at the size asked for, the desktop is moved onto it, and
-    /// the engine is asked to film it. The engine last, because it is the
-    /// only one of the three that can refuse for a reason nothing here
-    /// can mend, and because what it refuses is cheap to undo where the
-    /// two before it are not.
-    ///
-    /// Nothing at all when this computer has never named the screen it
-    /// grows, which is a computer whose engine has never finished a
-    /// start: there is no screen to ask for by name yet, and the session
-    /// is served the size this computer's own screen can draw, exactly as
-    /// before.
+    /// the engine is told to film it.
     fn grow_one_for_this_session(&self, screen: WantedScreen) -> Option<(u32, u32)> {
-        let grown = crate::screen::remembered()?;
         self.log.write(
             "this computer's own screen will not draw the size this session asks for, so the one \
-             it grew is woken and the engine is asked to film that one where it stands",
+             it grew is woken, the desktop moves onto it and the engine films it",
         );
         self.wake_the_one_it_grew(screen)?;
         let Some(showing) = self.move_the_desktop_onto_it(screen) else {
             self.put_the_grown_screen_away();
             return None;
         };
-        if !self.film_the_one_it_grew(&grown) {
-            // In this order, and it is the order everything else in this
-            // file puts them back in: the desk first, so Windows is not
-            // left to decide where the desktop lands, and the grown
-            // screen after it, with nothing on it.
-            match give_the_desk_back() {
-                Ok(took) => self.log.write(&format!(
-                    "the desk was put back from the session on screen ({took})"
-                )),
-                Err(e) => self
-                    .log
-                    .write(&format!("this computer's desk was left as it was: {e}")),
-            }
-            self.put_the_grown_screen_away();
-            return None;
-        }
+        self.film_the_grown_screen();
         Some(showing)
     }
 
-    /// Asks the engine that is running to film the screen this computer
-    /// grew, and writes that down where the watch reads it.
+    /// Tells this session's engine to film the screen this computer grew,
+    /// as soon as it can see it.
     ///
-    /// Both or neither, and the note first. The watch that holds the
-    /// engine compares that note against what the engine is filming, and
-    /// finding the two apart is exactly what makes it start the engine
-    /// over, which would take the tunnel and this very session with it.
-    /// Written first so that window never exists, and put back exactly as
-    /// it was when the engine turns the ask down.
-    fn film_the_one_it_grew(&self, grown: &str) -> bool {
-        let before = crate::screen::wanted_by_a_session();
-        if let Err(refused) = crate::screen::film_this_screen(Some(grown)) {
+    /// Said and not undone when the engine cannot be told: the desktop is
+    /// on that screen alone by now, so it is the main screen too, and an
+    /// engine filming the main screen films it all the same.
+    fn film_the_grown_screen(&self) {
+        if let Err(e) = self.engine.film(Film::Grown) {
             self.log.write(&format!(
-                "the screen this computer is served from could not be written down: {refused}"
+                "this session's engine could not be told to film the screen this computer grew: \
+                 {e}"
             ));
-            return false;
-        }
-        let asked = Asked {
-            display: Some(grown.to_string()),
-            ..Asked::default()
-        };
-        match self.api.serve_as_asked(&asked) {
-            Ok(()) => {
-                *self.filming.lock().expect("écran filmé") = Some(grown.to_string());
-                self.log
-                    .write("this computer's engine films the screen it grew, where it stands");
-                true
-            }
-            Err(refused) => {
-                self.log.write(&format!(
-                    "this computer's engine could not be asked to film the screen it grew \
-                     ({refused}), so this session is served the size its own screen draws"
-                ));
-                let _ = crate::screen::film_this_screen(before.as_deref());
-                false
-            }
         }
     }
 
@@ -1221,12 +797,40 @@ fn press_it(_log: &Log) -> io::Result<()> {
     ))
 }
 
+/// What every session coming through the door shares.
+struct AtTheDoor {
+    sessions: Arc<Sessions>,
+    machine: Machine,
+    fingerprint: Fingerprint,
+    launcher: Arc<dyn Launcher>,
+    log: Log,
+}
+
+impl AtTheDoor {
+    /// What answers for this computer to one session, with that
+    /// session's engine.
+    fn attending(&self, engine: Arc<Engine>) -> Attending {
+        Attending {
+            sessions: self.sessions.clone(),
+            machine: self.machine.clone(),
+            fingerprint: self.fingerprint,
+            engine,
+            log: self.log.clone(),
+        }
+    }
+}
+
 /// The open door, and the sessions coming through it.
 ///
-/// Dropping it closes everything: the tunnel has no reason to outlive
-/// the engine it serves.
+/// Closing it lets every session's engine go before anything is taken;
+/// dropping it takes everything at once.
 pub struct Gateway {
+    runtime: Handle,
     tasks: Vec<JoinHandle<()>>,
+    /// Takes the knocks, and holds the sessions they open.
+    serving: Option<JoinHandle<()>>,
+    /// Tells every session the door is closing.
+    closing: watch::Sender<bool>,
     sessions: Arc<Sessions>,
     /// Where the junction this door stands on is held for the account,
     /// and taken back when the door closes.
@@ -1235,16 +839,9 @@ pub struct Gateway {
 
 /// The sessions this door has taken in, as the rest of the service needs
 /// to know about them.
-///
-/// Two questions, and they are not the same one. What is open right now
-/// says whether the engine may be disturbed at all. Whether anybody came
-/// through at all says whether a screen the engine cannot put back is a
-/// screen this run of it moved, or one it inherited already wrong from
-/// the run before.
 #[derive(Debug, Default)]
 struct Sessions {
     open: AtomicUsize,
-    ever: AtomicBool,
     /// Whether a session in progress asked this computer to go quiet.
     ///
     /// Not part of a session's own state on purpose: it is asked after
@@ -1259,7 +856,7 @@ struct Sessions {
     /// but the putting back is not done where it is noticed: rearranging
     /// a desktop takes long enough that it has no business happening
     /// while a session is being torn down. What is written here is read
-    /// by the watch that holds the engine, on its own thread, which is
+    /// by the watch that holds the door, on its own thread, which is
     /// where it is acted on.
     desk_held: AtomicBool,
 }
@@ -1268,7 +865,7 @@ struct Sessions {
 ///
 /// A guard and not two lines around the body: a session that ends by
 /// anything other than a clean return would otherwise be counted as open
-/// for as long as the engine lives, and nothing would ever notice. It is
+/// for as long as the door stands, and nothing would ever notice. It is
 /// handed to the session's own body and named there, so that it lasts
 /// exactly as long as the session and not a moment less.
 struct Counted {
@@ -1282,7 +879,6 @@ struct Counted {
 impl Counted {
     fn one(sessions: &Arc<Sessions>, media: &Media, log: &Log) -> Self {
         sessions.open.fetch_add(1, Ordering::Relaxed);
-        sessions.ever.store(true, Ordering::Relaxed);
         Self {
             sessions: sessions.clone(),
             media: media.clone(),
@@ -1306,7 +902,7 @@ impl Drop for Counted {
 
 impl Drop for Gateway {
     fn drop(&mut self) {
-        for task in &self.tasks {
+        for task in self.tasks.iter().chain(&self.serving) {
             task.abort();
         }
         self.door.closed();
@@ -1314,8 +910,14 @@ impl Drop for Gateway {
 }
 
 impl Gateway {
-    /// Opens the tunnel and serves whoever is authorised.
-    pub fn open(runtime: &Handle, engine: AtHand, machine: Machine, log: &Log) -> io::Result<Self> {
+    /// Opens the tunnel and serves whoever is authorised, starting each
+    /// session's engine with `launcher`.
+    pub fn open(
+        runtime: &Handle,
+        launcher: Arc<dyn Launcher>,
+        machine: Machine,
+        log: &Log,
+    ) -> io::Result<Self> {
         // The transport registers with the runtime as it is built, so it
         // has to be built from inside it.
         let _guard = runtime.enter();
@@ -1374,44 +976,50 @@ impl Gateway {
         machine.door.opened(junction.clone());
 
         let sessions = Arc::new(Sessions::default());
-        let attending: Arc<dyn Answers> = Arc::new(Attending {
-            ports: engine.ports,
-            api: Arc::new(EngineApi::new(engine.ports, engine.credentials)),
-            films_the_grown_screen: engine.films_the_grown_screen,
-            engine_log: engine.engine_log,
-            filming: engine.filming,
-            serving: engine.serving,
+        let door = machine.door.clone();
+        let incoming = machine.incoming.clone();
+        let at_the_door = Arc::new(AtTheDoor {
             sessions: sessions.clone(),
             machine: machine.clone(),
             fingerprint: identity.fingerprint(),
-            pointer_drawn: AtomicU8::new(2),
-            offering: Arc::new(AtomicU64::new(0)),
+            launcher,
             log: log.about(TAG),
         });
-        let door = machine.door.clone();
-        let incoming = machine.incoming.clone();
+        let (closing, closed) = watch::channel(false);
         Ok(Self {
-            tasks: vec![
-                runtime.spawn(keep_the_list_fresh(
-                    list,
-                    allowed,
-                    starting,
-                    machine,
-                    log.clone(),
-                )),
-                runtime.spawn(serve(
-                    endpoint,
-                    junction,
-                    attending,
-                    sessions.clone(),
-                    incoming,
-                    door.media(),
-                    log.clone(),
-                )),
-            ],
+            runtime: runtime.clone(),
+            tasks: vec![runtime.spawn(keep_the_list_fresh(
+                list,
+                allowed,
+                starting,
+                machine,
+                log.clone(),
+            ))],
+            serving: Some(runtime.spawn(serve(
+                endpoint,
+                junction,
+                at_the_door,
+                incoming,
+                closed,
+                log.clone(),
+            ))),
+            closing,
             sessions,
             door,
         })
+    }
+
+    /// Closes the door, letting every session's engine go first.
+    ///
+    /// Blocks the calling thread, which must not be one of the runtime's:
+    /// it is the supervisor's, which has nothing else to do meanwhile.
+    pub fn close(mut self) {
+        let _ = self.closing.send(true);
+        if let Some(serving) = self.serving.take() {
+            let _ = self
+                .runtime
+                .block_on(tokio::time::timeout(CLOSING_PATIENCE, serving));
+        }
     }
 
     /// Whether somebody is being served right this moment.
@@ -1424,27 +1032,15 @@ impl Gateway {
         self.sessions.hushing.load(Ordering::Relaxed)
     }
 
-    /// Whether a session has been served since this door was opened.
-    ///
-    /// Which is to say since the engine started, the two being opened and
-    /// closed together. It is what tells a screen the engine could not put
-    /// back after a session from a screen it inherited wrong from the run
-    /// before: only the first is worth acting on, and confusing them is
-    /// how a service ends up restarting its engine in a circle.
-    pub fn anyone_came_through(&self) -> bool {
-        self.sessions.ever.load(Ordering::Relaxed)
-    }
-
     /// Whether a session still has this computer's desk with nobody left
     /// watching it.
     ///
-    /// Asked by the watch that holds the engine, which is on a thread
-    /// where rearranging a desktop is allowed to take its time. A session
-    /// that ends properly says so itself and this never fires; this is
-    /// for the sessions that do not, which is every one whose computer
-    /// was closed, unplugged or crashed, and those are exactly the ones
-    /// after which somebody's screens would stay the way a stranger left
-    /// them.
+    /// Asked by the watch that holds the door, which is on a thread where
+    /// rearranging a desktop is allowed to take its time. A session that
+    /// ends properly says so itself and this never fires; this is for the
+    /// sessions that do not, which is every one whose computer was closed,
+    /// unplugged or crashed, and those are exactly the ones after which
+    /// somebody's screens would stay the way a stranger left them.
     pub fn the_desk_is_held_for_nobody(&self) -> bool {
         self.sessions.desk_held.load(Ordering::Relaxed)
             && self.sessions.open.load(Ordering::Relaxed) == 0
@@ -1457,7 +1053,8 @@ impl Gateway {
     }
 }
 
-/// Takes in the devices that connect, one session each.
+/// Takes in the devices that connect, one session each, until the door
+/// closes, and then waits for every session to have let its engine go.
 ///
 /// Only the knock itself is waited for here: a connection is handed over
 /// before its handshake finishes, on purpose, since waiting for one to
@@ -1465,48 +1062,49 @@ impl Gateway {
 /// succeed. Doing that in this loop would hold up every other computer
 /// waiting to knock for as long as the slowest one takes to give up,
 /// which is a denial of service anyone could trigger by simply being
-/// slow, and no different from the one the comment below already
-/// guards against.
+/// slow.
 async fn serve(
     endpoint: TunnelEndpoint,
     junction: Junction,
-    attending: Arc<dyn Answers>,
-    counting: Arc<Sessions>,
+    door: Arc<AtTheDoor>,
     incoming: crate::incoming::Incoming,
-    media: Media,
+    mut closing: watch::Receiver<bool>,
     log: Log,
 ) {
+    // What each session is handed, apart from what this loop waits on.
+    let told = closing.clone();
     let mut sessions = JoinSet::new();
     loop {
-        match endpoint.accept_knock(|_| true).await {
-            Ok(knocking) => {
-                let log = log.clone();
-                let attending = attending.clone();
-                let junction = junction.clone();
-                let counting = counting.clone();
-                let incoming = incoming.clone();
-                let media = media.clone();
-                sessions.spawn(async move {
-                    take_the_knock(
-                        knocking, junction, attending, counting, incoming, media, log,
-                    )
-                    .await
-                });
-                while sessions.try_join_next().is_some() {}
-            }
-            // A refused device is not the end of the door: it must not
-            // stop this computer from taking in the next one, which is
-            // otherwise a denial of service anyone could trigger.
-            Err(EndpointError::Closed) => {
-                log.write("the tunnel is closed, no longer taking anyone in");
-                return;
-            }
-            // `accept_knock` only ever fails this way in practice; kept
-            // for the variants the type allows but this call cannot
-            // produce, read the same as a handshake failing below.
-            Err(e) => log.write(&format!("connection refused: {e}")),
+        tokio::select! {
+            knock = endpoint.accept_knock(|_| true) => match knock {
+                Ok(knocking) => {
+                    sessions.spawn(take_the_knock(
+                        knocking,
+                        junction.clone(),
+                        door.clone(),
+                        incoming.clone(),
+                        told.clone(),
+                        log.clone(),
+                    ));
+                    while sessions.try_join_next().is_some() {}
+                }
+                // A refused device is not the end of the door: it must
+                // not stop this computer from taking in the next one,
+                // which is otherwise a denial of service anyone could
+                // trigger.
+                Err(EndpointError::Closed) => {
+                    log.write("the tunnel is closed, no longer taking anyone in");
+                    break;
+                }
+                // `accept_knock` only ever fails this way in practice;
+                // kept for the variants the type allows but this call
+                // cannot produce, read the same as a handshake failing.
+                Err(e) => log.write(&format!("connection refused: {e}")),
+            },
+            _ = closing.wait_for(|closing| *closing) => break,
         }
     }
+    while sessions.join_next().await.is_some() {}
 }
 
 /// Waits out one knock's handshake and, once it stands, serves the
@@ -1518,40 +1116,89 @@ async fn serve(
 async fn take_the_knock(
     knocking: Knocking,
     junction: Junction,
-    attending: Arc<dyn Answers>,
-    counting: Arc<Sessions>,
+    door: Arc<AtTheDoor>,
     incoming: crate::incoming::Incoming,
-    media: Media,
+    mut closing: watch::Receiver<bool>,
     log: Log,
 ) {
-    let connection = match knocking.taken().await {
+    let taken = tokio::select! {
+        taken = knocking.taken() => taken,
+        _ = closing.wait_for(|closing| *closing) => return,
+    };
+    let connection = match taken {
         Ok(connection) => connection,
         Err(e) => {
             log.write(&format!("connection refused: {e}"));
             return;
         }
     };
-    let counted = Counted::one(&counting, &media, &log);
+    let _counted = Counted::one(&door.sessions, &door.machine.door.media(), &log);
     // Absent only when the certificate presented could not be read back
     // into a fingerprint, which authorisation itself already requires:
     // this never actually misses, and is not worth refusing a session
     // over if it ever did.
-    let held = connection
+    let _held = connection
         .peer_fingerprint()
         .map(|peer| incoming.arrived(peer, connection.remote_address(), connection.clone()));
-    one_session(connection, junction, attending, counted, held, log).await
+    one_session(connection, junction, door, closing, log).await
 }
 
+/// One connection, from its first question to its end.
 async fn one_session(
-    connection: zyr_transport::Connection,
+    connection: Connection,
     junction: Junction,
-    attending: Arc<dyn Answers>,
-    _counted: Counted,
-    _held: Option<crate::incoming::Held>,
+    door: Arc<AtTheDoor>,
+    mut closing: watch::Receiver<bool>,
     log: Log,
 ) {
     let from = connection.remote_address();
-    let watched = connection.clone();
+    let engine = Arc::new(Engine::default());
+    let answering: Arc<dyn Answers> = Arc::new(door.attending(engine.clone()));
+
+    // Most connections ask a question or two and go; only the first word
+    // of a session brings an engine up.
+    let opening = tokio::select! {
+        opening = aside::until_a_session_opens(&connection, answering.clone(), Some(&log)) => opening,
+        _ = closing.wait_for(|closing| *closing) => return,
+    };
+    let opening = match opening {
+        Ok(opening) => opening,
+        Err(e) => {
+            log.debug(|| format!("{from} went without opening a session: {e}"));
+            return;
+        }
+    };
+    let serving = opening.serving();
+    door.machine.door.media().serving(serving);
+    log.write(&format!(
+        "a session opening here asks to be served at {} kbps, {} images a second, and this \
+         computer's tunnel is held open for that",
+        serving.bits_per_second / 1_000,
+        serving.frames_per_second
+    ));
+
+    let brought_up = tokio::select! {
+        brought_up = bring_up_the_engine(&connection, &engine, &door, &log) => brought_up,
+        _ = closing.wait_for(|closing| *closing) => return,
+    };
+    let running = match brought_up {
+        Ok(running) => running,
+        Err(refused) => {
+            log.write(&format!(
+                "the session from {from} was not opened: {refused}"
+            ));
+            let _ = opening.refused(&refused).await;
+            return;
+        }
+    };
+    if let Err(e) = opening.opened().await {
+        log.write(&format!(
+            "the session from {from} went before it was told it was open: {e}"
+        ));
+        let_the_engine_go(running.launched, &log).await;
+        return;
+    }
+
     // A computer the server presented speaks to its card: the road it
     // really takes is the junction's to say.
     let road = if is_card(from) {
@@ -1568,28 +1215,198 @@ async fn one_session(
     } else {
         String::new()
     };
-    let mut tunnel = match Tunnel::host(connection, ENGINE, attending, Some(log.clone())).await {
-        Ok(tunnel) => tunnel,
-        Err(e) => {
-            log.write(&format!("session from {from}{road} not opened: {e}"));
-            return;
-        }
-    };
+    let watched = connection.clone();
+    let mut tunnel = Tunnel::host(
+        connection,
+        answering,
+        running.link,
+        running.service,
+        Some(log.clone()),
+    );
     log.write(&format!(
         "session open with {from}{road}, {} bytes of room in a packet",
         watched.carrying().usable_datagram
     ));
 
-    let outcome = watch_over(&mut tunnel, &watched, &junction, &from.to_string(), &log).await;
+    // Heard for as long as the link stands, which is as long as the
+    // tunnel: it ends by itself once the tunnel has let go of the link.
+    tokio::spawn(listen_to_the_engine(
+        running.from_engine,
+        engine,
+        door.machine.door.media(),
+        log.clone(),
+    ));
+    let named = from.to_string();
+    let outcome = tokio::select! {
+        outcome = watch_over(&mut tunnel, &watched, &junction, &named, &log) => Some(outcome),
+        _ = closing.wait_for(|closing| *closing) => None,
+    };
     let carried = said::carried(&tunnel.reading(), &watched.carrying());
     match outcome {
-        Ok(()) => log.write(&format!("session ended, {carried}")),
-        Err(e) => log.write(&format!("session ended: {e}, {carried}")),
+        Some(Ok(())) => log.write(&format!("session ended, {carried}")),
+        Some(Err(e)) => log.write(&format!("session ended: {e}, {carried}")),
+        None => log.write(&format!("session closed with the door, {carried}")),
     }
+    // The link first, which is what tells the engine its session is over,
+    // and the engine after it.
+    tunnel.close().await;
+    let_the_engine_go(running.launched, &log).await;
     // The card is the account's to give back, and it does so when the
     // server says the session is over. A tunnel gives up half a minute
     // after the last packet, which is long after another session may
     // have taken the same card.
+}
+
+/// A session's engine, up and connected.
+struct Running {
+    link: Link,
+    /// The tunnel's half of the service's channel to the engine.
+    service: ServiceSide,
+    /// What the engine says to the service.
+    from_engine: mpsc::Receiver<Bytes>,
+    launched: Box<dyn Launched>,
+}
+
+/// Starts this session's engine, waits for it on its link, and says its
+/// first words to it: how large a datagram the tunnel takes, and which
+/// screen to film.
+///
+/// Answers why it could not, in words the far computer shows.
+async fn bring_up_the_engine(
+    connection: &Connection,
+    engine: &Arc<Engine>,
+    door: &AtTheDoor,
+    log: &Log,
+) -> Result<Running, String> {
+    // Taken from what the path can never stop carrying, less the byte
+    // that names the channel of every datagram.
+    let datagram_budget = connection
+        .guaranteed_usable_datagram()
+        .and_then(|usable| usable.checked_sub(1))
+        .ok_or("le chemin n'annonce aucune taille de datagramme")?;
+    let listener = LinkListener::create(Access::SystemOnly).map_err(|e| {
+        format!(
+            "la liaison du moteur n'a pas pu être créée : {}",
+            with_its_code(&e)
+        )
+    })?;
+    let name = listener.name().to_string();
+    let launcher = door.launcher.clone();
+    let launched = tokio::task::spawn_blocking(move || launcher.launch(&name))
+        .await
+        .map_err(|e| format!("le moteur n'a pas pu être lancé : {e}"))?
+        .map_err(|e| format!("le moteur n'a pas pu être lancé : {}", with_its_code(&e)))?;
+    let process = launched.process();
+    log.write(&format!(
+        "the engine of this session was started, process {process}, and is waited for on its link"
+    ));
+
+    let link = match tokio::time::timeout(ENGINE_PATIENCE, listener.accept()).await {
+        Ok(Ok(link)) => link,
+        Ok(Err(e)) => {
+            let refused = format!(
+                "le moteur n'a pas pu rejoindre sa liaison : {}",
+                with_its_code(&e)
+            );
+            let_the_engine_go(launched, log).await;
+            return Err(refused);
+        }
+        Err(_) => {
+            let_the_engine_go(launched, log).await;
+            return Err(format!(
+                "le moteur n'a pas rejoint sa liaison en {} secondes",
+                ENGINE_PATIENCE.as_secs()
+            ));
+        }
+    };
+    // The name of a link is no secret to whoever may open one, the
+    // system account: the one expected has to be the one that came.
+    if link.peer_process() != Some(process) {
+        log.write(&format!(
+            "the engine's link was taken by process {} and not by the engine, process {process}: \
+             dropped",
+            link.peer_process()
+                .map_or_else(|| "unknown".to_string(), |other| other.to_string())
+        ));
+        drop(link);
+        let_the_engine_go(launched, log).await;
+        return Err("la liaison du moteur a été prise par un autre programme".to_string());
+    }
+
+    let (service, spoken) = service_channel();
+    engine.connected(spoken.to_link);
+    let first_words = engine
+        .tell(&ToEngine::Setup { datagram_budget })
+        .and_then(|()| engine.film_now());
+    if let Err(refused) = first_words {
+        let_the_engine_go(launched, log).await;
+        return Err(refused);
+    }
+    log.write(&format!(
+        "the engine of this session is on its link, told {datagram_budget} bytes a datagram"
+    ));
+    Ok(Running {
+        link,
+        service,
+        from_engine: spoken.from_link,
+        launched,
+    })
+}
+
+/// Hears what the engine says, for as long as its link stands.
+async fn listen_to_the_engine(
+    mut from_engine: mpsc::Receiver<Bytes>,
+    engine: Arc<Engine>,
+    media: Media,
+    log: Log,
+) {
+    while let Some(said) = from_engine.recv().await {
+        let message = match ToService::decode(&said) {
+            Ok(message) => message,
+            Err(e) => {
+                log.write(&format!(
+                    "the engine said something this service cannot read ({} bytes): {e}",
+                    said.len()
+                ));
+                continue;
+            }
+        };
+        let said = engine.heard(message);
+        if let Some(serving) = said.serving {
+            media.serving(serving);
+        }
+        for line in said.lines {
+            log.write(&line);
+        }
+    }
+}
+
+/// Lets a session's engine go, giving it the time to let go of what it
+/// holds, and says how it went.
+async fn let_the_engine_go(launched: Box<dyn Launched>, log: &Log) {
+    let process = launched.process();
+    let went = tokio::task::spawn_blocking(move || launched.let_go(ENGINE_GOES)).await;
+    log.write(&match went {
+        Ok(Ok(Some(code))) => format!("the engine, process {process}, went with code {code}"),
+        Ok(Ok(None)) => format!(
+            "the engine, process {process}, was still there after {} s and was taken",
+            ENGINE_GOES.as_secs()
+        ),
+        Ok(Err(e)) => format!(
+            "the engine, process {process}, could not be waited for, and was taken: {}",
+            with_its_code(&e)
+        ),
+        Err(e) => format!("the engine, process {process}, was taken: {e}"),
+    });
+}
+
+/// An error, with the system's own number for it when it gave one: the
+/// number is what names the fault in Microsoft's documentation.
+fn with_its_code(e: &io::Error) -> String {
+    match e.raw_os_error() {
+        Some(code) => format!("{e} (0x{:08X})", code as u32),
+        None => e.to_string(),
+    }
 }
 
 /// Waits for the session to end, saying what it throws away while it
@@ -1852,6 +1669,228 @@ mod tests {
         let devices = let_in(vec![fingerprint(1)], &machine);
         assert_eq!(devices, vec![fingerprint(1), fingerprint(2)]);
 
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+    /// An engine standing in for the real one: it joins the link it is
+    /// given from a thread of its own, says what a real one says when it
+    /// starts, echoes the control stream, and writes down what it is told.
+    #[derive(Default)]
+    struct StandIn {
+        told: Arc<std::sync::Mutex<Vec<ToEngine>>>,
+        let_go: Arc<AtomicBool>,
+    }
+
+    /// The screens it says it can film: two of this computer's own, and
+    /// the one it grows for itself.
+    fn its_screens() -> Vec<zyr_media::service::Display> {
+        let display = |id: &str, main: bool, name: &str| zyr_media::service::Display {
+            id: id.to_string(),
+            main,
+            width: 1920,
+            height: 1080,
+            name: name.to_string(),
+        };
+        vec![
+            display(r"MONITOR\GSM5B7F\0003", true, "ROG PG279Q"),
+            display(r"\\.\DISPLAY2", false, "Dell U2412M"),
+            display(r"MONITOR\MTT1337\0007", false, "VDD by MTT"),
+        ]
+    }
+
+    struct StoodIn {
+        gone: std::sync::mpsc::Receiver<()>,
+        let_go: Arc<AtomicBool>,
+    }
+
+    impl Launcher for StandIn {
+        fn launch(&self, link: &str) -> io::Result<Box<dyn Launched>> {
+            use zyr_control::link::Channel;
+
+            let link = link.to_string();
+            let told = self.told.clone();
+            let (going, gone) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                runtime.block_on(async {
+                    let link = zyr_control::link::connect(&link).await.unwrap();
+                    let (mut reads, mut writes) = link.split();
+                    let ready = ToService::Ready {
+                        encodable: zyr_media::codec::CodecSet::empty()
+                            .with(zyr_media::codec::VideoCodec::Hevc),
+                        encoders: "hevc_nvenc".to_string(),
+                        displays: its_screens(),
+                    };
+                    let serving = ToService::Serving {
+                        kbps: 42_000,
+                        fps: 90,
+                    };
+                    for message in [ready, serving] {
+                        writes
+                            .send(Channel::Service, &message.encode())
+                            .await
+                            .unwrap();
+                    }
+                    while let Ok(Some((channel, payload))) = reads.next().await {
+                        match channel {
+                            Channel::Service => told
+                                .lock()
+                                .unwrap()
+                                .push(ToEngine::decode(&payload).unwrap()),
+                            Channel::Control => {
+                                writes.send(Channel::Control, &payload).await.unwrap()
+                            }
+                            Channel::Video | Channel::Audio => {}
+                        }
+                    }
+                });
+                let _ = going.send(());
+            });
+            Ok(Box::new(StoodIn {
+                gone,
+                let_go: self.let_go.clone(),
+            }))
+        }
+    }
+
+    impl Launched for StoodIn {
+        fn process(&self) -> u32 {
+            // Its thread is in this very process, which is what the link
+            // says of the other end.
+            std::process::id()
+        }
+
+        fn let_go(self: Box<Self>, within: Duration) -> io::Result<Option<u32>> {
+            self.let_go.store(true, Ordering::Relaxed);
+            Ok(self.gone.recv_timeout(within).ok().map(|()| 0))
+        }
+    }
+
+    async fn soon(done: impl Fn() -> bool) {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !done() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("never happened");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_session_brings_its_engine_up_and_lets_it_go_at_its_end() {
+        use zyr_control::link::{Channel, connect};
+        use zyr_transport::{Marking, MediaProfile};
+
+        let (machine, folder) = machine("session");
+        let log = Log::open(&folder.join("service.log")).unwrap();
+        let this = Arc::new(Identity::generate().unwrap());
+        let far = Identity::generate().unwrap();
+        let junction = Junction::bind(
+            "127.0.0.1:0".parse().unwrap(),
+            this.clone(),
+            Arc::new(|_, _: &str| {}),
+            Marking::Ecn,
+        )
+        .unwrap();
+        let endpoint =
+            TunnelEndpoint::host_at(&this, far.fingerprint(), machine.door.media(), &junction)
+                .unwrap();
+        let towards = TunnelEndpoint::client(
+            &far,
+            this.fingerprint(),
+            MediaProfile::default(),
+            "127.0.0.1:0".parse().unwrap(),
+        )
+        .unwrap();
+        let (taken, reached) = tokio::join!(
+            endpoint.accept(),
+            towards.connect(junction.local_address().unwrap())
+        );
+
+        let stand_in = Arc::new(StandIn::default());
+        let door = Arc::new(AtTheDoor {
+            sessions: Arc::default(),
+            machine: machine.clone(),
+            fingerprint: this.fingerprint(),
+            launcher: stand_in.clone(),
+            log: log.clone(),
+        });
+        let (_closing, closed) = watch::channel(false);
+        let session = tokio::spawn(one_session(
+            taken.unwrap(),
+            junction.clone(),
+            door,
+            closed,
+            log,
+        ));
+
+        // The first word of the session, answered once its engine is up.
+        let connection = reached.unwrap();
+        let asked = MediaProfile {
+            bits_per_second: 30_000_000,
+            frames_per_second: 60,
+        };
+        aside::ask_to_open(&connection, asked).await.unwrap();
+        let told = stand_in.told.clone();
+        soon(|| told.lock().unwrap().len() >= 2).await;
+        // It heard first how large a datagram is, the path's floor less
+        // the byte naming the channel, then to film the main screen.
+        assert_eq!(
+            told.lock().unwrap()[..2],
+            [
+                ToEngine::Setup {
+                    datagram_budget: 1161
+                },
+                ToEngine::Film {
+                    display: String::new()
+                }
+            ]
+        );
+
+        // The player, on the way's link: what it says reaches the engine
+        // and comes back.
+        let listener = LinkListener::create(Access::SystemAndInteractive).unwrap();
+        let name = listener.name().to_string();
+        let (side, _way) = service_channel();
+        let tunnel = Tunnel::client(connection.clone(), listener, side, None);
+        let (mut reads, mut writes) = connect(&name).await.unwrap().split();
+        writes.send(Channel::Control, b"hello").await.unwrap();
+        let (channel, echoed) = reads.next().await.unwrap().unwrap();
+        assert_eq!((channel, &echoed[..]), (Channel::Control, &b"hello"[..]));
+
+        // What the engine serves sizes this computer's tunnel.
+        let media = machine.door.media();
+        soon(|| media.now().bits_per_second == 42_000_000).await;
+        assert_eq!(media.now().frames_per_second, 90);
+
+        // The screens are the engine's, the grown one left out, and
+        // another is filmed where the engine stands.
+        let listed = aside::ask_what_screens_it_has(&connection).await.unwrap();
+        let screens = zyr_proto::session::far_screens_read(&listed);
+        assert_eq!(screens.len(), 2, "{listed}");
+        assert_eq!(screens[1].id, r"\\.\DISPLAY2");
+        aside::ask_to_film_this_screen(&connection, Some(screens[1].id.clone()))
+            .await
+            .unwrap();
+        soon(|| told.lock().unwrap().len() >= 3).await;
+        assert_eq!(
+            told.lock().unwrap()[2],
+            ToEngine::Film {
+                display: screens[1].id.clone()
+            }
+        );
+
+        // The player leaves: the session ends, the engine's link closes,
+        // and it is let go of.
+        drop((reads, writes));
+        tokio::time::timeout(Duration::from_secs(10), session)
+            .await
+            .expect("the session never ended")
+            .unwrap();
+        assert!(stand_in.let_go.load(Ordering::Relaxed));
+        drop(tunnel);
         let _ = std::fs::remove_dir_all(&folder);
     }
 }

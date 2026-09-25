@@ -1,9 +1,11 @@
-//! The service's dealings with the virtual screen.
+//! The service's dealings with the virtual screen and this computer's
+//! desk.
 //!
 //! The screen itself is grown by `zyr-screen`, which knows drivers and
 //! nothing about ZyrDesk. This file is the other half: when the screen
-//! is put in place, where its papers live, how the host engine is told
-//! to capture it, and what all of that writes into the service's log.
+//! is put in place, where its papers live, when it is woken and put back
+//! to sleep, how this computer's desk is noted and given back around a
+//! session, and what all of that writes into the service's log.
 //!
 //! Everything here is deliberately forgiving. A computer with no virtual
 //! screen is a computer that still opens sessions, still reaches other
@@ -11,56 +13,15 @@
 //! serve a screen bigger than its own properly. That is worth saying out
 //! loud at every step and worth failing not one single thing over.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
+#[cfg(windows)]
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 
 /// What this module's lines are filed under.
+#[cfg(windows)]
 const TAG: &str = "screen";
-
-/// Where the identifier the engine knows the virtual screen by is kept.
-///
-/// Learned from the engine, which is the only thing that computes it,
-/// and written down because learning it costs the engine a restart.
-const LEARNED: &str = "engine-screen.txt";
-
-/// Where the identifier the engine knows this computer's main screen by
-/// is kept.
-///
-/// Learned the same way and for the same reason, and it is the one that
-/// matters on every ordinary computer: told nothing, the engine films
-/// whichever screen its graphics card enumerates first, and that is not
-/// the same screen from one enumeration to the next.
-const MAIN: &str = "engine-main-screen.txt";
-
-/// Where the screen a session asked to be served from is kept.
-///
-/// A machine with two screens plugged in shows one of them, and which one
-/// is the watcher's choice: they are the one looking at it, and they are
-/// not in the room to lean over and drag a window. Written here rather
-/// than held in memory for the reason the two above are: the engine reads
-/// which screen to film once, when it starts, so the choice has to
-/// outlive the engine that was running when it was made.
-///
-/// Absent means the main screen, which is what every session asks for
-/// until somebody says otherwise. A machine left showing the screen some
-/// previous session picked would be a machine rearranged by having been
-/// looked at, so nothing but a session's own ask ever puts a name here,
-/// and the service empties it at every start.
-const WANTED: &str = "engine-wanted-screen.txt";
-
-fn learned_path() -> PathBuf {
-    paths::virtual_screen_dir().join(LEARNED)
-}
-
-fn main_path() -> PathBuf {
-    paths::virtual_screen_dir().join(MAIN)
-}
-
-fn wanted_path() -> PathBuf {
-    paths::virtual_screen_dir().join(WANTED)
-}
 
 /// Puts the virtual screen on this computer, if it is not on it already.
 ///
@@ -74,7 +35,7 @@ fn wanted_path() -> PathBuf {
 ///
 /// Both moments qualify. Laying a driver down needs administrator rights,
 /// which the service has, and needs nobody to be watching a session,
-/// which is true of a service that has not started its engine yet.
+/// which is true of a service whose door is not open yet.
 ///
 /// Whether it is already there is asked first, and the whole of the
 /// laying down hangs on that answer. Laying a driver onto a device that
@@ -86,16 +47,11 @@ pub fn put_in_place(log: Option<&Log>) {
     let driver = zyr_screen::shipped();
     match zyr_screen::present(driver) {
         Ok(true) => {
-            // Left as it is, and that is deliberate. A service killed in
-            // the middle of a session leaves the screen awake, and it
-            // does have to go back; but not here, and not now. The engine
-            // has not been started yet, and an engine starting up spends
-            // its first moments putting back an arrangement of screens
-            // that a session it never finished had changed. Taking a
-            // display device away from under it, a second before it
-            // begins, is what left somebody's screens rearranged at every
-            // start of the service. The supervisor does it once the
-            // engine has had its say.
+            // Left as it is, awake or asleep. A service killed in the
+            // middle of a session leaves the screen awake, and it does
+            // have to go back; the supervisor does it as the door opens,
+            // after the desk, which is the order everything here puts
+            // them back in.
             write_down(log, vec!["virtual screen already in place".to_string()]);
             return;
         }
@@ -135,65 +91,6 @@ pub fn put_in_place(log: Option<&Log>) {
         ],
     };
     write_down(log, said);
-}
-
-/// Where the engine writes the arrangement of screens it owes this
-/// computer back.
-///
-/// Beside its own executable, in the folder it keeps its papers in, and
-/// named by the engine and not by us.
-#[cfg(windows)]
-fn what_the_engine_owes_back() -> PathBuf {
-    paths::host_engine_dir()
-        .join("config")
-        .join("display_device.state")
-}
-
-/// Throws away an arrangement the engine can never put back.
-///
-/// The engine saves the arrangement of screens it found before a session
-/// changed it, and puts that arrangement back at the start of every one
-/// of its lives until it succeeds. That is right, and this is the one
-/// case where it cannot work.
-///
-/// Our virtual screen sleeps between sessions. An arrangement that names
-/// it therefore names a screen that does not exist at the moment the
-/// engine tries, so the attempt fails, and what the engine does when it
-/// fails is **switch every screen it can find back on**. It then keeps
-/// that arrangement and tries again at its next start, and at every one
-/// after that: a screen its owner had switched off came back on every
-/// single time the service started, for ever, with nothing to break the
-/// circle.
-///
-/// The engine cannot know any of this. It has no way of telling a screen
-/// that is gone from a screen that is asleep, and no reason to suspect
-/// that one of them will be back. This side does know, so this is where
-/// the circle is broken: an arrangement naming our screen is not a
-/// promise worth keeping, it is a trap, and it goes.
-///
-/// Only that one. An arrangement naming nothing but real screens is a
-/// real debt to a real person, and it is left exactly where it is.
-#[cfg(windows)]
-pub fn forget_what_cannot_be_put_back(log: &Log) {
-    let Some(ours) = remembered() else {
-        return;
-    };
-    let owed = what_the_engine_owes_back();
-    let Ok(said) = std::fs::read_to_string(&owed) else {
-        return;
-    };
-    if !said.contains(&ours) {
-        return;
-    }
-    match std::fs::remove_file(&owed) {
-        Ok(()) => log.about(TAG).write(&format!(
-            "the engine was holding an arrangement of screens it can never put back, naming this              computer's virtual screen ({ours}) which sleeps between sessions; it has been              dropped, so it stops switching every screen back on at each start"
-        )),
-        Err(e) => log.about(TAG).write(&format!(
-            "the engine holds an arrangement of screens it can never put back ({}), and it could              not be dropped: {e}",
-            owed.display()
-        )),
-    }
 }
 
 /// Where the desk is written down before a session touches it.
@@ -322,17 +219,16 @@ pub fn hold_the_desk_for(wanted: Option<(u32, u32, u32)>) -> Vec<String> {
                 "{} cannot draw {wide}x{high}, so it keeps its own size and its own magnification",
                 main.adapter
             ));
-            // Written down, because it decides which screen the engine
-            // films. A screen that has once refused a desktop larger than
-            // itself refuses every one after it, so the next engine on
-            // this computer is aimed at the screen it grows for itself
-            // instead, and a session can then borrow that one.
+            // Written down, because it decides which screen a session is
+            // served from. A screen that has once refused a desktop
+            // larger than itself refuses every one after it, so a session
+            // asking for more than it draws borrows the screen this
+            // computer grows for itself instead.
             //
-            // Read by the session being opened as well, and not only by
-            // the next engine start: this is written before that session
-            // asks for its screen, so the one that discovers the limit is
-            // served through the grown screen too rather than being the
-            // one that pays for the discovery.
+            // Read by the session being opened as well: this is written
+            // before that session is answered, so the one that discovers
+            // the limit is served through the grown screen too rather
+            // than being the one that pays for the discovery.
             said.extend(remember_it_is_stuck(&main));
         }
     }
@@ -399,10 +295,9 @@ pub fn take_the_grown_screen_for(wanted: (u32, u32, u32)) -> Vec<String> {
 /// Where the screens that have refused a desktop larger than themselves
 /// are remembered.
 ///
-/// One line per screen, by the name that survives a restart. Read before
-/// the engine starts, because which screen it films is settled there and
-/// nowhere else, and a computer whose own screen cannot take a session's
-/// size has to be filmed on the screen it grows instead.
+/// One line per screen, by the name that survives a restart. Read when a
+/// session asks for its size: a computer whose own screen cannot take it
+/// serves that session from the screen it grows instead.
 const STUCK: &str = "screens-stuck-at-their-size.txt";
 
 fn stuck_path() -> PathBuf {
@@ -419,9 +314,8 @@ fn stuck_at_its_size(screen: &str) -> bool {
 /// Whether the screen this computer serves a session from draws nothing
 /// larger than itself.
 ///
-/// Asked before the engine starts, which is the one moment it can be
-/// answered for: a computer whose main screen is stuck is filmed on the
-/// screen it grows for itself, so that a session can borrow that one.
+/// Asked when a session asks for its size: a computer whose main screen
+/// is stuck serves that session from the screen it grows for itself.
 pub fn the_main_screen_is_stuck() -> bool {
     std::fs::read_to_string(showing_path())
         .map(|text| zyr_screen::arrangement::read(&text))
@@ -442,8 +336,8 @@ fn remember_it_is_stuck(main: &zyr_screen::arrangement::Seat) -> Vec<String> {
     let text = format!("{}{}\n", known, main.screen);
     match write_beside(STUCK, &text) {
         Ok(()) => vec![format!(
-            "{} draws nothing larger than itself, so the next engine on this computer films the \
-             screen it grows instead and a session can borrow that one",
+            "{} draws nothing larger than itself, so a session asking for more borrows the \
+             screen this computer grows instead",
             main.adapter
         )],
         Err(e) => vec![format!(
@@ -519,8 +413,8 @@ fn what_was_known() -> Vec<(String, u32)> {
 /// screens this desk says nothing about.
 ///
 /// Says nothing at all when nothing changed, which is nearly every time:
-/// this runs at every start of the engine and at the opening of every
-/// session, and a line each would bury the journal.
+/// this runs at the opening of every session, and a line each would bury
+/// the journal.
 #[cfg(windows)]
 fn remember_what_can_be_read(desk: &[zyr_screen::arrangement::Seat]) -> Vec<String> {
     let mut known = what_was_known();
@@ -627,57 +521,13 @@ pub fn sleep_after_a_session(still_nobody: &dyn Fn() -> bool) -> Result<Vec<Stri
         .map_err(|e| e.to_string())
 }
 
-/// Wakes the screen only long enough for the engine to name it.
-///
-/// The engine's name for a screen is a digest of that screen's own
-/// identity, which nothing else on the machine computes the same way, and
-/// the engine only says it about screens it can see. A screen that sleeps
-/// between sessions is never seen, so on a computer that has never run an
-/// engine with it awake the name would never be learned and the virtual
-/// screen would never be captured.
-///
-/// So it is woken for exactly one start of the engine, once in the life
-/// of a computer, and put back to sleep as soon as the name is written
-/// down. Somebody sitting in front of that computer sees a second screen
-/// appear and go, once.
-///
-/// Answers whether it was woken, which is what says it has to be put back.
-#[cfg(windows)]
-pub fn wake_to_be_named(log: &Log) -> bool {
-    let log = &log.about(TAG);
-    if remembered().is_some() {
-        return false;
-    }
-    match zyr_screen::wake_up(
-        zyr_screen::shipped(),
-        &paths::virtual_screen_dir(),
-        zyr_screen::Mode::new(1920, 1080, SESSION_RATE),
-    ) {
-        Ok(done) => {
-            log.write(
-                "the virtual screen has never been named by an engine, waking it for this one \
-                 start so it can be",
-            );
-            for line in done.steps {
-                log.write(&line);
-            }
-            true
-        }
-        Err(e) => {
-            log.write(&format!(
-                "the virtual screen could not be woken to be named: {e}"
-            ));
-            false
-        }
-    }
-}
-
 /// Puts it back to sleep, saying so, whoever asked.
 ///
 /// Answers whether it is asleep now. Windows refuses to stop a display
 /// device while something else is rearranging the desktop, which at the
-/// end of a session is exactly what the engine is doing, so a refusal
-/// here is ordinary and means try again in a moment, never give up.
+/// end of a session is exactly what the desk going home is doing, so a
+/// refusal here is ordinary and means try again in a moment, never give
+/// up.
 #[cfg(windows)]
 pub fn back_to_sleep(log: &Log, still_nobody: &dyn Fn() -> bool) -> bool {
     let log = &log.about(TAG);
@@ -703,7 +553,7 @@ pub fn back_to_sleep(log: &Log, still_nobody: &dyn Fn() -> bool) -> bool {
 }
 
 /// Whether it is asleep right now, and `true` where there is none at all:
-/// both mean the engine has no virtual screen to see.
+/// both mean there is no virtual screen to film.
 #[cfg(windows)]
 pub fn asleep() -> bool {
     !zyr_screen::awake(zyr_screen::shipped()).is_ok_and(|awake| awake == Some(true))
@@ -735,454 +585,7 @@ pub fn take_away(log: Option<&Log>) {
         Ok(done) => done.steps,
         Err(e) => vec![format!("virtual screen not fully removed: {e}")],
     };
-    let _ = std::fs::remove_file(learned_path());
     write_down(log, said);
-}
-
-/// The identifier the host engine knows the virtual screen by, as
-/// learned at some earlier start.
-///
-/// Absent means one of two things, and they are not worth telling apart
-/// here: no virtual screen on this computer, or one that no engine has
-/// listed yet. Either way there is nothing to aim a computer with no
-/// screen of its own at, and the engine films what it finds.
-pub fn remembered() -> Option<String> {
-    read_name(&learned_path())
-}
-
-/// The identifier the host engine knows this computer's main screen by,
-/// as learned at some earlier start.
-///
-/// Absent on the first start of an engine on this computer, and only
-/// then: the name is written down as soon as an engine has listed its
-/// screens once, and the engine is started over so it is aimed there.
-pub fn main_remembered() -> Option<String> {
-    read_name(&main_path())
-}
-
-/// The screen a session asked this computer to be served from, if one
-/// asked at all.
-///
-/// Read from outside for one thing only: putting this note back exactly
-/// as it was when what it was written for did not go through. Forgetting
-/// it instead would throw away the screen somebody picked from the menu.
-pub fn wanted_by_a_session() -> Option<String> {
-    read_name(&wanted_path())
-}
-
-/// The screen the engine should be filming right now.
-///
-/// What a session asked for, and this computer's main screen when none
-/// did. The one place that answer is worked out: it is read before the
-/// engine starts, to aim it, and again while it runs, to know that it is
-/// aimed somewhere else and has to start over. Two readings that could
-/// drift apart would be an engine restarting for ever.
-pub fn the_screen_to_film() -> Option<String> {
-    wanted_by_a_session().or_else(main_remembered)
-}
-
-/// Writes down which screen a session wants to be served from, or forgets
-/// the ask.
-///
-/// Nothing named is the main screen, which is what every session asks for
-/// unless somebody says otherwise. Whether that changed anything is not
-/// answered here and is not this note's to answer: what decides is the
-/// screen the engine was **started** on, which the caller holds.
-pub fn film_this_screen(id: Option<&str>) -> Result<(), String> {
-    let path = wanted_path();
-    if wanted_by_a_session().as_deref() == id {
-        return Ok(());
-    }
-    match id {
-        Some(id) => write_name(&path, id)
-            .map_err(|e| format!("l'écran demandé n'a pas pu être écrit : {e}"))?,
-        None => match std::fs::remove_file(&path) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(format!("l'écran demandé n'a pas pu être oublié : {e}")),
-        },
-    }
-    Ok(())
-}
-
-/// Forgets any screen a session asked for.
-///
-/// Called when the service starts, and there only. A computer that came
-/// back up still serving the screen somebody picked last week would be a
-/// computer rearranged by having been looked at, and nobody would be
-/// there to see it: the main screen is what this machine answers with
-/// until a session says otherwise.
-pub fn forget_the_screen_a_session_asked_for() {
-    let _ = std::fs::remove_file(wanted_path());
-}
-
-/// The screens this computer is showing on, as its engine named them.
-///
-/// Only the ones it is really showing on, and never the one it grows for
-/// itself: a screen that is switched off shows a black picture, and the
-/// grown one is not a screen anybody sitting at this machine can see.
-///
-/// Empty means the engine has not said, which is every engine that has
-/// not finished starting. Empty is never « this computer has no screen »:
-/// that answer would be about the reading and not about the machine.
-pub fn on_this_computer(engine_log: &Path) -> Vec<zyr_proto::session::FarScreen> {
-    let Ok(bytes) = std::fs::read(engine_log) else {
-        return Vec::new();
-    };
-    let driver = zyr_screen::shipped();
-    zyr_screen::engine::screens_in_the_log(&String::from_utf8_lossy(&bytes))
-        .into_iter()
-        .filter(|screen| screen.active && !driver.is_its_screen(&screen.friendly_name))
-        .filter_map(|screen| {
-            let (wide, high) = screen.size?;
-            Some(zyr_proto::session::FarScreen {
-                id: screen.device_id,
-                main: screen.main,
-                wide,
-                high,
-                // What a person reads. The name the screen publishes when
-                // it has one, and the number Windows gives it when it does
-                // not: two nameless screens on one desk have to be telling
-                // apart somehow.
-                name: if screen.friendly_name.is_empty() {
-                    screen.display_name
-                } else {
-                    screen.friendly_name
-                },
-            })
-        })
-        .collect()
-}
-
-fn read_name(path: &Path) -> Option<String> {
-    let said = std::fs::read_to_string(path).ok()?;
-    let said = said.trim();
-    (!said.is_empty()).then(|| said.to_string())
-}
-
-/// What reading the engine's list of screens changed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Learned {
-    /// The engine is aimed where it should be.
-    NothingToChange,
-    /// It is not, and the note has been corrected. The engine reads that
-    /// note once, when it starts, so it has to start again.
-    StartAgain,
-}
-
-/// What was true of this computer when the engine was started, which is
-/// the only moment the engine reads which screen to film.
-#[derive(Debug, Clone, Copy)]
-pub struct AsStarted<'a> {
-    /// The screen it was aimed at, under the engine's own name for it,
-    /// or nothing at all.
-    pub aimed_at: Option<&'a str>,
-    /// Whether it was aimed at the screen this computer grows for itself
-    /// rather than at one of this computer's own.
-    pub films_the_grown_screen: bool,
-    /// Whether that grown screen is asleep, which is why the engine
-    /// cannot see it and must not be taken for a computer without one.
-    pub asleep: bool,
-}
-
-/// Reads the engine's own list of screens and aims it at the right one.
-///
-/// Which screen that is depends on the computer. One with a screen of
-/// its own is filmed at its main screen, and naming it is not a nicety:
-/// told nothing, the engine films whichever screen its graphics card
-/// enumerates first, which is not the main one on every machine and not
-/// even the same one from one enumeration to the next. A screen being
-/// resized drops out of that enumeration for as long as the change
-/// lasts, so a host whose main screen had just been put at a session's
-/// size went on filming the screen beside it.
-///
-/// One with no screen at all is filmed at the screen it grew for itself,
-/// and there two things can be wrong. That screen may be there under a
-/// name the engine was not started with, which is what happens the first
-/// time this computer ever runs one; and the engine may have been
-/// started aimed at a screen that is no longer there, which is what
-/// happens when the driver goes.
-pub fn learn_from(engine_log: &std::path::Path, as_started: AsStarted<'_>, log: &Log) -> Learned {
-    let log = &log.about(TAG);
-    /// The engine lists its screens as it starts and answers on its own
-    /// port a moment later, but the two are not the same moment and the
-    /// log is written through a buffer. Read a few times rather than
-    /// once, so a list that was still on its way is not taken for a
-    /// computer with no screens.
-    const TRIES: u32 = 5;
-    const BETWEEN: std::time::Duration = std::time::Duration::from_millis(400);
-
-    let driver = zyr_screen::shipped();
-    let mut seen = Vec::new();
-    let mut text = String::new();
-    for attempt in 0..TRIES {
-        if attempt > 0 {
-            std::thread::sleep(BETWEEN);
-        }
-        let Ok(read) = std::fs::read_to_string(engine_log) else {
-            continue;
-        };
-        seen = zyr_screen::engine::screens_in_the_log(&read);
-        text = read;
-        if !seen.is_empty() {
-            break;
-        }
-    }
-    if seen.is_empty() {
-        log.write(&format!(
-            "the engine listed no screen in {} after {} tries, so which screen it captures stays \
-             unknown and it captures the main one",
-            engine_log.display(),
-            TRIES
-        ));
-        return Learned::NothingToChange;
-    }
-    log.write(&format!(
-        "screens the engine sees: {}",
-        seen.iter()
-            .map(|screen| format!(
-                "{} ({}, {})",
-                if screen.friendly_name.is_empty() {
-                    "unnamed"
-                } else {
-                    &screen.friendly_name
-                },
-                screen.device_id,
-                showing(screen)
-            ))
-            .collect::<Vec<_>>()
-            .join(" ; ")
-    ));
-
-    if !as_started.films_the_grown_screen {
-        return aim_at_the_right_screen(&seen, as_started.aimed_at, log);
-    }
-
-    let Some(ours) = zyr_screen::engine::the_virtual_screen(&text, driver) else {
-        // Asleep is not gone, and telling them apart is the whole of this
-        // branch. The screen sleeps at the device between sessions, so
-        // the engine cannot see it and is not supposed to: forgetting its
-        // name here would throw away, at every start, the one thing that
-        // costs an engine restart to learn.
-        if as_started.asleep {
-            log.write(
-                "the virtual screen is asleep, as it is between sessions, so the engine does not \
-                 see it; its name is kept for the session that wakes it",
-            );
-            return Learned::NothingToChange;
-        }
-        log.write(&format!(
-            "no virtual screen among them: looked for one calling itself the way {} does",
-            driver.name()
-        ));
-        let Some(gone) = as_started.aimed_at else {
-            log.write(
-                "the engine captures the main screen, so a session asking for more than that \
-                 screen can draw gets it blown up",
-            );
-            return Learned::NothingToChange;
-        };
-        // The engine was started aimed at a screen that is not there,
-        // which also means told to put every other screen out for a
-        // screen that cannot come back. Forgotten and started over.
-        if let Err(e) = std::fs::remove_file(learned_path()) {
-            log.write(&format!(
-                "the engine is aimed at a screen that is gone ({gone}) and the note saying so \
-                 could not be removed: {e}"
-            ));
-            return Learned::NothingToChange;
-        }
-        log.write(&format!(
-            "the engine was aimed at a virtual screen that is no longer there ({gone}), forgotten \
-             and started over so it captures the main screen"
-        ));
-        return Learned::StartAgain;
-    };
-
-    if as_started.aimed_at == Some(ours.device_id.as_str()) {
-        log.write(&format!(
-            "the engine is capturing the virtual screen ({}), this computer having no screen of \
-             its own",
-            ours.device_id
-        ));
-        return Learned::NothingToChange;
-    }
-    if let Err(e) = write_name(&learned_path(), &ours.device_id) {
-        log.write(&format!(
-            "the virtual screen's name could not be written down: {e}"
-        ));
-        return Learned::NothingToChange;
-    }
-    log.write(&format!(
-        "virtual screen found under a name the engine was not started with ({} instead of {}), \
-         the engine starts over so it captures it",
-        ours.device_id,
-        as_started.aimed_at.unwrap_or("none")
-    ));
-    Learned::StartAgain
-}
-
-/// Aims the engine at the screen this computer is to be served from, on
-/// a computer that has screens of its own.
-///
-/// Which one that is: the screen a session asked for, and this computer's
-/// main screen when none did. Naming it is what keeps the engine on it.
-/// Told nothing, the engine films whichever screen its graphics card
-/// enumerates first and takes the first one that answers whenever it has
-/// to start filming again; a screen being resized answers nothing for the
-/// length of the change, so the screen a session had just put at its own
-/// size was exactly the one the engine walked away from.
-fn aim_at_the_right_screen(
-    seen: &[zyr_screen::engine::Screen],
-    aimed_at: Option<&str>,
-    log: &Log,
-) -> Learned {
-    let Some(main) = seen.iter().find(|screen| screen.main) else {
-        log.write(
-            "the engine named no main screen among them, so it films whichever one it finds first",
-        );
-        return Learned::NothingToChange;
-    };
-    // Written down whatever else happens here: it is the answer this
-    // computer gives every session that asks for no screen in particular,
-    // and this is the only place it is ever learned.
-    if main_remembered().as_deref() != Some(main.device_id.as_str())
-        && let Err(e) = write_name(&main_path(), &main.device_id)
-    {
-        log.write(&format!(
-            "the name of this computer's main screen could not be written down: {e}"
-        ));
-        return Learned::NothingToChange;
-    }
-
-    // The screen a session asked for, as long as it is still one this
-    // computer is showing on. One that has been unplugged since is
-    // forgotten rather than waited for: nothing would ever bring it back
-    // on its own, and the engine would start over for ever trying to film
-    // a screen that is not there.
-    let asked_for = wanted_by_a_session().filter(|id| {
-        let showing = seen
-            .iter()
-            .any(|screen| screen.active && &screen.device_id == id);
-        if !showing {
-            log.write(&format!(
-                "a session asked to be served from a screen this computer is not showing on \
-                 ({id}), so its main screen is filmed instead"
-            ));
-            forget_the_screen_a_session_asked_for();
-        }
-        showing
-    });
-    let its_own = asked_for.is_none();
-    let film = asked_for.unwrap_or_else(|| main.device_id.clone());
-
-    if aimed_at == Some(film.as_str()) {
-        log.write(&format!(
-            "the engine is filming {} ({film})",
-            if its_own {
-                "this computer's main screen"
-            } else {
-                "the screen a session asked to be served from"
-            }
-        ));
-        return Learned::NothingToChange;
-    }
-    log.write(&format!(
-        "this computer is to be filmed on {film} and the engine was aimed at {}, so it starts \
-         over to film the right one",
-        aimed_at.unwrap_or("whichever it found first")
-    ));
-    Learned::StartAgain
-}
-
-/// Follows the engine's log from where it stood, looking for the one
-/// thing it says about the host's screens that nobody else can see.
-///
-/// The engine resizes the screens of the computer being watched for the
-/// length of a session and puts them back when it ends. Putting them back
-/// is what the person sitting at that computer cares about, and it is
-/// also the half that can fail. When it does, the engine says so once and
-/// then goes quiet, retrying on its own terms for as long as it lives.
-/// Reading its log is the only way to hear it.
-///
-/// Only what the engine has written since the last look is read: the log
-/// grows all session long, and reading it whole every few seconds would
-/// cost the machine something for nothing. The offset stops at the last
-/// complete line, so a sentence caught half-written is read whole at the
-/// next look rather than split in two and recognised as neither.
-pub struct Watching {
-    log: PathBuf,
-    read_up_to: u64,
-}
-
-impl Watching {
-    /// Starts watching from the end of what is already written.
-    ///
-    /// From the end and not from the top: the log carries every earlier
-    /// run of the engine, and a complaint from one of those is a screen
-    /// somebody has long since put back by hand. A log that is not there
-    /// yet has no past to skip, and starts at nought.
-    pub fn from_here(log: &Path) -> Self {
-        Self {
-            log: log.to_path_buf(),
-            read_up_to: std::fs::metadata(log).map(|it| it.len()).unwrap_or(0),
-        }
-    }
-
-    /// Whether the engine has given up on the screens since the last look.
-    pub fn gave_up_on_the_screens(&mut self) -> bool {
-        use std::io::{Read, Seek, SeekFrom};
-
-        let Ok(mut file) = std::fs::File::open(&self.log) else {
-            return false;
-        };
-        // The journal writer cuts this file back from its top once it has
-        // grown past reason. What was written before the cut is gone, and
-        // carrying on from an offset into it would read the middle of a
-        // line for ever. It cannot happen while the engine holds the file,
-        // which is the whole of this watch, and the day it does the watch
-        // takes its place again at the new end rather than losing itself.
-        let length = file.metadata().map(|it| it.len()).unwrap_or(0);
-        if length < self.read_up_to {
-            self.read_up_to = length;
-            return false;
-        }
-        if file.seek(SeekFrom::Start(self.read_up_to)).is_err() {
-            return false;
-        }
-        let mut written = Vec::new();
-        if file.read_to_end(&mut written).is_err() {
-            return false;
-        }
-        let Some(complete) = written.iter().rposition(|byte| *byte == b'\n') else {
-            return false;
-        };
-        self.read_up_to += complete as u64 + 1;
-        let said = String::from_utf8_lossy(&written[..=complete]);
-        zyr_screen::engine::could_not_put_the_screens_back(&said)
-    }
-}
-
-/// What a screen is showing, for the journal.
-///
-/// The size and not merely on or off. Whether the host's screen came home
-/// after a session is what this product is asked about most, the engine
-/// writes its list at every one of its starts, and this turns that list
-/// into the answer instead of half of it.
-fn showing(screen: &zyr_screen::Screen) -> String {
-    let main = if screen.main { ", the main one" } else { "" };
-    match screen.size {
-        Some((width, height)) if screen.active => format!("on at {width}x{height}{main}"),
-        _ if screen.active => format!("on, size unsaid{main}"),
-        _ => "off".to_string(),
-    }
-}
-
-fn write_name(path: &Path, device_id: &str) -> std::io::Result<()> {
-    if let Some(folder) = path.parent() {
-        std::fs::create_dir_all(folder)?;
-    }
-    std::fs::write(path, device_id.as_bytes())
 }
 
 #[cfg(windows)]
@@ -1193,170 +596,5 @@ fn write_down(log: Option<&Log>, said: Vec<String>) {
     let log = log.about(TAG);
     for line in said {
         log.write(&line);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-
-    const GAVE_UP: &str = "[2026-08-25 21:16:26]: Warning: Failed to revert display device \
-                           configuration (will retry once devices are added or removed).\n";
-
-    fn a_log(what: &str) -> (PathBuf, PathBuf) {
-        let folder = std::env::temp_dir().join(format!(
-            "zyrdeskd-screen-{}-{what}",
-            zyr_proto::random::alphanumeric_string(8)
-        ));
-        std::fs::create_dir_all(&folder).unwrap();
-        (folder.join("engine.log"), folder)
-    }
-
-    fn add(log: &Path, said: &str) {
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(log)
-            .unwrap();
-        file.write_all(said.as_bytes()).unwrap();
-    }
-
-    /// Victor's case, word for word: two screens switched on, the
-    /// television switched off as a third, and the product's virtual
-    /// screen beside them.
-    const A_DESK: &str = r#"
-[2026-08-31 09:12:03]: Info: Currently available display devices:
-[
-    {
-        "device_id": "{64243705-4020-5895-b923-adc862c3457e}",
-        "display_name": "",
-        "friendly_name": "VDD by MTT",
-        "info": null
-    },
-    {
-        "device_id": "{daeac860-f4db-5208-b1f5-cf59444fb768}",
-        "display_name": "\\\\.\\DISPLAY1",
-        "friendly_name": "ROG PG279Q",
-        "info": {
-            "primary": true,
-            "resolution": { "height": 1440, "width": 2560 }
-        }
-    },
-    {
-        "device_id": "{11111111-4020-5895-b923-adc862c3457e}",
-        "display_name": "\\\\.\\DISPLAY2",
-        "friendly_name": "Dell U2412M",
-        "info": {
-            "primary": false,
-            "resolution": { "height": 1080, "width": 1920 }
-        }
-    },
-    {
-        "device_id": "{22222222-4020-5895-b923-adc862c3457e}",
-        "display_name": "",
-        "friendly_name": "SAMSUNG TV",
-        "info": null
-    }
-]
-"#;
-
-    #[test]
-    fn only_the_screens_this_computer_is_really_showing_on_are_offered() {
-        // The switched-off screen would only show a black picture, and
-        // the screen the product grows is not a screen someone sitting at
-        // the machine can see: neither one is a screen anyone asks to
-        // watch.
-        let (log, folder) = a_log("ecrans");
-        add(&log, A_DESK);
-
-        let seen = on_this_computer(&log);
-        assert_eq!(seen.len(), 2);
-        assert_eq!(seen[0].name, "ROG PG279Q");
-        assert!(seen[0].main);
-        assert_eq!((seen[0].wide, seen[0].high), (2560, 1440));
-        assert_eq!(seen[1].name, "Dell U2412M");
-        assert!(!seen[1].main);
-
-        // And an engine that has written nothing says nothing,
-        // rather than making the reading fail.
-        assert!(on_this_computer(&folder.join("rien.log")).is_empty());
-
-        let _ = std::fs::remove_dir_all(&folder);
-    }
-
-    #[test]
-    fn what_the_engine_said_before_the_watch_began_is_not_answered_for() {
-        // The engine's log carries all of its earlier starts. A complaint
-        // from three weeks ago is a screen someone put back by hand long
-        // ago.
-        let (log, folder) = a_log("avant");
-        add(&log, GAVE_UP);
-
-        let mut watching = Watching::from_here(&log);
-        assert!(!watching.gave_up_on_the_screens());
-
-        let _ = std::fs::remove_dir_all(&folder);
-    }
-
-    #[test]
-    fn what_the_engine_says_afterwards_is_heard_once() {
-        let (log, folder) = a_log("apres");
-        add(&log, "[2026-08-25 21:16:23]: Info: Session ended\n");
-
-        let mut watching = Watching::from_here(&log);
-        add(&log, GAVE_UP);
-        assert!(watching.gave_up_on_the_screens());
-        // And not a second time: what has been read is behind us.
-        assert!(!watching.gave_up_on_the_screens());
-
-        let _ = std::fs::remove_dir_all(&folder);
-    }
-
-    #[test]
-    fn a_line_caught_half_written_is_read_whole_at_the_next_look() {
-        // The engine writes to this file while it is being read. A
-        // sentence cut in two and read in two pieces no longer looks like
-        // anything, and it is precisely the one that must not be missed.
-        let (log, folder) = a_log("coupe");
-        let mut watching = Watching::from_here(&log);
-
-        let (start, rest) = GAVE_UP.split_at(40);
-        add(&log, start);
-        assert!(!watching.gave_up_on_the_screens());
-        add(&log, rest);
-        assert!(watching.gave_up_on_the_screens());
-
-        let _ = std::fs::remove_dir_all(&folder);
-    }
-
-    #[test]
-    fn a_log_cut_back_from_its_top_does_not_leave_the_watch_lost() {
-        // The log is cut back when it grows too big. Starting again from
-        // a position that no longer exists means reading the middle of a
-        // line for ever.
-        let (log, folder) = a_log("rogne");
-        add(
-            &log,
-            "[2026-08-25 21:16:23]: Info: Session ended\n"
-                .repeat(20)
-                .as_str(),
-        );
-        let mut watching = Watching::from_here(&log);
-
-        std::fs::write(&log, b"[2026-08-25 21:20:00]: Info: fresh\n").unwrap();
-        assert!(!watching.gave_up_on_the_screens());
-        add(&log, GAVE_UP);
-        assert!(watching.gave_up_on_the_screens());
-
-        let _ = std::fs::remove_dir_all(&folder);
-    }
-
-    #[test]
-    fn a_log_that_is_not_there_says_nothing_rather_than_failing() {
-        let (log, folder) = a_log("absent");
-        let mut watching = Watching::from_here(&log);
-        assert!(!watching.gave_up_on_the_screens());
-        let _ = std::fs::remove_dir_all(&folder);
     }
 }

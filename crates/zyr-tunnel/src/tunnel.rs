@@ -37,6 +37,18 @@ pub struct Tunnel {
     somebody_there: Arc<AtomicBool>,
 }
 
+/// Whether somebody is at the other end of a tunnel's link, readable
+/// apart from the tunnel, by whoever speaks to that somebody only while
+/// they are there.
+#[derive(Debug, Clone)]
+pub struct Presence(Arc<AtomicBool>);
+
+impl Presence {
+    pub fn here(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
 /// The engine's stream, handed from whoever accepts it to whoever
 /// carries it. Taken once: a second one is refused.
 type EngineStream = Arc<Mutex<Option<oneshot::Sender<(SendStream, RecvStream)>>>>;
@@ -184,6 +196,11 @@ impl Tunnel {
     /// once the player has connected on the client.
     pub fn connected(&self) -> bool {
         self.somebody_there.load(Ordering::Relaxed)
+    }
+
+    /// The same, for as long as it is wanted.
+    pub fn presence(&self) -> Presence {
+        Presence(self.somebody_there.clone())
     }
 
     /// Waits for the tunnel to stop, and says why it stopped.

@@ -1,21 +1,17 @@
-//! Keeps the host engine running for as long as the service does.
+//! Keeps this computer's door open for as long as the service runs.
 //!
-//! The supervisor strings four things together: choosing the session the
-//! engine has to live in, preparing it, starting it, and deciding what
-//! to do when it stops. The decision itself belongs to the neighbouring
-//! module's policy; here we apply it, write down what happens, and hand
-//! back the moment a stop is asked for.
+//! The supervisor strings three things together: choosing the session
+//! the engines have to live in, opening the door while everything a
+//! session needs is there, and closing it when that stops being so. Each
+//! session that comes through the door brings its own engine up in the
+//! session that owns the screen; the supervisor runs none.
 //!
 //! The session is not a detail. A service lives in a session with no
-//! screen: the engine has to be pushed into the one carrying the
-//! display, and that session changes whenever somebody signs in, signs
-//! out or switches user. The supervisor watches it and starts the engine
-//! over in the new one, because an engine left in a dead session shows
-//! nothing at all.
-//!
-//! The engine is not reachable from the network: the tunnel the service
-//! holds is the only way in, and it hands everything to the engine over
-//! loopback. The engine's life and the tunnel's are tied together here.
+//! screen: an engine has to be pushed into the one carrying the display,
+//! and that session changes whenever somebody signs in, signs out or
+//! switches user. The supervisor watches it and opens the door again in
+//! the new one, because an engine left in a dead session shows nothing
+//! at all.
 
 // Outside Windows nothing calls this module: the service does not exist
 // there. It stays compiled and tested everywhere, the logic having
@@ -24,26 +20,21 @@
 // Windows, genuinely dead code is still reported.
 #![cfg_attr(not(windows), allow(dead_code))]
 
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use zyr_control::Holdup;
-use zyr_engine_host::api::EngineApi;
-use zyr_engine_host::{Credentials, EngineRuntime, HostEngine, Launcher, SunshineConfig, ports};
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 
 use crate::account::Account;
 use crate::control::{Answering, Desk};
-use crate::gateway::{AtHand, Gateway};
+use crate::gateway::{Gateway, Launcher};
 use crate::machine::{Hosting, Machine};
 use crate::preferences::Remembered;
-use crate::restart::{self, Next, Policy};
 use crate::ways::Ways;
-
-/// Margin given to the engine to open its ports at start-up.
-const START_DELAY: Duration = Duration::from_secs(30);
 
 /// What this module's lines are filed under.
 ///
@@ -52,31 +43,33 @@ const START_DELAY: Duration = Duration::from_secs(30);
 /// for a line about either.
 const TAG: &str = "service";
 
-/// How often the supervisor takes back control to check the engine's
-/// state, the session on screen and the stop order.
+/// How often the supervisor takes back control to check the door, the
+/// session on screen and the stop order.
 const WATCH_PERIOD: Duration = Duration::from_millis(500);
 
-/// Pause before starting the engine over in a new session.
+/// Pause before opening the door again in a new session.
 ///
 /// A user switch hands the screen over in several steps: waiting a
-/// moment lets it settle rather than starting an engine in a session
-/// that is already on its way out.
+/// moment lets it settle rather than starting engines in a session that
+/// is already on its way out.
 const SESSION_SETTLING: Duration = Duration::from_secs(1);
 
-/// How often a missing or unusable engine is looked in on again.
+/// How often FFmpeg is looked for.
 ///
 /// It can be dropped onto the machine at any moment, so it is worth
 /// checking; and doing so every second would be noise.
 const ENGINE_WATCH: Duration = Duration::from_secs(5);
 
-/// How often the engine is read on the subject of the host's screens.
+/// How often a desk nobody is watching any more is tried again.
 ///
-/// Slower than the rest of the watch on purpose. The one thing being
-/// looked for there is said at the end of a session and stays true until
-/// something is done about it, so hearing it two seconds late costs
-/// nothing, and reading a file the engine writes to all session long
-/// twice a second costs the machine something for nothing.
+/// Slower than the rest of the watch on purpose: putting a desk back is
+/// an errand in another session, and one that was refused a moment ago
+/// is refused again for a while.
 const SCREEN_WATCH: Duration = Duration::from_secs(2);
+
+/// The libraries of FFmpeg the engine loads, by the name their files
+/// start with.
+const FFMPEG: [&str; 3] = ["avutil", "swresample", "avcodec"];
 
 /// Identifier of the session attached to the screen, when there is one.
 #[cfg(windows)]
@@ -92,25 +85,15 @@ fn screen_session() -> Option<u32> {
     Some(0)
 }
 
-/// How to start the engine in that session.
+/// How each session's engine is started in that session.
 #[cfg(windows)]
-fn launcher(session: u32) -> impl Launcher + 'static {
-    crate::session::SessionLauncher::new(session)
+fn launcher(session: u32) -> Arc<dyn Launcher> {
+    Arc::new(crate::session::ServingInSession::new(session))
 }
 
 #[cfg(not(windows))]
-fn launcher(_session: u32) -> impl Launcher + 'static {
-    zyr_engine_host::SameSession
-}
-
-#[cfg(windows)]
-fn wake_to_be_named(log: &Log) -> bool {
-    crate::screen::wake_to_be_named(log)
-}
-
-#[cfg(not(windows))]
-fn wake_to_be_named(_log: &Log) -> bool {
-    false
+fn launcher(_session: u32) -> Arc<dyn Launcher> {
+    Arc::new(crate::gateway::NotHere)
 }
 
 /// Puts the screen this computer grew for itself back to sleep.
@@ -126,25 +109,6 @@ fn put_the_grown_screen_away(log: &Log, still_nobody: &dyn Fn() -> bool) -> bool
 fn put_the_grown_screen_away(_log: &Log, _still_nobody: &dyn Fn() -> bool) -> bool {
     true
 }
-
-/// Writes down what this computer's screens are doing, from the session
-/// that owns them.
-///
-/// Nothing is moved: this is the errand that holds a desk for a session,
-/// asked for nothing at all, which is how it doubles as the one way a
-/// service ever learns what is plugged into its own machine.
-#[cfg(windows)]
-fn look_at_the_desk(log: &Log) {
-    match crate::session::hold_the_desk_for(None) {
-        Ok(took) => log.write(&format!(
-            "this computer's screens were looked at from the session on screen ({took})"
-        )),
-        Err(e) => log.write(&format!("this computer could not look at its screens: {e}")),
-    }
-}
-
-#[cfg(not(windows))]
-fn look_at_the_desk(_log: &Log) {}
 
 /// Puts this computer's desk back the way it was noted before a session
 /// took it, from the session that owns the screen.
@@ -214,7 +178,7 @@ impl StopOrder {
     }
 
     /// Asks for a stop. The supervisor hands back at its next check,
-    /// having stopped the engine.
+    /// having closed the door.
     pub fn ask_for_a_stop(&self) {
         self.0.store(true, Ordering::Relaxed);
     }
@@ -224,53 +188,33 @@ impl StopOrder {
     }
 }
 
-/// How one life of the engine ended.
+/// Why the door was closed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Life {
-    /// It stopped, with this exit code.
-    Stopped(Option<i32>),
-    /// The screen moved to another session: the engine was stopped on
-    /// purpose, and belongs over there now.
+enum Closed {
+    /// A stop was asked for.
+    Asked,
+    /// The screen moved to another session: the engines belong over
+    /// there now.
     SessionChanged,
-    /// The name the engine knows this computer's virtual screen by was
-    /// learned from the engine itself, which only says it as it starts.
-    /// It was stopped on purpose so the next one is told to capture it.
-    VirtualScreenLearned,
-    /// How this computer serves was changed while it was running, and the
-    /// engine could not be asked to serve that way where it stood: the way
-    /// the screen is captured, which nothing changes in a running engine,
-    /// or a floor an engine of an older build does not know how to be
-    /// asked. It was stopped on purpose and the next one is told the new
-    /// answer.
-    ServingChanged,
-    /// Which screen this computer is filmed on changed while the engine
-    /// ran, its own having refused a size a session asked for. It reads
-    /// that at its start and never again, so it was stopped on purpose.
-    ScreenToFilmChanged,
-    /// It said it could not put this computer's screens back the way it
-    /// found them. It was stopped on purpose, which is what makes it try
-    /// again.
-    ScreenNotPutBack,
-    /// Remote access was turned off while it ran.
+    /// Remote access was turned off.
     NoLongerWanted,
-    /// How this computer speaks on the wire was changed while it ran.
-    /// The door is opened on that once, so it was stopped on purpose
-    /// and the next one opens its door the new way.
+    /// How this computer speaks on the wire was changed. The door is
+    /// opened on that once, so it opens again the new way.
     WireChanged,
+    /// FFmpeg went missing: no engine could make a picture.
+    FfmpegGone,
 }
 
 /// Why the supervisor handed back.
 ///
-/// Nothing about the host engine ends the service. A computer whose
-/// engine is missing, or will not stand, is still a computer that opens
-/// sessions towards others: taking the whole service down would cost it
-/// that, and the interface with it.
+/// Nothing about the engine ends the service. A computer whose engine
+/// cannot run is still a computer that opens sessions towards others:
+/// taking the whole service down would cost it that, and the interface
+/// with it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum End {
     /// A stop was asked for.
     Asked,
-    /// Windows is shutting down.
-    WindowsShutdown,
     /// There was nothing to run the service on.
     NoRuntime,
 }
@@ -278,17 +222,9 @@ pub enum End {
 /// Runs until a stop is asked for.
 pub fn run(order: &StopOrder, log: &Log) -> End {
     let log = &log.about(TAG);
-    let exe = paths::host_engine_exe();
 
-    // A screen some session picked belongs to that session and to nothing
-    // else. A computer coming back up still serving the screen somebody
-    // chose last week would be a computer rearranged by having been looked
-    // at, with nobody there to notice: its main screen is the answer until
-    // a session says otherwise.
-    crate::screen::forget_the_screen_a_session_asked_for();
-
-    // One runtime for the whole life of the service: the tunnel is
-    // rebuilt with each engine, but rebuilding the threads underneath it
+    // One runtime for the whole life of the service: the door is opened
+    // and closed many times, but rebuilding the threads underneath it
     // every time would be waste.
     let runtime = match tokio::runtime::Runtime::new() {
         Ok(runtime) => runtime,
@@ -299,7 +235,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     };
 
     // The neighbourhood is announced for as long as the service runs,
-    // not for as long as an engine does: a computer that only appeared
+    // not for as long as the door is open: a computer that only appeared
     // once its owner opened a window would be no use to anyone.
     let neighbourhood = match announce(log) {
         Ok(neighbourhood) => Some(neighbourhood),
@@ -311,9 +247,8 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         }
     };
     // What this computer holds lives as long as the service, not as long
-    // as one engine: reaching another computer has nothing to do with
-    // this one being reachable, and neither has anything to do with the
-    // engine of the moment.
+    // as the door: reaching another computer has nothing to do with this
+    // one being reachable.
     //
     // What was asked for last time, honoured before anyone has said
     // anything this time.
@@ -360,11 +295,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     runtime.spawn(machine.ways.clone().keep_the_clipboards_in_step());
     runtime.spawn(machine.ways.clone().carry_the_pieces());
 
-    let mut policy = Policy::new();
-    let runtime_path = EngineRuntime::standard_path();
     let around = Around {
-        exe: &exe,
-        runtime_path: &runtime_path,
         runtime: runtime.handle(),
         machine: &machine,
         order,
@@ -372,15 +303,14 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     };
     let mut screenless = false;
     let mut refused = false;
-    let mut engineless = false;
-    let mut given_up = false;
+    let mut ffmpegless = false;
 
     loop {
         if order.stop_asked() {
             return End::Asked;
         }
 
-        // No engine running means nobody watching this computer, so its
+        // No door open means nobody watching this computer, so its
         // speakers play. This is also what gives the sound back after a
         // session that ended badly, and what keeps trying until somebody
         // is signed in to give it back in.
@@ -404,20 +334,22 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         if refused {
             log.write("remote access is on again");
             refused = false;
-            // Turned off and on again is not a string of failures: the
-            // engine deserves its first try back. It is also the one way
-            // back from an engine this service has stopped insisting on.
-            policy = Policy::new();
-            given_up = false;
         }
 
-        if !exe.is_file() {
-            // The engine can be dropped in later, and everything this
+        let ffmpeg = paths::ffmpeg_dir();
+        let missing = missing_from(&ffmpeg);
+        if !missing.is_empty() {
+            // FFmpeg can be dropped in later, and everything this
             // computer needs to reach another one works without it. So
             // it is waited for rather than given up on.
-            if !engineless {
-                log.write(&format!("host engine not found: {}", exe.display()));
-                engineless = true;
+            if !ffmpegless {
+                log.write(&format!(
+                    "FFmpeg is missing from {} ({}): no engine can make a picture, so this \
+                     computer cannot be reached",
+                    ffmpeg.display(),
+                    missing.join(", ")
+                ));
+                ffmpegless = true;
                 machine.hosting.held_by(Holdup::EngineMissing);
             }
             if !wait(ENGINE_WATCH, order) {
@@ -425,26 +357,14 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             }
             continue;
         }
-        if engineless {
-            log.write("host engine found");
-            engineless = false;
-            policy = Policy::new();
-        }
-
-        if given_up {
-            // The engine will not stand. Trying forever would fill the
-            // log and load the machine for nothing; the way back is the
-            // remote access switch, read at the top of this loop.
-            if !wait(ENGINE_WATCH, order) {
-                return End::Asked;
-            }
-            continue;
+        if ffmpegless {
+            log.write("FFmpeg found");
+            ffmpegless = false;
         }
 
         let Some(session) = screen_session() else {
-            // Between two sign-ins, no session owns the screen. An
-            // engine started then would capture nothing, so we wait
-            // instead of counting it as a failure.
+            // Between two sign-ins, no session owns the screen. An engine
+            // started then would capture nothing, so the door waits.
             if !screenless {
                 log.write("no session on screen, waiting for one");
                 screenless = true;
@@ -456,77 +376,70 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         };
         screenless = false;
 
-        let start = Instant::now();
-        let life = match one_engine_life(session, &around) {
-            Ok(life) => life,
+        let closed = match one_door_life(session, &around) {
+            Ok(closed) => closed,
             Err(reason) => {
                 log.write(&reason);
-                // An engine that will not start is a failure like any
-                // other: the policy decides whether insisting is worth
-                // it.
-                Life::Stopped(None)
-            }
-        };
-
-        if order.stop_asked() {
-            return End::Asked;
-        }
-
-        // Neither a session change nor a switch turned off is an
-        // incident: the engine did what was asked of it, and the failure
-        // count has no business moving.
-        let Life::Stopped(stop) = life else {
-            if life == Life::SessionChanged {
-                log.write(&format!(
-                    "the screen left session {session}, the engine starts over in the new one"
-                ));
-            }
-            // Straight away rather than after the settling delay: the
-            // engine was stopped on purpose the moment it had said what
-            // was wanted of it, and nothing on the machine moved.
-            if matches!(
-                life,
-                Life::VirtualScreenLearned
-                    | Life::ServingChanged
-                    | Life::ScreenToFilmChanged
-                    | Life::WireChanged
-            ) {
+                if !wait(ENGINE_WATCH, order) {
+                    return End::Asked;
+                }
                 continue;
             }
-            if !wait(SESSION_SETTLING, order) {
-                return End::Asked;
-            }
-            continue;
         };
-
-        let lifetime = start.elapsed();
-        match policy.after_stop(stop, lifetime) {
-            Next::Finish => {
-                log.write("Windows is shutting down, the engine is not restarted");
-                return End::WindowsShutdown;
-            }
-            Next::GiveUp => {
+        match closed {
+            Closed::Asked => return End::Asked,
+            Closed::SessionChanged => {
                 log.write(&format!(
-                    "the engine fell {} times in a row without holding, this computer stays \
-                     unreachable until remote access is turned off and on again",
-                    policy.failures()
+                    "the screen left session {session}, the door opens again in the new one"
                 ));
-                machine.hosting.held_by(Holdup::EngineWontStand);
-                given_up = true;
-            }
-            Next::Restart(delay) => {
-                log.write(&format!(
-                    "engine stopped after {} s, {}; another starts in {} s",
-                    lifetime.as_secs(),
-                    how_it_went(stop),
-                    delay.as_secs()
-                ));
-                if !wait(delay, order) {
+                if !wait(SESSION_SETTLING, order) {
                     return End::Asked;
                 }
             }
+            Closed::NoLongerWanted | Closed::WireChanged | Closed::FfmpegGone => {}
         }
     }
+}
+
+/// Which of FFmpeg's libraries that folder does not hold.
+///
+/// Looked for by name and not opened: opening them is the engine's, in
+/// the session it runs in, which also checks that they are the version
+/// it was built for. What matters here is only whether there is anything
+/// to open at all.
+fn missing_from(folder: &Path) -> Vec<&'static str> {
+    let files: Vec<String> = std::fs::read_dir(folder)
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    FFMPEG
+        .into_iter()
+        .filter(|library| {
+            !files
+                .iter()
+                .any(|file| is_the_library(file, library, cfg!(windows)))
+        })
+        .collect()
+}
+
+/// Whether that file is that FFmpeg library, under the name FFmpeg gives
+/// it: `avcodec-63.dll` on Windows, `libavcodec.so.63` elsewhere.
+fn is_the_library(file: &str, library: &str, on_windows: bool) -> bool {
+    let file = file.to_ascii_lowercase();
+    let major = if on_windows {
+        file.strip_prefix(library)
+            .and_then(|rest| rest.strip_prefix('-'))
+            .and_then(|rest| rest.strip_suffix(".dll"))
+    } else {
+        file.strip_prefix("lib")
+            .and_then(|rest| rest.strip_prefix(library))
+            .and_then(|rest| rest.strip_prefix(".so."))
+    };
+    major.is_some_and(|major| !major.is_empty() && major.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// Opens the desk the interface and the command line talk to.
@@ -590,420 +503,103 @@ fn say_where_this_computer_answers(log: &Log) {
     }
 }
 
-/// Everything one engine's life is lived against: what does not change
-/// from one engine to the next, gathered so it travels as one thing.
+/// Everything the door is opened against: what does not change from one
+/// opening to the next, gathered so it travels as one thing.
 struct Around<'a> {
-    exe: &'a std::path::Path,
-    runtime_path: &'a std::path::Path,
     runtime: &'a tokio::runtime::Handle,
     machine: &'a Machine,
     order: &'a StopOrder,
     log: &'a Log,
 }
 
-/// Starts the engine in the given session and follows it until it stops.
+/// Opens the door for engines living in that session, and holds it open
+/// until it no longer should be.
 ///
-/// Returns how its life ended, or why it could not live at all.
-fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
+/// Returns why it was closed, or why it could not be opened at all.
+fn one_door_life(session: u32, around: &Around<'_>) -> Result<Closed, String> {
     let Around {
-        exe,
-        runtime_path,
         runtime,
         machine,
         order,
         log,
     } = around;
-    let Some(ports) = ports::free_base() else {
-        return Err("no port available in the range reserved for the engines".to_string());
-    };
 
-    // The engine binds to the local machine only: the tunnel below is
-    // the sole way to it, and nothing on the network can knock on its
-    // seven ports.
-    // Read once, here, and compared against later: the engine is told
-    // this at its start and never again, so a change while it runs is
-    // only honoured by starting another one.
-    let serving = machine.remembered.serving();
-    let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir())
-        .with_serving(serving);
-    // What this computer's screens are doing, asked of the session that
-    // owns them because a service cannot see one. Asked here rather than
-    // when a session wants to know, so the answer is already in hand at
-    // the one moment it decides something: whether this computer has a
-    // screen of its own to film at all.
-    look_at_the_desk(log);
-    // Which screen to capture is read once, as the engine starts, so it
-    // is decided here or not at all. A computer with a screen of its own
-    // is aimed at its main screen, which is where the desktop is and
-    // which a session is put at the size of.
-    //
-    // The screen this computer grows for itself is for the computer that
-    // has none, a machine in a cupboard with nothing plugged into it, and
-    // there it is the only thing there is to film. Woken only where it
-    // has never been named, and put back below as soon as it has: the
-    // engine names the screens it can see, and one that sleeps between
-    // sessions is seen by nobody.
-    //
-    // Either name is absent the first time this computer ever runs an
-    // engine, the name being the engine's own and the engine not having
-    // said it yet; both are learned below and used from the next start
-    // on, which costs that one start a restart.
-    let named_this_start = wake_to_be_named(log);
-    // Two computers are filmed on the screen they grow rather than on one
-    // of their own: the one with nothing plugged in, which has no other,
-    // and the one whose own screens draw nothing larger than themselves,
-    // which cannot serve a session the size it asks for. Settled here
-    // because the engine reads which screen to film at its start and
-    // never again, and a session may only borrow that screen where the
-    // engine is already looking at it.
-    let on_its_own = crate::screen::showing_now().is_none();
-    let films_the_grown_screen = on_its_own || crate::screen::the_main_screen_is_stuck();
-    // Named on every computer, and not only on the one with nothing
-    // plugged in. Left unnamed, the engine films whichever screen the
-    // graphics card enumerates first, and it takes the first screen that
-    // answers each time it has to start filming again: a screen being
-    // resized answers nothing while the change lasts, so the very screen
-    // a session had just put at its own size was the one the engine
-    // walked away from, for the rest of that session.
-    // And on an ordinary computer, the screen it is to be served from:
-    // the one a session asked for, and its main one when none did. The
-    // watch below reads that same answer again while the engine runs, so
-    // a session asking for the screen beside this one is a start over and
-    // not a wish nobody acts on.
-    let aiming_at = match films_the_grown_screen {
-        true => crate::screen::remembered(),
-        false => crate::screen::the_screen_to_film(),
-    };
-    let config = match &aiming_at {
-        Some(screen) => {
-            log.write(&if films_the_grown_screen {
-                format!(
-                    "this computer is filmed on the screen it grew for itself ({screen}), {}",
-                    if on_its_own {
-                        "having none of its own"
-                    } else {
-                        "its own drawing nothing larger than themselves"
-                    }
-                )
-            } else {
-                format!("the engine is aimed at this computer's main screen ({screen})")
-            });
-            config.with_screen(screen)
-        }
-        None => config,
-    };
-    let engine_log = config.log_path();
-    let credentials = Credentials::random();
-    let mut engine = HostEngine::new(
-        exe,
-        config,
-        credentials.clone(),
-        paths::logs_dir().join("engine-console.log"),
-    )
-    .launched_by(launcher(session));
-
-    engine.prepare().map_err(|e| e.to_string())?;
-    engine.provision_credentials().map_err(|e| e.to_string())?;
-    engine.start().map_err(|e| e.to_string())?;
-    log.write(&format!(
-        "engine started in session {session}, process {}, on base port {}",
-        engine.process_id().unwrap_or_default(),
-        ports.base()
-    ));
-
-    let api = EngineApi::new(ports, credentials.clone());
-    if let Err(e) = api.wait_until_ready(START_DELAY, || !order.stop_asked()) {
-        let _ = engine.stop();
-        return Err(format!("the engine never finished starting: {e}"));
-    }
-
-    // Asked now and not later: the engine writes its list of screens as
-    // it starts and never again, and what is being looked for in it is
-    // the one name that lets the next start aim at the right screen.
-    let learned = crate::screen::learn_from(
-        &engine_log,
-        crate::screen::AsStarted {
-            aimed_at: aiming_at.as_deref(),
-            films_the_grown_screen,
-            asleep: !named_this_start && screen_asleep(),
-        },
-        log,
-    );
-    // Back to sleep the moment it has been named, whatever came of the
-    // naming: awake past this point is a second screen on somebody's desk
-    // with nobody watching it.
-    if named_this_start {
-        // Woken for this one start of the engine and for nothing else:
-        // there is no session that could want it.
-        put_the_grown_screen_away(log, &|| true);
-    } else if !screen_asleep() {
-        // Left awake by a run that never got to finish: the machine was
-        // switched off, or the service fell over, with a session in
-        // progress. It has to go, and it has to go **here** rather than
-        // before the engine was started.
-        //
-        // Before, it collided with the engine head on. An engine starting
-        // up tries to put back the arrangement of screens a session it
-        // never finished had changed, and it retries that every time a
-        // display device is added or removed. Taking our screen away a
-        // second earlier was therefore both the thing that made the
-        // arrangement it wants to restore impossible and the very event
-        // that made it try again, and what it does when it fails is
-        // switch every screen it can find back on. Somebody's screens
-        // came out of it rearranged at every start of the service.
-        //
-        // Started first, the engine has said what it had to say, and
-        // putting the screen away waits for the desktop to stop changing
-        // before touching anything, which is what it has always done at
-        // the end of a session.
-        log.write("a screen was left awake by a run that did not finish, putting it back");
-        put_the_grown_screen_away(log, &|| true);
-    }
-    // And the desk itself, for the same run that did not finish. What
-    // says a session left one behind is the note it wrote before touching
-    // anything, which outlives the service that wrote it: nothing else
-    // could, the whole point of the note being to survive the machine
-    // being switched off in the middle of a session.
-    //
-    // Here rather than before the engine started, for the reason just
-    // above and doubled: rearranging a desktop while the engine is
-    // arranging one is how two programs undo each other all evening.
+    // What a run that never got to finish left behind: the machine was
+    // switched off, or the service fell over, with a session in
+    // progress. Put back before anybody can come in, the desk first and
+    // the grown screen after it, which is the order everything here puts
+    // them back in.
     if !crate::screen::noted_before().is_empty() {
         log.write(
             "a desk was left the way a session left it by a run that did not finish, putting it \
              back",
         );
         put_the_desk_back(log);
-    }
-    if learned == crate::screen::Learned::StartAgain {
-        let _ = engine.stop();
-        return Ok(Life::VirtualScreenLearned);
-    }
-
-    let state = EngineRuntime {
-        ports,
-        credentials: credentials.clone(),
-    };
-    if let Err(e) = state.write(runtime_path) {
-        let _ = engine.stop();
-        return Err(format!("engine state not recorded: {e}"));
+    } else if !screen_asleep() {
+        log.write("a screen was left awake by a run that did not finish, putting it back");
+        put_the_grown_screen_away(log, &|| true);
     }
 
-    // Opened last: an engine that never answered has nothing to serve,
-    // and dropped first at the end, since a tunnel leading to a stopped
-    // engine only makes the other computer wait.
-    // What the engine is filming, from the screen it was aimed at. Held
-    // in one place and shared: the door moves it when a session asks for
-    // another screen, and the watch below reads it to know whether the
-    // engine is where it should be.
-    let filming: crate::gateway::Filming = Arc::new(std::sync::Mutex::new(aiming_at.clone()));
-    // And how the engine serves, from how it was started, held and shared
-    // the same way: the door moves the floor a still screen is served at
-    // where the engine stands, and the watch below reads it to know
-    // whether the engine serves the way it should.
-    let serving_now: crate::gateway::ServingNow = Arc::new(std::sync::Mutex::new(serving));
-    let at_hand = AtHand {
-        ports,
-        credentials,
-        films_the_grown_screen,
-        engine_log: engine_log.clone(),
-        filming: filming.clone(),
-        serving: serving_now.clone(),
-    };
     let wire = machine.remembered.wire();
-    let gateway = match Gateway::open(runtime, at_hand, (*machine).clone(), log) {
-        Ok(gateway) => gateway,
-        Err(e) => {
-            let _ = engine.stop();
-            let _ = EngineRuntime::remove(runtime_path);
-            return Err(format!("the tunnel could not be opened: {e}"));
-        }
-    };
+    let gateway = Gateway::open(runtime, launcher(session), (*machine).clone(), log)
+        .map_err(|e| format!("the tunnel could not be opened: {e}"))?;
     machine.hosting.open();
-    log.write("remote access active");
+    log.write(&format!(
+        "remote access active, each session's engine starting in session {session}"
+    ));
 
-    let life = {
-        let mut watched = Watched {
-            engine: &mut engine,
-            api: &api,
-            gateway: &gateway,
-            wire,
-            // From here and not from the top of the file: what the engine
-            // said about the screens at its own start is about the run
-            // before this one, and that one has already been answered for.
-            screens: crate::screen::Watching::from_here(&engine_log),
-            heard: false,
-            dealt_with: false,
-        };
-        wait_for_the_engine_to_stop(
-            &mut watched,
-            session,
-            serving_now,
-            Aimed {
-                grown: films_the_grown_screen,
-                at: filming,
-            },
-            &machine.remembered,
-            order,
-            log,
-        )
-    };
-    machine.hosting.held_by(Holdup::Starting);
-    drop(gateway);
-    let _ = EngineRuntime::remove(runtime_path);
-    Ok(life)
+    let closed = watch_the_door(&gateway, session, wire, machine, order, log);
+    machine.hosting.held_by(match closed {
+        Closed::FfmpegGone => Holdup::EngineMissing,
+        _ => Holdup::Starting,
+    });
+    gateway.close();
+    Ok(closed)
 }
 
-/// Which screen the engine is filming, starting with the one it was
-/// aimed at.
-///
-/// The two travel together because they are one answer: a computer with
-/// no screen of its own films the one it grows, and every other computer
-/// films a screen it has, named. Read again while it runs, and a
-/// difference is an engine that has to start over.
-///
-/// The name is shared with the door rather than copied: a session can
-/// ask the engine to change screen where it stands, and what it is
-/// filming then is what the door wrote there.
-#[derive(Clone)]
-struct Aimed {
-    /// Whether it films the screen this computer grew for itself.
-    grown: bool,
-    /// The screen it is filming, under the engine's own name for it.
-    at: crate::gateway::Filming,
-}
-
-/// One engine, and everything used to keep an eye on it while it lives.
-///
-/// Gathered so that watching it stays one function with a readable
-/// signature: the engine itself, the two things that can be asked of it,
-/// and what is remembered from one turn of the watch to the next.
-struct Watched<'a> {
-    engine: &'a mut HostEngine,
-    api: &'a EngineApi,
-    gateway: &'a Gateway,
-    /// What the door was opened on, kept to notice a switch moving under
-    /// it: the door reads the wire once, as it opens.
-    wire: crate::preferences::Wire,
-    screens: crate::screen::Watching,
-    /// Whether the engine has said it could not put the screens back.
-    ///
-    /// Remembered rather than acted on where it is read: the engine says
-    /// it once and never again, and the moment it says it is not always
-    /// the moment to answer.
-    heard: bool,
-    /// Whether it has been answered for during this engine's life.
-    /// Answered once and once only: both answers below are things that
-    /// must not be done twice in a row.
-    dealt_with: bool,
-}
-
-/// Waits for the engine to stop, and stops it when it no longer has a
-/// reason to run where it is.
-fn wait_for_the_engine_to_stop(
-    watched: &mut Watched<'_>,
+/// Holds the door open, and closes it the moment it no longer has a
+/// reason to stand where it is.
+fn watch_the_door(
+    gateway: &Gateway,
     session: u32,
-    serving: crate::gateway::ServingNow,
-    aimed: Aimed,
-    remembered: &Remembered,
+    wire: crate::preferences::Wire,
+    machine: &Machine,
     order: &StopOrder,
     log: &Log,
-) -> Life {
-    let mut last_look = Instant::now();
+) -> Closed {
+    let mut last_look_for_ffmpeg = Instant::now();
     // Apart from the one above: this one paces trying again after a
-    // refusal, and the two would otherwise reset each other and leave a
-    // refused screen unlooked at.
+    // refusal, and the two would otherwise reset each other.
     let mut last_sleep_try = Instant::now() - SCREEN_WATCH;
     loop {
         if order.stop_asked() {
-            log.write("stop asked for, the engine is being stopped");
-            stop_and_say_how(watched.engine, log);
-            return Life::Stopped(None);
+            log.write("stop asked for, the door closes");
+            return Closed::Asked;
         }
 
-        if !remembered.remote_access() {
-            log.write("remote access turned off, the engine is being stopped");
-            stop_and_say_how(watched.engine, log);
-            return Life::NoLongerWanted;
+        if !machine.remembered.remote_access() {
+            log.write("remote access turned off, the door closes");
+            return Closed::NoLongerWanted;
         }
 
         // The door was opened on the wire as it was then, and cannot be
-        // moved under a running session: it is reopened, engine and all,
-        // which is what a session opened towards this computer costs.
-        if remembered.wire() != watched.wire {
+        // moved under a running session: it is opened again, which is
+        // what a session opened towards this computer costs.
+        if machine.remembered.wire() != wire {
             log.write("how this computer speaks on the wire was changed, the door reopens with it");
-            stop_and_say_how(watched.engine, log);
-            return Life::WireChanged;
+            return Closed::WireChanged;
         }
 
-        // Weighed against how the engine serves **now** and not against
-        // how it was started: the door moves the floor a still screen is
-        // served at where the engine stands, and moves this with it, so
-        // the two agree and nothing starts over. What is left here is an
-        // engine that could not be asked, and the way the screen is
-        // captured, which nothing changes in a running engine.
-        let served = *serving.lock().expect("façon de servir");
-        if remembered.serving() != served {
-            log.write("how this computer serves was changed, the engine starts over with it");
-            stop_and_say_how(watched.engine, log);
-            return Life::ServingChanged;
-        }
-
-        // A session has asked to be served from another of this computer's
-        // screens, or to come back to its main one, and the door could not
-        // ask the engine to change screen where it stands. Starting it
-        // over is then the only way left, and the session that asked
-        // knows: it is told that this computer is starting over, and it
-        // waits and comes back rather than finding out from a way that
-        // broke under it.
-        //
-        // The ordinary change never reaches this: the door moves the
-        // engine and moves this with it, so the two agree and nothing
-        // starts over. What is left here is an engine that could not be
-        // asked, and a computer whose main screen has no name yet.
-        //
-        // Not held back until nobody is watching, unlike the case below.
-        // The session that asked has no picture yet, it is what is waiting
-        // on this, and holding the change until it closed would be holding
-        // it for ever.
-        let should_be = crate::screen::the_screen_to_film();
-        let filming = aimed.at.lock().expect("écran filmé").clone();
-        if !aimed.grown && should_be != filming {
-            log.write(&format!(
-                "a session asked this computer to be served from {}, and the engine was filming \
-                 {}, so it starts over",
-                should_be.as_deref().unwrap_or("its main screen"),
-                filming
-                    .as_deref()
-                    .unwrap_or("whichever screen it found first")
-            ));
-            stop_and_say_how(watched.engine, log);
-            return Life::ScreenToFilmChanged;
-        }
-
-        // A session has just found out that this computer's own screens
-        // draw nothing larger than themselves, which changes the screen it
-        // is filmed on. Read while nobody is watching and never during a
-        // session: starting the engine over takes the tunnel with it, and
-        // with the tunnel every session going through it.
-        //
-        // And never while a desk is still noted, which is the half that
-        // was missed. Putting a desk back is paced a couple of seconds
-        // slower than this, so the engine went first, and the desk came
-        // home through the path meant for a run that did not finish: it
-        // did come home, three seconds late and under a sentence that was
-        // not true. Somebody's screens come first, the engine can wait.
-        if !watched.gateway.a_session_is_open()
-            && !aimed.grown
-            && crate::screen::noted_before().is_empty()
-            && crate::screen::the_main_screen_is_stuck()
-        {
-            log.write(
-                "this computer's own screens draw nothing larger than themselves, so the engine \
-                 starts over to film the screen it grew instead",
-            );
-            stop_and_say_how(watched.engine, log);
-            return Life::ScreenToFilmChanged;
+        if last_look_for_ffmpeg.elapsed() >= ENGINE_WATCH {
+            last_look_for_ffmpeg = Instant::now();
+            let missing = missing_from(&paths::ffmpeg_dir());
+            if !missing.is_empty() {
+                log.write(&format!(
+                    "FFmpeg is no longer all there ({} missing), the door closes",
+                    missing.join(", ")
+                ));
+                return Closed::FfmpegGone;
+            }
         }
 
         // The speakers follow whoever is watching: silent while a session
@@ -1015,167 +611,36 @@ fn wait_for_the_engine_to_stop(
         // are, so a refusal costs one line and is tried again in a
         // moment.
         crate::speakers::keep_in_step(
-            watched.gateway.silence_was_asked_for(),
-            watched.gateway.a_session_is_open(),
+            gateway.silence_was_asked_for(),
+            gateway.a_session_is_open(),
             log,
         );
 
-        // And the virtual screen follows the same rule for the same
-        // reason. A session that ends properly says so and this never
-        // fires; this is the net under the ones that do not, which is
-        // every session whose computer was closed, unplugged or crashed,
-        // and without it such a session would leave a screen on this
-        // machine's desk until somebody noticed.
+        // And the desk follows the same rule for the same reason. A
+        // session that ends properly says so and this never fires; this
+        // is the net under the ones that do not, which is every session
+        // whose computer was closed, unplugged or crashed, and without it
+        // such a session would leave a screen on this machine's desk
+        // until somebody noticed.
         //
         // Tried again until it works, and that is the whole of the second
         // half. A refusal counted as done would leave somebody's screens
         // the way a stranger left them, with nothing ever looking at them
         // again, which is the one outcome this must never have.
-        if watched.gateway.the_desk_is_held_for_nobody() && last_sleep_try.elapsed() >= SCREEN_WATCH
-        {
+        if gateway.the_desk_is_held_for_nobody() && last_sleep_try.elapsed() >= SCREEN_WATCH {
             last_sleep_try = Instant::now();
             log.write(
                 "nobody is watching this computer any more, its desk goes back the way it was",
             );
             if put_the_desk_back(log) {
-                watched.gateway.the_desk_came_back();
-            }
-        }
-
-        // The exit code is asked for first: it is the only thing that
-        // tells a Windows shutdown from an incident, and a shutdown also
-        // takes the session on screen away.
-        match watched.engine.exit_seen() {
-            Ok(Some(code)) => return Life::Stopped(code),
-            Ok(None) => {}
-            Err(e) => {
-                log.write(&format!("cannot watch the engine: {e}"));
-                return Life::Stopped(None);
+                gateway.the_desk_came_back();
             }
         }
 
         if screen_session() != Some(session) {
-            stop_and_say_how(watched.engine, log);
-            return Life::SessionChanged;
-        }
-
-        if last_look.elapsed() >= SCREEN_WATCH {
-            last_look = Instant::now();
-            if put_the_screens_back(watched, log) {
-                return Life::ScreenNotPutBack;
-            }
+            return Closed::SessionChanged;
         }
         std::thread::sleep(WATCH_PERIOD);
-    }
-}
-
-/// Answers for the host's screens when the engine says it cannot.
-///
-/// The engine changes them for the length of a session and puts them back
-/// when it ends, which is the whole point of the arrangement: the far
-/// computer is shown a desktop really drawn at the size it asked for,
-/// rather than a small one blown up. Putting them back is the half that
-/// can fail, and this is what happens then.
-///
-/// The engine is started over. That is not a trick played on it: going
-/// and coming back are the two moments it puts the screens back of its
-/// own accord, once on its way out with nothing standing in the way, and
-/// then again on its way in for as long as it takes. Three more chances
-/// where there were none, and the endless trying that was taking turns
-/// with whatever else holds those screens stops the moment it goes.
-///
-/// If it says the same thing again with no session having been served in
-/// between, then starting it over has been tried and has not worked:
-/// something else on this computer holds the screens and means to keep
-/// them. The engine is told to stop trying, so that at least the
-/// monitors stop being switched about, and the journal says so plainly
-/// rather than leaving somebody to work out why their machine clicks.
-///
-/// Neither answer is ever given while somebody is being served, and what
-/// was heard before they arrived is forgotten rather than kept for later.
-/// Both answers would cut the session that person is in the middle of:
-/// one takes the engine away, the other makes it forget what it is meant
-/// to be getting back to. And neither would be right anyway, because a
-/// session in progress has moved those screens again and the engine will
-/// try to put them back when it ends. Whoever quits their session and
-/// reconnects straight away, which is the very thing a screen that came
-/// back wrong makes people do, is left alone for it.
-///
-/// What the engine writes is read at every turn all the same, session or
-/// no session. Skipping the reading would only pile the words up to be
-/// read as one when the session ended, which is the same mistake with a
-/// delay on it.
-///
-/// Answers whether the engine is to be started over.
-fn put_the_screens_back(watched: &mut Watched<'_>, log: &Log) -> bool {
-    if watched.dealt_with {
-        return false;
-    }
-    watched.heard |= watched.screens.gave_up_on_the_screens();
-    if watched.gateway.a_session_is_open() {
-        watched.heard = false;
-        return false;
-    }
-    if !watched.heard {
-        return false;
-    }
-    watched.dealt_with = true;
-
-    if watched.gateway.anyone_came_through() {
-        log.write(
-            "the engine could not put this computer's screens back the way it found them, so it \
-             is started over: it puts them back as it goes, and goes on trying as it comes back",
-        );
-        stop_and_say_how(watched.engine, log);
-        return true;
-    }
-
-    log.write(
-        "the engine still cannot put this computer's screens back, and it has just been started \
-         over for that: something else on this computer is holding them",
-    );
-    match watched.api.stop_trying_to_put_the_screens_back() {
-        Ok(()) => log.write(
-            "the engine is told to stop trying, so this computer stops switching its monitors \
-             about; the screens stay as they are until somebody sets them",
-        ),
-        Err(e) => log.write(&format!("the engine would not be told to stop trying: {e}")),
-    }
-    false
-}
-
-/// How the engine's life ended, in words rather than in a number.
-///
-/// A bare number was what the journal carried, and it hid the one thing
-/// worth seeing: `1073807364` reads as an incident to anybody, and it is
-/// not one. It is a computer taking its engine with it as it goes, which
-/// is the moment the host's screen is most likely to be left where a
-/// session put it.
-fn how_it_went(code: Option<i32>) -> String {
-    match code {
-        None => "interrupted".to_string(),
-        Some(restart::TAKEN_WITH_ITS_SESSION) => {
-            "taken away with the session it lived in, which is somebody signing out, somebody \
-             switching user, or this computer going down"
-                .to_string()
-        }
-        Some(restart::ENGINE_ASKED_TO_BE_LEFT) => "having asked to be left where it is".to_string(),
-        Some(code) => format!("code {code}"),
-    }
-}
-
-/// Stops the engine and writes down how it went.
-///
-/// Worth a line of its own every time. The engine puts the far
-/// computer's screen back the size and the magnification it found it at
-/// as it goes, and only as it goes: this line is what tells a screen
-/// that came back wrong because the engine was taken from one that came
-/// back wrong for some other reason.
-fn stop_and_say_how(engine: &mut HostEngine, log: &Log) {
-    match engine.stop() {
-        Ok(Some(parting)) => log.write(&parting.to_string()),
-        Ok(None) => {}
-        Err(e) => log.write(&format!("the engine could not be stopped: {e}")),
     }
 }
 
@@ -1230,12 +695,63 @@ mod tests {
     }
 
     #[test]
-    fn without_an_engine_the_service_waits_for_one_instead_of_stopping() {
-        // A computer without a host engine is still a client in its own
-        // right. A service that stopped there would cost it the tunnel,
-        // network discovery and its interface, for one half of the
-        // product it may have no use for.
-        if paths::host_engine_exe().is_file() {
+    fn ffmpeg_is_found_by_the_names_its_libraries_carry() {
+        // The names FFmpeg gives its libraries on each system; the
+        // version is the engine's to check.
+        assert!(is_the_library("avcodec-63.dll", "avcodec", true));
+        assert!(is_the_library("AVUTIL-61.DLL", "avutil", true));
+        assert!(is_the_library("libswresample.so.7", "swresample", false));
+        for (file, library, on_windows) in [
+            // The other system's name.
+            ("libavcodec.so.63", "avcodec", true),
+            ("avcodec-63.dll", "avcodec", false),
+            // Another library whose name starts the same way.
+            ("avcodec_extra-63.dll", "avcodec", true),
+            // What is not a library at all.
+            ("avcodec-.dll", "avcodec", true),
+            ("avcodec-63.dll.txt", "avcodec", true),
+            ("avcodec.lib", "avcodec", true),
+            ("libavcodec.so", "avcodec", false),
+        ] {
+            assert!(
+                !is_the_library(file, library, on_windows),
+                "{file} taken for {library}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_folder_says_which_of_ffmpeg_s_libraries_it_lacks() {
+        let folder = std::env::temp_dir().join(format!(
+            "zyrdeskd-ffmpeg-{}",
+            zyr_proto::random::alphanumeric_string(8)
+        ));
+        assert_eq!(missing_from(&folder), FFMPEG.to_vec());
+
+        std::fs::create_dir_all(&folder).unwrap();
+        let named = |library: &str, major: u32| {
+            if cfg!(windows) {
+                format!("{library}-{major}.dll")
+            } else {
+                format!("lib{library}.so.{major}")
+            }
+        };
+        std::fs::write(folder.join(named("avutil", 61)), b"").unwrap();
+        std::fs::write(folder.join(named("avcodec", 63)), b"").unwrap();
+        assert_eq!(missing_from(&folder), vec!["swresample"]);
+
+        std::fs::write(folder.join(named("swresample", 7)), b"").unwrap();
+        assert!(missing_from(&folder).is_empty());
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn without_ffmpeg_the_service_waits_for_it_instead_of_stopping() {
+        // A computer that cannot serve a picture is still a client in its
+        // own right. A service that stopped there would cost it the
+        // tunnel, network discovery and its interface, for one half of
+        // the product it may have no use for.
+        if missing_from(&paths::ffmpeg_dir()).is_empty() {
             return;
         }
         let folder = std::env::temp_dir().join(format!("zyrdeskd-{}-none", std::process::id()));

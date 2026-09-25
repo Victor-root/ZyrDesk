@@ -1012,7 +1012,6 @@ fn access_now(hosting: &Hosting, remembered: &Remembered) -> Access {
         None => Access::Ready,
         Some(Holdup::Starting) => Access::Starting,
         Some(Holdup::EngineMissing) => Access::EngineMissing,
-        Some(Holdup::EngineWontStand) => Access::EngineWontStand,
     }
 }
 

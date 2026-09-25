@@ -458,12 +458,6 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 }),
             }
         }
-        Request::Pair { way, pin } => {
-            match answering.machine.ways.hand_over_the_code(way, &pin).await {
-                Ok(()) => Answer::Done,
-                Err(reason) => Answer::Refused(reason),
-            }
-        }
         Request::SecureAttention { way } => {
             match answering
                 .machine
@@ -479,18 +473,6 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             Ok(()) => Answer::Done,
             Err(reason) => Answer::Refused(reason),
         },
-        Request::SteadyFar { way, rate } => {
-            match answering.machine.ways.ask_to_serve_steady(way, rate).await {
-                Ok(starting_over) => Answer::Settled { starting_over },
-                Err(reason) => Answer::Refused(reason),
-            }
-        }
-        Request::BitrateFar { way, kbps } => {
-            match answering.machine.ways.ask_to_serve_at(way, kbps).await {
-                Ok(()) => Answer::Done,
-                Err(reason) => Answer::Refused(reason),
-            }
-        }
         Request::FarScreen { way, wanted } => {
             match answering.machine.ways.ask_for_a_screen(way, wanted).await {
                 Ok(size) => Answer::Showing { size },
@@ -503,12 +485,6 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 Err(reason) => Answer::Refused(reason),
             }
         }
-        Request::FarCodecs { way } => {
-            match answering.machine.ways.ask_what_it_can_encode(way).await {
-                Ok(named) => Answer::Codecs(named),
-                Err(reason) => Answer::Refused(reason),
-            }
-        }
         Request::FarPointer { way } => {
             match answering
                 .machine
@@ -517,17 +493,6 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 .await
             {
                 Ok(shape) => Answer::Pointer(shape),
-                Err(reason) => Answer::Refused(reason),
-            }
-        }
-        Request::FarPointerDrawn { way, drawn } => {
-            match answering
-                .machine
-                .ways
-                .tell_it_to_draw_its_pointer(way, drawn)
-                .await
-            {
-                Ok(()) => Answer::Done,
                 Err(reason) => Answer::Refused(reason),
             }
         }
@@ -544,7 +509,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 .ask_to_film_this_screen(way, id)
                 .await
             {
-                Ok(starting_over) => Answer::Settled { starting_over },
+                Ok(()) => Answer::Done,
                 Err(reason) => Answer::Refused(reason),
             }
         }
@@ -574,10 +539,6 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 Err(reason) => Answer::Refused(reason),
             }
         }
-        // The engine reads both of these once, when it starts, so
-        // writing them down is only half the job: the supervisor sees
-        // them change and starts it again. Said in the answer, since a
-        // session in progress goes with it.
         Request::ServeLike { serving } => {
             match kept(answering.machine.remembered.set_serving(serving)) {
                 Ok(()) => {
@@ -876,13 +837,13 @@ mod tests {
             assert_eq!(standing.protocol, PROTOCOL);
             assert_eq!(standing.fingerprint, bench.fingerprint);
             assert_eq!(standing.ways, 0);
-            // No engine has answered here, so this computer is not
-            // reachable and must not claim otherwise.
+            // No door is open here, so this computer is not reachable
+            // and must not claim otherwise.
             assert!(!standing.hosting);
             assert_eq!(standing.holdup, Holdup::Starting);
 
-            // And the holdup travels: without it, a missing engine
-            // reads like an engine that is starting, forever.
+            // And the holdup travels: without it, an engine that cannot
+            // run reads like a door that is opening, forever.
             bench.hosting.held_by(Holdup::EngineMissing);
             let Ok(Answer::Standing(standing)) = caller.ask(&Request::Standing).await else {
                 panic!("attendu un état");
@@ -928,7 +889,7 @@ mod tests {
         runtime.block_on(async {
             let mut caller = bench.caller().await;
 
-            // What was asked for and what the engine has reached are two
+            // What was asked for and what the door has reached are two
             // different things: only the first moves here.
             let answer = caller
                 .ask(&Request::SetHosting { on: false })

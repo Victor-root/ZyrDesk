@@ -1,6 +1,6 @@
 //! This computer, as everything answering for it has to see it.
 //!
-//! The service holds five things that outlive any one engine: whether
+//! The service holds five things that outlive any one session: whether
 //! this computer can be reached, the ways out it has open, what its
 //! owner asked for, who it sees on the network, and the account it is
 //! attached to when it is. The desk answers the interface from them, the
@@ -40,12 +40,11 @@ use crate::ways::Ways;
 /// Whether this computer can be reached right now, and what is in the
 /// way when it is not.
 ///
-/// The supervisor opens it once the engine answers and the tunnel is
-/// standing, and holds it back whenever something stops that from
-/// happening. It is the one thing nothing else can work out on its own,
-/// and the reason matters as much as the fact: an engine that is missing
-/// and an engine that is starting look alike from a window, and only one
-/// of the two is worth waiting for.
+/// The supervisor opens it once the door is standing, and holds it back
+/// whenever something stops that from happening. It is the one thing
+/// nothing else can work out on its own, and the reason matters as much
+/// as the fact: an engine that cannot run and a door that is opening look
+/// alike from a window, and only one of the two is worth waiting for.
 #[derive(Clone)]
 pub struct Hosting(Arc<Mutex<Option<Holdup>>>);
 
@@ -80,8 +79,8 @@ impl Default for Hosting {
 /// The junction the door stands on, for as long as the door is open,
 /// and what the sessions coming through it ask to be served.
 ///
-/// Held here because the door comes and goes with the engine, and the
-/// account outlives both: when the server presents a computer, it is
+/// Held here because the door comes and goes, and the account outlives
+/// it: when the server presents a computer, it is
 /// the junction of the moment that has to expect it, and the branch of
 /// relay opened for that computer carries the same session as the
 /// tunnel, so it is sized on the same thing.
@@ -114,10 +113,10 @@ impl Door {
 
 /// What this computer holds, for as long as the service runs.
 ///
-/// None of it belongs to one engine: reaching another computer, being
+/// None of it belongs to one session: reaching another computer, being
 /// reachable, what its owner asked for, who is on the network and the
-/// account it is attached to all outlive any number of engines starting
-/// and stopping.
+/// account it is attached to all outlive any number of sessions and of
+/// doors opening and closing.
 #[derive(Clone)]
 pub struct Machine {
     pub hosting: Hosting,
@@ -223,8 +222,10 @@ impl Machine {
         match self.hosting.standing() {
             None => "activé, prêt à être contrôlé".to_string(),
             Some(Holdup::Starting) => "activé, démarrage en cours".to_string(),
-            Some(Holdup::EngineMissing) => "activé, mais le moteur hôte est absent".to_string(),
-            Some(Holdup::EngineWontStand) => "activé, mais le moteur hôte ne tient pas".to_string(),
+            Some(Holdup::EngineMissing) => {
+                "activé, mais FFmpeg manque dans vendor/ffmpeg : aucune image ne peut être faite"
+                    .to_string()
+            }
         }
     }
 
@@ -464,11 +465,11 @@ mod tests {
     fn what_stands_in_the_way_is_named_rather_than_left_to_be_guessed() {
         let (machine, _, folder) = machine("acces");
 
-        // A missing engine and an engine that is starting look too much
-        // alike for a journal to settle for "not ready".
+        // An engine that cannot run and a door that is opening look too
+        // much alike for a journal to settle for "not ready".
         assert!(machine.remote_access().contains("démarrage"));
         machine.hosting.held_by(Holdup::EngineMissing);
-        assert!(machine.remote_access().contains("absent"));
+        assert!(machine.remote_access().contains("FFmpeg"));
         machine.hosting.open();
         assert!(machine.remote_access().contains("prêt"));
 

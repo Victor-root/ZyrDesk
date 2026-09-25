@@ -1,12 +1,15 @@
 //! The ZyrDesk service.
 //!
-//! The same executable serves in two ways. Started by Windows with its
-//! reserved argument, it becomes the service. Started by hand, it serves
-//! to install, start, stop or remove it.
+//! The same executable serves in several ways. Started by Windows with
+//! its reserved argument, it becomes the service. Started by the service
+//! with another, it becomes the engine of one session, or runs one short
+//! errand in the session that owns the screen. Started by hand, it serves
+//! to install, start, stop or remove the service.
 
 mod account;
 mod clipboard;
 mod control;
+mod engine;
 mod gateway;
 mod incoming;
 mod known;
@@ -14,7 +17,6 @@ mod machine;
 mod outside;
 mod pointer;
 mod preferences;
-mod restart;
 mod said;
 mod screen;
 mod speakers;
@@ -75,16 +77,17 @@ fn main() -> ExitCode {
         };
     }
 
-    // And the service starts this program again, in the session the
-    // engine runs in, when the engine has to be asked to go: only a
-    // program in that session can reach the engine's console, and that
-    // console is the one way to ask. Nobody types this either.
+    // And the service starts this program again, in the session that owns
+    // the screen and with the system's own account, to be the engine of
+    // one session: it films, encodes and plays what the far computer
+    // types, over the link the service named. Nobody types this either.
     #[cfg(windows)]
-    if let Some(engine) = session::the_engine_to_let_go() {
-        return if session::let_the_engine_go(engine) {
-            ExitCode::SUCCESS
-        } else {
-            ExitCode::FAILURE
+    if let Some(link) = session::the_link_to_serve() {
+        return match zyr_proto::log::Log::open(&zyr_proto::paths::logs_dir().join("engine.log")) {
+            Ok(log) => zyr_host::serve(&link, log),
+            // Nothing to say it in: the console, which the service has
+            // pointed at a file of its own, is all that is left.
+            Err(e) => failure("le moteur n'a pas pu ouvrir son journal", e),
         };
     }
 

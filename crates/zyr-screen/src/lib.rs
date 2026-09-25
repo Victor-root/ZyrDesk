@@ -28,7 +28,6 @@
 
 pub mod arrangement;
 pub mod driver;
-pub mod engine;
 pub mod mtt;
 
 #[cfg(windows)]
@@ -46,7 +45,6 @@ use std::fmt;
 use std::path::Path;
 
 pub use driver::{Driver, Guid, Mode};
-pub use engine::Screen;
 
 /// Sizes the virtual screen always offers, whatever a session asks for.
 ///

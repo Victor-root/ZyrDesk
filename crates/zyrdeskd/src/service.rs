@@ -2,7 +2,7 @@
 //!
 //! Windows starts this program, talks to it through the service control
 //! manager, and expects an answer. Answering is compulsory: a service
-//! that takes too long to confirm a stop is killed, and its engine with
+//! that takes too long to confirm a stop is killed, and its engines with
 //! it, with nothing put away.
 //!
 //! Everything touching the service control manager lives here. The real
@@ -56,11 +56,12 @@ const STOP_STEP: Duration = Duration::from_millis(250);
 
 /// How long Windows is told a stop may take.
 ///
-/// It has to cover the whole of it: the engine is asked to go and given
-/// time to put the far computer's screen back before it is taken. A
-/// service that is still tidying up when this runs out is killed, and
-/// the engine with it, which is exactly the tidying up that matters.
-const STOPPING_TAKES: Duration = Duration::from_secs(45);
+/// It has to cover the whole of it: the door closes, and every session's
+/// engine is given its moment to let go of the keys it holds before it
+/// is taken, which is a few seconds at most. A service that is still
+/// tidying up when this runs out is killed, and its engines with it,
+/// which is exactly the tidying up that matters.
+const STOPPING_TAKES: Duration = Duration::from_secs(15);
 
 /// A service runs in exactly one copy, so what it shares with its
 /// handler is legitimately global.
@@ -148,12 +149,6 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     // existed, and nothing said so. Asked for here as well, where it does
     // nothing at all when the screen is already there.
     crate::screen::put_in_place(Some(log));
-    // Here and only here: no session can be running at the start of the
-    // service, so an arrangement of screens the engine still owes back is
-    // one a run that never finished left behind. The one kind it can
-    // never honour is dropped now, before the engine is started and tries
-    // it again.
-    crate::screen::forget_what_cannot_be_put_back(log);
     // And a fourth time, for the same reason again, which this one has
     // already cost: laid only where the service is registered, the
     // policy that lets Ctrl+Alt+Suppr be pressed never reached a computer
@@ -179,7 +174,7 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     // leaving without a word: the services console would otherwise show
     // it stopped for no reason.
     let exit = match end {
-        End::Asked | End::WindowsShutdown => ServiceExitCode::Win32(0),
+        End::Asked => ServiceExitCode::Win32(0),
         End::NoRuntime => ServiceExitCode::ServiceSpecific(1),
     };
     handle.set_service_status(announcement(ServiceState::Stopped, exit))?;
@@ -189,7 +184,6 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
 fn reason(end: End) -> &'static str {
     match end {
         End::Asked => "stop asked for",
-        End::WindowsShutdown => "Windows shutting down",
         End::NoRuntime => "nothing to run the service on",
     }
 }
@@ -424,23 +418,13 @@ const OPENINGS: [(&str, u16); 3] = [
     ("ZyrDesk (voisinage)", zyr_lan::CALLING_PORT),
 ];
 
-/// One rule keeping a program off the network: its name, and where that
-/// program sits.
-type ShutOut = (&'static str, fn() -> std::path::PathBuf);
-
-/// The engines, shut out of the network they never speak on.
+/// Rules an earlier version laid, which nothing needs any more.
 ///
-/// Not for safety, which they already have from being bound to the
-/// loopback: for a question nobody must ever be asked. A program that
-/// opens a socket makes Windows put up « autoriser cette application »,
-/// and the name in that box is the one the program carries in itself.
-/// A rule, whichever way it points, means no question at all; this one
-/// points at « non », which is exactly what an engine needs from the
-/// outside world.
-const SHUT_IN: [ShutOut; 2] = [
-    ("ZyrDesk (moteur hôte)", paths::host_engine_exe),
-    ("ZyrDesk (moteur client)", paths::client_engine_exe),
-];
+/// They kept the two engines this product used to carry off the network.
+/// The engine is now this very program, which opens no socket for it,
+/// and those programs are gone: rules naming them are removed wherever
+/// they are found.
+const LEFT_BEHIND: [&str; 2] = ["ZyrDesk (moteur hôte)", "ZyrDesk (moteur client)"];
 
 /// Lets the outside reach the service, through the Windows firewall.
 ///
@@ -467,19 +451,11 @@ fn lay_the_firewall(program: &std::path::Path, log: Option<&Log>) {
         let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
         told(log, rule, port, add_rule(rule, port, program));
     }
-    for (rule, engine) in SHUT_IN {
-        let engine = engine();
-        let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
-        let closed = shut_rule(rule, &engine);
-        if let Some(log) = log {
-            log.write(&match closed {
-                Ok(true) => format!("firewall keeps {rule} off the network, as it should be"),
-                Ok(false) => format!(
-                    "firewall rule {rule} refused: Windows may ask to allow it, under the name \
-                     the engine carries"
-                ),
-                Err(e) => format!("firewall untouched for {rule}: {e}"),
-            });
+    for rule in LEFT_BEHIND {
+        if let (Ok(true), Some(log)) = (netsh(&["delete", "rule", &format!("name={rule}")]), log) {
+            log.write(&format!(
+                "firewall rule {rule} left by an earlier version removed"
+            ));
         }
     }
 }
@@ -547,19 +523,6 @@ fn add_rule(rule: &str, port: u16, program: &std::path::Path) -> std::io::Result
         "protocol=UDP",
         &format!("localport={port}"),
         &format!("program={}", program.display()),
-        &format!("description={DESCRIPTION}"),
-    ])
-}
-
-/// Shuts one engine out of the network, whatever it tries to open.
-fn shut_rule(rule: &str, engine: &std::path::Path) -> std::io::Result<bool> {
-    netsh(&[
-        "add",
-        "rule",
-        &format!("name={rule}"),
-        "dir=in",
-        "action=block",
-        &format!("program={}", engine.display()),
         &format!("description={DESCRIPTION}"),
     ])
 }
@@ -653,7 +616,7 @@ pub fn uninstall() -> ServiceResult<()> {
     for (rule, _) in OPENINGS {
         let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
     }
-    for (rule, _) in SHUT_IN {
+    for rule in LEFT_BEHIND {
         let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
     }
 
@@ -664,7 +627,7 @@ pub fn uninstall() -> ServiceResult<()> {
 
     // After the service is gone and not before: the driver cannot leave
     // Windows' store while anything is still using its device, and the
-    // engine is what uses it.
+    // engines the service started are what use it.
     crate::screen::take_away(Log::open(&log_path()).ok().as_ref());
     Ok(())
 }

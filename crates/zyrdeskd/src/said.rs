@@ -1,11 +1,14 @@
 //! What a session says about itself, on both sides of it.
 //!
-//! A tunnel throws packets away in two places, and both are silent. A
-//! packet too large for the path, thrown away rather than cut in two;
-//! and the send queue overflowing, where the transport sacrifices the
-//! oldest. Neither ends the session, and that is exactly why they have
-//! to be said: a session that dies leaves a reason behind, a session
-//! that goes quiet leaves nothing at all.
+//! A tunnel throws packets away in four places, and all of them are
+//! silent. A packet too large for the path, thrown away rather than cut
+//! in two; the send queue overflowing, where the transport sacrifices the
+//! oldest; the queue towards the local link overflowing, where the tunnel
+//! does the same for an engine or a player that is not reading fast
+//! enough; and a word for the service that the service did not take in
+//! time. None ends the session, and that is exactly why they have to be
+//! said: a session that dies leaves a reason behind, a session that goes
+//! quiet leaves nothing at all.
 //!
 //! The length of the road is the other half, and it answers a question
 //! nothing else could: a session whose road doubles in length mid way is
@@ -53,6 +56,8 @@ const QUIET_READINGS: u32 = 3;
 pub struct Said {
     too_large: bool,
     crowded: bool,
+    crowded_here: bool,
+    service_dropped: bool,
     round_trip: Duration,
     /// What had arrived at the previous reading, and how many readings
     /// in a row have added nothing to it.
@@ -99,6 +104,24 @@ impl Said {
             ));
         }
 
+        if reading.crowded_here > 0 && !self.crowded_here {
+            self.crowded_here = true;
+            said.push(format!(
+                "{named}: what is at the other end of the local link is not reading as fast as \
+                 the tunnel brings pictures in, so the oldest are thrown away here, {} so far",
+                reading.crowded_here
+            ));
+        }
+
+        if reading.service_dropped > 0 && !self.service_dropped {
+            self.service_dropped = true;
+            said.push(format!(
+                "{named}: the service is not hearing what comes over the local link in time, {} \
+                 of its messages thrown away so far",
+                reading.service_dropped
+            ));
+        }
+
         // A session that has stopped arriving, which nothing else says.
         // The tunnel holds, the connection holds, the road is as short
         // as ever, and not one packet comes: from this end that is a
@@ -106,14 +129,16 @@ impl Said {
         // the shape every failure at the far end takes here. Counted
         // only once something has arrived: the first seconds of a
         // session are silent by construction and are not a fault.
-        if reading.to_engine > 0 {
-            if reading.to_engine == self.arrived {
+        // Pictures on the side watching, the player's words on the side
+        // being watched: whatever the far end sends reaches the link.
+        let arrived = reading.to_link + reading.control_to_link;
+        if arrived > 0 {
+            if arrived == self.arrived {
                 self.quiet += 1;
                 if self.quiet == QUIET_READINGS {
                     said.push(format!(
                         "{named}: nothing has come from the far computer for several seconds, \
-                         though the way is open and {} packets came before that",
-                        reading.to_engine
+                         though the way is open and {arrived} packets came before that"
                     ));
                 }
             } else {
@@ -121,7 +146,7 @@ impl Said {
                     said.push(format!("{named}: the far computer is sending again"));
                 }
                 self.quiet = 0;
-                self.arrived = reading.to_engine;
+                self.arrived = arrived;
             }
         }
 
@@ -148,17 +173,22 @@ impl Said {
 pub fn carried(reading: &Reading, path: &Carrying) -> String {
     format!(
         "{} packets into the tunnel, {} of them onto the wire, {} thrown away for want of room, \
-         {} too large; {} handed to the engine, {} with nobody to take them, {} unreadable, {} \
-         refused by the system; {} bytes of room in a packet, {} narrowings, {} lost on the path, \
+         {} too large; {} onto the local link, {} thrown away there, {} with nobody to take them, \
+         {} unreadable; {} pieces of the control stream out and {} in; {} streams refused, {} \
+         service messages lost; {} bytes of room in a packet, {} narrowings, {} lost on the path, \
          {} bytes out unanswered at once, round trip {} ms",
         reading.to_tunnel,
         path.sent,
         reading.crowded,
         reading.too_large,
-        reading.to_engine,
+        reading.to_link,
+        reading.crowded_here,
         reading.no_recipient,
         reading.unreadable,
+        reading.control_to_tunnel,
+        reading.control_to_link,
         reading.refused,
+        reading.service_dropped,
         path.usable_datagram,
         path.narrowings,
         path.lost,
@@ -199,9 +229,9 @@ mod tests {
         }
     }
 
-    fn arriving(to_engine: u64) -> Reading {
+    fn arriving(to_link: u64) -> Reading {
         Reading {
-            to_engine,
+            to_link,
             ..Reading::default()
         }
     }
@@ -264,6 +294,34 @@ mod tests {
         let lines = said.what_changed("way 1", &reading(900, 3), &path(ms(4)));
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("no longer carries"), "{}", lines[0]);
+
+        // And so are the two this side makes itself, once each.
+        let here = Reading {
+            crowded: 900,
+            too_large: 3,
+            crowded_here: 12,
+            service_dropped: 1,
+            ..Reading::default()
+        };
+        let lines = said.what_changed("way 1", &here, &path(ms(4)));
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(lines[0].contains("12 so far"), "{}", lines[0]);
+        assert!(lines[1].contains("1 of its messages"), "{}", lines[1]);
+        assert!(said.what_changed("way 1", &here, &path(ms(4))).is_empty());
+    }
+
+    #[test]
+    fn the_player_s_words_count_as_the_far_computer_speaking() {
+        // On the computer being watched, nothing but the player's words
+        // come from the far end: a session whose player pings every half
+        // second is not a silent one.
+        let ms = Duration::from_millis;
+        let mut said = Said::from(ms(4));
+        let mut words = Reading::default();
+        for heard in 1..6 {
+            words.control_to_link = heard;
+            assert!(said.what_changed("way 1", &words, &path(ms(4))).is_empty());
+        }
     }
 
     #[test]

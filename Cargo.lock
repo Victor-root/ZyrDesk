@@ -3203,7 +3203,6 @@ dependencies = [
 name = "zyr-screen"
 version = "0.1.0"
 dependencies = [
- "serde_json",
  "windows-sys 0.61.2",
 ]
 
@@ -3313,8 +3312,9 @@ dependencies = [
  "zyr-broker",
  "zyr-clipboard",
  "zyr-control",
- "zyr-engine-host",
+ "zyr-host",
  "zyr-lan",
+ "zyr-media",
  "zyr-proto",
  "zyr-screen",
  "zyr-server",

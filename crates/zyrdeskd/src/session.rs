@@ -6,11 +6,12 @@
 //! It has to go into the session attached to the physical screen, the
 //! one where the sign-in prompt appears.
 //!
-//! The token used is the service's own, the system account's, simply
-//! attached to that session. Borrowing the logged-in user's token would
-//! feel more natural but would forbid capturing the secure desktop:
-//! elevation prompts and the sign-in screen would stay black, which is
-//! exactly what this milestone has to make visible.
+//! The engine is this very program, started again with a reserved
+//! argument naming the link it is to serve a session on. The token used
+//! is the service's own, the system account's, simply attached to that
+//! session. Borrowing the logged-in user's token would feel more natural
+//! but would forbid capturing the secure desktop: elevation prompts and
+//! the sign-in screen would stay black.
 //!
 //! The process we start is locked inside a job object set to kill it
 //! along with its parent. Without that, a service stopping abruptly
@@ -36,9 +37,6 @@ use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_APPEND_DATA, FILE_ATTRIBUTE_NORMAL, FILE_CREATION_DISPOSITION,
     FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_ALWAYS, OPEN_EXISTING,
 };
-use windows_sys::Win32::System::Console::{
-    AttachConsole, CTRL_C_EVENT, FreeConsole, GenerateConsoleCtrlEvent, SetConsoleCtrlHandler,
-};
 use windows_sys::Win32::System::Environment::{CreateEnvironmentBlock, DestroyEnvironmentBlock};
 use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
@@ -51,8 +49,10 @@ use windows_sys::Win32::System::Threading::{
     GetCurrentProcess, GetExitCodeProcess, OpenProcessToken, PROCESS_INFORMATION,
     STARTF_USESTDHANDLES, STARTUPINFOW, TerminateProcess, WaitForSingleObject,
 };
-use zyr_engine_host::{Launch, Launcher, Parting, Running};
+use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
+
+use crate::gateway::{Launched, Launcher};
 
 /// Value Windows returns when no session is attached to the screen.
 const NO_SESSION: u32 = 0xFFFF_FFFF;
@@ -66,13 +66,17 @@ const DESKTOP: &str = "winsta0\\default";
 /// Device that swallows what is written to it, and gives nothing back.
 const NOTHING: &str = "NUL";
 
-/// Reserved argument that turns this program into the hand tapping the
-/// engine on the shoulder; see `let_the_engine_go`.
+/// Reserved argument that turns this program into the engine of one
+/// session, followed by the name of the link it serves it on.
 ///
 /// An argument and not a command, like the one Windows starts the
 /// service with: nobody types it, and it names a moment rather than
 /// something a person can ask for.
-pub const LET_GO_ARGUMENT: &str = "--let-the-engine-go";
+pub const SERVE_ARGUMENT: &str = "--serve-a-session";
+
+/// Where the engine's own console output goes, which is what it says
+/// before its journal is open, and what a crash leaves behind.
+const ENGINE_CONSOLE: &str = "engine-console.log";
 
 /// The same for the speakers of this computer; see
 /// `move_the_speakers`.
@@ -163,26 +167,10 @@ pub const CLIPBOARD_ARGUMENT: &str = "--carry-the-clipboard";
 /// and an errand that lost its argument on the way must not look alike.
 const NOTHING_WANTED: &str = "none";
 
-/// Time left to the ask itself: starting a program in another session,
-/// attaching to a console and sending one interruption down it.
-///
-/// Nothing here waits for the engine; that is the wait below. This one
-/// only covers the messenger, and a messenger that has not come back in
-/// this long is not going to.
+/// Time left to an errand: starting a program in another session, doing
+/// the one thing it went for and coming back. An errand that has not
+/// come back in this long is not going to.
 const ASKING: Duration = Duration::from_secs(5);
-
-/// Time left to the engine to put the screen back and go of its own
-/// accord, once it has been asked.
-///
-/// It is what the engine's own service leaves it, and the engine gives
-/// itself ten seconds before calling its shutdown stuck: past this, it is
-/// not coming.
-const GOING: Duration = Duration::from_secs(20);
-
-/// Time left to the engine to disappear once it has been taken. Beyond
-/// it, the job object takes over, Windows killing a service that drags
-/// out a stop.
-const STOP_DELAY: Duration = Duration::from_secs(10);
 
 /// Identifier of the session attached to the physical screen.
 ///
@@ -194,22 +182,55 @@ pub fn session_on_screen() -> Option<u32> {
     (session != NO_SESSION).then_some(session)
 }
 
-/// Starts the engine in the session attached to the screen.
+/// Starts the engine of each incoming session in the session attached
+/// to the screen.
 #[derive(Debug, Clone, Copy)]
-pub struct SessionLauncher {
+pub struct ServingInSession {
     session: u32,
 }
 
-impl SessionLauncher {
+impl ServingInSession {
     pub fn new(session: u32) -> Self {
         Self { session }
     }
 }
 
-impl Launcher for SessionLauncher {
-    fn launch(&self, launch: &Launch) -> io::Result<Box<dyn Running>> {
-        Ok(Box::new(start_in_session(launch, self.session)?))
+impl Launcher for ServingInSession {
+    fn launch(&self, link: &str) -> io::Result<Box<dyn Launched>> {
+        let ourselves = std::env::current_exe()?;
+        let arguments = [SERVE_ARGUMENT.to_string(), link.to_string()];
+        let console = paths::logs_dir().join(ENGINE_CONSOLE);
+        let launch = Launch {
+            exe: &ourselves,
+            arguments: &arguments,
+            working_dir: ourselves.parent(),
+            log: &console,
+        };
+        Ok(Box::new(start_in_session(&launch, self.session)?))
     }
+}
+
+/// The link this program was started to serve a session on, if that is
+/// what it was started for.
+pub fn the_link_to_serve() -> Option<String> {
+    the_link_named_in(std::env::args())
+}
+
+/// The same, over any list of arguments, so it can be read without
+/// starting a program to hold them.
+fn the_link_named_in(arguments: impl Iterator<Item = String>) -> Option<String> {
+    let mut after = arguments.skip_while(|a| a != SERVE_ARGUMENT);
+    after.next()?;
+    after.next().filter(|link| !link.is_empty())
+}
+
+/// A program to start in another session.
+struct Launch<'a> {
+    exe: &'a Path,
+    arguments: &'a [String],
+    working_dir: Option<&'a Path>,
+    /// Where what it writes on its console goes.
+    log: &'a Path,
 }
 
 /// Handle closed for certain, whatever happens next.
@@ -244,18 +265,12 @@ impl Drop for Environment {
 /// Process started in the session, and the job object holding it.
 ///
 /// Dropping it closes the job object, which kills the process: that is
-/// the guarantee no engine outlives its supervisor.
+/// the guarantee no engine outlives the service that started it.
 #[derive(Debug)]
 pub struct SessionProcess {
     _job: Handle,
     process: Handle,
     identifier: u32,
-    /// Session it was started in, which is where its console lives.
-    ///
-    /// Remembered rather than asked for again when it is stopped: one of
-    /// the reasons for stopping it is that the screen has moved to
-    /// another session, and the console did not move with it.
-    session: u32,
 }
 
 // Safe: a Windows handle belongs to the process, not to the thread that
@@ -263,58 +278,33 @@ pub struct SessionProcess {
 // makes the same promise for the children it starts.
 unsafe impl Send for SessionProcess {}
 
-impl Running for SessionProcess {
-    fn identifier(&self) -> u32 {
+impl Launched for SessionProcess {
+    fn process(&self) -> u32 {
         self.identifier
     }
 
-    fn exit_seen(&mut self) -> io::Result<Option<Option<i32>>> {
-        // Asking the handle rather than the exit code: a process is
-        // free to return the very value that means "still running".
-        // Safe: the handle stays valid for as long as this structure.
-        let waited = unsafe { WaitForSingleObject(self.process.0, 0) };
+    fn let_go(self: Box<Self>, within: Duration) -> io::Result<Option<u32>> {
+        // Safe: the handle stays valid for as long as this structure, and
+        // the wait is bounded.
+        let waited = unsafe {
+            WaitForSingleObject(
+                self.process.0,
+                within.as_millis().min(u128::from(u32::MAX - 1)) as u32,
+            )
+        };
         if waited == WAIT_TIMEOUT {
+            // Dropped on the way out, which closes the job and takes it.
             return Ok(None);
         }
         if waited != WAIT_OBJECT_0 {
             return Err(io::Error::last_os_error());
         }
-
         let mut code: u32 = 0;
         // Safe: the handle is valid and the code is written into a local.
         if unsafe { GetExitCodeProcess(self.process.0, &mut code) } == 0 {
             return Err(io::Error::last_os_error());
         }
-        Ok(Some(Some(code as i32)))
-    }
-
-    fn stop(&mut self) -> io::Result<Parting> {
-        // Asked before it is taken. The engine puts the far computer's
-        // screen back the size and the magnification it found it at as
-        // it goes, and only as it goes: taken outright it never runs
-        // that, and the screen stays at the size of whoever was watching
-        // it. That is what a computer shut down from inside a session
-        // came back to.
-        if asked_to_go(self.session, self.identifier).is_ok() {
-            // Safe: the handle stays valid for as long as this structure.
-            let waited = unsafe { WaitForSingleObject(self.process.0, GOING.as_millis() as u32) };
-            if waited == WAIT_OBJECT_0 {
-                return Ok(Parting::OfItsOwnAccord);
-            }
-        }
-        // A process already gone refuses to be terminated, which is not
-        // a problem: what counts is that it is no longer there when we
-        // hand back.
-        // Safe: the handle stays valid for as long as this structure.
-        unsafe { TerminateProcess(self.process.0, 1) };
-        let waited = unsafe { WaitForSingleObject(self.process.0, STOP_DELAY.as_millis() as u32) };
-        if waited == WAIT_OBJECT_0 {
-            return Ok(Parting::Taken);
-        }
-        Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            format!("the engine did not stop within {} s", STOP_DELAY.as_secs()),
-        ))
+        Ok(Some(code))
     }
 }
 
@@ -325,7 +315,7 @@ fn start_in_session(launch: &Launch, session: u32) -> io::Result<SessionProcess>
     let job = job_object()?;
 
     let nothing = inheritable_file(OsStr::new(NOTHING), GENERIC_READ, OPEN_EXISTING)?;
-    keep_what_the_engine_said(&launch.log);
+    keep_what_the_engine_said(launch.log);
     // Append access and not plain write: every line the engine writes
     // then lands at the end of the file as it stands, wherever its own
     // cursor was. With plain write, emptying the journal from the window
@@ -340,12 +330,9 @@ fn start_in_session(launch: &Launch, session: u32) -> io::Result<SessionProcess>
     // exactly when somebody comes looking for it.
     let log = inheritable_file(launch.log.as_os_str(), FILE_APPEND_DATA, OPEN_ALWAYS)?;
 
-    let mut line = command_line(&launch.exe, &launch.arguments);
+    let mut line = command_line(launch.exe, launch.arguments);
     let mut desktop: Vec<u16> = wide(DESKTOP);
-    let folder: Option<Vec<u16>> = launch
-        .working_dir
-        .as_deref()
-        .map(|path| wide(path.as_os_str()));
+    let folder: Option<Vec<u16>> = launch.working_dir.map(|path| wide(path.as_os_str()));
 
     let mut startup: STARTUPINFOW = unsafe { std::mem::zeroed() };
     startup.cb = size_of::<STARTUPINFOW>() as u32;
@@ -397,28 +384,7 @@ fn start_in_session(launch: &Launch, session: u32) -> io::Result<SessionProcess>
         _job: job,
         process,
         identifier: started.dwProcessId,
-        session,
     })
-}
-
-/// Asks the engine to go, from where it can be asked.
-///
-/// Not from here. The way to ask a program to end itself on Windows is
-/// the interruption a console carries, and a console belongs to the
-/// session it was opened in: a service lives in a session of its own and
-/// cannot reach into another one. So the ask is made by this same
-/// program, started for that one purpose in the session the engine is in,
-/// which is exactly how the engine's own service does it.
-///
-/// Detached from any console of its own, since attaching to somebody
-/// else's is only possible for a program that has none.
-fn asked_to_go(session: u32, engine: u32) -> io::Result<()> {
-    errand(
-        session,
-        &[LET_GO_ARGUMENT.to_string(), engine.to_string()],
-        "the engine's console would not take the interruption",
-    )
-    .map(|_| ())
 }
 
 /// Moves this computer's speakers, and says whether they really moved.
@@ -894,15 +860,13 @@ fn desktop_with_the_input() -> Option<String> {
 /// Runs this program in another Windows session, for one short errand.
 ///
 /// The service cannot reach into the session that owns the screen, and
-/// two things it has to do live there: asking the engine to go, and
-/// moving the speakers the person in front of that session hears. Both
-/// are the same shape, so they are the same code: this program started
-/// again with a reserved argument, as itself, on the interactive
-/// desktop, with the answer read back from its exit code.
+/// several things it has to do live there: moving the speakers the
+/// person in front of that session hears, locking the screen, holding
+/// the desk. They are the same shape, so they are the same code: this
+/// program started again with a reserved argument, as itself, on the
+/// interactive desktop, with the answer read back from its exit code.
 ///
-/// Detached from any console of its own, since one of the errands is
-/// attaching to somebody else's, which is only possible for a program
-/// that has none.
+/// Detached, with no console of its own: nobody is there to read one.
 fn errand(session: u32, arguments: &[String], refused: &str) -> io::Result<Errand> {
     match errand_code(session, arguments, refused)? {
         (0, took) => Ok(took),
@@ -971,45 +935,6 @@ fn errand_code(session: u32, arguments: &[String], refused: &str) -> io::Result<
             answered: running_at.elapsed(),
         },
     ))
-}
-
-/// Taps the engine on the shoulder, from inside its own session.
-///
-/// This is the whole of what this program does when it is started with
-/// `LET_GO_ARGUMENT`: it attaches to the engine's console and sends the
-/// interruption down it, which the engine answers by putting the screen
-/// back and stopping. It then hands back straight away; whether the
-/// engine really went is watched by the service, which holds it.
-///
-/// Its own handling of that interruption is switched off first, or the
-/// ask would take this program down before it has been made.
-pub fn let_the_engine_go(engine: u32) -> bool {
-    // Safe: three calls with no buffer of ours, each answering with
-    // nought when it refuses. Letting go of a console we do not have is
-    // one of the refusals, and it is the ordinary case: a program
-    // started detached has none.
-    unsafe {
-        FreeConsole();
-        if AttachConsole(engine) == 0 {
-            return false;
-        }
-        SetConsoleCtrlHandler(None, 1);
-        GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0) != 0
-    }
-}
-
-/// The engine this program was started to tap on the shoulder, if that
-/// is what it was started for.
-pub fn the_engine_to_let_go() -> Option<u32> {
-    the_engine_named_in(std::env::args())
-}
-
-/// The same, over any list of arguments, so it can be tried without
-/// starting a program to hold them.
-fn the_engine_named_in(arguments: impl Iterator<Item = String>) -> Option<u32> {
-    let mut after = arguments.skip_while(|a| a != LET_GO_ARGUMENT);
-    after.next()?;
-    after.next()?.parse().ok()
 }
 
 /// The token of whoever is signed in at that session.
@@ -1241,18 +1166,20 @@ mod tests {
     }
 
     #[test]
-    fn the_engine_to_tap_on_the_shoulder_is_read_from_the_arguments() {
-        let said =
-            |arguments: &[&str]| the_engine_named_in(arguments.iter().map(|a| a.to_string()));
-        assert_eq!(said(&["zyrdeskd.exe", LET_GO_ARGUMENT, "1234"]), Some(1234));
-        // Started for anything else, this program has no engine to tap:
+    fn the_link_to_serve_is_read_from_the_arguments() {
+        let said = |arguments: &[&str]| the_link_named_in(arguments.iter().map(|a| a.to_string()));
+        let link = r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1";
+        assert_eq!(
+            said(&["zyrdeskd.exe", SERVE_ARGUMENT, link]),
+            Some(link.to_string())
+        );
+        // Started for anything else, this program serves no session:
         // the ordinary commands must go on reaching clap untouched.
         assert_eq!(said(&["zyrdeskd.exe", "status"]), None);
         assert_eq!(said(&["zyrdeskd.exe"]), None);
-        // And a number that is not one names nobody, which is safer than
-        // naming whatever happens to hold that place.
-        assert_eq!(said(&["zyrdeskd.exe", LET_GO_ARGUMENT]), None);
-        assert_eq!(said(&["zyrdeskd.exe", LET_GO_ARGUMENT, "plus tard"]), None);
+        // And a link that is not named is no link at all.
+        assert_eq!(said(&["zyrdeskd.exe", SERVE_ARGUMENT]), None);
+        assert_eq!(said(&["zyrdeskd.exe", SERVE_ARGUMENT, ""]), None);
     }
 
     #[test]

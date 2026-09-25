@@ -13,4 +13,4 @@ pub use aside::{Answers, Opening, Question, Told};
 pub use channel::{DatagramChannel, StreamChannel};
 pub use pump::{Counters, Reading, nudge};
 pub use service::{ServiceEnd, ServiceSide, service_channel};
-pub use tunnel::Tunnel;
+pub use tunnel::{Presence, Tunnel};
