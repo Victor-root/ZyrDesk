@@ -217,6 +217,17 @@ Les journaux des **deux PC**, pris **juste après** l'essai raté, sans rien red
 - sur le **PC hôte** : `engine gateway`. Les lignes `engine` sont celles du moteur lui-même : quels encodeurs il a trouvés, quel écran il filme, chaque flux qu'il ouvre. Les lignes `gateway` disent quand le service l'a lancé, et comment il s'est arrêté ;
 - sur le **PC client** : `player picture session`. Les lignes `player` et `picture` sont celles du lecteur : le décodage de chaque flux (`decoding stream …`), et ce qui a été perdu ou refusé.
 
+**Si l'image n'est pas fluide** (la fiche dit 60 images par seconde, mais une fenêtre qu'on déplace avance par à-coups), ce sont les lignes écrites chaque seconde qui comptent ([MOTEUR.md](../MOTEUR.md), section 9) :
+
+1. sur les deux PC, dans le journal, **Vider** puis **Confirmer** ;
+2. ouvrir la session, puis déplacer une fenêtre en rond sur l'hôte pendant 30 secondes, sans s'arrêter ;
+3. terminer la session ;
+4. dans la boîte de tri, taper les noms, puis **Copier le tri** :
+   - sur le **PC hôte** : `pace engine tunnel`. Les lignes `pace` disent, image par image, quand chacune est partie du moteur et ce qu'elle y a attendu ; les lignes `tunnel` ce qui a traversé le service, et ce que la connexion mesure du chemin ;
+   - sur le **PC client** : `flow measures tunnel`. Les lignes `flow` disent quand chaque image est arrivée, son décodage, et ce que l'écran en a vraiment montré ; les lignes `tunnel` la même chose que sur l'hôte, dans l'autre sens.
+
+Dire aussi comment chaque PC était relié à Internet (câble, Wi-Fi, fibre, 4G) et la fréquence de l'écran du client (60 Hz, 144 Hz…).
+
 Dire aussi, en une phrase, ce qui était branché où : quel PC était le client, câble ou Wi-Fi, quelle carte graphique de chaque côté.
 
 ## Ce qui n'est pas encore sûr

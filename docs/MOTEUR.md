@@ -76,6 +76,14 @@ Tout se change pendant la session, sans bouton « Appliquer » ([D117](DECISIONS
 
 Le lecteur tient ses mesures cinq fois par seconde, indépendamment du décodage, pour qu'elles continuent de parler quand l'image se fige : images par seconde, temps de décodage et d'affichage, temps de l'hôte, aller-retour du réseau, débit, images perdues ou remplacées, temps depuis la dernière image, et deux mesures nouvelles : la latence de bout en bout, de la capture à l'affichage, et l'intervalle entre deux images affichées (le seuil G-frame de [perf/GATES.md](../perf/GATES.md)). La fiche « Statistiques », le menu et les voyants les lisent directement, sans fichier. L'intervalle entre images n'y est pas encore affiché.
 
+Ces moyennes cachent justement ce qui fait une image saccadée : une image un peu en retard et la suivante un peu en avance tombent sur le même rafraîchissement de l'écran, la première n'est jamais vue, et l'écran montre deux fois celle d'avant, sans que le compte de 60 par seconde bouge. Le journal reçoit donc aussi chaque seconde en entier, image par image, sous trois étiquettes qui suivent les mêmes images d'un bout à l'autre, numérotées comme l'hôte les numérote ([D227](DECISIONS.md)) :
+
+| Étiquette | Où | Ce qu'elle dit, chaque seconde |
+|---|---|---|
+| `pace` | Moteur hôte | L'écart entre deux images envoyées, le temps passé chez l'hôte (attente, dessin, encodage, remise au tube), la taille, ce que l'écran a donné et quand, le retard pris sur la cadence, ce qui a été jeté ; et en fin de session, le temps passé dans le tube |
+| `tunnel` | Chaque service | Ce qui est entré dans le tunnel ou en est sorti, ce qui a attendu dans le service, et ce que la connexion mesure du chemin : aller-retour, paquets envoyés et reçus, pertes |
+| `flow` | Lecteur | Quand chaque image est arrivée entière, combien de temps après sa capture, l'écart entre son premier et son dernier paquet, son décodage, sa présentation, et ce que l'écran en a vraiment montré, rafraîchissement par rafraîchissement, d'après Windows |
+
 ## 10. Sécurité
 
 Tout ce qui sort de la machine est dans le tunnel, chiffré une fois, entre deux empreintes épinglées. Le moteur hôte tourne avec le compte système dans la session de l'écran, parce que c'est la seule façon de voir et de piloter l'écran de connexion et les invites d'administration ; c'est pourquoi son tube n'accepte que le compte système. Le moteur n'écrit jamais une touche dans le journal.

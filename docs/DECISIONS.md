@@ -3578,6 +3578,18 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **La correction.** Le fichier de réglages de l'écran virtuel demande désormais au pilote de porter le curseur. Le curseur reste hors de l'image, et la capture le reçoit à part, comme pour un vrai écran. Le réglage est lu à chaque réveil de l'écran, donc dès la prochaine session. Un essai garde la ligne dans le fichier ([ECRAN-VIRTUEL.md](ECRAN-VIRTUEL.md), section « Le curseur »).
 
+## D227. La fluidité se mesure image par image, à chaque étape du trajet (2026-09-25, pendant MZ)
+
+**Ce qui se voit.** À travers Internet, la fiche dit bien 60 images par seconde, mais une fenêtre qu'on déplace avance par à-coups. Avant la migration, dans les mêmes conditions, c'était nettement plus fluide.
+
+**Pourquoi rien ne le montrait.** Toutes les mesures faisaient des moyennes sur une seconde. Or soixante images par seconde peuvent bouger de travers : une image un peu en retard et la suivante un peu en avance tombent sur le même rafraîchissement de l'écran, la première n'est jamais vue, et le rafraîchissement d'avant a montré deux fois la même. La moyenne, elle, reste à 60.
+
+**Ce qui est ajouté.** Chaque seconde s'écrit en entier au journal, image par image, à chaque étape du trajet, sous trois étiquettes ([MOTEUR.md](MOTEUR.md), section 9) : `pace` sur le moteur hôte, `tunnel` sur chaque service, `flow` sur le lecteur. Les images y portent le numéro que l'hôte leur donne, pour que les journaux des deux ordinateurs se lisent côte à côte. Le lecteur y ajoute ce que Windows dit de l'écran lui-même, rafraîchissement par rafraîchissement : les images vues, celles jamais vues, les rafraîchissements qui ont remontré l'image d'avant, et le temps jusqu'à l'écran. Une à trois lignes par seconde et par étiquette, seulement pendant qu'une image passe, écrites toujours comme toute la chasse depuis [D191](#d191-la-chasse-se-décide-au-démarrage-pas-à-la-compilation-2026-09-12-pendant-m6). Ce qu'il faut envoyer est dans [MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.md).
+
+**Une piste déjà, que les chiffres doivent confirmer.** L'ancien lecteur, Moonlight, était toujours lancé avec sa cadence des images (`--frame-pacing`) : il posait les images au rythme des rafraîchissements de l'écran, une par rafraîchissement, en gardant au besoin une ou deux images en réserve. Les irrégularités du réseau étaient ainsi absorbées, au prix d'un peu d'attente. Le nouveau lecteur pose chaque image dès qu'elle est décodée, sans se caler sur l'écran. Sur le réseau local, où les images arrivent à intervalles réguliers, ça ne se voit pas ; à travers Internet, chaque irrégularité du chemin passe telle quelle à l'écran. Si les journaux montrent un hôte qui envoie régulièrement et un écran qui remontre l'image d'avant, la correction est là.
+
+**Deux choses de plus à lire dans les mêmes lignes.** Chaque image part d'un seul coup, tous ses paquets à la suite : sur une connexion montante étroite, une rafale peut déborder la file d'attente d'une box, ce qui se lirait en pertes et en écart entre le premier et le dernier paquet d'une image. Et le moteur hôte écrit chaque paquet séparément dans le tube qui le relie au service, ce que la ligne du tube dira en temps d'écriture.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
