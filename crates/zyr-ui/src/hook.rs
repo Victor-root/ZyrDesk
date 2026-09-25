@@ -1,31 +1,37 @@
 //! A hook of the system, on a thread that does nothing else.
 //!
 //! Windows calls a hook back on the thread that installed it, and only
-//! while that thread is reading its messages. Two are held here for the
-//! length of a session, and neither may be answered late: the one on the
-//! keyboard has every keystroke of the whole computer waiting behind it,
-//! and a call that takes more than a third of a second has the keystroke
-//! handed on as though there had been no hook at all. So each of them
-//! gets a thread that reads its messages and does nothing else, and this
-//! is that thread.
+//! while that thread is reading its messages. The one held here, on the
+//! keyboard, may not be answered late: it has every keystroke of the
+//! whole computer waiting behind it, and a call that takes more than a
+//! third of a second has the keystroke handed on as though there had been
+//! no hook at all. So it gets a thread that reads its messages and does
+//! nothing else, and this is that thread.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+/// The message that asks the thread to lay its hook again.
+const AGAIN: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
+
 /// One hook, and the thread it lives on for as long as it is held.
 ///
-/// Laid once and left alone. Taking it off and putting it back on, to be
-/// the newest of the chain again, was tried and taken out: between the
-/// two there is an instant with no hook at all, and one wider still in
-/// which the thread is not reading its messages, and a keystroke that
-/// falls in either is lost outright, invisibly, since every count this
-/// program keeps lives inside the callback that is not being called. The
-/// journal caught it doing exactly that, twice per closing of the
-/// floating menu, which is where the two lost presses of that session
-/// went.
+/// Hooks of the keyboard form a chain served newest first, and another
+/// program laying its own later goes ahead of this one for good: that is
+/// the whole story of `docs/CLAVIER.md`. So the hook can be laid again,
+/// to be the newest once more.
+///
+/// Laid again the new one first and the old one after, both on this
+/// thread and between two readings of its messages. Taken off first and
+/// put back after, as it once was, left an instant with no hook at all
+/// and a wider one in which the thread was not reading its messages, and
+/// a keystroke falling in either was lost outright, invisibly: the
+/// journal caught it twice per closing of the floating menu. Laid this
+/// way, a keystroke arriving meanwhile waits for the thread to read its
+/// messages again, and meets the new hook.
 pub struct Held {
     /// That thread by the number the system knows it as, which is what a
-    /// message is posted to, to ask it to stop.
+    /// message is posted to, to ask it to stop or to lay its hook again.
     thread: AtomicU32,
     /// And the thread itself, kept so the end of a session can wait for
     /// it to have really let go before the next one takes hold.
@@ -45,9 +51,10 @@ impl Held {
     ///
     /// `put` runs on the new thread and answers the hook as a plain
     /// number, nought meaning refused; `take_back` is handed that number
-    /// on that same thread once the wait is over. A hook belongs to the
-    /// thread that installed it and may only be given back there, which
-    /// is why neither of them is done here.
+    /// on that same thread once the wait is over, or once a newer one has
+    /// been laid. A hook belongs to the thread that installed it and may
+    /// only be given back there, which is why neither of them is done
+    /// here.
     pub fn hold(&self, put: fn() -> isize, take_back: fn(isize)) -> Option<bool> {
         use windows_sys::Win32::System::Threading::GetCurrentThreadId;
         use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -59,7 +66,7 @@ impl Held {
         }
         let (say, hear) = std::sync::mpsc::channel();
         let worker = std::thread::spawn(move || {
-            let hook = put();
+            let mut hook = put();
             let mut message = nothing_yet();
             // A thread has nowhere to receive a message until it has
             // looked for one once, and the end of a session posts it the
@@ -82,6 +89,16 @@ impl Held {
             // message that asks it to stop, and -1 for a fault; both end
             // the wait.
             while unsafe { GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) } > 0 {
+                if message.hwnd.is_null() && message.message == AGAIN {
+                    let newer = put();
+                    // Refused, the old one stays: it is still in the
+                    // chain, which is better than no hook at all.
+                    if newer != 0 {
+                        take_back(hook);
+                        hook = newer;
+                    }
+                    continue;
+                }
                 // SAFETY: the message comes from the call above.
                 unsafe { DispatchMessageW(&message) };
             }
@@ -89,9 +106,26 @@ impl Held {
         });
 
         let (thread, taken) = hear.recv().unwrap_or((0, false));
+        // Refused, the thread has already ended: nothing is held, and the
+        // next ask may try again.
+        if !taken {
+            let _ = worker.join();
+            return Some(false);
+        }
         self.thread.store(thread, Ordering::SeqCst);
         *self.worker.lock().expect("fil d'un crochet du système") = Some(worker);
-        Some(taken)
+        Some(true)
+    }
+
+    /// Asks the thread to lay its hook again, newest of the chain, and
+    /// says whether there was one to lay again.
+    pub fn lay_again(&self) -> bool {
+        use windows_sys::Win32::UI::WindowsAndMessaging::PostThreadMessageW;
+
+        let thread = self.thread.load(Ordering::SeqCst);
+        // SAFETY: a thread this program started, which reads what is
+        // posted to it.
+        thread != 0 && unsafe { PostThreadMessageW(thread, AGAIN, 0, 0) } != 0
     }
 
     /// Takes it off, waits for the thread to have really gone, and says

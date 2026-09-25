@@ -3282,6 +3282,7 @@ dependencies = [
  "zyr-clipboard",
  "zyr-codec",
  "zyr-control",
+ "zyr-player",
  "zyr-proto",
  "zyr-session",
  "zyr-sound",

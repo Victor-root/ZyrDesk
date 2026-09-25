@@ -151,6 +151,12 @@ fn interface_log() -> PathBuf {
     paths::logs_dir().join("interface.log")
 }
 
+/// The window's journal, for the player of a session to write its own
+/// lines in, beside the window's.
+pub fn the_log() -> Option<Log> {
+    own_log().cloned()
+}
+
 /// Writes down what the window just did, under that tag.
 ///
 /// Every part of the window declares one of its own where it writes,

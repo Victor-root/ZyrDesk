@@ -8,8 +8,9 @@
 //! nothing else, and that shape exists only over there.
 //!
 //! So it is asked for, several times a second while a session is on the
-//! screen. Nothing is kept from one question to the next: a shape is
-//! worth nothing a moment later.
+//! screen, and kept for the picture's window, which puts it on whenever
+//! the system asks what pointer to draw over it. Only the last answer is
+//! kept: a shape is worth nothing a moment later.
 //!
 //! A single connection to the service for the whole session, and not one
 //! per question as everywhere else in this window: elsewhere it is a
@@ -18,7 +19,7 @@
 // A session only exists on Windows, and this loop with it.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::Duration;
 
 use zyr_control::{Answer, Request, Service, WayId};
@@ -54,6 +55,31 @@ const REFUSALS_BEFORE_GIVING_UP: u32 = 20;
 /// True while the loop is running.
 static FOLLOWING: AtomicBool = AtomicBool::new(false);
 
+/// The far pointer's shape, by its rank in `Pointer::ALL`.
+///
+/// A number and not a lock: it is read by the picture's window every
+/// time the pointer moves over it.
+static SHAPE: AtomicU8 = AtomicU8::new(0);
+
+/// The shape the pointer takes over the picture right now.
+pub fn the_far_shape() -> Pointer {
+    Pointer::ALL
+        .get(usize::from(SHAPE.load(Ordering::Relaxed)))
+        .copied()
+        .unwrap_or_default()
+}
+
+/// Keeps that shape, and tells the picture when it changed.
+fn keep(shape: Pointer) {
+    let rank = Pointer::ALL
+        .iter()
+        .position(|each| *each == shape)
+        .unwrap_or(0) as u8;
+    if SHAPE.swap(rank, Ordering::Relaxed) != rank {
+        crate::video::the_pointer_changed();
+    }
+}
+
 /// Follows the shape of the far computer's pointer until the end of
 /// the session.
 ///
@@ -68,6 +94,9 @@ pub fn follow(app: &App) {
     let app = app.clone();
     crate::app::spawn(async move {
         let seen = keep_it_in_step(&app).await;
+        // The next session starts from the ordinary pointer, and not
+        // from whatever this one was left pointing at.
+        keep(Pointer::Arrow);
         note(&format!("forme du curseur : {seen}"));
         FOLLOWING.store(false, Ordering::SeqCst);
     });
@@ -86,10 +115,9 @@ async fn keep_it_in_step(app: &App) -> Seen {
             return seen;
         }
         // The way is looked for at every turn for as long as it is
-        // missing, and not once at the start. The service only knows
-        // about a session once the player has been handed over: this
-        // loop starts well before that, and giving up there meant asking
-        // nothing during the six seconds a session takes to be believed.
+        // missing, and not once at the start. The service only lists a
+        // session once its first picture is up, and this loop can start
+        // just before.
         let asking = match way {
             Some(known) => known,
             None => match crate::session::the_way_in_use().await {
@@ -104,19 +132,20 @@ async fn keep_it_in_step(app: &App) -> Seen {
         // is hidden: asking for a shape nobody will show would be twenty
         // round trips a second for nothing. The loop stays alive, because
         // the person can come back to the desktop without closing.
-        if crate::floating::in_game_mouse(app) {
+        if crate::video::in_a_game() {
             continue;
         }
         match asked(&mut talking, asking).await {
             Ok(shape) => {
                 refused = 0;
                 seen.saw(shape);
+                keep(shape);
             }
             Err(reason) => {
                 // The connection is thrown away, and the way forgotten:
                 // a refusal often comes from a service that has
-                // restarted or a picture that was relaunched, and the
-                // way is then a different one.
+                // restarted or a picture that came back, and the way is
+                // then a different one.
                 talking = None;
                 way = None;
                 refused += 1;

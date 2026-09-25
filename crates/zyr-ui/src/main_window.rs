@@ -8,9 +8,9 @@
 //!
 //! What this changes, plainly: the frame, full screen, the maximised state
 //! and following the screen are written here, on one page, instead of
-//! being reproduced by a layer aimed at something else. What `picture`
-//! laid on top is still laid on top, exactly the same: a guard steps in
-//! front of this window as it stepped in front of the other one.
+//! being reproduced by a layer aimed at something else. What a session
+//! needs of it on top of that, `picture` asks by stepping in front of its
+//! messages for the length of the session.
 //!
 //! Lengths are counted in **page pixels** when they are written here, and
 //! in real pixels everywhere else: `scale` makes the conversion, once,
@@ -77,7 +77,7 @@ const PLACE: usize = 1;
 /// loop that would know whom to talk to.
 static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
 
-fn program() -> Option<App> {
+pub(crate) fn program() -> Option<App> {
     PROGRAM.lock().expect("programme de la fenêtre").clone()
 }
 
@@ -272,10 +272,12 @@ unsafe extern "system" fn answers(
         // Its size has changed: what it carries follows, here and now.
         // What an event loop would say about it would arrive one trip
         // through the queue later, and an inside lagging behind its frame
-        // shows for the whole of a resize.
+        // shows for the whole of a resize. The picture of a session first,
+        // since it is what is looked at.
         WM_SIZE => {
             say_whether_it_goes_down_or_up(holding);
             let (width, height) = ((with & 0xFFFF) as i32, ((with >> 16) & 0xFFFF) as i32);
+            crate::video::fit(width, height);
             let inside = crate::home::its_canvas();
             if inside != 0 {
                 // SAFETY: a window of ours, laid over the inside of
@@ -342,13 +344,12 @@ unsafe extern "system" fn answers(
             0
         }
         // The keyboard goes to what is drawn inside: this window draws
-        // nothing and has nothing to read. Except during a session: the
-        // keyboard then belongs to the picture, and taking it back from
-        // it when coming back to the window would take it away from the
-        // far computer.
+        // nothing and has nothing to read. During a session that is the
+        // picture, and coming back to the window gives the far computer
+        // its keyboard back.
         WM_SETFOCUS => {
             let inside = crate::home::its_canvas();
-            if inside != 0 && crate::picture::the_engines_window().is_none() {
+            if !crate::video::take_the_keyboard() && inside != 0 {
                 // SAFETY: a window of ours, on the thread that owns it.
                 unsafe { SetFocus(inside as windows_sys::Win32::Foundation::HWND) };
             }
@@ -464,6 +465,22 @@ pub fn on_screen() -> bool {
 
 #[cfg(not(windows))]
 pub fn on_screen() -> bool {
+    false
+}
+
+/// Whether it is the window at the front, the one the keyboard and the
+/// mouse belong to.
+#[cfg(windows)]
+pub fn in_front() -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+
+    let hwnd = handle() as windows_sys::Win32::Foundation::HWND;
+    // SAFETY: no argument, and a null answer is one of the answers.
+    !hwnd.is_null() && unsafe { GetForegroundWindow() } == hwnd
+}
+
+#[cfg(not(windows))]
+pub fn in_front() -> bool {
     false
 }
 
@@ -583,14 +600,13 @@ pub fn maximize() {}
 /// that size is only a way through. Now the compositor plays changes of
 /// state at its own pace and not at ours. ShowWindow returns at once,
 /// the animation carries on behind, and the window has already taken the
-/// screen while the compositor is still shrinking it. The remote
-/// desktop, which is a window carried by this one and so drawn in its
-/// composition, goes along with it: that is the strange enlargement
-/// inside the stream, at the first full screen of a session.
+/// screen while the compositor is still shrinking it. The picture of a
+/// session, a child of this window and so drawn in its composition, goes
+/// along with it: that is the strange enlargement inside the stream, at
+/// the first full screen of a session.
 ///
 /// Restored right after: "maximise" from the title bar is a gesture
-/// where the system's animation is wanted, and where a whole part of
-/// picture.rs counts on it.
+/// where the system's animation is wanted.
 #[cfg(windows)]
 fn restore_its_size() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SW_RESTORE, ShowWindow};

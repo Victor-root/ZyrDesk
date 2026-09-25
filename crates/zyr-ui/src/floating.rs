@@ -1,42 +1,35 @@
 //! The floating button of a session.
 //!
-//! During a session the picture fills the window and belongs to the
-//! engine. This is the one thing of ours left on top of it: a small
-//! button, hanging in a corner, that opens what can be done without
-//! leaving the picture.
+//! During a session the picture fills the window. This is the one thing
+//! of ours left on top of it: a small button, hanging in a corner, that
+//! opens what can be done without leaving the picture.
 //!
 //! It is made of two windows of ours, the logo and the menu card, which
-//! this program draws itself: neither of them carries a page, and there
-//! is no browser anywhere on the picture any more. This file draws
-//! nothing; it keeps track of where the button hangs, what it does, and
-//! when it goes up and comes down.
+//! this program draws itself. This file draws nothing; it keeps track of
+//! where the button hangs, what it does, and when it goes up and comes
+//! down.
 //!
-//! Windows of ours rather than a drawing made in the picture. Drawing
-//! inside it would mean teaching the engine what ZyrDesk is, which is
-//! precisely what the engines are bound to know nothing of; and a window
-//! of ours lets itself be clicked without the engine having to give the
-//! mouse back.
+//! Windows of ours rather than a drawing made in the picture: the picture
+//! is the far computer's desktop, and a window of ours lets itself be
+//! clicked without the player having to give the mouse back.
 //!
 //! Two things make that work, and both are why no session ever takes the
 //! screen exclusively. A window that owns the screen lets nothing be
 //! drawn above it. And the pointer, in the ordinary desktop mode, stays
-//! free to leave the picture: it is hidden over the picture, where the
-//! far computer's own cursor stands in for it, and the system shows it
-//! again the moment it crosses onto this button.
+//! free to leave the picture: this computer draws it over the picture in
+//! the far computer's shape, and in its own shape the moment it crosses
+//! onto this button.
 //!
-//! What the menu asks of the engine, it asks through the engine's own
-//! keyboard shortcuts, aimed at the session window and at nothing else.
-//! Two entries never reach it: covering the screen is done to our own
-//! window, and ending the session is asked of the far computer over the
-//! tunnel, since what ends it there is that computer letting its desktop
-//! go.
+//! What the menu asks of the session, it asks of the player, in the same
+//! program: a call that answers, where it once was a keystroke typed at
+//! another program in the hope that it listened. Ctrl+Alt+Suppr and the
+//! lock screen are asked of the far computer's service through the way,
+//! since only a service may do them over there.
 
-// Off Windows there is no session to float over, and the shortcut the
-// letters belong to is never typed. The rest stays compiled and tested
-// everywhere all the same.
+// Off Windows there is no session to float over. The rest stays compiled
+// and tested everywhere all the same.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
 use std::time::Duration;
 
@@ -117,11 +110,11 @@ const AT_MOST: Duration = Duration::from_secs(60);
 
 /// What the menu can ask of the session.
 ///
-/// Ending a session is one entry and not two. The engines offer both a
-/// leaving that keeps the far desktop open and waiting and a closing
-/// that hands it back, and carrying that difference up to the person
-/// would leave them with a session that is neither running nor over. A
-/// session is on or it is not.
+/// Ending a session is one entry and not two. A session could be left
+/// with the far desktop open and waiting, or closed with it handed back,
+/// and carrying that difference up to the person would leave them with a
+/// session that is neither running nor over. A session is on or it is
+/// not.
 #[derive(Clone, Copy)]
 pub enum Act {
     Fullscreen,
@@ -141,66 +134,7 @@ pub enum Act {
     /// Whether the two badges in the corner of the picture are drawn at
     /// all times rather than only when they have something to say.
     Badges,
-    /// Whether the pointer is kept inside the picture.
-    PointerLock,
     End,
-}
-
-impl Act {
-    /// Letter of the engine's Ctrl+Alt+Shift shortcut, for the ones that
-    /// have one.
-    ///
-    /// Six do not, and for three reasons. Ending a session is asked of
-    /// the far computer over the tunnel, since what ends it there is that
-    /// computer letting its desktop go; covering the screen is done to
-    /// our own window, the engine's having gone inside it; the sound is
-    /// hushed on this computer's own mixer, where the player has a strip
-    /// like any other program; Ctrl+Alt+Suppr and the lock screen are the
-    /// pair Windows keeps for itself at both ends of a session, so they
-    /// travel on the product's own channel and are done over there by the
-    /// service, the one program on that machine allowed to; and the
-    /// clipboard and the badges are switches of this program alone, which
-    /// the engine has no business hearing about.
-    fn letter(self) -> Option<u8> {
-        match self {
-            Act::Stats => Some(b'S'),
-            Act::MouseMode => Some(b'M'),
-            Act::SystemKeys => Some(b'K'),
-            Act::PointerLock => Some(b'L'),
-            Act::Fullscreen
-            | Act::SecureAttention
-            | Act::LockScreen
-            | Act::Sound
-            | Act::Clipboard
-            | Act::Badges
-            | Act::End => None,
-        }
-    }
-
-    /// Where that letter sits on the keyboard.
-    ///
-    /// The engine is built on a library that reads a key by its place
-    /// before it reads it by its name, and the two come apart on the
-    /// keyboards this product is used on: the key engraved A in France
-    /// is the key engraved Q elsewhere. A key sent by name leaves the
-    /// place to be worked out by whatever the system happens to think
-    /// the keyboard is, which is one guess too many for a keystroke
-    /// nobody typed.
-    fn where_it_sits(self) -> Option<u16> {
-        match self {
-            Act::Stats => Some(0x1F),
-            Act::MouseMode => Some(0x32),
-            Act::SystemKeys => Some(0x25),
-            Act::PointerLock => Some(0x26),
-            Act::Fullscreen
-            | Act::SecureAttention
-            | Act::LockScreen
-            | Act::Sound
-            | Act::Clipboard
-            | Act::Badges
-            | Act::End => None,
-        }
-    }
 }
 
 impl std::fmt::Display for Act {
@@ -215,7 +149,6 @@ impl std::fmt::Display for Act {
             Act::SystemKeys => "touches système",
             Act::Clipboard => "presse-papiers partagé",
             Act::Badges => "voyants montrés en permanence",
-            Act::PointerLock => "pointeur tenu dans l'image",
             Act::End => "fin de la session",
         })
     }
@@ -224,58 +157,21 @@ impl std::fmt::Display for Act {
 /// The session the button belongs to.
 #[derive(Default)]
 pub struct Floating {
-    /// Player the button hangs on, and the only window our keystrokes
-    /// may reach.
-    watched: Mutex<Option<u32>>,
-    /// Set while this window is asking the far computer to close the
-    /// session.
+    /// Whether the button is up over the picture of a session.
+    up: AtomicBool,
+    /// Set while this window is closing the session.
     ///
-    /// The engine loses its stream when that happens and stops on a
-    /// failure, which from the outside is exactly what a session that
-    /// broke looks like. Without this, the one thing the person asked for
-    /// would be reported back to them as an error.
-    closing: std::sync::atomic::AtomicBool,
-    /// Whether the session's mouse is in game mode right now.
-    ///
-    /// Kept by this program because this program is what sets it: the
-    /// mode starts from the settings the session was opened with, and
-    /// every toggle goes through this window. It cannot be read from the
-    /// system. Game mode pins the pointer inside the picture, but a
-    /// session covering the only screen pins it to a rectangle exactly
-    /// the size of the screen, which is what no pinning at all looks
-    /// like; read from there, the menu shortcut left the pointer with
-    /// the far computer and the menu it had just opened could not be
-    /// clicked.
-    game_mouse: AtomicBool,
-    /// Whether the engine is keeping the pointer inside the picture.
-    ///
-    /// The engine decides this from its own window being on a whole
-    /// screen, which it can never be here: it is a small windowed one
-    /// carried inside ours for the whole session. Asked there, the
-    /// pointer was free to wander off the picture all session long, and
-    /// on a machine with a second screen it simply left. It is this
-    /// program that knows, so it is this program that says, by throwing
-    /// the engine's own switch for it.
-    ///
-    /// Counted here rather than read, like the two beside it: the engine
-    /// never says where it stands. It starts off, which is what the
-    /// engine leaves it at for a window like ours.
-    pointer_held: AtomicBool,
-    /// Whether Alt+Tab, Échap and the Windows key are going to the
-    /// session right now rather than to this computer.
-    ///
-    /// Kept here for the same reason as the mouse mode beside it: the
-    /// engine is the one holding those keys and it never says where it
-    /// stands, so this program counts its own switches. The session
-    /// starts on the side its settings asked for.
-    system_keys: AtomicBool,
+    /// Read by the opening, which lets go where it stands, and by the end
+    /// of the session, which is then no failure to report: a session that
+    /// ended because the person closed it must never be told to them as
+    /// a session that broke.
+    closing: AtomicBool,
     /// Whether the two computers share one clipboard right now.
     ///
-    /// Counted here like the two above it, and this one holds nothing at
-    /// all beyond the switch: sharing is done by the two services, on the
-    /// product's own channel inside the tunnel, and this window's whole
-    /// part in it is to say which way the switch is and to write that
-    /// down.
+    /// This one holds nothing at all beyond the switch: sharing is done
+    /// by the two services, on the product's own channel inside the
+    /// tunnel, and this window's whole part in it is to say which way the
+    /// switch is and to write that down.
     clipboard: AtomicBool,
     /// Whether the two badges in the corner of the picture are drawn at
     /// all times.
@@ -290,6 +186,9 @@ pub struct Floating {
     /// exists to look at something must not be left on by a session
     /// nobody was looking at.
     badges: AtomicBool,
+    /// Whether the figures of the session are shown in the corner of the
+    /// picture, which « Statistiques » turns on and off.
+    figures: AtomicBool,
 }
 
 static NUDGE: AtomicI64 = AtomicI64::new(0);
@@ -519,242 +418,120 @@ fn leave_it_there() {
 }
 
 impl Floating {
-    /// Says a close is being asked for, and takes it back when it was
-    /// refused: a session still running must be told apart from one this
-    /// window brought down.
+    /// Says a close is being asked for, or that none is any more.
     fn closing(app: &App, asked: bool) {
-        app.floating()
-            .closing
-            .store(asked, std::sync::atomic::Ordering::Relaxed);
+        app.floating().closing.store(asked, Ordering::Relaxed);
     }
 
     /// Whether a close has been asked for, without forgetting it.
     ///
-    /// Asked while a session is still opening, where nothing else can
-    /// tell a player the person stopped from one the far computer turned
-    /// away: both look like an engine that lost its stream. Left standing
-    /// for `was_closed_on_purpose` to take, since that is what the
-    /// opening reads once it is over.
+    /// Asked while a session is still opening, which lets go where it
+    /// stands, and during the pause before a picture comes back. Left
+    /// standing for `was_closed_on_purpose` to take, since that is what
+    /// the session reads once it is over.
     pub fn a_close_was_asked_for(app: &App) -> bool {
-        app.floating()
-            .closing
-            .load(std::sync::atomic::Ordering::Relaxed)
+        app.floating().closing.load(Ordering::Relaxed)
     }
 
     /// Whether the session that just ended was closed on purpose, and
     /// forgets it either way.
     pub fn was_closed_on_purpose(app: &App) -> bool {
-        app.floating()
-            .closing
-            .swap(false, std::sync::atomic::Ordering::Relaxed)
+        app.floating().closing.swap(false, Ordering::Relaxed)
     }
 }
 
-/// Whether a session is running right now.
-///
-/// Read from what the button hangs on rather than asked of the service:
-/// it is the same answer, it is already kept up to date every second, and
-/// it costs nothing to whoever asks.
-pub fn a_session_is_up(app: &App) -> bool {
-    app.floating()
-        .watched
-        .lock()
-        .expect("session suivie")
-        .is_some()
+/// Whether a session is running right now: a player plays in this
+/// window, whether or not its first picture has come.
+pub fn a_session_is_up(_app: &App) -> bool {
+    crate::session::player().is_some()
 }
 
-/// The player the button belongs to right now: that of the first
-/// session the service holds.
+/// Follows the session for as long as the program runs, and puts the
+/// button up and down with its picture.
 ///
-/// The service and not this window: it knows every session on this
-/// computer, including those another window opened.
-async fn seen() -> Option<u32> {
-    crate::session::sessions()
-        .await
-        .into_iter()
-        .next()
-        .map(|session| session.process)
-}
-
-/// Stops that player, and says whether it was there to be stopped.
-///
-/// What ends a session on this side when nothing else is going to: a far
-/// computer that has stopped answering, or a person changing what the
-/// session asks for, which the engine is only ever told once and at its
-/// start. Nothing is lost by stopping it. The player holds no state worth
-/// saving, the service gives the way back when the process is gone, and
-/// whoever was waiting on that process wakes the moment it does.
-///
-/// Nought as the parting code, which is the one the engine gives when a
-/// session ends normally: it did, this being what was asked for.
-#[cfg(windows)]
-pub fn stop_the_player(process: u32) -> bool {
-    use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_TERMINATE, TerminateProcess};
-
-    // SAFETY: a refused or finished process gives a null handle, which is
-    // one of the answers; a real one is closed right below.
-    let handle = unsafe { OpenProcess(PROCESS_TERMINATE, 0, process) };
-    if handle.is_null() {
-        note(&format!("lecteur {process} déjà arrêté"));
-        return false;
-    }
-    // SAFETY: the handle is live and was opened for exactly this.
-    let stopped = unsafe { TerminateProcess(handle, 0) } != 0;
-    // SAFETY: the handle came from the call above and is closed once.
-    unsafe { CloseHandle(handle) };
-    note(&if stopped {
-        format!("lecteur {process} arrêté")
-    } else {
-        format!("Windows a refusé d'arrêter le lecteur {process}")
-    });
-    stopped
-}
-
-#[cfg(not(windows))]
-pub fn stop_the_player(_process: u32) -> bool {
-    false
-}
-
-/// Follows the sessions for as long as the program runs, and puts the
-/// button up and down with them.
+/// The picture going up puts the button up at once as well; this comes
+/// round once a second for everything that can change without anybody
+/// saying so, a window coming back from the taskbar first of all.
 pub fn watch(app: App) {
     crate::app::spawn(async move {
         loop {
             tokio::time::sleep(LOOK).await;
-            match seen().await {
-                Some(process) => {
-                    // The picture first: the button hangs from the corner
-                    // of it, and a corner read before the picture has
-                    // been laid in our window is the wrong corner.
-                    crate::picture::hold(&app, process);
-                    let fresh = adopt(&app, process);
-                    if fresh {
-                        // A session just adopted starts on the two sides
-                        // its settings asked for; every toggle after that
-                        // goes through this window and is counted as it
-                        // is sent.
-                        let preferred = crate::settings::preferred().await;
-                        let state = app.floating();
-                        state
-                            .game_mouse
-                            .store(!preferred.absolute_mouse, Ordering::Relaxed);
-                        state
-                            .system_keys
-                            .store(preferred.system_keys, Ordering::Relaxed);
-                        state
-                            .clipboard
-                            .store(preferred.shared_clipboard, Ordering::Relaxed);
-                        // Off at every session, whatever the last one
-                        // was left on: see the field itself.
-                        state.badges.store(false, Ordering::Relaxed);
-                        state.pointer_held.store(false, Ordering::Relaxed);
-                        // What the far computer draws is not put down
-                        // here: it lives over there, in an engine this
-                        // new player has not touched.
-                    }
-                    put_the_button_up(&app, process);
-                    // None of this while the menu is open: throwing one
-                    // of these switches gives the keyboard to the
-                    // picture, and a hand reading the menu is aiming at
-                    // something else. The change of mouse mode, for its
-                    // part, throws them along with it: the keyboard has
-                    // just gone anyway, and waiting for the menu to
-                    // close left a moment with no pointer at all.
-                    if !the_menu_is_open() {
-                        keep_the_pointer_in_step(&app, process).await;
-                    }
-                    // And the pointer of this computer stays inside the
-                    // picture as long as the mouse is in game mode:
-                    // hidden and free, it wanders off behind the hand
-                    // that is playing. Here and not in the engine, which
-                    // cannot; see `picture::shut_the_pointer_in`. The
-                    // open menu gives it back, like everything else: a
-                    // hand reading the menu is aiming at something else.
-                    crate::picture::shut_the_pointer_in(in_game_mouse(&app) && !the_menu_is_open());
-                    // And the shape this pointer takes, which comes
-                    // from the far computer and is asked for far more
-                    // often than this watch goes round: it has its
-                    // own loop, started again here when the previous
-                    // one has stopped.
-                    crate::pointer::follow(&app);
-                    // And the health of the session, read again far more
-                    // often than this watch goes round: what it lights
-                    // up must show within a third of a second, and this
-                    // watch comes round once a second.
-                    crate::badges::watch(&app);
-                    // And what arrives of the files being pasted, read
-                    // again at the same rhythm and for the same reason: a
-                    // bar that moves once a second does not look as if it
-                    // is moving.
-                    crate::transfer::watch(&app);
-                    // And the keyboard belongs to the picture, always.
-                    // The menu no longer takes it away: the card this
-                    // program draws is never activated and carries no
-                    // page that would take the focus, which is one more
-                    // thing the web view cost. This stays as the safety
-                    // net, for a keyboard another window has taken; the
-                    // system flatly refuses anyway as long as another
-                    // program is in front.
-                    crate::picture::the_keyboard_back(&app);
-                }
-                None => {
-                    // The pointer first: without a session there is no
-                    // picture left to shut it in, and a cage left behind
-                    // by a session holds the whole desktop.
-                    crate::picture::shut_the_pointer_in(false);
-                    crate::picture::let_go(&app);
-                    lower(&app);
-                }
-            }
+            keep_up_with_the_picture(&app);
         }
     });
 }
 
-/// Takes that player as the session this window is following, and says
-/// whether it had not already.
-///
-/// Nothing about what is on screen is asked here. Whether the button can
-/// be shown depends on that; whether there is a session does not, and the
-/// two used to be one decision: a window put down in the taskbar was read
-/// as no session at all, so the cross went back to merely putting the
-/// window away and left the session running behind it.
-fn adopt(app: &App, process: u32) -> bool {
-    let state = app.floating();
-    let already = state
-        .watched
-        .lock()
-        .expect("session suivie")
-        .as_ref()
-        .is_some_and(|seen| *seen == process);
-    if already {
-        return false;
+/// Puts the button up over the picture and keeps what goes with it
+/// running, or takes it all down when there is no picture.
+pub fn keep_up_with_the_picture(app: &App) {
+    let Some(picture) = crate::video::where_it_is() else {
+        // The pointer first: without a picture there is nothing left to
+        // shut it in, and a cage left behind by a session holds the
+        // whole desktop.
+        crate::picture::shut_the_pointer_in(crate::picture::Cage::Free);
+        lower(app);
+        return;
+    };
+    put_the_button_up(app, picture);
+    // The pointer of this computer stays inside the picture as long as
+    // the mouse is a game's, or the picture is the whole screen; see
+    // `picture::Cage`.
+    crate::picture::shut_the_pointer_in(crate::picture::Cage::for_the(
+        crate::video::in_a_game(),
+        crate::main_window::holds_the_screen(),
+        the_menu_is_open(),
+        crate::main_window::in_front(),
+    ));
+    // And the shape this pointer takes, which comes from the far
+    // computer and is asked for far more often than this watch goes
+    // round: it has its own loop, started again here when the previous
+    // one has stopped.
+    crate::pointer::follow(app);
+    // And the health of the session, read again far more often than this
+    // watch goes round: what it lights up must show within a third of a
+    // second.
+    crate::badges::watch(app);
+    // And its figures, when they are asked for.
+    if the_figures_are_shown(app) {
+        crate::statistics::watch(app, the_bottom_corner(picture));
     }
+    // And what arrives of the files being pasted, read again at the same
+    // rhythm and for the same reason: a bar that moves once a second does
+    // not look as if it is moving.
+    crate::transfer::watch(app);
+}
+
+/// Takes a new session's player as the one the button belongs to, and
+/// starts its switches on the sides its settings asked for.
+///
+/// Every session, and every picture that comes back after a fall: the
+/// switches that live in this window start over with it, as they did
+/// when a player was a program of its own.
+pub fn adopt(app: &App, preferred: &zyr_proto::session::Preferred) {
     // A new session starts with the button on screen, whatever was done
     // with the one before.
     HIDDEN.store(false, Ordering::Relaxed);
-    *state.watched.lock().expect("session suivie") = Some(process);
-    true
+    let state = app.floating();
+    state
+        .clipboard
+        .store(preferred.shared_clipboard, Ordering::Relaxed);
+    state
+        .figures
+        .store(preferred.stats_overlay, Ordering::Relaxed);
+    // Off at every session, whatever the last one was left on: see the
+    // field itself.
+    state.badges.store(false, Ordering::Relaxed);
 }
 
-/// Puts the button up for that player, and keeps it up.
+/// Puts the button up over that picture, and keeps it up.
 ///
 /// Called at every turn of the watch and does nothing when there is
 /// nothing to do, so a session begun while ZyrDesk was down in the
 /// taskbar still gets its button the moment the window comes back.
-///
-/// Waits for the player to have a window before showing anything. The
-/// service calls a session held from the moment the player starts, but
-/// the engine only opens its window once the far computer has answered
-/// and the stream stands: showing the button any earlier would put it
-/// over a screen that has no picture on it yet.
 // Off Windows, the logo and the card do not exist, and nothing of what
 // remains here needs the program.
 #[cfg_attr(not(windows), allow(unused_variables))]
-fn put_the_button_up(app: &App, process: u32) {
-    let Some(picture) = picture_of(process) else {
-        return;
-    };
+fn put_the_button_up(app: &App, picture: (i32, i32, i32, i32)) {
     // A button over a window that is not on screen would be the only
     // thing showing, hanging in a corner over somebody else's work. It
     // goes up when the window does, which the watch sees a second later.
@@ -764,6 +541,7 @@ fn put_the_button_up(app: &App, process: u32) {
     if !crate::main_window::on_screen() {
         return;
     }
+    app.floating().up.store(true, Ordering::Relaxed);
 
     let size = button_size() as i32;
     ITS_LOGO.store(size, Ordering::Relaxed);
@@ -802,6 +580,13 @@ fn the_other_corner(picture: (i32, i32, i32, i32)) -> (i32, i32) {
     (picture.0 + margin, picture.1 + margin)
 }
 
+/// The bottom left corner of the picture, at the same margin again: where
+/// the figures of the session stand.
+fn the_bottom_corner(picture: (i32, i32, i32, i32)) -> (i32, i32) {
+    let margin = margin();
+    (picture.0 + margin, picture.3 - margin)
+}
+
 /// What the button comes to in real pixels, on the screen it hangs over.
 ///
 /// Everything in this file is counted in real pixels: the picture is
@@ -815,19 +600,12 @@ fn button_size() -> u32 {
 
 /// Takes the button down.
 ///
-/// Called by the watch when the session is no longer there, and by
-/// whoever ended it the moment they know: a second of a button hanging
+/// Called by the watch when the picture is no longer there, and by the
+/// end of the session the moment it is over: a second of a button hanging
 /// over a picture that has gone is a second too many, and the watch only
 /// comes round once a second.
 pub fn lower(app: &App) {
-    let state = app.floating();
-    if state
-        .watched
-        .lock()
-        .expect("session suivie")
-        .take()
-        .is_some()
-    {
+    if app.floating().up.swap(false, Ordering::Relaxed) {
         crate::badges::lower(app);
         #[cfg(windows)]
         {
@@ -866,16 +644,10 @@ pub fn hide(app: &App) -> Result<(), String> {
 /// Nothing is asked of the page while this runs, and the menu is left
 /// open if it was: a window that changes size under the mouse gets away
 /// from it.
-pub async fn grabbed(app: &App) -> bool {
-    let held = *app.floating().watched.lock().expect("session suivie");
-    let Some(process) = held else {
-        return true;
-    };
+pub async fn grabbed() -> bool {
     // The picture is read once: it does not move while the button is
-    // being dragged over it, and looking for it again at every step
-    // would mean enumerating every window on the machine a hundred times
-    // a second.
-    let (Some(start), Some(picture)) = (cursor_now(), picture_of(process)) else {
+    // being dragged over it.
+    let (Some(start), Some(picture)) = (cursor_now(), crate::video::where_it_is()) else {
         return true;
     };
     // Where the button starts from, worked out and not read back: it is
@@ -1035,24 +807,13 @@ pub fn show_the_menu(app: &App) -> Result<(), String> {
     }
     // Asked for by name, which takes back the choice of hiding it.
     HIDDEN.store(false, Ordering::Relaxed);
-    // In game mouse mode the pointer is shut on a point in the middle of
-    // the picture, so it cannot be brought to this button at all. Asking
-    // for the menu is asking to do something with the pointer, so the
-    // cage is opened here rather than at the next turn of the watch: a
-    // menu that takes a second to become usable reads as a menu that
-    // does not work.
-    //
-    // The mouse mode itself is left exactly where it is. Opening this
-    // menu used to throw the session out of game mouse mode, by typing
-    // the engine's own combination into the picture, which meant handing
-    // the picture the keyboard first: it was refused four times running
-    // on the very session that asked for this, and the menu stayed
-    // unusable. It also changed a mode nobody asked to change. The
-    // engine now reads the movement of a game only while the pointer
-    // stands on the picture, so an open cage is the whole of what this
-    // needs.
-    #[cfg(windows)]
-    crate::picture::shut_the_pointer_in(false);
+    // In a game the pointer is shut on a point in the middle of the
+    // picture, so it cannot be brought to this button at all. Asking for
+    // the menu is asking to do something with the pointer, so the cage
+    // is opened here rather than at the next turn of the watch: a menu
+    // that takes a second to become usable reads as a menu that does not
+    // work. The mouse mode itself is left exactly where it is.
+    crate::picture::shut_the_pointer_in(crate::picture::Cage::Free);
     #[cfg(windows)]
     {
         crate::logo::shown(app, true);
@@ -1061,7 +822,7 @@ pub fn show_the_menu(app: &App) -> Result<(), String> {
         // it, so one freed in the middle of the picture has to cross it
         // unseen to reach this button: aiming blind, on the one thing a
         // session cannot be left without.
-        if in_game_mouse(app) {
+        if crate::video::in_a_game() {
             crate::picture::put_the_pointer_on(crate::logo::its_window());
         }
         crate::menu::show(true);
@@ -1069,17 +830,7 @@ pub fn show_the_menu(app: &App) -> Result<(), String> {
     Ok(())
 }
 
-/// The same, from anywhere in the program rather than from the page.
-pub fn in_game_mouse(app: &App) -> bool {
-    app.floating().game_mouse.load(Ordering::Relaxed)
-}
-
-/// The same, from anywhere in the program rather than from the page.
-pub fn keys_to_the_session(app: &App) -> bool {
-    app.floating().system_keys.load(Ordering::Relaxed)
-}
-
-/// The same, for the one clipboard the two computers share.
+/// Whether the two computers share one clipboard right now.
 pub fn the_clipboard_is_shared(app: &App) -> bool {
     app.floating().clipboard.load(Ordering::Relaxed)
 }
@@ -1088,6 +839,11 @@ pub fn the_clipboard_is_shared(app: &App) -> bool {
 /// screen rather than left to show themselves.
 pub fn the_badges_are_held_up(app: &App) -> bool {
     app.floating().badges.load(Ordering::Relaxed)
+}
+
+/// Whether the figures of the session are shown over the picture.
+pub fn the_figures_are_shown(app: &App) -> bool {
+    app.floating().figures.load(Ordering::Relaxed)
 }
 
 /// Holds the two badges on screen, or lets them go back to showing
@@ -1130,64 +886,109 @@ async fn share_the_clipboard(app: &App) -> Result<(), String> {
     Ok(())
 }
 
-/// The same, from anywhere in the program rather than from the menu.
+/// Shows the figures of the session in the corner of the picture, or
+/// takes them away.
+///
+/// For this session only, like the badges held up: the settings screen
+/// says whether a session opens with them.
+fn show_the_figures(app: &App) -> Result<(), String> {
+    if !a_session_is_up(app) {
+        return Err("aucune session en cours".to_string());
+    }
+    let shown = !app.floating().figures.fetch_xor(true, Ordering::Relaxed);
+    note(if shown {
+        "statistiques montrées sur l'image"
+    } else {
+        "statistiques retirées de l'image"
+    });
+    keep_up_with_the_picture(app);
+    Ok(())
+}
+
+/// Gives the mouse to a game, or back to a desktop.
+///
+/// Two ends move together. This window reads movement from the device
+/// in a game and places elsewhere, and hides its own pointer over the
+/// picture; the far computer is asked to draw its own pointer into the
+/// picture in a game, which is the only pointer a game shows, and to
+/// stop on a desktop, where this computer draws it with no round trip
+/// behind the hand.
+fn change_the_mouse(app: &App) -> Result<(), String> {
+    if !a_session_is_up(app) {
+        return Err("aucune session en cours".to_string());
+    }
+    let game = !crate::video::in_a_game();
+    crate::video::play_a_game(app, game);
+    crate::session::ask_the_player(|settings, _| settings.absolute_mouse = !game);
+    note(if game {
+        "souris de jeu : le mouvement va à la session, l'ordinateur distant dessine son curseur"
+    } else {
+        "souris de bureau : la position va à la session, le curseur est dessiné ici"
+    });
+    Ok(())
+}
+
+/// Gives the system's keys to the session, or back to this computer, and
+/// remembers where they were left: that is where the next session opens.
+async fn change_the_keyboard() -> Result<(), String> {
+    let theirs = !crate::system_keys::immersive();
+    crate::system_keys::switch(theirs);
+    crate::settings::remember_system_keys(theirs).await;
+    Ok(())
+}
+
+/// Whether the session's sound is hushed on this computer.
+pub fn hushed() -> Option<bool> {
+    crate::session::player().map(|player| player.muted())
+}
+
+/// Hushes the session's sound on this computer, or gives it back.
+///
+/// Here and not over there. The far computer goes on playing whatever it
+/// plays, and the person who asked is not asking for silence in a room
+/// they are not in: they are asking for silence in theirs. Nothing else
+/// playing here is touched.
+fn hush_the_session() -> Result<(), String> {
+    let player = crate::session::player().ok_or("aucune session en cours")?;
+    let quiet = !player.muted();
+    player.set_muted(quiet);
+    note(if quiet {
+        "son de la session coupé"
+    } else {
+        "son de la session rendu"
+    });
+    Ok(())
+}
+
+/// Does what the menu or a shortcut asks of the session.
 pub async fn ask(app: &App, act: Act) -> Result<(), String> {
-    // Ours to do, all of them, and none goes through the engine's
-    // keyboard. Covering the screen is still a session matter: the
-    // shortcut is registered with the system for the whole life of the
-    // program, and without a session it would fullscreen the empty home
-    // screen and write that down as the choice for the next session.
     match act {
+        // Covering the screen is still a session matter: the shortcut is
+        // registered with the system for the whole life of the program,
+        // and without a session it would fullscreen the empty home screen
+        // and write that down as the choice for the next session.
         Act::Fullscreen => {
             if !a_session_is_up(app) {
                 return Err("aucune session en cours".to_string());
             }
-            return crate::picture::toggle_the_screen(app);
+            crate::picture::toggle_the_screen(app)
         }
-        Act::End => return end_the_session(app).await,
-        Act::SecureAttention => return press_ctrl_alt_del_over_there(app).await,
-        Act::LockScreen => return lock_over_there(app).await,
-        Act::Sound => return hush_the_session(app).await,
-        Act::Clipboard => return share_the_clipboard(app).await,
-        Act::Badges => return always_show_the_badges(app),
-        _ => {}
+        Act::Stats => show_the_figures(app),
+        Act::MouseMode => change_the_mouse(app),
+        Act::SecureAttention => press_ctrl_alt_del_over_there().await,
+        Act::LockScreen => lock_over_there().await,
+        Act::Sound => hush_the_session(),
+        Act::SystemKeys => change_the_keyboard().await,
+        Act::Clipboard => share_the_clipboard(app).await,
+        Act::Badges => always_show_the_badges(app),
+        Act::End => end_the_session(app),
     }
-
-    let process = the_player(app)?;
-
-    type_at_the_picture(app, act, process).await?;
-    // The keystroke left, so the engine will act on it: what this window
-    // believes of the two switches follows the keystrokes it sends.
-    match act {
-        Act::MouseMode => {
-            let _ = app.floating().game_mouse.fetch_xor(true, Ordering::Relaxed);
-        }
-        Act::PointerLock => {
-            let _ = app
-                .floating()
-                .pointer_held
-                .fetch_xor(true, Ordering::Relaxed);
-        }
-        Act::SystemKeys => {
-            let theirs = !app
-                .floating()
-                .system_keys
-                .fetch_xor(true, Ordering::Relaxed);
-            // Remembered, unlike the mouse: this one is thrown back and
-            // forth in the middle of a session, and the side it is left on
-            // is the side the next session should open on.
-            crate::settings::remember_system_keys(theirs).await;
-        }
-        _ => {}
-    }
-    Ok(())
 }
 
 /// Whether the menu of the floating button is open right now.
 ///
-/// What holds the two switches below off while a hand is in it: throwing
-/// either of them gives the keyboard to the picture, and a hand reading
-/// the menu is aiming at something else.
+/// What gives the pointer back to the desk while a hand is in it: a hand
+/// reading the menu is aiming at something else than the picture.
 fn the_menu_is_open() -> bool {
     #[cfg(windows)]
     {
@@ -1197,145 +998,6 @@ fn the_menu_is_open() -> bool {
     {
         false
     }
-}
-
-/// Keeps the pointer inside the picture for as long as the picture is
-/// the whole screen, and lets it go the moment it is not.
-///
-/// The engine has this and cannot use it. It ties the pointer to its own
-/// window being on a whole screen, and its window is a small windowed one
-/// carried inside ours for the length of a session: the condition is
-/// false all session long, whatever the person is actually looking at.
-/// Asked there, the pointer wandered off the picture with nothing to stop
-/// it, which on a machine with a second screen means it simply leaves.
-///
-/// So this program answers instead, and says so with the engine's own
-/// switch. The engine stops deciding for itself the first time that
-/// switch is thrown, which is exactly what is wanted: from then on there
-/// is one opinion about the pointer and it is the right one.
-///
-/// Windowed, the pointer must be free to leave: the other windows of this
-/// computer are around the picture and reaching them is the whole reason
-/// somebody is not in full screen.
-async fn keep_the_pointer_in_step(app: &App, process: u32) {
-    let wanted = crate::picture::on_the_whole_screen();
-    let state = app.floating();
-    if wanted == state.pointer_held.load(Ordering::Relaxed) {
-        return;
-    }
-    match type_at_the_picture(app, Act::PointerLock, process).await {
-        Ok(()) => {
-            state.pointer_held.store(wanted, Ordering::Relaxed);
-            note(if wanted {
-                "pointeur tenu dans l'image, qui est tout l'écran"
-            } else {
-                "pointeur rendu à l'écran, l'image n'en occupe plus la totalité"
-            });
-        }
-        Err(reason) => note(&format!("pointeur non réglé : {reason}")),
-    }
-}
-
-/// The player the button is hanging on right now.
-///
-/// What the watch adopted, and never the first session it can find: with
-/// two sessions open, what this window's menu asks for is this window's.
-fn the_player(app: &App) -> Result<u32, String> {
-    app.floating()
-        .watched
-        .lock()
-        .expect("session suivie")
-        .as_ref()
-        .copied()
-        .ok_or_else(|| "aucune session en cours".to_string())
-}
-
-/// The same, from anywhere in the program rather than from the page.
-pub async fn hushed(app: &App) -> Result<bool, String> {
-    let process = the_player(app)?;
-    aside(move || zyr_sound::muted(process)).await
-}
-
-/// Hushes the session's sound on this computer, or gives it back.
-///
-/// Here and not over there. The far computer goes on playing whatever it
-/// plays, and the person who asked is not asking for silence in a room
-/// they are not in: they are asking for silence in theirs. The player
-/// has a strip in this computer's volume mixer like any other program,
-/// and that is the strip this pulls down, so nothing else playing here
-/// is touched.
-async fn hush_the_session(app: &App) -> Result<(), String> {
-    let process = the_player(app)?;
-    let quiet = !aside(move || zyr_sound::muted(process)).await?;
-    aside(move || zyr_sound::mute(process, quiet)).await?;
-    note(&format!(
-        "son du lecteur {process} {}",
-        if quiet { "coupé" } else { "rendu" }
-    ));
-    Ok(())
-}
-
-/// Asks the mixer, off the threads that must not wait.
-///
-/// Every question in `zyr-sound` is a round trip through COM, which is
-/// quick and is still not something to do on a runtime that has a
-/// picture to keep flowing.
-async fn aside<T: Send + 'static>(
-    ask: impl FnOnce() -> Result<T, zyr_sound::Trouble> + Send + 'static,
-) -> Result<T, String> {
-    crate::app::spawn_blocking(ask)
-        .await
-        .map_err(|e| format!("le mélangeur n'a pas répondu : {e}"))?
-        .map_err(|e| e.to_string())
-}
-
-/// Gives the picture the keyboard back and types the engine's shortcut
-/// into it, from anywhere in the program.
-///
-/// The two are one thing and are done in one place. A keystroke goes to
-/// whatever window has the keyboard, and clicking this button gives it to
-/// this button's own page: sent from there, a shortcut is read by our own
-/// web view and thrown away, while `SendInput` reports the same success it
-/// reports for one that arrived. That is the whole of « the Statistics
-/// entry does nothing »: the journal said the keystroke had left, and it
-/// had, into our own window.
-///
-/// Handed to the thread that draws. Giving another program's window the
-/// keyboard is only possible from the thread whose input this program
-/// joined to that program's, and reading back where it went is only
-/// truthful from that same thread.
-async fn type_at_the_picture(app: &App, act: Act, process: u32) -> Result<(), String> {
-    let (say, mut heard) = tokio::sync::mpsc::channel(1);
-    app.run_on_main_thread(move || {
-        // Nothing else sends on it and it holds one: this cannot wait.
-        let _ = say.try_send(hand_over_and_type(act, process));
-    })
-    .map_err(|e| e.to_string())?;
-    heard
-        .recv()
-        .await
-        .unwrap_or_else(|| Err("la fenêtre de ZyrDesk n'a pas répondu".to_string()))
-}
-
-/// The same on the spot, for callers already on the thread that draws.
-#[cfg(windows)]
-fn hand_over_and_type(act: Act, process: u32) -> Result<(), String> {
-    if !crate::picture::the_keyboard_to_the_picture() {
-        note(&format!(
-            "{act} refusé : l'image du lecteur {process} n'a pas repris le clavier ; \
-             le premier plan est {}",
-            crate::picture::the_front_in_words()
-        ));
-        return Err("la session n'a pas repris le clavier.\n  \
-             Cliquez d'abord dans l'image."
-            .to_string());
-    }
-    shortcut(act, process)
-}
-
-#[cfg(not(windows))]
-fn hand_over_and_type(_act: Act, _process: u32) -> Result<(), String> {
-    Err("les sessions ne tournent que sous Windows".to_string())
 }
 
 /// Presses Ctrl+Alt+Suppr on the far computer.
@@ -1351,8 +1013,8 @@ fn hand_over_and_type(_act: Act, _process: u32) -> Result<(), String> {
 /// is handled here rather than among the keystrokes: it has no letter and
 /// no place on a keyboard, and never will.
 ///
-async fn press_ctrl_alt_del_over_there(app: &App) -> Result<(), String> {
-    let way = the_way_of_this_session(app).await?;
+async fn press_ctrl_alt_del_over_there() -> Result<(), String> {
+    let way = the_way_of_this_session().await?;
     crate::service::ask(&zyr_control::Request::SecureAttention { way })
         .await
         .map(|_| ())
@@ -1370,8 +1032,8 @@ async fn press_ctrl_alt_del_over_there(app: &App) -> Result<(), String> {
 /// So it goes round the same way Ctrl+Alt+Suppr does, and for the same
 /// reason: some things a session needs have no letter, no place on a
 /// keyboard, and never will.
-async fn lock_over_there(app: &App) -> Result<(), String> {
-    let way = the_way_of_this_session(app).await?;
+async fn lock_over_there() -> Result<(), String> {
+    let way = the_way_of_this_session().await?;
     // Timed from here because here is where the picture is watched. The
     // far computer says what its own half cost, and the two together say
     // whether a picture that stands still for a second is standing still
@@ -1388,57 +1050,35 @@ async fn lock_over_there(app: &App) -> Result<(), String> {
 
 /// The way this window's own session runs on.
 ///
-/// Found the way ending one finds it: the service knows every session on
-/// this computer, and it is the one the button hangs on that is meant,
-/// never merely the first of the list. With two sessions open, what this
-/// menu asks for must reach the picture this menu belongs to.
-async fn the_way_of_this_session(app: &App) -> Result<zyr_control::WayId, String> {
-    let watched = *app.floating().watched.lock().expect("session suivie");
-
+/// Asked of the service, which knows every session of this computer: the
+/// one this program holds, and failing that the first.
+async fn the_way_of_this_session() -> Result<zyr_control::WayId, String> {
     let sessions = crate::session::sessions().await;
-    let ours = watched
-        .and_then(|process| sessions.iter().find(|session| session.process == process))
+    let ours = sessions
+        .iter()
+        .find(|session| session.process == std::process::id())
         .or_else(|| sessions.first())
         .ok_or("aucune session en cours")?;
     Ok(zyr_control::WayId(ours.way))
 }
 
-/// Ends the session: the player the button hangs on is stopped, and
-/// the far computer's engine goes with the way.
-///
-/// It is the session the button hangs on that is ended, never merely the
-/// first of the list: with two sessions open, ending from this window
-/// must end this window's.
+/// Ends the session: the player says goodbye to the far computer, and
+/// the way closes behind it.
 ///
 /// And before there is a player at all, there is an opening: a tunnel
 /// being raced for, the far computer being asked for its screen. Closing
-/// then is closing that, and it is said before anything else here so the
-/// opening reads it at its very next step rather than after the question
-/// below has been round the service.
-async fn end_the_session(app: &App) -> Result<(), String> {
-    let opening = crate::session::opening();
-    if opening {
-        Floating::closing(app, true);
-    }
-    let watched = *app.floating().watched.lock().expect("session suivie");
-
-    let sessions = crate::session::sessions().await;
-    let ours = watched
-        .and_then(|process| sessions.iter().find(|session| session.process == process))
-        .or_else(|| sessions.first());
-    let Some(session) = ours else {
-        // An opening with no player yet has been let go of above, and
-        // that is the whole of what closing means at that moment.
-        if opening {
-            return Ok(());
-        }
+/// then is closing that, and it is said before anything else so the
+/// opening reads it at its very next step.
+fn end_the_session(app: &App) -> Result<(), String> {
+    if !crate::session::opening() {
         return Err("aucune session en cours".to_string());
-    };
-    note(&format!("fermeture demandée sur {}", session.towards));
+    }
     // Said before the player stops, and never taken back: a session
     // reported as broken to whoever just closed it would be a lie.
     Floating::closing(app, true);
-    stop_the_player(session.process);
+    if crate::session::close() {
+        note("fermeture de la session demandée");
+    }
     Ok(())
 }
 
@@ -1452,10 +1092,11 @@ pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
     let anchor = hung_from(picture, nudge(), logo(), margin());
     decide_the_direction(picture, anchor, menu_height());
     put_the_button(picture, anchor);
-    // The badges follow the picture from here, and not from a watch of
-    // their own: they sit on the same edge as this button, and a picture
-    // being resized would carry each of them off at its own rhythm.
+    // The badges and the figures follow the picture from here, and not
+    // from a watch of their own: a picture being resized would carry each
+    // of them off at its own rhythm.
     crate::badges::lay(the_other_corner(picture));
+    crate::statistics::lay(the_bottom_corner(picture));
 }
 
 /// How tall the menu card is, which decides the direction it opens in.
@@ -1589,421 +1230,9 @@ fn cursor_now() -> Option<(i32, i32)> {
     }
 }
 
-/// Which of a player's windows is being looked for.
-///
-/// It has more than one, and the answer changes with the moment: before
-/// the picture is taken in hand it still carries the engine's title, and
-/// afterwards it carries nothing at all, that title having gone with the
-/// frame it was written on.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Looked {
-    /// The one the engine has just opened, still its own.
-    ///
-    /// Recognised by its title, which our own rebranding put there
-    /// (patch P-M2, `patches/MANIFEST.md`) and which no other window of
-    /// that process carries. Nothing weaker will do: the engine opens
-    /// other windows, one of them larger than the picture, and taking
-    /// the biggest one meant laying an empty window inside ours and
-    /// leaving the picture standing beside it.
-    ///
-    /// On screen or not, because it is born hidden and only shown once
-    /// everything about it is settled. That is the whole point: taken in
-    /// hand while still hidden, it is never seen anywhere but where it
-    /// belongs.
-    Fresh,
-    /// The one already laid inside our window.
-    ///
-    /// Recognised by being the biggest on screen, which it is by then:
-    /// it fills our window, and it is the only one of that process the
-    /// system shows at all.
-    Taken,
-}
-
-/// The mark our own rebranding leaves on the engine's picture window.
-#[cfg(windows)]
-const TITLED: &str = " - ZyrDesk";
-
-/// That player's picture window, and where it sits.
-#[cfg(windows)]
-fn window_and_place_of(
-    process: u32,
-    looked: Looked,
-) -> Option<(
-    windows_sys::Win32::Foundation::HWND,
-    windows_sys::Win32::Foundation::RECT,
-)> {
-    use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
-    };
-    use windows_sys::core::BOOL;
-
-    // The one already laid inside our window is not looked for: it is
-    // held, by the very part of the program that laid it, which weighs
-    // the number it holds before answering. And it could not be found by
-    // looking any more: a window taken into ours is no longer one of the
-    // system's top-level windows, and a top-level window is all an
-    // enumeration walks. Looked for all the same, it was not found, and
-    // what depends on finding it stopped: the floating button was never
-    // put up at all, and the engine's own shortcuts were refused on the
-    // grounds that the session was not in front.
-    if matches!(looked, Looked::Taken) {
-        let window = crate::picture::the_engines_window()?;
-        let mut rect = RECT {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-        // SAFETY: a window this program holds, and the rectangle is
-        // ours. It answers in screen coordinates whether the window is
-        // one of the system's own or one of ours, which is what every
-        // caller wants.
-        return (unsafe { GetWindowRect(window, &mut rect) } != 0).then_some((window, rect));
-    }
-
-    struct Looking {
-        process: u32,
-        looked: Looked,
-        widest: i64,
-        found: Option<(HWND, RECT)>,
-    }
-
-    unsafe extern "system" fn consider(window: HWND, carried: LPARAM) -> BOOL {
-        // SAFETY: the pointer is the one handed to EnumWindows just
-        // below, and lives for the whole of the call.
-        let looking = unsafe { &mut *(carried as *mut Looking) };
-
-        let mut owner = 0u32;
-        // SAFETY: the window comes from the enumeration and the slot is
-        // ours.
-        unsafe { GetWindowThreadProcessId(window, &mut owner) };
-        if owner != looking.process {
-            return TRUE;
-        }
-        match looking.looked {
-            // SAFETY: same window.
-            Looked::Taken if unsafe { IsWindowVisible(window) } == 0 => return TRUE,
-            Looked::Fresh if !titled(window) => return TRUE,
-            _ => {}
-        }
-
-        let mut rect = RECT {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-        // SAFETY: same window, and the rectangle is ours.
-        if unsafe { GetWindowRect(window, &mut rect) } != 0 {
-            let area = i64::from(rect.right - rect.left) * i64::from(rect.bottom - rect.top);
-            if area > looking.widest {
-                looking.widest = area;
-                looking.found = Some((window, rect));
-            }
-        }
-        TRUE
-    }
-
-    /// Whether that window carries the engine's own title.
-    ///
-    /// Asked of another program's window, which the system answers from
-    /// the caption it is drawing rather than by asking that program: it
-    /// therefore only answers while the window still has a caption, which
-    /// is exactly as long as it is still the engine's.
-    fn titled(window: HWND) -> bool {
-        let mut written = [0u16; 256];
-        // SAFETY: the window comes from the enumeration and the buffer is
-        // ours, of the length the call is told.
-        let taken = unsafe { GetWindowTextW(window, written.as_mut_ptr(), written.len() as i32) };
-        if taken <= 0 {
-            return false;
-        }
-        String::from_utf16_lossy(&written[..taken as usize]).ends_with(TITLED)
-    }
-
-    let mut looking = Looking {
-        process,
-        looked,
-        widest: 0,
-        found: None,
-    };
-    // SAFETY: the callback above is what reads the pointer, and the
-    // enumeration is over before this function returns.
-    unsafe { EnumWindows(Some(consider), &mut looking as *mut Looking as LPARAM) };
-    looking.found
-}
-
-/// That player's picture window, for whoever else needs to reach it.
-#[cfg(windows)]
-pub fn window_of(process: u32, looked: Looked) -> Option<windows_sys::Win32::Foundation::HWND> {
-    window_and_place_of(process, looked).map(|(window, _)| window)
-}
-
-/// Where that player's picture is, as left, top, right and bottom in
-/// real pixels.
-#[cfg(windows)]
-fn picture_of(process: u32) -> Option<(i32, i32, i32, i32)> {
-    window_and_place_of(process, Looked::Taken)
-        .map(|(_, rect)| (rect.left, rect.top, rect.right, rect.bottom))
-        .filter(|(left, top, right, bottom)| right > left && bottom > top)
-}
-
-#[cfg(not(windows))]
-fn picture_of(_process: u32) -> Option<(i32, i32, i32, i32)> {
-    None
-}
-
-/// Types the engine's shortcut, at the session and nowhere else.
-///
-/// Which is `hand_over_and_type`'s doing, and the only reason this may
-/// type at all: the keyboard was given to the picture and seen to land
-/// there one call earlier, on this same thread.
-#[cfg(windows)]
-fn shortcut(act: Act, process: u32) -> Result<(), String> {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_CONTROL, VK_MENU, VK_SHIFT};
-
-    let (Some(letter), Some(key)) = (act.letter(), act.where_it_sits()) else {
-        return Ok(());
-    };
-
-    // Whether anything will actually receive this. `SendInput` reports
-    // success whatever happens downstream: a combination another program
-    // has claimed as its own global shortcut swallows the injected keys
-    // before they ever reach the session, and nothing about that shows up
-    // as a failure here. Checked by claiming it ourselves and handing it
-    // straight back, the one way this can be known at all.
-    if already_claimed(letter) {
-        let combo = format!("Ctrl+Alt+Maj+{}", char::from(letter));
-        note(&format!(
-            "{act} refusé : {combo} est déjà pris par un autre programme"
-        ));
-        return Err(format!(
-            "{combo} est déjà utilisé par un autre programme sur cet ordinateur.\n  \
-             Fermez-le, ou changez son raccourci, puis réessayez."
-        ));
-    }
-
-    // A modifier a finger is already holding is neither pressed nor
-    // released here. Releasing it for them leaves the system certain
-    // that finger has gone while it has not, and the next shortcut typed
-    // without lifting it is read as the bare key: it does nothing at
-    // all. This is typed in answer to a shortcut the person has just
-    // typed, so the finger in question is very often still down, and
-    // that is a shortcut which works or not depending on whether they
-    // let go in between. The engine reads the whole combination either
-    // way: what it does not get from us, it already has.
-    let mut to_press: Vec<u16> = Vec::new();
-    let mut a_finger_has: Vec<&str> = Vec::new();
-    for (name, place, named) in [
-        ("Ctrl", place::CTRL, VK_CONTROL),
-        ("Alt", place::ALT, VK_MENU),
-        ("Maj", place::SHIFT, VK_SHIFT),
-    ] {
-        if a_finger_holds(named) {
-            a_finger_has.push(name);
-        } else {
-            to_press.push(place);
-        }
-    }
-
-    // Pressed in order, released in the mirror order: no key is left
-    // down that was not down before.
-    let mut keys: Vec<(u16, bool)> = to_press.iter().map(|place| (*place, false)).collect();
-    keys.push((key, false));
-    keys.push((key, true));
-    keys.extend(to_press.iter().rev().map(|place| (*place, true)));
-
-    if typed(&keys) {
-        // Said out loud because nothing else can say it: if the picture
-        // does not react, this line is what tells a keystroke that never
-        // left from one the engine chose to ignore.
-        //
-        // And what was skipped with it. The engine answers only when it
-        // holds the three modifiers itself; one of them skipped here on
-        // the word of a finger that has in truth already let go, and the
-        // combination arrives short, is recognised by nobody, and nothing
-        // anywhere says why.
-        note(&format!(
-            "{act} envoyé au lecteur {process} : Ctrl+Alt+Maj+{}, à la place {key:#04x}{}",
-            char::from(letter),
-            if a_finger_has.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    " ; non pressé ici, un doigt le tenait déjà : {}",
-                    a_finger_has.join(", ")
-                )
-            }
-        ));
-        Ok(())
-    } else {
-        note(&format!(
-            "{act} refusé par Windows pour le lecteur {process}"
-        ));
-        Err("Windows a refusé la combinaison de touches".to_string())
-    }
-}
-
-/// Where the keys this program types sit, in the numbering of places
-/// rather than of names.
-///
-/// The place is what is sent and the name is left for the far end to work
-/// out from its own keyboard: the key engraved A in France is the key
-/// engraved Q elsewhere, and a name sent instead leaves the place to
-/// whatever the far system thinks the keyboard is.
-#[cfg(windows)]
-mod place {
-    pub const CTRL: u16 = 0x1D;
-    pub const ALT: u16 = 0x38;
-    pub const SHIFT: u16 = 0x2A;
-}
-
-/// Types those keys, in that order, and says whether the system took them
-/// all.
-///
-/// Each pair is where a key sits and whether it is going up. Shared by
-/// everything this program types: what it hands the system is the same
-/// either way, and two copies of it would be two chances to send a
-/// keystroke slightly differently.
-#[cfg(windows)]
-fn typed(keys: &[(u16, bool)]) -> bool {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, SendInput,
-    };
-
-    let events: Vec<INPUT> = keys
-        .iter()
-        .map(|(place, up)| INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: 0,
-                    wScan: *place,
-                    dwFlags: KEYEVENTF_SCANCODE | if *up { KEYEVENTF_KEYUP } else { 0 },
-                    time: 0,
-                    dwExtraInfo: 0,
-                },
-            },
-        })
-        .collect();
-
-    // SAFETY: the events are ours and well formed, and their size is the
-    // one the call is told to expect.
-    let sent = unsafe {
-        SendInput(
-            events.len() as u32,
-            events.as_ptr(),
-            std::mem::size_of::<INPUT>() as i32,
-        )
-    };
-    sent as usize == events.len()
-}
-
-#[cfg(not(windows))]
-fn typed(_keys: &[(u16, bool)]) -> bool {
-    false
-}
-
-/// Whether a finger is on that key at this instant.
-///
-/// Asked of the keyboard itself and not of this thread's own reading of
-/// it: this runs nowhere near the window that has the keys, and what
-/// that window has been told is neither here nor now.
-#[cfg(windows)]
-fn a_finger_holds(named: windows_sys::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY) -> bool {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
-
-    // SAFETY: a named key, which is all this call reads.
-    unsafe { GetAsyncKeyState(named as i32) < 0 }
-}
-
-/// Whether Ctrl+Alt+Shift+`letter` is already claimed by something else
-/// on this computer, found out by claiming it here and handing it
-/// straight back.
-///
-/// The one way this can be known at all. Windows does not say who holds a
-/// combination, only whether a new claim on it succeeds, so this is
-/// answered the same way the question would be asked of Windows itself: a
-/// hotkey of our own, on a thread of our own, id chosen so nothing else in
-/// this program is asking for it at the same time. A refusal can then only
-/// mean something outside this program got there first: this program's
-/// own are registered on a thread of their own from a fixed, different
-/// set of keys (`shortcuts.rs`).
-///
-/// Given back at once when it is won: keeping it would be claiming, for
-/// the rest of the program's life, a combination that is none of its
-/// business the moment this question is answered, and would itself then
-/// swallow it from whoever asked for it first.
-#[cfg(windows)]
-fn already_claimed(letter: u8) -> bool {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, RegisterHotKey, UnregisterHotKey,
-    };
-
-    const PROBE: i32 = 0x2A11;
-    // The virtual-key code of an ordinary letter is its own ASCII value.
-    let vk = u32::from(letter);
-    // SAFETY: a thread-owned hotkey, id and all, claimed and given back
-    // within this one call; no window is named.
-    let refused = unsafe {
-        RegisterHotKey(
-            std::ptr::null_mut(),
-            PROBE,
-            MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT,
-            vk,
-        )
-    } == 0;
-    if !refused {
-        // SAFETY: the same id and the same thread that just claimed it.
-        unsafe { UnregisterHotKey(std::ptr::null_mut(), PROBE) };
-    }
-    refused
-}
-
-#[cfg(not(windows))]
-fn shortcut(_act: Act, _process: u32) -> Result<(), String> {
-    Err("les sessions ne tournent que sous Windows".to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn every_menu_entry_names_a_shortcut_the_engine_answers_to() {
-        // The letters are those of the client engine: changing them
-        // without the engine would type a combination that does nothing,
-        // or worse, another one than the one wanted.
-        //
-        // And the places are those of a keyboard, independent of what is
-        // engraved on it: that is how the engine recognises a key first.
-        for (act, letter, place) in [
-            (Act::Stats, b'S', 0x1Fu16),
-            (Act::MouseMode, b'M', 0x32),
-            (Act::SystemKeys, b'K', 0x25),
-            (Act::PointerLock, b'L', 0x26),
-        ] {
-            assert_eq!(act.letter(), Some(letter), "sur « {act} »");
-            assert_eq!(act.where_it_sits(), Some(place), "sur « {act} »");
-        }
-        // The others do not go through the keyboard of the player: ending
-        // is asked of the far computer over the tunnel, covering the
-        // screen is done to our own window, the one of the engine being
-        // laid inside it, Ctrl+Alt+Suppr is the combination Windows keeps
-        // for itself at both ends, and the sound is cut in the mixer of
-        // this computer.
-        for act in [
-            Act::End,
-            Act::Fullscreen,
-            Act::SecureAttention,
-            Act::LockScreen,
-            Act::Sound,
-        ] {
-            assert_eq!(act.letter(), None, "sur « {act} »");
-            assert_eq!(act.where_it_sits(), None, "sur « {act} »");
-        }
-    }
 
     #[test]
     fn a_picture_smaller_than_the_button_is_answered_and_not_refused() {
@@ -2085,10 +1314,17 @@ mod tests {
 
     #[test]
     fn there_is_one_way_to_end_a_session_and_not_two() {
-        // The engines offer two: leaving with the far desktop left open,
-        // and handing it back. Carrying that difference up to the person
+        // A session could be left with the far desktop open, or closed
+        // with it handed back. Carrying that difference up to the person
         // would leave them a session neither running nor over. One single
         // line of the menu ends it, and it carries one single act.
         assert_eq!(Act::End.to_string(), "fin de la session");
+    }
+
+    #[test]
+    fn the_figures_stand_in_the_corner_under_the_badges() {
+        let image = (100, 200, 1_000, 800);
+        assert_eq!(the_other_corner(image), (100 + MARGIN, 200 + MARGIN));
+        assert_eq!(the_bottom_corner(image), (100 + MARGIN, 800 - MARGIN));
     }
 }

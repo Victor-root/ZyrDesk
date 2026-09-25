@@ -29,22 +29,19 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicIsize, Ordering};
 
 use crate::floating::Floating;
-use crate::picture::Picture;
 use crate::tray::Shown;
 
 /// The program, as every part of it holds it.
 ///
 /// What a toolkit called a "handle". What is behind it is what the
 /// product keeps from one session to the next: what the floating button
-/// follows, what the picture holds, and what the icon by the clock said
-/// last time.
+/// follows, and what the icon by the clock said last time.
 #[derive(Clone)]
 pub struct App(Arc<Inner>);
 
 #[derive(Default)]
 struct Inner {
     floating: Floating,
-    picture: Picture,
     shown: Shown,
 }
 
@@ -57,10 +54,6 @@ impl App {
 
     pub fn floating(&self) -> &Floating {
         &self.0.floating
-    }
-
-    pub fn picture(&self) -> &Picture {
-        &self.0.picture
     }
 
     pub fn shown(&self) -> &Shown {
@@ -348,4 +341,9 @@ where
     R: Send + 'static,
 {
     runtime().spawn_blocking(work)
+}
+
+/// Waits for a task from a thread that is not one.
+pub fn block_on<F: std::future::Future>(task: F) -> F::Output {
+    runtime().block_on(task)
 }

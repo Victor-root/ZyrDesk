@@ -12,23 +12,14 @@
 //! are struggling. It reads without a caption since it is the brand's own
 //! drawing, and it fits in eighteen pixels where a word would not.
 //!
-//! What they replace. The client engine has a warning of its own for the
-//! first of the two: red letters at thirty-six points, burnt into the
-//! frames it decodes, in a colour and a size it chose. Two things are
-//! wrong with it and neither is a matter of taste. It is drawn into the
-//! picture, which is the far computer's desktop and not ours to write on;
-//! and it arrives late, several seconds after the person has watched the
-//! picture stop, because it is worked out over a window of its own on the
-//! far side of a decoder that has nothing to decode. The engine's switch
-//! for it is thrown at the session's start (patch P-M16) and this says it
-//! instead.
+//! Never a warning drawn into the picture: the picture is the far
+//! computer's desktop and not ours to write on.
 //!
-//! What makes it quick. The engine writes down what a session costs, and
-//! lately it writes it five times a second rather than once, with one
-//! more number: how long the picture has not moved. That one is not
-//! averaged and not waited for, it is true the moment it is read, and it
-//! is what lights the first badge before the hand has had time to move
-//! the mouse to check.
+//! What makes it quick. The player measures what a session costs five
+//! times a second, and one of its numbers is how long the picture has not
+//! moved. That one is not averaged and not waited for, it is true the
+//! moment it is read, and it is what lights the first badge before the
+//! hand has had time to move the mouse to check.
 //!
 //! What decides is not Windows code and compiles everywhere: it is
 //! arithmetic on a reading, and it is the only half a test can say
@@ -41,7 +32,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::measures::Measures;
+use zyr_player::Measures;
 
 /* ---- What a reading says --------------------------------------------- */
 
@@ -53,13 +44,14 @@ fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
 
-/// How long the picture must have been frozen for it to show.
+/// How long the picture must have been frozen for it to show, in
+/// milliseconds.
 ///
 /// A third of a second. Below that, it is one of the late frames that go
 /// by all the time, and a badge that blinks at that pace no longer means
 /// anything; above it, the person has already noticed and the badge
 /// arrives after them.
-const FROZEN_MS: u64 = 350;
+const FROZEN_MS: f64 = 350.0;
 
 /// How many frames lost on the way, as a percentage of the second gone
 /// by, before it is said.
@@ -137,7 +129,7 @@ pub fn read(measures: &Measures) -> Reads {
     let mut reads = Reads::default();
 
     if let Some(frozen) = measures.since_frame_ms.filter(|held| *held >= FROZEN_MS) {
-        reads.link = Some(format!("l'image est figée depuis {frozen} ms"));
+        reads.link = Some(format!("l'image est figée depuis {frozen:.0} ms"));
     } else if let Some(lost) = measures.dropped_network_pct.filter(|pct| *pct >= LOST_PCT) {
         reads.link = Some(format!("{lost:.1} % des images se perdent en route"));
     } else if let Some(late) = measures
@@ -226,7 +218,7 @@ fn still(until: &mut Option<Instant>, wrong: bool, now: Instant) -> bool {
 
 /// How many times a second the reading is read again.
 ///
-/// The engine writes five; this loop reads a little more often, so
+/// The player measures five; this loop reads a little more often, so
 /// that the delay added on this side is smaller than the one on the
 /// other. The aim is for a badge to be there within the third of a
 /// second that follows what it reports.
@@ -261,11 +253,6 @@ pub fn watch(_app: &crate::app::App) {}
 /// The loop itself.
 #[cfg(windows)]
 async fn keep_up(app: &crate::app::App) {
-    // From when on a reading belongs to this session. The file outlives
-    // the session that wrote it, and a session opening would find it as
-    // the previous one left it, so with a picture frozen for hours: a
-    // badge lit on the first frame of a perfectly healthy session.
-    let started = std::time::SystemTime::now();
     let mut steady = Steady::default();
     let mut was = Shown::default();
     loop {
@@ -274,16 +261,7 @@ async fn keep_up(app: &crate::app::App) {
             return;
         }
         let held = crate::floating::the_badges_are_held_up(app);
-        let Some(measures) = fresh(started) else {
-            // Held on screen, they are there even before the client
-            // engine has written a single reading: what is being
-            // looked at then is the badges themselves, and a session
-            // whose readings have not started is precisely the moment
-            // someone looks at them.
-            show(app, Shown::default(), &Reads::default(), held);
-            continue;
-        };
-        let reads = read(&measures);
+        let reads = read(&crate::session::measures());
         let now = Instant::now();
         let shown = steady.after(&reads, now);
         if shown != was {
@@ -297,20 +275,6 @@ async fn keep_up(app: &crate::app::App) {
         // only redraws on a real difference.
         show(app, shown, &reads, held);
     }
-}
-
-/// The reading, if it belongs to this session.
-#[cfg(windows)]
-fn fresh(started: std::time::SystemTime) -> Option<Measures> {
-    let path = crate::measures::readings();
-    // The file's time rather than its contents: nothing in the line says
-    // which session wrote it, and its age says so without adding
-    // anything to what the engine writes.
-    let written = std::fs::metadata(&path).ok()?.modified().ok()?;
-    if written < started {
-        return None;
-    }
-    Some(crate::measures::session_measures())
 }
 
 /// Says what has just changed, and nothing else.
@@ -900,7 +864,7 @@ mod tests {
             network_ms: Some(8.0),
             dropped_network_pct: Some(0.0),
             dropped_jitter_pct: Some(0.1),
-            since_frame_ms: Some(12),
+            since_frame_ms: Some(12.0),
             ..Default::default()
         }
     }
@@ -941,8 +905,8 @@ mod tests {
 
     #[test]
     fn a_reading_that_says_nothing_lights_nothing_either() {
-        // A session that has just opened: the engine has not yet
-        // written a single second. Nothing is known, so nothing lights
+        // A session that has just opened: the player has not yet
+        // measured a single second. Nothing is known, so nothing lights
         // up.
         assert_eq!(read(&Measures::default()), Reads::default());
     }
@@ -1063,7 +1027,7 @@ mod tests {
         let start = Instant::now();
         let mut steady = Steady::default();
         let wrong = read(&Measures {
-            since_frame_ms: Some(900),
+            since_frame_ms: Some(900.0),
             ..healthy()
         });
 
@@ -1090,7 +1054,7 @@ mod tests {
         let start = Instant::now();
         let mut steady = Steady::default();
         let wrong = read(&Measures {
-            since_frame_ms: Some(900),
+            since_frame_ms: Some(900.0),
             ..healthy()
         });
         let well = read(&healthy());

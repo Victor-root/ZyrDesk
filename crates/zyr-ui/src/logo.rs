@@ -826,16 +826,16 @@ fn under_the_hand(window: windows_sys::Win32::Foundation::HWND) -> bool {
 /// only answer that is always true. What is left here is saying that the
 /// logo is held, so it draws itself held.
 fn taken(window: windows_sys::Win32::Foundation::HWND) {
-    let Some(app) = PROGRAM.lock().expect("programme du logo").clone() else {
+    if PROGRAM.lock().expect("programme du logo").is_none() {
         return;
-    };
+    }
     if TAKEN.swap(true, Ordering::Relaxed) {
         return;
     }
     head_for(window);
     let handle = window as isize;
     crate::app::spawn(async move {
-        let plain = crate::floating::grabbed(&app).await;
+        let plain = crate::floating::grabbed().await;
         TAKEN.store(false, Ordering::Relaxed);
         head_for(handle as windows_sys::Win32::Foundation::HWND);
         // A plain click opens and closes the menu; a drag does not, or

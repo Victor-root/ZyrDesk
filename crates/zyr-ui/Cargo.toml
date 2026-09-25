@@ -27,6 +27,9 @@ zyr-clipboard.workspace = true
 # Whether FFmpeg is all there, which the home screen says.
 zyr-codec.workspace = true
 zyr-control.workspace = true
+# The player of a session, which draws its picture into a window of
+# ours and hears its keyboard and mouse from there.
+zyr-player.workspace = true
 zyr-session.workspace = true
 zyr-sound.workspace = true
 zyr-transport.workspace = true
@@ -64,28 +67,20 @@ windows-sys = { version = "0.61.2", features = [
     # asked not to round them for the length of a session.
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
-    # PrintWindow, the only copy of a window that reaches what a program
-    # draws on the graphics card. windows-sys files it with printing,
-    # hence this feature.
-    "Win32_Storage_Xps",
     "Win32_System_Com",
     # SHELLEXECUTEINFOW holds a registry field, so windows-sys files the
     # whole ShellExecuteEx family behind this feature.
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
-    # GetTickCount: the only clock that speaks the same language as the
-    # timestamp Windows puts on every key press, so the only one that
-    # tells a key's age when it arrives.
-    "Win32_System_SystemInformation",
+    # MK_LBUTTON and the other buttons a mouse message says are down.
+    "Win32_System_SystemServices",
     "Win32_System_Threading",
-    # SetWinEventHook: being told by Windows where the foreground goes,
-    # instead of asking it again and again. Filed with accessibility,
-    # which is what these hooks were first made for.
-    "Win32_UI_Accessibility",
     # WM_MOUSELEAVE, without which nothing ever says a hand has left the
     # logo: windows-sys files it with the controls.
     "Win32_UI_Controls",
     "Win32_UI_HiDpi",
+    # The mouse read from the device itself, for a game.
+    "Win32_UI_Input",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",

@@ -27,6 +27,7 @@ use zyr_proto::session::{
 };
 
 use crate::service;
+use crate::session::Changed;
 
 /// What this module files its journal lines under.
 const TAG: &str = "settings";
@@ -216,13 +217,13 @@ pub struct SessionMenu {
     /// said, and on one that has a single screen worth offering: the line
     /// then does not show at all, which is right in all three cases.
     pub screens: Vec<OfferedScreen>,
-    /// The ones the far computer's engine says it cannot make.
+    /// The ones the far computer's engine says it cannot make, once it
+    /// has said.
     ///
-    /// Empty means it has not said, which is every menu opened outside a
-    /// session and every far computer whose engine has not finished
-    /// starting. Empty is never « it can make none »: a computer that
-    /// could encode nothing could not be watched at all.
-    pub beyond_it: Vec<String>,
+    /// Nothing means it has not said, which is every menu opened outside
+    /// a session and every far computer whose engine has not answered the
+    /// player yet.
+    pub beyond_it: Option<Vec<String>>,
     pub now: SessionChoice,
 }
 
@@ -244,11 +245,41 @@ pub async fn session_menu(app: crate::app::App) -> SessionMenu {
         rates: RATES_OFFERED.to_vec(),
         codecs: CODECS_OFFERED.iter().map(Codec::to_string).collect(),
         screens: the_far_computers_screens().await,
-        // What the far computer cannot make is learnt by the player that
-        // plays its session, and this window plays none.
-        beyond_it: Vec::new(),
+        beyond_it: beyond_the_far_computer(),
         now: SessionChoice::of(preferred, screen),
     }
+}
+
+/// The codecs the far computer of the session in progress cannot make.
+///
+/// Worked out from what its engine says it can, and not the other way
+/// round: « Automatique » is never beyond anybody, being the choice not
+/// to choose.
+///
+/// Nothing at all when there is no session, or when that computer's
+/// engine has not said yet: an unanswered question must leave the menu
+/// exactly as it was rather than grey half of it out.
+fn beyond_the_far_computer() -> Option<Vec<String>> {
+    crate::session::what_the_far_computer_encodes().map(beyond)
+}
+
+/// The codecs offered that a computer able to encode `can` cannot make.
+fn beyond(can: zyr_player::CodecSet) -> Vec<String> {
+    use zyr_player::VideoCodec;
+
+    CODECS_OFFERED
+        .iter()
+        .filter(|codec| {
+            let made_as = match codec {
+                Codec::Auto => return false,
+                Codec::H264 => VideoCodec::H264,
+                Codec::Hevc => VideoCodec::Hevc,
+                Codec::Av1 => VideoCodec::Av1,
+            };
+            !can.contains(made_as)
+        })
+        .map(Codec::to_string)
+        .collect()
 }
 
 /// The screens the far computer of the session in progress is showing on.
@@ -291,8 +322,10 @@ fn offered(screen: &FarScreen) -> OfferedScreen {
 /// stands, and hands back where the lines stand.
 ///
 /// Written down first, so the next session opens with it whatever becomes
-/// of this one; then given to the session on screen, which is what
-/// `take_where_it_stands` does.
+/// of this one; then taken by the session on screen, which is what
+/// `take_where_it_stands` does: the player asks the far engine for it on
+/// the stream it already has, and nothing is reopened. Every click acts,
+/// and none of them costs the picture.
 ///
 /// A value the product does not offer is refused rather than written
 /// down. These come from a list the product handed over itself, so a
@@ -304,13 +337,14 @@ pub async fn choose_session(
     value: String,
 ) -> Result<SessionChoice, String> {
     let mut preferred = preferred().await;
-    match which.as_str() {
+    let changed = match which.as_str() {
         "asked" => {
             let asked = value.parse::<Asked>()?;
             if !SIZES_OFFERED.contains(&asked) {
                 return Err(format!("taille non proposée : {value}"));
             }
             preferred.asked = asked;
+            Changed::Size
         }
         "bitrate" => {
             let rate = value
@@ -320,6 +354,7 @@ pub async fn choose_session(
                 return Err(format!("débit non proposé : {value}"));
             }
             preferred.bitrate_kbps = rate;
+            Changed::Rate
         }
         "codec" => {
             let codec = value.parse::<Codec>()?;
@@ -327,6 +362,7 @@ pub async fn choose_session(
                 return Err(format!("codec non proposé : {value}"));
             }
             preferred.codec = codec;
+            Changed::Codec
         }
         // Written down in no settings file, so it never reaches the
         // service that keeps them: which of the far computer's screens is
@@ -356,15 +392,18 @@ pub async fn choose_session(
         }
         // Two words and not a list: it is a switch, and the two sides are
         // named in the window like the ones beside them.
-        "steady" => match value.as_str() {
-            "on" => preferred.steady_far_rate = true,
-            "off" => preferred.steady_far_rate = false,
-            other => return Err(format!("cadence non proposée : {other}")),
-        },
+        "steady" => {
+            match value.as_str() {
+                "on" => preferred.steady_far_rate = true,
+                "off" => preferred.steady_far_rate = false,
+                other => return Err(format!("cadence non proposée : {other}")),
+            }
+            Changed::SteadyFarRate
+        }
         other => return Err(format!("réglage inconnu : {other}")),
-    }
+    };
     write_down(preferred).await?;
-    crate::session::take_where_it_stands().await?;
+    crate::session::take_where_it_stands(app.clone(), changed, preferred).await?;
     Ok(SessionChoice::of(
         preferred,
         crate::picture::the_screen_of_this_computer(&app),
@@ -555,6 +594,22 @@ mod tests {
         // The rate of the measured screen and not the default one: that
         // is what the line under "Qualité" must announce.
         assert_eq!(big.fps, 144);
+    }
+
+    #[test]
+    fn what_the_far_computer_cannot_make_is_struck_and_automatic_never_is() {
+        use zyr_player::{CodecSet, VideoCodec};
+
+        let h264_only = CodecSet::empty().with(VideoCodec::H264);
+        assert_eq!(
+            beyond(h264_only),
+            vec![Codec::Hevc.to_string(), Codec::Av1.to_string()]
+        );
+        let all = h264_only.with(VideoCodec::Hevc).with(VideoCodec::Av1);
+        assert!(beyond(all).is_empty());
+        // Even a computer that says it can make nothing does not strike
+        // « Automatique »: it is the choice not to choose.
+        assert!(!beyond(CodecSet::empty()).contains(&Codec::Auto.to_string()));
     }
 
     #[test]

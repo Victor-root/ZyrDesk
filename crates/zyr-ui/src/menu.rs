@@ -30,10 +30,10 @@ use crate::app::App;
 use crate::design::{self, Colour, Palette};
 use crate::floating::{Act, Opens};
 use crate::icons;
-use crate::measures::Measures;
 use crate::paint::{Align, Canvas, Icon, Pen, Rect};
 use crate::settings::{Offered, SessionMenu};
 use crate::shortcuts::Doing;
+use zyr_player::Measures;
 
 /// What this module files its journal lines under.
 const TAG: &str = "floating";
@@ -193,7 +193,7 @@ const LINES: [Line; 21] = [
     Line::Entry(Entry {
         icon: &icons::STATISTICS,
         label: "Statistiques",
-        trailing: Trailing::Text("Ctrl+Alt+Maj+S"),
+        trailing: Trailing::Text(""),
         does: Does::Session(Act::Stats),
         destructive: false,
     }),
@@ -322,7 +322,7 @@ mod layout {
 }
 
 /// One of the bar's four figures: what it costs, how it reads, and
-/// where it is taken from in what the engine writes.
+/// where it is taken from in what the player measures.
 struct Reading {
     label: &'static str,
     unit: &'static str,
@@ -368,7 +368,7 @@ const READINGS: [Reading; 4] = [
 
 /// What a reading shows while it has nothing to say.
 ///
-/// The engine says nothing rather than zero when it has measured
+/// The player says nothing rather than zero when it has measured
 /// nothing, and zero would be a lie: a second with no frame decoded
 /// does not have a zero decoding time.
 const NO_READING: &str = "-";
@@ -388,8 +388,8 @@ const NO_READING: &str = "-";
 /// tells the truth.
 const KEEP_FOR: std::time::Duration = std::time::Duration::from_secs(3);
 
-/// The engine's pulse, which writes once a second. Asking more often
-/// would reread the same file for the same number.
+/// How often the bar is read again. Its four figures are averages over
+/// the second just gone: read more often, they would only flicker.
 const REFRESH: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// How much a colour tints the background when it serves as a hover:
@@ -464,12 +464,11 @@ static READINGS_BAR: Mutex<ReadingsBar> = Mutex::new(ReadingsBar::empty());
 /// leave two watches behind the same card.
 static ROUND: AtomicU32 = AtomicU32::new(0);
 
-/// Where each of the six switches stands.
+/// Where each of the switches stands.
 ///
-/// Read again at every opening of the card rather than remembered: the
-/// product's shortcut flips the mouse, and the Windows mixer is open to
-/// everyone. A switch that shows what it believes rather than what is, is
-/// a switch nobody believes twice.
+/// Read again at every opening of the card rather than remembered, from
+/// what each of them really is: a switch that shows what it believes
+/// rather than what is, is a switch nobody believes twice.
 static IN_GAME: AtomicBool = AtomicBool::new(false);
 static MUTED: AtomicBool = AtomicBool::new(false);
 static IMMERSIVE: AtomicBool = AtomicBool::new(false);
@@ -608,7 +607,7 @@ impl ReadingsBar {
         }
     }
 
-    /// What a read of the engine shows, with the previous one at hand.
+    /// What a read of the player shows, with the previous one at hand.
     ///
     /// The previous one because a missing reading keeps what it was
     /// saying for a while rather than being wiped; see `KEEP_FOR`.
@@ -632,7 +631,7 @@ impl ReadingsBar {
         ReadingsBar {
             figures,
             read_at,
-            stream: stream(readings),
+            stream: crate::statistics::stream(readings),
         }
     }
 
@@ -793,7 +792,7 @@ impl Setting {
     /// question has no answer, and a question with no answer must leave
     /// the menu exactly as it was.
     fn out_of_reach(self, menu: &SessionMenu, value: &str) -> bool {
-        self == Setting::Codec && menu.beyond_it.iter().any(|other| other == value)
+        self == Setting::Codec && menu.beyond_it.iter().flatten().any(|other| other == value)
     }
 }
 
@@ -819,22 +818,6 @@ fn ratio(width: u32, top: u32) -> String {
         (683, 384) => "16:9".to_string(),
         (x, y) => format!("{x}:{y}"),
     }
-}
-
-/// The grey line under the figures: what the picture is made of. What
-/// is missing leaves no gap, it is not written.
-fn stream(said: &Measures) -> String {
-    let mut pieces: Vec<String> = Vec::new();
-    if let Some(codec) = &said.codec {
-        pieces.push(codec.clone());
-    }
-    if let (Some(width), Some(height)) = (said.width, said.height) {
-        pieces.push(format!("{width}x{height}"));
-    }
-    if let Some(frames) = said.fps {
-        pieces.push(format!("{frames:.0} images/s"));
-    }
-    pieces.join(" · ")
 }
 
 impl Trailing {
@@ -1013,11 +996,10 @@ pub fn raise(app: &App, scale: f32, light: bool) {
 /// Asks again what the session offers and where it stands, and starts over
 /// as long as the far machine has not said what it can encode.
 ///
-/// It takes a few seconds to say so: its engine starts, then the road
-/// starts serving the session. Asked only once when the button opened, the
-/// question always came before that, and the menu opened offering a codec
-/// that particular machine cannot do; it only corrected itself once the
-/// card was already in front of the eyes, which shows.
+/// It says so when its engine welcomes the player, which can come after
+/// the button: asked only once when the button opened, the menu could
+/// open offering a codec that particular machine cannot do, and only
+/// correct itself once the card was already in front of the eyes.
 ///
 /// A numbered round, as for the readings: two openings close together do
 /// not leave two watches behind the same card.
@@ -1029,10 +1011,9 @@ fn reread_the_session_menu(app: &App) {
             && ITS_WINDOW.load(Ordering::Relaxed) != 0
         {
             let read = crate::settings::session_menu(app.clone()).await;
-            // Nothing at all means it has said nothing, never that it can
-            // do nothing: so it is on that, and nowhere else, that the
-            // question is asked again.
-            let answered = !read.beyond_it.is_empty();
+            // Asked again until it has said, and no longer: every ask
+            // costs a question to the far computer about its screens.
+            let answered = read.beyond_it.is_some();
             let change = {
                 let mut session_menu = SESSION_MENU.lock().expect("réglages du menu");
                 let change = session_menu.as_ref() != Some(&read);
@@ -1096,8 +1077,7 @@ pub fn show(is_open: bool) {
     // they may have moved without it.
     follow_the_readings(&app, is_open);
     if is_open {
-        let asked = app.clone();
-        crate::app::spawn(async move { reread_the_toggles(&asked).await });
+        reread_the_toggles(&app);
         reread_the_session_menu(&app);
     }
     let _ = app.run_on_main_thread(move || {
@@ -2536,9 +2516,8 @@ fn acts(target: Target) {
             crate::app::spawn(async move {
                 match crate::floating::ask(&app, act).await {
                     // Read again rather than assumed: it is the only
-                    // way to show where things really stand, and the
-                    // sound is read in the Windows mixer and not here.
-                    Ok(()) => reread_the_toggles(&app).await,
+                    // way to show where things really stand.
+                    Ok(()) => reread_the_toggles(&app),
                     Err(refusal) => say_the_refusal(Err(refusal)),
                 }
             });
@@ -2703,25 +2682,25 @@ fn released(window: windows_sys::Win32::Foundation::HWND, rank: usize) {
     choose(&app, slider.setting, value);
 }
 
-/// Rereads where the four switches stand, and redraws if anything moved.
+/// Rereads where the switches stand, and redraws if anything moved.
 ///
-/// Three of them are what this program believes, because it is the one
-/// flipping them and the engine never says where it stands; the sound is
-/// asked of the Windows mixer, which knows it and is open to everyone.
-async fn reread_the_toggles(app: &App) {
+/// Each is read where it lives: the mouse and the keyboard in what takes
+/// them, the sound in the player that plays it, the two others in this
+/// window.
+fn reread_the_toggles(app: &App) {
     /// Sets where a switch stands, and says if it moved.
     fn set(cell: &AtomicBool, value: bool) -> bool {
         cell.swap(value, Ordering::Relaxed) != value
     }
 
-    let mut change = set(&IN_GAME, crate::floating::in_game_mouse(app));
-    change |= set(&IMMERSIVE, crate::floating::keys_to_the_session(app));
+    let mut change = set(&IN_GAME, crate::video::in_a_game());
+    change |= set(&IMMERSIVE, crate::system_keys::immersive());
     change |= set(&SHARED, crate::floating::the_clipboard_is_shared(app));
     change |= set(&HELD, crate::floating::the_badges_are_held_up(app));
-    // Without a session the mixer has nothing to say, and the card does
-    // not open without a session: so a refusal is left as it is rather
-    // than turning the switch off.
-    if let Ok(muted) = crate::floating::hushed(app).await {
+    // Without a session there is no player to ask, and the card does not
+    // open without a session: the switch is then left as it is rather
+    // than turned off.
+    if let Some(muted) = crate::floating::hushed() {
         change |= set(&MUTED, muted);
     }
     if change {
@@ -2730,8 +2709,7 @@ async fn reread_the_toggles(app: &App) {
 }
 
 /// Follows what the session costs while the card is open, and not a
-/// second longer: figures nobody looks at are worth neither the file nor
-/// the wake-up.
+/// second longer: figures nobody looks at are worth no wake-up.
 fn follow_the_readings(app: &App, is_open: bool) {
     // The round changes at every call, which stops the one before:
     // without that, opening and closing quickly would leave two watches
@@ -2743,7 +2721,7 @@ fn follow_the_readings(app: &App, is_open: bool) {
     let app = app.clone();
     crate::app::spawn(async move {
         while ROUND.load(Ordering::Relaxed) == round {
-            let said = crate::measures::session_measures();
+            let said = crate::session::measures();
             let now = Instant::now();
             // The lock is given back before the wait: a lock held
             // across a wait is a lock held for a second. Taken before

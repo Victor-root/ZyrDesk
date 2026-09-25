@@ -5163,6 +5163,34 @@ pub fn step(app: &App, detail: &str) {
     redraw(app);
 }
 
+/// The session dropped by itself and the picture is coming back.
+///
+/// The same screen as the opening, for the reason that it says the same
+/// thing: there is nothing to watch and something is being done. The
+/// attempt number only appears from the second one on: the first is the
+/// ordinary case and goes without counting, whereas a third says something
+/// the bar that goes back and forth will never say, which is that things
+/// are not going well.
+pub fn coming_back(app: &App, attempt: u32) {
+    {
+        let mut state = STATE.lock().expect("accueil");
+        let towards = state
+            .opening
+            .as_ref()
+            .map_or_else(String::new, |already| already.towards.clone());
+        state.opening = Some(Opening {
+            towards,
+            detail: if attempt > 1 {
+                format!("Connexion perdue, reprise en cours… ({attempt}ᵉ essai)")
+            } else {
+                "Connexion perdue, reprise en cours…".to_string()
+            },
+            since: std::time::Instant::now(),
+        });
+    }
+    redraw(app);
+}
+
 /// The window has nothing more to tell: what is happening now can be
 /// read in what the service holds.
 pub fn put_the_opening_away(app: &App) {

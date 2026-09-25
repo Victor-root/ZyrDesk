@@ -8,16 +8,14 @@
 //! product: the window the toolkit opens is a bare one, and its inside is
 //! a canvas this program paints, like the floating button and its menu.
 //!
-//! The one thing it does hold is the player of a session, which it
-//! starts and which goes when it goes. That is deliberate: a player left
+//! The one thing it does hold is the player of a session, which plays in
+//! this program and goes when it goes. That is deliberate: a player left
 //! running behind a window that is no longer there would hold the far
 //! computer's desktop with nothing on screen to give it back.
 //!
-//! The video is never drawn here either: the player draws it in a window
-//! of its own, so nothing about this interface is on the path of a
-//! frame. That window is laid over the inside of this one and made to
-//! follow it, which is what puts one window on screen instead of two
-//! without a picture ever passing through a web view.
+//! The player draws the picture into a window of this program, a child of
+//! the main one, from threads of its own: nothing about this interface is
+//! on the path of a frame, and there is one window on screen, not two.
 
 // A second console window opening behind the interface would give the
 // game away immediately.
@@ -68,11 +66,11 @@ mod home {
     use crate::app::App;
 
     pub fn step(_app: &App, _detail: &str) {}
+    pub fn coming_back(_app: &App, _attempt: u32) {}
     pub fn put_the_opening_away(_app: &App) {}
     pub fn failed(_app: &App, _text: &str) {}
 }
 
-mod measures;
 mod picture;
 mod pointer;
 mod service;
@@ -80,6 +78,12 @@ mod session;
 mod settings;
 mod shortcuts;
 mod startup;
+// The figures of a session, in the corner of its picture. What is
+// written compiles everywhere; the card is a window, so Windows'.
+mod statistics;
+// The keys Windows keeps for itself, taken for the session on request.
+// The decision compiles everywhere; the hook is Windows'.
+mod system_keys;
 mod theme;
 // What the floating button shows of the files arriving: the pane of the
 // mark fills like a loading bar. The reading compiles everywhere; the
@@ -91,11 +95,15 @@ mod tray;
 // window, so they belong to Windows.
 mod badges;
 
+// The picture of a session, in a window of ours. What a message means
+// compiles everywhere; the window is Windows'.
+mod video;
+
 #[cfg(windows)]
 mod elevated;
 
-// Being told where the front is going is a thing only Windows does, and
-// the watch that hears it lives on a thread of its own.
+// A hook of the system lives on a thread of its own, which only Windows
+// has to offer.
 #[cfg(windows)]
 mod hook;
 
