@@ -887,6 +887,9 @@ struct Counted {
     /// What this computer reaches outside itself, written down for as
     /// long as the session lasts and dropped with it.
     _outside: crate::outside::Watching,
+    /// This computer's Wi-Fi putting the session first, for as long as it
+    /// lasts.
+    _wifi: crate::wifi::Favouring,
 }
 
 impl Counted {
@@ -896,6 +899,7 @@ impl Counted {
             sessions: sessions.clone(),
             media: media.clone(),
             _outside: crate::outside::watch(log),
+            _wifi: crate::wifi::favour_latency(log),
         }
     }
 }

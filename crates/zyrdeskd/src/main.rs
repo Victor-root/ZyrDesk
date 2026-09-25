@@ -23,6 +23,7 @@ mod speakers;
 mod supervisor;
 mod transfer;
 mod ways;
+mod wifi;
 
 #[cfg(windows)]
 mod attention;

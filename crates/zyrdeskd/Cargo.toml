@@ -41,6 +41,10 @@ windows-service = "0.8.1"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Foundation",
+    # The Wi-Fi's types only: its functions are looked for at run time,
+    # wlanapi.dll being missing from a Windows Server without its
+    # wireless service.
+    "Win32_NetworkManagement_WiFi",
     "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_Environment",
