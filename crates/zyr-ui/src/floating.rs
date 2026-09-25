@@ -571,6 +571,20 @@ fn put_the_button_up(app: &App, picture: (i32, i32, i32, i32)) {
     lay_the_button(picture);
 }
 
+/// Whether a window of the button is still to be made, asked by the
+/// thread that makes it, at the moment it would.
+///
+/// The button is put up from more than one place, the watch and the
+/// picture's own window among them, and each asks for the windows it
+/// finds missing: two asks crossing before the first is answered made a
+/// second logo over the first, and the first hung there, lost, for as long
+/// as the program ran. Nor is one made once the picture it hangs on has
+/// gone.
+#[cfg(windows)]
+pub fn still_to_be_made(its_window: &std::sync::atomic::AtomicIsize) -> bool {
+    its_window.load(Ordering::Relaxed) == 0 && crate::video::shown()
+}
+
 /// The top left corner of the picture, at the same margin as the button.
 ///
 /// The same margin and not a second one: the two corners are looked at

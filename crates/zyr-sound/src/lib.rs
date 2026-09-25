@@ -1,16 +1,8 @@
 //! The sound of a computer, as a session needs to move it.
 //!
-//! Two silences, and they are not the same silence.
-//!
-//! One is here, at the screen somebody is watching: the picture arrives
-//! with its sound and the person wants the sound gone, without touching
-//! anything else the computer is playing. Windows has kept a volume and
-//! a mute per program since the volume mixer existed, and this is that
-//! same switch asked for from a program rather than from the mixer.
-//!
-//! The other is over there, at the computer being controlled: it goes on
-//! playing out loud into an empty room while its sound is also travelling
-//! down the session. Muting its speakers is what stops that, and it works
+//! The computer being controlled goes on playing out loud into an empty
+//! room while its sound is also travelling down the session. Muting its
+//! speakers is what stops that, and it works
 //! because of a detail of how Windows captures a computer's own output:
 //! what the engine records is the mix the audio engine hands to the
 //! device, copied before the device applies its own volume and mute. The
@@ -22,9 +14,10 @@
 //! # The border
 //!
 //! This crate knows Windows' sound and nothing about ZyrDesk, in the same
-//! way `zyr-screen` knows drivers and nothing about ZyrDesk. It takes a
-//! process number or nothing at all, and answers whether something is
-//! muted. What is worth muting, and when, is decided elsewhere.
+//! way `zyr-screen` knows drivers and nothing about ZyrDesk. It answers
+//! whether the speakers are muted, mutes them, and says whether there are
+//! any. What is worth muting, and when, is decided elsewhere; the sound of
+//! a session on the screen watching it is its player's to silence.
 
 // Everything below is Windows' sound. Elsewhere the crate still
 // compiles and still says something true, which is that there is no such
@@ -58,24 +51,6 @@ impl fmt::Display for Trouble {
 }
 
 impl std::error::Error for Trouble {}
-
-/// Whether the sound that program is playing is muted right now.
-///
-/// Asked rather than remembered: the mixer is open to anybody, the
-/// person may have used it, and a switch that shows what it believes
-/// instead of what is true is a switch nobody trusts twice.
-pub fn muted(process: u32) -> Result<bool, Trouble> {
-    mixer::muted(process)
-}
-
-/// Mutes, or unmutes, everything that program plays.
-///
-/// It reaches the program's own sound and nothing else on the computer,
-/// which is the whole point: the picture can be watched in silence while
-/// the music that was already playing goes on.
-pub fn mute(process: u32, quiet: bool) -> Result<(), Trouble> {
-    mixer::mute(process, quiet)
-}
 
 /// Whether this computer's speakers are muted right now.
 pub fn speakers_muted() -> Result<bool, Trouble> {
@@ -123,8 +98,6 @@ mod tests {
     fn outside_windows_the_answer_is_honest() {
         // Neither a false "it is muted" nor a false "it is on": both
         // would lie to whoever shows a switch.
-        assert!(muted(1).is_err());
-        assert!(mute(1, true).is_err());
         assert!(speakers_muted().is_err());
         assert!(mute_speakers(true).is_err());
     }
@@ -132,7 +105,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn the_sound_card_is_assumed_present_for_want_of_asking() {
-        // The only one of the five questions that answers instead of
+        // The only one of the three questions that answers instead of
         // refusing, and it answers yes: what reads it tells a person
         // their session is silent, and a false "there is none" would say
         // so of a machine that has sound.

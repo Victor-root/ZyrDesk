@@ -110,6 +110,30 @@ fn from_its_name(code: u32) -> Option<(u8, bool)> {
     (scancode != 0).then_some((scancode, code & 0xFF00 == 0xE000))
 }
 
+/// Where a key sits: where the keystroke says, or, for a keystroke typed
+/// by a program with the key's name alone, where the layout puts that
+/// name, which is only asked then. Nothing when neither knows: there is
+/// no key to send.
+///
+/// The picture's window and the hook on the system's keys both read
+/// keystrokes, and both answer this one way.
+pub(crate) fn placed(said: (u8, bool), by_its_name: impl FnOnce() -> u32) -> Option<(u8, bool)> {
+    match said {
+        (0, _) => from_its_name(by_its_name()),
+        place => Some(place),
+    }
+}
+
+/// What the keyboard's layout says of a key's name: its place, E0 in the
+/// second byte.
+#[cfg(windows)]
+pub(crate) fn the_layouts_place(named: u32) -> u32 {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MAPVK_VK_TO_VSC_EX, MapVirtualKeyW};
+
+    // SAFETY: a plain translation, of a key name.
+    unsafe { MapVirtualKeyW(named, MAPVK_VK_TO_VSC_EX) }
+}
+
 /// Where a point of the window falls on the picture, from 0 to 65535
 /// across it, the picture being `left, top, width, height` in the window.
 ///
@@ -266,6 +290,7 @@ pub fn play_a_game(app: &App, game: bool) {
 fn build() -> Result<isize, String> {
     use windows_sys::Win32::Foundation::{GetLastError, HWND, RECT};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::Input::Ime::ImmAssociateContext;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, GetClientRect, RegisterClassW, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS,
     };
@@ -335,6 +360,17 @@ fn build() -> Result<isize, String> {
             "la fenêtre de l'image n'a pas pu s'ouvrir (erreur {code})"
         ));
     }
+    // No input method of this computer on the picture: the keys go over
+    // there by their place, and the far computer's own input method is
+    // the one that composes. Left on, this one would open its own
+    // composition over the picture as well.
+    //
+    // SAFETY: our own window, left with no input context at all, on the
+    // thread that made it.
+    unsafe { ImmAssociateContext(window, std::ptr::null_mut()) };
+    // A new window is not on screen, whatever the one before it was left
+    // saying.
+    SHOWN.store(false, Ordering::Relaxed);
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);
     LAST_PLACE.store(u32::MAX, Ordering::Relaxed);
     note(&format!(
@@ -673,12 +709,16 @@ unsafe extern "system" fn answer(
             // Alt+F4 with the keyboard shared closes the session, as the
             // cross does: it is this computer's key while the switch says
             // the system's keys are its own.
+            // Once: the keyboard repeating the press held down asks for
+            // nothing more.
             if message == WM_SYSKEYDOWN
                 && holding == usize::from(VK_F4)
                 && with_alt(with)
                 && !crate::system_keys::immersive()
             {
-                if let Some(app) = crate::main_window::program() {
+                if !held_before(with)
+                    && let Some(app) = crate::main_window::program()
+                {
                     note("Alt+F4 sur l'image, le clavier étant partagé : la session se termine");
                     crate::session::end_it(&app);
                 }
@@ -802,9 +842,7 @@ fn no_button_left(holding: usize) -> bool {
 /// One keystroke, to the player.
 #[cfg(windows)]
 fn key(named: usize, with: isize, down: bool) {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        MAPVK_VK_TO_VSC_EX, MapVirtualKeyW, VK_LWIN, VK_RWIN,
-    };
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_LWIN, VK_RWIN};
 
     // The Windows keys are this computer's while the keyboard is shared:
     // the Start menu opens here, and must not open over there as well.
@@ -813,18 +851,9 @@ fn key(named: usize, with: isize, down: bool) {
     {
         return;
     }
-    let (scancode, extended) = match the_place_of(with) {
-        (0, _) => {
-            // A keystroke typed by a program rather than a keyboard can
-            // come with its name alone: its place is asked of the layout.
-            // SAFETY: a plain translation, of a key name.
-            let code = unsafe { MapVirtualKeyW(named as u32, MAPVK_VK_TO_VSC_EX) };
-            match from_its_name(code) {
-                Some(place) => place,
-                None => return,
-            }
-        }
-        place => place,
+    let Some((scancode, extended)) = placed(the_place_of(with), || the_layouts_place(named as u32))
+    else {
+        return;
     };
     let Some(player) = crate::session::player() else {
         return;
@@ -1017,10 +1046,18 @@ mod tests {
 
     #[test]
     fn a_key_known_by_its_name_alone_gets_its_place_from_the_layout() {
-        assert_eq!(from_its_name(0x1E), Some((0x1E, false)));
-        assert_eq!(from_its_name(0xE01D), Some((0x1D, true)));
+        assert_eq!(placed((0, false), || 0x1E), Some((0x1E, false)));
+        // The Windows key, typed by a program: E0 5B.
+        assert_eq!(placed((0, false), || 0xE05B), Some((0x5B, true)));
         // No place at all is no key to send.
-        assert_eq!(from_its_name(0), None);
+        assert_eq!(placed((0, false), || 0), None);
+    }
+
+    #[test]
+    fn a_key_that_says_where_it_sits_is_not_asked_of_the_layout() {
+        let never = || -> u32 { panic!("the layout was asked about a key that had a place") };
+        assert_eq!(placed((0x0F, false), never), Some((0x0F, false)));
+        assert_eq!(placed((0x5C, true), never), Some((0x5C, true)));
     }
 
     #[test]

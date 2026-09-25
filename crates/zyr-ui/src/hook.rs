@@ -35,6 +35,11 @@ pub struct Held {
     thread: AtomicU32,
     /// And the thread itself, kept so the end of a session can wait for
     /// it to have really let go before the next one takes hold.
+    ///
+    /// Locked from the ask to the answer, both to hold and to let go: the
+    /// picture's window and the menu can ask at the same moment from two
+    /// threads, and two hook threads started side by side left one of
+    /// them holding a hook nothing could take off any more.
     worker: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
@@ -61,7 +66,8 @@ impl Held {
             DispatchMessageW, GetMessageW, PM_NOREMOVE, PeekMessageW,
         };
 
-        if self.thread.load(Ordering::SeqCst) != 0 {
+        let mut held = self.worker.lock().expect("fil d'un crochet du système");
+        if held.is_some() {
             return None;
         }
         let (say, hear) = std::sync::mpsc::channel();
@@ -113,7 +119,7 @@ impl Held {
             return Some(false);
         }
         self.thread.store(thread, Ordering::SeqCst);
-        *self.worker.lock().expect("fil d'un crochet du système") = Some(worker);
+        *held = Some(worker);
         Some(true)
     }
 
@@ -133,21 +139,15 @@ impl Held {
     pub fn let_go(&self) -> bool {
         use windows_sys::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_QUIT};
 
-        let thread = self.thread.swap(0, Ordering::SeqCst);
-        if thread == 0 {
+        let mut held = self.worker.lock().expect("fil d'un crochet du système");
+        let Some(worker) = held.take() else {
             return false;
-        }
+        };
+        let thread = self.thread.swap(0, Ordering::SeqCst);
         // SAFETY: a thread this program started, told to stop the only
         // way a thread waiting on its messages can be.
         unsafe { PostThreadMessageW(thread, WM_QUIT, 0, 0) };
-        if let Some(worker) = self
-            .worker
-            .lock()
-            .expect("fil d'un crochet du système")
-            .take()
-        {
-            let _ = worker.join();
-        }
+        let _ = worker.join();
         true
     }
 }

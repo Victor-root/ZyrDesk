@@ -442,6 +442,9 @@ fn build(owner: isize, anchor: (i32, i32)) {
         0,
     ];
 
+    if !crate::floating::still_to_be_made(&ITS_WINDOW) {
+        return;
+    }
     let side = ITS_BOX.load(Ordering::Relaxed) as i32;
     // Born where it belongs rather than at the corner of the screen: a
     // window is shown where it was made, and the page only asks for it to

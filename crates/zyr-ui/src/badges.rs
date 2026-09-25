@@ -652,6 +652,9 @@ fn build(owner: isize, anchor: (i32, i32)) {
         WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
     };
 
+    if !crate::floating::still_to_be_made(&ITS_WINDOW) {
+        return;
+    }
     let name = wide("ZyrDeskVoyants");
     let (wide_px, high) = its_size();
     let (left, top) = window_corner(anchor);

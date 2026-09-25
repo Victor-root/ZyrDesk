@@ -1257,6 +1257,9 @@ fn build(owner: isize) {
         0,
     ];
 
+    if !crate::floating::still_to_be_made(&ITS_WINDOW) {
+        return;
+    }
     // The size is measured before the window exists: it depends on the
     // text, and measuring text takes something to draw it with.
     let Some(measure) = Canvas::new(1, 1) else {

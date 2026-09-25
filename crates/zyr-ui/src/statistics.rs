@@ -271,6 +271,10 @@ fn build(owner: isize, anchor: (i32, i32)) {
         WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
     };
 
+    // Asked for by a loop that has ended since, it is not made at all.
+    if !WATCHING.load(Ordering::SeqCst) || !crate::floating::still_to_be_made(&ITS_WINDOW) {
+        return;
+    }
     let name: Vec<u16> = "ZyrDeskStatistiques"
         .encode_utf16()
         .chain(Some(0))

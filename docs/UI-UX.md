@@ -60,8 +60,8 @@ Session (l'écran le plus important) : l'image est native et s'affiche dans la f
                      ┌────────────────────┐
                      │  ✓ Écran, 3840x2160│  ┌───────────────────────────────────────┐
                      │    2560 x 1440     │  │ ⛶  Fenêtré ou plein écran   Ctrl+Alt+F │
-                     │    1920 x 1080     │  │ ▥  Statistiques        Ctrl+Alt+Maj+S │
-                     │    1280 x 720      │  │ ⌖  Souris bureau ou jeu Ctrl+Alt+Maj+M│
+                     │    1920 x 1080     │  │ ▥  Statistiques                        │
+                     │    1280 x 720      │  │ ⌖  Souris             Bureau · Jeu     │
                      └────────────────────┘  │ ────────────────────────────────────── │
                                              │ ▭  Taille       Écran, 3840x2160    ‹  │
                                              │ ∿  Débit                  20 Mb/s   ‹  │
@@ -74,7 +74,7 @@ Session (l'écran le plus important) : l'image est native et s'affiche dans la f
 
 Deux groupes, et une seule façon de finir : la distinction des moteurs entre partir et fermer ne remonte pas jusqu'ici ([D24](DECISIONS.md)).
 
-En haut, ce qui se fait tout de suite. Chaque entrée affiche le raccourci clavier qui fait la même chose : en mode souris de jeu, le pointeur appartient à l'ordinateur distant et le bouton n'est pas cliquable. Celles qui parlent au moteur portent ses combinaisons à lui ; les nôtres se choisissent dans les réglages, et ce sont celles qui s'affichent.
+En haut, ce qui se fait tout de suite. Chaque entrée affiche le raccourci clavier qui fait la même chose : en mode souris de jeu, le pointeur appartient à l'ordinateur distant et le bouton n'est pas cliquable. Ces combinaisons se choisissent dans les réglages, et ce sont celles qui s'affichent ; une entrée qui n'en a pas n'en montre aucune, le lecteur jouant dans ZyrDesk même et n'ayant plus de combinaisons à lui.
 
 En bas, les trois nombres qu'une session demande. Ils sont là et pas dans l'écran des réglages parce qu'on les change en regardant l'image qu'ils changent, et que revenir sur un écran de réglages pour en essayer un, c'est s'éloigner de la seule chose qui dit si ça a marché. Chacun ouvre sa liste sur le côté, avec une coche sur la valeur en place ; la taille dit à quoi « Écran » revient sur cet ordinateur-ci, le mot seul ne disant pas si on demande du 4K ou du 1080p. Chacun agit tout de suite, sans rien à appliquer : la session le prend là où elle est ([D117](DECISIONS.md)), et rien n'est jamais relancé.
 

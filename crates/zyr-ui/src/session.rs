@@ -984,8 +984,8 @@ impl Showing {
                 Event::FirstPicture => {
                     opening.shown();
                     shown_at = Some(Instant::now());
+                    // The button goes up with it, on the window's thread.
                     crate::video::show(app);
-                    crate::floating::keep_up_with_the_picture(app);
                     crate::home::put_the_opening_away(app);
                     note(&opening.how_long_it_took());
                     if coming_back.tried() {

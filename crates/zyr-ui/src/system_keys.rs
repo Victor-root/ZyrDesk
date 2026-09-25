@@ -410,7 +410,13 @@ fn hand_it_over(
     let Some(bit) = slot(key.vkCode) else {
         return false;
     };
-    let (scancode, extended) = (key.scanCode as u8, key.flags & LLKHF_EXTENDED != 0);
+    // An on-screen keyboard can type the Windows key by its name alone.
+    let said = (key.scanCode as u8, key.flags & LLKHF_EXTENDED != 0);
+    let Some((scancode, extended)) =
+        crate::video::placed(said, || crate::video::the_layouts_place(key.vkCode))
+    else {
+        return false;
+    };
     PLAYER.with_borrow(|player| {
         let Some(player) = player else {
             return false;

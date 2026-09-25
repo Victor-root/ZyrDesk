@@ -1087,7 +1087,11 @@ pub(crate) fn shut_the_pointer_in(cage: Cage) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::WindowsAndMessaging::{ClipCursor, GetClipCursor};
 
-    let wanted = match (cage, crate::video::where_it_is()) {
+    // A window down in the taskbar still has a picture, placed far off
+    // the desk: a cage there would hold the pointer against the edge of
+    // the screen.
+    let picture = crate::video::where_it_is().filter(|_| crate::main_window::on_screen());
+    let wanted = match (cage, picture) {
         (Cage::Free, _) | (_, None) => None,
         (Cage::Picture, Some((left, top, right, bottom))) => Some(RECT {
             left,

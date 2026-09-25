@@ -1,6 +1,6 @@
 [package]
 name = "zyr-sound"
-description = "The computer's sound: muting one program, muting the speakers"
+description = "The computer's sound: muting the speakers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
