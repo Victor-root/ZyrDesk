@@ -27,7 +27,7 @@ Accueil :
 │  │  Empreinte de cet ordinateur       [ Copier ] │  │
 │  └───────────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────────┐  │
-│  │  Le moteur hôte n'est pas installé…  [Ouvrir] │  │
+│  │  FFmpeg manque…           [Ouvrir le dossier] │  │
 │  └───────────────────────────────────────────────┘  │
 │                                                     │
 │  MES ORDINATEURS                                    │
@@ -41,8 +41,8 @@ Accueil :
 └─────────────────────────────────────────────────────┘
 ```
 
-- La carte « Cet ordinateur » porte l'interrupteur Accès distant et son état en langage humain (« Prêt », « Désactivé », « Moteur hôte absent », « Démarrage en cours »). Ce qui empêche d'être joignable est dit, jamais laissé à deviner ([D18](DECISIONS.md)).
-- Sous la carte, ce qu'il reste à faire pour que le produit marche, avec de quoi le faire : le service qui ne tourne pas se démarre d'un bouton, un moteur qui manque ouvre son dossier. Rien de tout cela ne demande de ligne de commande.
+- La carte « Cet ordinateur » porte l'interrupteur Accès distant et son état en langage humain (« Prêt à être contrôlé », « Accès distant désactivé », « FFmpeg absent », « Démarrage en cours »). Ce qui empêche d'être joignable est dit, jamais laissé à deviner ([D18](DECISIONS.md)).
+- Sous la carte, ce qu'il reste à faire pour que le produit marche, avec de quoi le faire : le service qui ne tourne pas se démarre d'un bouton, et FFmpeg, s'il manque, ouvre son dossier. Rien de tout cela ne demande de ligne de commande.
 - Les cartes machines : pastille de présence, nom, adresse, bouton Se connecter proéminent au survol. Clic simple = connexion. Elles se remplissent seules à partir des annonces du réseau local ; « Ajouter un ordinateur » ne sert qu'aux réseaux où l'annonce ne passe pas. Ce geste-là écrit l'ordinateur dans les deux sens, et se fait donc sur les deux machines : l'adresse n'est demandée que si on veut aussi le contrôler depuis ici. Elle est ce qui le garde à l'écran, sur une carte comme les autres, à une pastille près : grise, avec « ajouté à la main » écrit à côté, parce que ce réseau ne porte pas son annonce et non parce qu'il serait éteint. Le retirer se fait dans le dialogue d'ajout, là où il a été écrit.
 - Une carte porte deux gestes à côté du grand clic, tous deux en haut à droite. L'icône du journal ouvre le journal de **cette machine-là** lu d'ici ([D96](DECISIONS.md)) ; elle ne s'efface pas pendant une session, alors que le reste de la carte s'estompe, parce que c'est justement à ce moment-là qu'on veut lire ce que la machine d'en face a écrit. L'icône de la maison, à sa gauche, ouvre la session **par ce réseau et rien d'autre** ([D148](DECISIONS.md)) : elle n'apparaît que pour un ordinateur que ce réseau annonce, et le mot du survol dit laquelle des deux voies la main est en train de choisir. Le grand clic reste la carte entière, une surface qui la recouvre, et les icônes se posent par-dessus : c'est ce qui permet à une carte d'être un bouton entier sans interdire tout autre bouton dessus.
 - La version tient au bas de l'écran, discrète. Quand la fenêtre et le service ne datent pas du même jour, elle le dit en ambre : c'est la panne que personne ne pense à vérifier.
@@ -54,33 +54,44 @@ Fiche machine (panneau latéral, pas une page) : statut, GPU, résolution native
 Session (l'écran le plus important) : l'image est native et s'affiche dans la fenêtre de ZyrDesk elle-même, qui prend l'écran entier ou reste une fenêtre selon le réglage ([D21](DECISIONS.md)). Une session n'ouvre donc jamais de deuxième fenêtre. L'image remplit exactement ce qu'on lui donne, sans bande noire et sans déformation : la fenêtre prend la forme de l'image, et l'ordinateur d'en face met son bureau à la forme demandée ([D22](DECISIONS.md)). Aucune décoration permanente. Une seule marque de ZyrDesk reste posée dessus, en haut à droite : le logo, en petit. Un clic dessus déplie le menu de la session.
 
 ```text
-                                        ┌────┐
-                                        │ ZD │
-                                        └────┘
-                     ┌────────────────────┐
-                     │  ✓ Écran, 3840x2160│  ┌───────────────────────────────────────┐
-                     │    2560 x 1440     │  │ ⛶  Fenêtré ou plein écran   Ctrl+Alt+F │
-                     │    1920 x 1080     │  │ ▥  Statistiques                        │
-                     │    1280 x 720      │  │ ⌖  Souris             Bureau · Jeu     │
-                     └────────────────────┘  │ ────────────────────────────────────── │
-                                             │ ▭  Taille       Écran, 3840x2160    ‹  │
-                                             │ ∿  Débit                  20 Mb/s   ‹  │
-                                             │ ⬚  Codec              Automatique   ‹  │
-                                             │ ────────────────────────────────────── │
-                                             │ ⦸  Masquer ce bouton             Alt+² │
-                                             │ ⏻  Terminer la session      Ctrl+Alt+W │
-                                             └───────────────────────────────────────┘
+                                                 ┌────┐
+                                                 │ ZD │
+                                                 └────┘
+ ┌────────────────────────────────────────────────────┐
+ │ Décodage    Encodage    Réseau    Débit            │
+ │ 0,84 ms     2,10 ms     1 ms      18,52 Mb/s       │
+ │ ────────────────────────────────────────────────── │
+ │ ⛶  Fenêtré ou plein écran                          │
+ │ ▥  Statistiques                                    │
+ │ ◎  Voyants                      [Au besoin]  Tenus │
+ │ ⌖  Souris                            [Bureau]  Jeu │
+ │ ♪  Son                              [Actif]  Coupé │
+ │ ⌨  Clavier                     Partagé  [Immersif] │
+ │ ⎘  Presse-papiers        Chacun le sien  [Partagé] │
+ │ ⌘  Ctrl+Alt+Suppr         sur l'ordinateur distant │
+ │ ⚿  Verrouiller                l'ordinateur distant │
+ │ ────────────────────────────────────────────────── │
+ │ ▭  Résolution                 client, 3840x2160  ‹ │
+ │ ▣  Écran de l'hôte                 DELL U2723QE  ‹ │
+ │ ∿  Débit                                   20 Mb/s │
+ │    ─────────●──────────────────────────────────    │
+ │ ⬚  Codec           [Automatique]  H.264  HEVC  AV1 │
+ │ ◐  Écran d'en face               [Fluide]  Économe │
+ │ ────────────────────────────────────────────────── │
+ │ ⦸  Masquer ce bouton                         Alt+² │
+ │ ⏻  Terminer la session      rend le bureau distant │
+ └────────────────────────────────────────────────────┘
 ```
 
-Deux groupes, et une seule façon de finir : la distinction des moteurs entre partir et fermer ne remonte pas jusqu'ici ([D24](DECISIONS.md)).
+Trois groupes, et une seule façon de finir : terminer la session, qui rend son bureau à l'ordinateur distant ([D24](DECISIONS.md)). En tête, quatre chiffres lus en direct ; entre crochets sur le dessin, le côté allumé de chaque interrupteur.
 
 En haut, ce qui se fait tout de suite. Chaque entrée affiche le raccourci clavier qui fait la même chose : en mode souris de jeu, le pointeur appartient à l'ordinateur distant et le bouton n'est pas cliquable. Ces combinaisons se choisissent dans les réglages, et ce sont celles qui s'affichent ; une entrée qui n'en a pas n'en montre aucune, le lecteur jouant dans ZyrDesk même et n'ayant plus de combinaisons à lui.
 
-En bas, les trois nombres qu'une session demande. Ils sont là et pas dans l'écran des réglages parce qu'on les change en regardant l'image qu'ils changent, et que revenir sur un écran de réglages pour en essayer un, c'est s'éloigner de la seule chose qui dit si ça a marché. Chacun ouvre sa liste sur le côté, avec une coche sur la valeur en place ; la taille dit à quoi « Écran » revient sur cet ordinateur-ci, le mot seul ne disant pas si on demande du 4K ou du 1080p. Chacun agit tout de suite, sans rien à appliquer : la session le prend là où elle est ([D117](DECISIONS.md)), et rien n'est jamais relancé.
+Au milieu, ce qu'une session demande : la résolution, l'écran de l'hôte quand il en a plusieurs, le débit, le codec, et ce que fait un écran immobile. Ils sont là et pas dans l'écran des réglages parce qu'on les change en regardant l'image qu'ils changent, et que revenir sur un écran de réglages pour en essayer un, c'est s'éloigner de la seule chose qui dit si ça a marché. La résolution et l'écran ouvrent leur liste sur le côté, avec une coche sur la valeur en place ; la résolution dit à quoi « client » revient sur cet ordinateur-ci, le mot seul ne disant pas si on demande du 4K ou du 1080p. Le débit se pousse sur une barre, d'un mégabit par cran, de 5 à 80 Mb/s. Les codecs sont des boutons, et ceux que l'ordinateur d'en face ne sait pas produire sont barrés. Chacun agit tout de suite, sans rien à appliquer : la session le prend là où elle est ([D117](DECISIONS.md)), et rien n'est jamais relancé.
 
-Posé en M4 ([D16](DECISIONS.md)). À venir : latence et chemin réseau en un coup d'œil, statistiques détaillées (fps capturés/reçus/affichés, débit, pertes, jitter, temps de décodage), changement d'écran.
+Posé en M4 ([D16](DECISIONS.md)). L'entrée « Statistiques » pose en bas à gauche de l'image une fiche relue cinq fois par seconde : le codec, la taille et les images par seconde, puis le temps passé chez l'hôte, le réseau, le décodage, l'affichage, le débit, les pertes, et la latence de bout en bout, de la capture là-bas à l'affichage ici ([MOTEUR.md](MOTEUR.md) §9). À venir : le chemin réseau en un coup d'œil.
 
-Réglages : ce qui ne se règle pas en regardant l'image. Le thème, la confiance aux ordinateurs du réseau local, la fenêtre de la session, la souris, les statistiques, le démarrage avec Windows, le dossier des journaux, et ce que cet ordinateur fait quand c'est lui qu'on regarde : renvoyer ou non un écran immobile, et la façon de filmer l'écran. Une ligne y rappelle ce qu'une session demanderait maintenant, sans qu'on puisse la changer là : c'est le menu de la session qui la porte. À venir : taille de paquet, décodeur, choix du relais, mode paranoïaque. Le jargon reste rangé dans « Avancé ».
+Réglages : ce qui ne se règle pas en regardant l'image. Le thème, la confiance aux ordinateurs du réseau local, le démarrage avec Windows, le compte, les raccourcis clavier, et, dans « Avancé », le codec, la fenêtre de la session, la souris, le silence des enceintes de l'ordinateur distant, les statistiques et le dossier des journaux. Une ligne y rappelle ce qu'une session demanderait maintenant, sans qu'on puisse la changer là : c'est le menu de la session qui la porte. À venir : taille de paquet, décodeur, choix du relais, mode paranoïaque. Le jargon reste rangé dans « Avancé ».
 
 Un seul de ces réglages s'écrit aussi tout seul : « fenêtre de la session ». Basculer entre plein écran et fenêtre pendant une session est un choix comme un autre, et il se retrouve écrit ici, donc la session suivante s'ouvre comme la précédente a été laissée. Personne ne doit avoir à dire deux fois la même chose, une fois dans l'image et une fois dans un écran de réglages.
 
@@ -102,4 +113,4 @@ Français naturel, humain, sans jargon dans le parcours principal (« Prêt à �
 
 ## 5. Ce que l'utilisateur ne verra jamais
 
-Aucun logo, nom, écran ou réglage Sunshine, Moonlight ou GameStream dans le parcours. Les crédits complets et licences vivent dans « À propos » (obligation légale et reconnaissance méritée), formulés comme « ZyrDesk s'appuie sur les projets open source Sunshine et Moonlight ».
+Aucun nom de bibliothèque, de codec ou de pilote dans le parcours principal : FFmpeg, NVENC ou Direct3D n'apparaissent que dans Avancé, dans le journal, et là où il faut dire quoi réparer (« FFmpeg manque »). Les crédits complets et les licences vivent dans « À propos » (obligation légale et reconnaissance méritée) : FFmpeg, x264, Opus, l'écran virtuel, et Sunshine et Moonlight, dont l'étude a guidé la conception du moteur.

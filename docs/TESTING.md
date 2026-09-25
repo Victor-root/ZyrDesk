@@ -4,11 +4,11 @@ Trois familles : tests classiques (CI), banc de performance (le juge de paix du 
 
 ## 1. Tests classiques (CI, à chaque commit)
 
-- Unitaires Rust par crate : framing du tunnel, calcul du budget MTU et de la taille de paquet, machine à états de reprise, génération de configuration moteur, parsing des statistiques du lecteur, RPC du pipe, logique de tickets.
-- Intégration sans GPU : broker en mémoire (comptes, enrôlement, tickets, présence, révocation) ; tunnel bouclé localement (deux extrémités en processus, trafic synthétique) ; contrôleur de congestion média sous profils de perte simulés ; superviseurs face à des moteurs factices (bons/mauvais codes de sortie, crashs, blocages).
+- Unitaires Rust par crate : framing du tunnel, budget de taille de paquet, machine à états de reprise, formats du moteur (paquets, correction d'erreurs, touches et souris, messages), mesures du lecteur, RPC du pipe, logique de tickets.
+- Intégration sans GPU : broker en mémoire (comptes, enrôlement, tickets, présence, révocation) ; tunnel bouclé localement (deux extrémités en processus, trafic synthétique) ; contrôleur de congestion média sous profils de perte simulés ; service face à un moteur de remplacement sur une vraie liaison locale (un moteur qui démarre, qui part, qui meurt avant de joindre sa liaison) ; session entière du moteur hôte au lecteur à travers le vrai tunnel, avec un écran synthétique, x264 et Opus réels, avec et sans perte ([D223](DECISIONS.md)).
 - Builds Debug et Release, lint (clippy) en erreur, format vérifié, audit des dépendances (licences + vulnérabilités connues).
 - Tests cryptographiques : vecteurs pour la signature/vérification des tickets, épinglage des clés, rejet des tickets expirés/rejoués/mal signés, dérive d'horloge aux bornes (±5 min).
-- Suite « contrat moteur » (voir [engines/UPGRADING.md](engines/UPGRADING.md)) : à chaque bump de submodule moteur + job mensuel de répétition de mise à niveau.
+- Les essais du moteur chargent le vrai FFmpeg : sous Windows celui de `vendor/ffmpeg`, sous Linux une compilation des mêmes sources par `packaging/ffmpeg/build.sh linux`, désignée par `ZYR_FFMPEG_DIR`. Un essai qui ne trouve pas FFmpeg échoue en disant où il a cherché, il ne passe jamais sans avoir tourné. Une mise à jour de FFmpeg repasse tous ces essais et le banc complet avant fusion ([vendor/ffmpeg/README.md](../vendor/ffmpeg/README.md)).
 
 ## 2. Banc de performance (dès M2, puis en garde permanente)
 
@@ -16,9 +16,9 @@ Seuils G-* définis dans [ROADMAP.md](ROADMAP.md) (G-lat, G-loss, G-cpu, G-start
 
 Sources de mesure :
 
-- Statistiques du lecteur (overlay/journaux Moonlight) : fps réseau/décodage/rendu, latence hôte min/max/moyenne, pertes réseau, pertes par jitter, latence réseau moyenne et variance, temps de décodage, délai de file, temps de rendu.
+- Mesures du lecteur, cinq fois par seconde (la fiche « Statistiques » et `zyr-cli connect` en affichent la plupart) : images par seconde, temps chez l'hôte, aller-retour réseau et sa variance, temps de décodage et d'affichage, débit, images perdues en route ou remplacées avant l'affichage, temps depuis la dernière image, latence de bout en bout de la capture à l'affichage (`latency_ms`), p99 de l'intervalle entre images affichées (`frame_interval_p99_ms`).
 - Compteurs du tunnel : paquets/octets par canal, datagrammes jetés (file pleine), RTT QUIC, chemin actif (direct/relais), migrations.
-- Journaux Sunshine : encodeur retenu, fps capturés/encodés, temps d'encodage.
+- Journal du moteur hôte (`engine.log`, étiquette `engine`) : encodeurs essayés et retenu, écran filmé, chaque flux ouvert (taille, cadence, codec, encodeur, débit), et le bilan des images capturées, encodées, envoyées, jetées, avec le temps moyen et maximal de conversion et d'encodage.
 - CPU/GPU par processus (compteurs Windows).
 
 Conditions réseau simulées : profils reproductibles de perte (0,5 %, 1 %, 2 %), latence (10, 25, 50 ms), gigue et limitation de débit, appliqués entre les deux PC de test (outil de conditionnement réseau côté Windows, scripté).
@@ -27,7 +27,8 @@ Latence bout en bout réelle (photon à photon) : procédure documentée pour l'
 
 Comparaisons obligatoires :
 
-- M1 (moteurs pilotés, sans tunnel) contre couple Sunshine+Moonlight vanilla : notre pilotage ne doit rien coûter (±5 %).
+- M1 (moteurs pilotés, sans tunnel) contre couple Sunshine+Moonlight vanilla : sans objet depuis que ces moteurs ont quitté le produit ([D222](DECISIONS.md)).
+- MZ (le moteur ZyrDesk) contre les anciens moteurs : latence de bout en bout, G-frame, qualité à débit égal, G-start ([ROADMAP.md](ROADMAP.md), jalon MZ).
 - M2 tunnel contre M1 : seuils G-lat/G-loss/G-cpu.
 - Chaque release ensuite contre la base de la release précédente : toute régression au-delà des marges bloque.
 
@@ -39,10 +40,10 @@ Matrice matérielle visée à terme : NVIDIA vers NVIDIA (référence), AMD hôt
 
 ## 4. Scénarios manuels scriptés (par jalon)
 
-Chaque jalon de [ROADMAP.md](ROADMAP.md) embarque son scénario pas à pas pour deux PC (documenté dans `perf/` et exécutable par un non-développeur) : les critères de sortie listent exactement quoi mesurer et quoi observer. Exemples structurants : connexion depuis l'écran de connexion (M3), tuer l'interface en pleine session (M4), 4G vers domicile (M5), UDP bloqué puis débloqué (M6), câble débranché 10 s (M7), hôte sans écran (M9).
+Chaque jalon de [ROADMAP.md](ROADMAP.md) embarque son scénario pas à pas pour deux PC (documenté dans `docs/testing/` et exécutable par un non-développeur) : les critères de sortie listent exactement quoi mesurer et quoi observer. Exemples structurants : connexion depuis l'écran de connexion (M3), tuer l'interface en pleine session (M4), 4G vers domicile (M5), UDP bloqué puis débloqué (M6), câble débranché 10 s (M7), hôte sans écran (M9).
 
 ## 5. Interopérabilité
 
 - Poignée de main de versions (canal de contrôle + broker) testée : paires incompatibles refusées proprement.
 - N-1 systématique à chaque release : nouveau client contre ancien hôte, ancien client contre nouvel hôte.
-- Mise à niveau moteur : suite contrat moteur + banc complet avant merge.
+- Le lecteur et le moteur hôte échangent leur version de moteur au premier message : deux versions différentes se refusent proprement, et c'est essayé.

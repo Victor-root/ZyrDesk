@@ -3492,6 +3492,45 @@ Les en-têtes NVIDIA avec lesquels FFmpeg est compilé restent en n13.0 (13.0.19
 
 **Plus d'appairage.** Le tunnel reconnaît déjà les deux ordinateurs par leurs empreintes ([D17](DECISIONS.md)) ; le code à quatre chiffres des moteurs ne prouvait rien de plus.
 
+## D223. Le moteur ZyrDesk est construit (2026-09-25, pendant MZ)
+
+**Ce qui est construit.** Le moteur de [D219](#d219-zyrdesk-aura-son-propre-moteur-dédié-aux-performances-2026-09-23-pendant-m6) et [D222](#d222-le-moteur-zyrdesk-remplace-les-deux-autres-dun-coup-2026-09-24-pendant-m6), tel que [MOTEUR.md](MOTEUR.md) le décrit, en morceaux qui ont chacun un seul rôle :
+
+- `zyr-media` : les formats du moteur, sans rien de Windows. La découpe des images en paquets et les paquets de réparation, les touches et la souris, les messages, la cadence, les mesures.
+- `zyr-codec` : FFmpeg 9.0.2, chargé au démarrage. Les encodeurs des trois fabricants de cartes graphiques et x264 en secours, les décodeurs, Opus pour le son.
+- `zyr-host` : le moteur hôte. Il filme l'écran dans la carte graphique, convertit l'image, l'encode, la découpe, enregistre le son, et pose les touches et la souris. C'est `zyrdeskd.exe --serve-a-session`, que le service lance pour chaque session, avec le compte système, dans la session qui tient l'écran, et qu'il arrête à la fin.
+- `zyr-player` : le lecteur. Il recolle les paquets, répare les pertes, décode par la carte graphique, dessine l'image, joue le son, et mesure tout, dont la latence de bout en bout.
+- `zyr-control::link` : les tubes locaux entre chaque moitié du moteur et le service de sa machine, gardés par Windows (le compte système seul chez l'hôte ; le compte système et la personne connectée chez le client).
+- `zyr-tunnel`, réécrit de ce côté : il fait passer messages, images et son entre ces tubes et le tunnel.
+- `zyr-session`, `zyr-cli` et la fenêtre ouvrent la session ; la fenêtre dessine l'image elle-même, dans une fenêtre à elle, et son menu parle directement au lecteur.
+
+Sunshine, Moonlight, leurs patchs, leurs sous-modules, leurs compilations, leurs caisses de pilotage et l'appairage par code ont quitté le dépôt.
+
+**Comment c'est vérifié.** 806 essais automatiques, et clippy muet pour Linux comme pour Windows. Le plus parlant est l'essai de bout en bout : le vrai moteur hôte, le vrai tunnel QUIC ouvert comme le service l'ouvre, et le vrai lecteur, dans un seul programme, sur une machine Linux, avec un écran synthétique, x264 et Opus réels.
+
+- La première image arrive en 31 à 42 ms, puis 60 images par seconde, sans perte. Clavier, souris et son passent ; le débit change sur place ; un changement de taille ouvre un nouveau flux et refait le décodeur ; à l'arrêt, le moteur finit en « lecteur parti » et relâche les touches encore tenues.
+- En 1080p60 à 20 Mb/s, de la capture à l'image décodée : 14,5 ms en médiane et 24,2 ms au 99e centile, sur 545 images. **C'est un plancher, pas une mesure du produit** : encodage et décodage en logiciel, sur la même machine, sans carte graphique, sans écran et sans réseau.
+- Avec 5 % de perte provoquée sous le tunnel, le rythme reste entre 54 et 57 images par seconde, l'image ne se fige jamais plus d'une seconde, et chaque perte que la réparation ne rattrape pas coûte au plus une demande d'image clé.
+
+**Deux vrais défauts, trouvés par cet essai et corrigés.**
+
+1. *L'au revoir se perdait dans le tunnel.* Le lecteur dit au revoir puis ferme son tube, d'un seul geste. Le tunnel lisait les deux ensemble, arrêtait la session et jetait l'au revoir déjà lu : le moteur hôte finissait en « lien perdu » au lieu de « lecteur parti », et pareil dans l'autre sens. Désormais, ce qu'un bout a dit avant de partir passe d'abord, deux secondes au plus, et le flux QUIC se ferme proprement, avec accusé de réception. Trois essais le gardent ; ils échouaient trois fois sur trois avant la correction.
+2. *La réparation ne protégeait pas les petites images.* Le transport range dans un même paquet les datagrammes qui tiennent ensemble. Pour une petite image, le morceau de données et son morceau de réparation partaient donc dans le même paquet, et une seule perte emportait les deux : à 5 % de perte, 7 petites images perdues sur 21 touchées, là où des pertes indépendantes en auraient perdu une. Or un bureau immobile ne produit presque que de petites images. Chaque datagramme fait maintenant plus de la moitié de la taille permise, et ne partage donc jamais son paquet avec un autre. Le prix : environ un kilo-octet par petite image, quelques centaines de kilobits par seconde sur un écran immobile.
+
+**Le pilote NVIDIA 570.** FFmpeg est compilé avec les en-têtes NVIDIA 13.0, et non 13.1 ([D221](#d221-les-outils-et-les-dépendances-suivent-leur-dernière-version-stable-2026-09-24-pendant-m6)) : l'encodeur NVIDIA marche dès le pilote 570 au lieu de 610. Avec un pilote plus ancien, il refuse de démarrer, et le moteur prend un autre encodeur, au pire x264.
+
+**Ce qui n'est pas vérifié.** Rien de ce moteur n'a encore tourné sur un vrai Windows ni sur une vraie carte graphique. Les doutes que ses constructeurs ont signalés, en bref :
+
+- Les dessins confiés à la carte graphique (la conversion de l'image sur l'hôte, l'affichage sur le client) n'ont été compilés que par des outils de remplacement, jamais par celui de Microsoft, et n'ont jamais tourné sur une carte. De même pour la disposition de l'image en mémoire quand elle doit en sortir, et pour la lecture directe du décodeur sur les cartes Intel.
+- Les écrans protégés (connexion, Ctrl+Alt+Suppr, invites d'administration) dépendent du compte système. Le lancement du moteur dans la session de l'écran, son tube réservé au compte système et le contrôle du programme qui s'y branche suivent la documentation de Windows, sans avoir été essayés.
+- Jamais provoqués pour de vrai : la perte de la carte graphique (pilote mis à jour, carte réinitialisée), un écran tourné, un écran HDR (image délavée si seule l'ancienne capture marche), l'écran virtuel sur une autre carte, un son d'hôte dans un format inhabituel, un changement de carte son en pleine session.
+- Côté fenêtre : l'image dans une fenêtre rangée dans une autre, avec ses coins arrondis et son redimensionnement ; la souris en mode jeu ; le crochet du clavier quand un autre programme pose le sien ; les touches relâchées après Windows+L ou Ctrl+Alt+Suppr.
+- Media Foundation peut garder une image jusqu'à la suivante sur un écran immobile, et Quick Sync pourrait mal se comporter sur une réserve d'images qui grandit à la demande. Ce sont les derniers encodeurs essayés.
+- Un moteur qui plante dans FFmpeg ou dans un pilote passe par le rapport d'erreurs de Windows : l'image reste figée le temps que Windows le laisse partir.
+- Pas encore fait : le débit de l'encodeur piloté par le contrôleur du tunnel. Et le p99 de l'intervalle entre images, que le lecteur calcule, n'est encore affiché nulle part.
+
+Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.md) ; ce qui reste à mesurer avant de dire chaque étape faite est dans [ROADMAP.md](ROADMAP.md), jalon MZ.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

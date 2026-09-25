@@ -37,7 +37,7 @@ Le tunnel, les identités, le relais, le serveur, l'écran virtuel, le presse-pa
 2. **Cadence.** Une image capturée part tout de suite, sauf si elle arrive plus vite que la cadence de la session (alors seule la plus récente part). Quand l'écran ne bouge plus et que « Fluide » est choisi, l'image précédente est renvoyée à la cadence exacte de la session, pour que le curseur et la qualité s'affinent ; une vraie image ne cède jamais sa place à une répétition.
 3. **Conversion.** La carte graphique convertit l'image du format de l'écran vers celui des encodeurs (NV12, couleurs BT.709), la met à la taille de la session et y dessine le curseur quand c'est l'hôte qui doit le montrer. Une seule passe, sans que l'image quitte la carte.
 4. **Encodage.** L'encodeur matériel de la carte (ou x264 en secours) encode l'image sans image différée, sans anticipation et avec un débit qu'une image ne dépasse pas. Une image clé n'est produite qu'au début et quand le client la demande.
-5. **Découpe et correction d'erreurs.** L'image encodée est découpée en paquets qui tiennent dans le tunnel, et 20 % de paquets de réparation sont ajoutés (Reed-Solomon) : n'importe quels paquets en nombre suffisant reconstruisent l'image, sans rien redemander.
+5. **Découpe et correction d'erreurs.** L'image encodée est découpée en paquets qui tiennent dans le tunnel, et 20 % de paquets de réparation sont ajoutés (Reed-Solomon) : n'importe quels paquets en nombre suffisant reconstruisent l'image, sans rien redemander. Une petite image part en paquets d'un peu plus de la moitié de la taille permise : le transport ne peut alors jamais en ranger deux dans le même envoi, et une perte n'emporte qu'un morceau, jamais un morceau et sa réparation ensemble ([D223](DECISIONS.md)).
 6. **Tunnel.** Les paquets partent en datagrammes QUIC, chiffrés une seule fois, direct ou par le relais.
 7. **Réassemblage.** Le client reconstruit chaque image dès que tous ses morceaux sont là, ou dès qu'assez de morceaux permettent de réparer les manquants.
 8. **Décodage.** Le décodeur matériel de la carte du client décode dans la mémoire de la carte.
@@ -74,7 +74,7 @@ Tout se change pendant la session, sans bouton « Appliquer » ([D117](DECISIONS
 
 ## 9. La mesure
 
-Le lecteur tient ses mesures cinq fois par seconde, indépendamment du décodage, pour qu'elles continuent de parler quand l'image se fige : images par seconde, temps de décodage et d'affichage, temps de l'hôte, aller-retour du réseau, débit, images perdues ou remplacées, temps depuis la dernière image, et deux mesures nouvelles : la latence de bout en bout, de la capture à l'affichage, et l'intervalle entre deux images affichées (le seuil G-frame de [perf/GATES.md](../perf/GATES.md)). Le menu et les voyants les lisent directement, sans fichier.
+Le lecteur tient ses mesures cinq fois par seconde, indépendamment du décodage, pour qu'elles continuent de parler quand l'image se fige : images par seconde, temps de décodage et d'affichage, temps de l'hôte, aller-retour du réseau, débit, images perdues ou remplacées, temps depuis la dernière image, et deux mesures nouvelles : la latence de bout en bout, de la capture à l'affichage, et l'intervalle entre deux images affichées (le seuil G-frame de [perf/GATES.md](../perf/GATES.md)). La fiche « Statistiques », le menu et les voyants les lisent directement, sans fichier. L'intervalle entre images n'y est pas encore affiché.
 
 ## 10. Sécurité
 

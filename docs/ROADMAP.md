@@ -93,13 +93,20 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 ## MZ : Le moteur ZyrDesk
 
 - Objectif : remplacer Sunshine et Moonlight par un moteur à nous, en Rust, dédié aux performances ([D219](DECISIONS.md)). **Priorité absolue : latence, qualité d'image, fluidité.** Rien ne se gagne à leurs dépens.
-- Méthode : chaque module se conçoit après avoir compris comment Sunshine et Moonlight traitent le même problème ; la technique se comprend, le code ne se reprend pas, sauf s'il n'y a vraiment pas d'autre choix, et alors c'est dit avant et sa provenance est notée. Encodage et décodage par FFmpeg (encodeurs matériels Nvidia, AMD, Intel, et logiciel de secours). Le nouveau moteur vit à côté des anciens, un réglage choisit lequel sert une session.
-- Étape 0, conception : document de conception validé par Victor avant la première ligne de code (ce qui passe dans le tunnel, ce qui tourne dans le service et dans la fenêtre, capture, encodage, réparation des pertes, affichage, mesure).
-- Étape 1, premier pixel : capture de l'écran, H.264 matériel, tunnel, décodage, image dessinée dans la fenêtre de ZyrDesk, souris et clavier. Sans son.
-- Étape 2, une session complète : son, écran sécurisé (UAC, écran de connexion), changement de taille et écran virtuel, reprise après coupure, débit de l'encodeur piloté par le contrôleur du tunnel.
-- Étape 3, la qualité : H.265, AV1, 4:4:4, multi-écran.
-- Étape 4, le débranchement : Sunshine, Moonlight, leurs patchs, leurs compilations, leurs caisses de pilotage et l'appairage par code quittent le projet.
-- Critères de sortie de chaque étape, mesurés sur les mêmes machines contre le moteur d'aujourd'hui : latence de bout en bout inférieure ou égale, G-frame tenu, qualité d'image au moins égale à débit égal, G-start tenu. Le débranchement n'a lieu que quand les quatre sont verts sur NVIDIA, Intel et, dès qu'une machine le permet, AMD.
+- Méthode : chaque module se conçoit après avoir compris comment Sunshine et Moonlight traitent le même problème ; la technique se comprend, le code ne se reprend pas, sauf s'il n'y a vraiment pas d'autre choix, et alors c'est dit avant et sa provenance est notée. Encodage et décodage par FFmpeg 9.0.2, compilé par nous et livré dans le dépôt (`vendor/ffmpeg`) : encodeurs matériels Nvidia, AMD, Intel, et x264 en secours. Le nouveau moteur a remplacé les anciens d'un coup, sans réglage pour choisir entre eux : personne n'utilise encore le produit, et deux chemins auraient doublé chaque morceau ([D222](DECISIONS.md)).
+- Étape 0, conception : **faite.** Le document est [MOTEUR.md](MOTEUR.md) ; la « carte blanche » de Victor tient lieu de sa validation, et il le corrige quand il veut ([D222](DECISIONS.md)).
+- Étape 1, premier pixel : **construite, pas encore vérifiée sur du vrai matériel.** Capture de l'écran dans la carte graphique, conversion, encodage matériel ou x264, découpe avec correction d'erreurs, tunnel, décodage matériel, image dessinée dans la fenêtre de ZyrDesk, souris et clavier. Le son est venu avec.
+- Étape 2, une session complète : **construite en grande partie, pas encore vérifiée sur du vrai matériel.** Son, écran sécurisé (le moteur hôte tourne avec le compte système et suit le bureau qui a la main : écran de connexion, invites d'administration), taille, débit, codec et écran de l'hôte changés en pleine session sans rien relancer, écran virtuel, reprise après coupure. **Pas fait : le débit de l'encodeur piloté par le contrôleur du tunnel.** Le débit est celui choisi dans le menu, et c'est le tunnel qui s'y ajuste, pas l'inverse.
+- Étape 3, la qualité : H.265 et AV1 sont proposés dans le menu, barrés quand l'ordinateur d'en face ne sait pas les produire, et jamais essayés sur du vrai matériel non plus. 4:4:4 et plusieurs écrans à la fois ne sont pas commencés.
+- Étape 4, le débranchement : **fait**, avant les mesures ci-dessous, sur la décision de Victor ([D222](DECISIONS.md)). Sunshine, Moonlight, leurs patchs, leurs sous-modules, leurs compilations, leurs caisses de pilotage et l'appairage par code ont quitté le dépôt. Ils restent lisibles dans son historique, au commit `615bb6e` et avant.
+- Vérifié jusqu'ici, sans aucun matériel réel : les essais automatiques, dont une session entière à travers le vrai tunnel, sur une seule machine Linux et en logiciel ([D223](DECISIONS.md)). Ce sont des planchers, pas des mesures : ni carte graphique, ni Windows, ni réseau.
+- Critères de sortie de chaque étape : latence de bout en bout inférieure ou égale à celle des anciens moteurs, G-frame tenu, qualité d'image au moins égale à débit égal, G-start tenu, sur NVIDIA, Intel et, dès qu'une machine le permet, AMD. **Aucun n'est encore mesuré.** Ce qui reste à faire pour chacun :
+  - Latence de bout en bout : le lecteur la mesure lui-même, de la capture à l'affichage, et la fiche « Statistiques » l'affiche. À relever sur les deux PC, et à recouper par la mesure photon à photon de [perf/GATES.md](../perf/GATES.md). Les anciens moteurs ne donnaient pas ce chiffre : la comparaison avec eux demande de reconstruire l'ancienne version depuis l'historique et de mesurer les deux photon à photon.
+  - G-frame : le lecteur calcule le p99 de l'intervalle entre images affichées, mais ne l'affiche encore nulle part, ni sur la fiche, ni en ligne de commande, ni au journal. À brancher avant de pouvoir le relever sur 5 minutes.
+  - Qualité d'image à débit égal : aucun outil du dépôt ne la mesure. La façon de la mesurer reste à choisir.
+  - G-start : le journal de la fenêtre écrit à chaque ouverture « image à l'écran … ms après la demande », avec le détail des étapes. Dix ouvertures en réseau local, la médiane.
+  - Les cartes : NVIDIA (pilote 570 ou plus récent pour son encodeur), Intel, puis AMD.
+  - Le déroulé sur les deux PC : [docs/testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.md).
 
 ## M7 : Résilience
 
@@ -117,7 +124,7 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 ## M9 : Écran virtuel
 
 - Objectif : un PC hôte sans écran branché, utilisable.
-- Contenu : intégration du pilote tiers signé Virtual-Display-Driver (MIT) en installation OPTIONNELLE et consentie (téléchargement vérifié par empreinte au moment où l'utilisateur active la fonction ; validé dès M1 sur Windows 11 à jour), orchestration des options `dd_*` de Sunshine : écran virtuel à la résolution/fréquence du client, `ensure_only_display` pendant la session, restauration de la topologie à la déconnexion. Base HDR posée.
+- Contenu : intégration du pilote tiers signé Virtual-Display-Driver (MIT) en installation OPTIONNELLE et consentie (téléchargement vérifié par empreinte au moment où l'utilisateur active la fonction ; validé dès M1 sur Windows 11 à jour) ; écran virtuel à la résolution/fréquence du client, seul écran filmé pendant la session, restauration de la topologie à la déconnexion. Le moteur filme l'écran que le service lui désigne ([ECRAN-VIRTUEL.md](ECRAN-VIRTUEL.md)). Base HDR posée.
 - Critères de sortie : hôte sans aucun écran -> session 1440p60 ; résolution qui suit celle du client ; topologie d'écrans restaurée après déconnexion ET après crash ; si le pilote tiers est refusé par Windows, la fonction se désactive proprement avec explication (repli : écran branché ; l'utilisateur final qui veut un PC sans écran peut utiliser un adaptateur du commerce, facultatif et à sa charge).
 
 ## M10 : Durcissement et bêta
@@ -130,8 +137,8 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 
 - Le canal de contrôle du tunnel échange les versions au premier contact ; le broker refuse proprement les paires incompatibles avec un message de mise à jour.
 - Fenêtre de compatibilité N-1 : chaque release est testée « nouveau client -> ancien hôte » et « ancien client -> nouvel hôte ».
-- Les moteurs suivent leur propre compatibilité GameStream (éprouvée upstream) ; nos mises à niveau moteurs sont couvertes par la suite contrat moteur + le banc de performance.
+- Le moteur porte son propre numéro de version, que le lecteur et le moteur hôte échangent à leur premier message : deux versions différentes se refusent proprement, avec une phrase qui le dit. Le moteur entre dans les mêmes essais N-1 que le reste, et dans le banc de performance.
 
 ## Évolutions post-v1 (ordre indicatif)
 
-Transfert de fichiers hors presse-papiers, manettes (via installation optionnelle du pilote historique, ou mieux si l'écosystème évolue), coupure de l'audio côté hôte (périphérique virtuel déjà présent chez l'utilisateur, type enceintes de streaming Steam), HDR complet, 120 FPS, multi-écran simultané, Wake-on-LAN, partage entre comptes (invités), lecteur natif maison (v2), clients autres plateformes.
+Transfert de fichiers hors presse-papiers, manettes (via installation optionnelle du pilote historique, ou mieux si l'écosystème évolue), coupure de l'audio côté hôte (périphérique virtuel déjà présent chez l'utilisateur, type enceintes de streaming Steam), HDR complet, 120 FPS, multi-écran simultané, Wake-on-LAN, partage entre comptes (invités), clients autres plateformes.
