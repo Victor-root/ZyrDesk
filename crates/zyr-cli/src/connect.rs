@@ -102,7 +102,7 @@ pub fn run(args: Args) -> ExitCode {
     };
     let asked_at = Instant::now();
     let still_wanted = || !interrupted.load(Ordering::Relaxed);
-    let mut opened =
+    let opened =
         match zyr_session::open(&wanted, &mut |step| tell(step, &args.host), &still_wanted) {
             Ok(opened) => opened,
             Err(zyr_session::Error::Abandoned) => {
@@ -128,10 +128,10 @@ pub fn run(args: Args) -> ExitCode {
         Ok(player) => player,
         Err(e) => return failure("démarrage du lecteur", e),
     };
-    if let Err(refused) = opened.way.hold() {
-        println!("  Le service n'a pas pris la session en charge : {refused}");
-        println!("  Elle ne figurera pas parmi les sessions en cours.");
-    }
+    // The way is not tied to this program: a session played here has no
+    // picture anybody else could show, so it is kept out of the sessions
+    // the service lists for the window. It closes with its player's link
+    // all the same.
 
     let ending = watch(&player, &heard, &interrupted, asked_at);
     // The way goes back to the service only now, with the player gone.
