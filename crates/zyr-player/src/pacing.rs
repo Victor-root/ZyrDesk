@@ -23,6 +23,15 @@
 //! refresh back: the delay stays where the network's own unevenness puts
 //! it and goes no further.
 //!
+//! A picture the host sent again, its screen not having changed, shows
+//! nothing new and never makes a newer one wait: waiting, it is left out
+//! as soon as a newer picture comes; presented for a refresh, it gives
+//! that refresh up to a newer picture that comes while its window is
+//! still open. The host sends the first one a period and an eighth after
+//! the last picture, late on the screen's rhythm more often than not:
+//! keeping a refresh of its own, it would push every picture after it a
+//! refresh later.
+//!
 //! The window closes 6 ms before the refresh, a little more than a
 //! laptop's compositor was measured needing, and earlier when the screen
 //! says so: a picture shown after the refresh it was presented for says
@@ -150,6 +159,8 @@ struct Waiting<T> {
     picture: T,
     /// When it was decoded.
     ready: Instant,
+    /// Sent again by the host, its screen unchanged.
+    repeat: bool,
 }
 
 /// A present the screen has not said anything about yet.
@@ -176,6 +187,9 @@ struct Second {
     piled_up: u64,
     /// Dropped, or replaced before they showed, to take a refresh back.
     caught_up: u32,
+    /// Pictures sent again that gave way to a newer one, waiting or
+    /// replaced before they showed.
+    gave_way: u64,
     /// Refreshes from one picture presented to the next: one, two,
     /// three, more.
     apart: [u32; 4],
@@ -199,6 +213,8 @@ pub(crate) struct Pacer<T> {
     waiting: VecDeque<Waiting<T>>,
     /// The refresh the last picture was presented for.
     served: Option<u64>,
+    /// Whether that picture was sent again by the host.
+    served_repeat: bool,
     /// When the last picture was presented.
     presented_at: Option<Instant>,
     /// How long before a refresh its window closes, as learnt; never
@@ -226,6 +242,7 @@ impl<T> Pacer<T> {
             last_timed: None,
             waiting: VecDeque::new(),
             served: None,
+            served_repeat: false,
             presented_at: None,
             cutoff: CUTOFF,
             cutoff_moved: None,
@@ -238,26 +255,35 @@ impl<T> Pacer<T> {
         }
     }
 
-    /// A picture decoded at `ready`. Says how many waiting pictures were
-    /// dropped for it: before the refreshes are known, only the newest
-    /// waits.
-    pub(crate) fn ready(&mut self, picture: T, ready: Instant) -> u64 {
+    /// A picture decoded at `ready`, a `repeat` if the host sent it again.
+    /// Says how many waiting pictures were dropped for it: before the
+    /// refreshes are known, only the newest waits.
+    pub(crate) fn ready(&mut self, picture: T, ready: Instant, repeat: bool) -> u64 {
         self.seconds.started(ready);
-        self.waiting.push_back(Waiting { picture, ready });
+        let before = self.waiting.len();
+        self.waiting.retain(|waiting| !waiting.repeat);
+        let gave_way = (before - self.waiting.len()) as u64;
+        self.waiting.push_back(Waiting {
+            picture,
+            ready,
+            repeat,
+        });
         let most = if self.refreshes.is_some() {
             MOST_WAITING
         } else {
             1
         };
-        if self.waiting.len() <= most {
-            return 0;
-        }
-        let dropped = self.waiting.len() - 1;
-        self.waiting.drain(..dropped);
+        let piled_up = if self.waiting.len() > most {
+            self.waiting.len() - 1
+        } else {
+            0
+        };
+        self.waiting.drain(..piled_up);
         if self.refreshes.is_some() {
-            self.second.piled_up += dropped as u64;
+            self.second.gave_way += gave_way;
+            self.second.piled_up += piled_up as u64;
         }
-        dropped as u64
+        gave_way + piled_up as u64
     }
 
     /// The picture to present at `now`, if one is due.
@@ -265,6 +291,7 @@ impl<T> Pacer<T> {
         let Some(refreshes) = self.refreshes else {
             let waiting = self.waiting.pop_front()?;
             self.second.unpaced += 1;
+            self.served_repeat = waiting.repeat;
             return Some(Turn {
                 picture: waiting.picture,
                 refresh: None,
@@ -278,23 +305,28 @@ impl<T> Pacer<T> {
         let again = self.served == Some(refresh);
         if now < opening
             || self.served.is_some_and(|served| served > refresh)
-            || (again && !self.catching_up)
+            || (again && !self.catching_up && !self.served_repeat)
         {
             return None;
         }
         let mut unshown = 0;
         if again {
             // The picture presented for this refresh is replaced before it
-            // shows, on purpose: not a miss.
+            // shows, on purpose: not a miss. Either way the refresh is
+            // taken back.
             unshown = 1;
             self.pending.retain(|pending| pending.refresh != refresh);
+            if self.served_repeat {
+                self.second.gave_way += 1;
+            } else {
+                self.second.caught_up += 1;
+            }
+            self.catching_up = false;
         } else if self.catching_up && self.waiting.len() > 1 {
             self.waiting.pop_front();
             unshown = 1;
-        }
-        if unshown > 0 {
-            self.catching_up = false;
             self.second.caught_up += 1;
+            self.catching_up = false;
         }
         let waiting = self.waiting.pop_front()?;
         let before_closed = refreshes
@@ -319,6 +351,7 @@ impl<T> Pacer<T> {
             .waited
             .add(now.saturating_duration_since(waiting.ready));
         self.served = Some(refresh);
+        self.served_repeat = waiting.repeat;
         self.seconds.started(now);
         Some(Turn {
             picture: waiting.picture,
@@ -427,6 +460,7 @@ impl<T> Pacer<T> {
         self.measured_from = None;
         self.last_timed = None;
         self.served = None;
+        self.served_repeat = false;
         self.pending.clear();
         self.early_since = None;
         self.early_run = 0;
@@ -570,16 +604,17 @@ impl<T> Pacer<T> {
             format!(
                 "pacing: {paced} presented one a refresh ({} as soon as decoded, {} held for \
                  their refresh, waiting {} ms), {} before the refreshes were known; {} dropped as \
-                 newer ones piled up, {} dropped to take a refresh back; refreshes from one \
-                 picture to the next: {one} one, {two} two, {three} three, {more} more; the \
-                 screen showed {} at their refresh, {} later ({} of them presented with half a \
-                 refresh to spare), {} sooner; {screen}",
+                 newer ones piled up, {} dropped to take a refresh back, {} sent again that gave \
+                 way to a newer one; refreshes from one picture to the next: {one} one, {two} \
+                 two, {three} three, {more} more; the screen showed {} at their refresh, {} later \
+                 ({} of them presented with half a refresh to spare), {} sooner; {screen}",
                 second.at_once,
                 second.held,
                 second.waited,
                 second.unpaced,
                 second.piled_up,
                 second.caught_up,
+                second.gave_way,
                 second.on_time,
                 second.late,
                 second.late_anyway,
@@ -707,6 +742,8 @@ mod tests {
         /// Every picture presented, for the refresh it was meant for.
         presented: Vec<(u32, Option<u64>)>,
         unshown: u64,
+        /// The pictures the host sent again, by number.
+        repeats: Vec<usize>,
     }
 
     impl Thread {
@@ -717,6 +754,7 @@ mod tests {
                 late,
                 presented: Vec::new(),
                 unshown: 0,
+                repeats: Vec::new(),
             }
         }
 
@@ -727,7 +765,8 @@ mod tests {
             let mut now = decoded[0];
             while now <= until {
                 while next < decoded.len() && decoded[next] <= now {
-                    self.unshown += self.pacer.ready(next as u32, decoded[next]);
+                    let repeat = self.repeats.contains(&next);
+                    self.unshown += self.pacer.ready(next as u32, decoded[next], repeat);
                     next += 1;
                 }
                 if let Some(turn) = self.pacer.due(now) {
@@ -1083,7 +1122,7 @@ mod tests {
         let at = Instant::now();
         pacer.after(None, at, Some(&said(1, 1_000, at)));
         assert!(pacer.refreshes.is_some());
-        assert_eq!(pacer.ready(7u32, at + Duration::from_millis(1)), 0);
+        assert_eq!(pacer.ready(7u32, at + Duration::from_millis(1), false), 0);
         let later = at + Duration::from_millis(2);
         pacer.after(None, later, Some(&said(2, 5, later)));
         assert_eq!(pacer.refreshes.map(|known| known.count), Some(5));
@@ -1115,8 +1154,8 @@ mod tests {
         let journal = testing::OwnLog::new("pacing-unknown");
         let mut pacer = Pacer::new(&journal.log);
         let now = Instant::now();
-        assert_eq!(pacer.ready(1u32, now), 0);
-        assert_eq!(pacer.ready(2, now), 1);
+        assert_eq!(pacer.ready(1u32, now, false), 0);
+        assert_eq!(pacer.ready(2, now, false), 1);
         assert_eq!(pacer.next_wakeup(now), None);
         let turn = pacer.due(now).unwrap();
         assert_eq!((turn.picture, turn.refresh, turn.unshown), (2, None, 0));
@@ -1155,6 +1194,64 @@ mod tests {
             .position(|&picture| picture >= 100)
             .unwrap();
         assert_eq!(presented[after], 106, "{presented:?}");
+    }
+
+    #[test]
+    fn a_picture_sent_again_late_on_the_rhythm_gives_its_refresh_to_the_next() {
+        let journal = testing::OwnLog::new("pacing-repeat");
+        let start = Instant::now();
+        let mut thread = Thread::new(
+            Compositor::new(start, SIXTY_HZ, Duration::from_millis(3)),
+            Duration::from_millis(1),
+            &journal.log,
+        );
+        // Decoded 10 ms after a refresh, just inside its window. The host
+        // had nothing new for picture 100 and sent the one before again, a
+        // period and an eighth after it: 2 ms past the window's close.
+        let mut decoded = arrivals(
+            start,
+            SIXTY_HZ,
+            Duration::from_millis(10),
+            Duration::ZERO,
+            300,
+        );
+        decoded[100] += Duration::from_nanos(SIXTY_HZ / 8);
+        thread.repeats = vec![100];
+        thread.run(&decoded, start + Duration::from_secs(5));
+        thread.pacer.look(start + Duration::from_secs(7));
+        let shown = thread.compositor.shown(0, 300);
+        // Picture n is shown at refresh n + 2. The one sent again missed
+        // the window of refresh 102, which shows picture 99 again as it
+        // would anyway, and was presented for refresh 103; picture 101
+        // took that refresh over, and nothing after comes a refresh late.
+        assert_eq!(shown[101], Some(99));
+        assert_eq!(shown[102], Some(99));
+        assert_eq!(shown[103], Some(101));
+        assert_eq!(shown[250], Some(248));
+        assert_eq!(thread.unshown, 1);
+        assert!(
+            journal
+                .written()
+                .contains("1 sent again that gave way to a newer one"),
+            "{}",
+            journal.written()
+        );
+    }
+
+    #[test]
+    fn a_picture_sent_again_and_waiting_is_left_out_for_a_newer_one() {
+        let journal = testing::OwnLog::new("pacing-repeat-waiting");
+        let mut pacer = Pacer::new(&journal.log);
+        let at = Instant::now();
+        pacer.after(None, at, Some(&said(1, 1_000, at)));
+        // Both decoded after the window of refresh 1001 closed.
+        let ms = Duration::from_millis;
+        assert_eq!(pacer.ready(1u32, at + ms(12), true), 0);
+        assert!(pacer.due(at + ms(12)).is_none());
+        assert_eq!(pacer.ready(2, at + ms(14), false), 1);
+        let turn = pacer.due(at + ms(18)).unwrap();
+        assert_eq!((turn.picture, turn.refresh), (2, Some(1_002)));
+        assert!(pacer.waiting.is_empty());
     }
 
     #[test]

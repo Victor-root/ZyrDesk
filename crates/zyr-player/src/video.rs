@@ -493,7 +493,7 @@ impl<P: Presenter> Video<P> {
                             captured_us: frame.captured_us,
                             whole: frame.last_packet,
                         };
-                        let dropped = self.pacer.ready(ready, Instant::now());
+                        let dropped = self.pacer.ready(ready, Instant::now(), frame.repeat);
                         self.unshown(now, dropped);
                     }
                     self.assembler.recycle(frame.data);
