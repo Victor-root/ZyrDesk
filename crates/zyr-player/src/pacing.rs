@@ -21,7 +21,11 @@
 //! What waits adds a refresh of delay. Once every picture of the last two
 //! seconds could have gone a refresh earlier, one is dropped to take that
 //! refresh back: the delay stays where the network's own unevenness puts
-//! it and goes no further.
+//! it and goes no further. Pictures the network held up and then let
+//! through together, decoded within a quarter of a refresh of one
+//! another, never wait one behind the other: each would keep a refresh
+//! of its own, and the delay would stay until the next catch-up. The
+//! newest takes the place of the one before.
 //!
 //! A picture the host sent again, its screen not having changed, shows
 //! nothing new and never makes a newer one wait: waiting, it is left out
@@ -93,6 +97,11 @@ const EARLY_BY: Duration = Duration::from_millis(1);
 /// Pictures waiting at most. Past that, they piled up behind a stall,
 /// and only the newest is kept: better shown at once than one by one.
 const MOST_WAITING: usize = 2;
+
+/// Two pictures decoded less than this part of a refresh apart were held
+/// up together and let through at once: the newer takes the older's
+/// place while both wait.
+const BURST: u32 = 4;
 
 /// Presents remembered until the screen says what became of them.
 const MOST_PENDING: usize = 16;
@@ -281,6 +290,14 @@ impl<T> Pacer<T> {
         let before = self.waiting.len();
         self.waiting.retain(|waiting| !waiting.repeat);
         let gave_way = (before - self.waiting.len()) as u64;
+        let burst = self.refreshes.is_some_and(|refreshes| {
+            self.waiting.back().is_some_and(|newest| {
+                ready.saturating_duration_since(newest.ready) < refreshes.period / BURST
+            })
+        });
+        if burst {
+            self.waiting.pop_back();
+        }
         self.waiting.push_back(Waiting {
             picture,
             ready,
@@ -297,11 +314,12 @@ impl<T> Pacer<T> {
             0
         };
         self.waiting.drain(..piled_up);
+        let piled_up = piled_up as u64 + u64::from(burst);
         if self.refreshes.is_some() {
             self.second.gave_way += gave_way;
-            self.second.piled_up += piled_up as u64;
+            self.second.piled_up += piled_up;
         }
-        gave_way + piled_up as u64
+        gave_way + piled_up
     }
 
     /// The picture to present at `now`, if one is due.
@@ -1306,6 +1324,49 @@ mod tests {
             .position(|&picture| picture >= 100)
             .unwrap();
         assert_eq!(presented[after], 106, "{presented:?}");
+    }
+
+    #[test]
+    fn pictures_let_through_together_leave_only_the_newest_waiting() {
+        let journal = testing::OwnLog::new("pacing-burst");
+        let start = Instant::now();
+        let mut thread = Thread::new(
+            Compositor::new(start, SIXTY_HZ, Duration::from_millis(3)),
+            Duration::from_millis(1),
+            &journal.log,
+        );
+        // Decoded 12 ms after a refresh, once its window has closed: each
+        // waits for the next one. Six pictures held up on the way, then
+        // let through together, decoded 0.4 ms apart.
+        let mut decoded = arrivals(
+            start,
+            SIXTY_HZ,
+            Duration::from_millis(12),
+            Duration::ZERO,
+            300,
+        );
+        let released = decoded[105];
+        for (n, at) in (0u32..).zip(&mut decoded[100..=105]) {
+            *at = released + Duration::from_micros(400) * n;
+        }
+        thread.run(&decoded, start + Duration::from_secs(5));
+        thread.pacer.look(start + Duration::from_secs(7));
+        let shown = thread.compositor.shown(0, 300);
+        // Picture n is shown at refresh n + 3. The newest of those let
+        // through is shown at the first refresh it can be, and nothing
+        // after it comes a refresh late.
+        assert_eq!(shown[107], Some(99));
+        assert_eq!(shown[108], Some(105));
+        assert_eq!(shown[109], Some(106));
+        assert_eq!(shown[150], Some(147));
+        assert_eq!(thread.unshown, 5);
+        assert!(
+            journal
+                .written()
+                .contains("5 dropped as newer ones piled up"),
+            "{}",
+            journal.written()
+        );
     }
 
     #[test]
