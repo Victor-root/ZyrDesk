@@ -8,14 +8,16 @@
 //! not know stops its opening rather than being ignored.
 //!
 //! What every backend shares is set on the codec context instead (see
-//! the encoder): no B-frames, a key frame only when asked, a constant
-//! rate whose buffer holds one frame, low delay, BT.709 limited range.
+//! the encoder): no B-frames, a key frame only when asked (Media
+//! Foundation aside, see [`gop`]), a constant rate whose buffer holds one
+//! frame, low delay, BT.709 limited range.
 
 use std::ffi::c_int;
 
 use zyr_media::codec::VideoCodec;
 
 use crate::encoder::Backend;
+use crate::sys;
 
 /// The private options of one encoder.
 pub(crate) fn options(backend: Backend, codec: VideoCodec) -> Vec<(&'static str, &'static str)> {
@@ -172,10 +174,27 @@ pub(crate) fn rates(backend: Backend, kbps: u32, fps: u32, slices: c_int) -> Rat
 
 /// The distance between key frames: as far as the encoder allows, since
 /// a key frame only comes when asked for. Intel keeps it in 16 bits.
+///
+/// Media Foundation is the exception. FFmpeg passes the request on, but
+/// Sunshine found its encoders do not honour it: with no key frame of
+/// its own, a player that lost a frame would wait for one forever. One
+/// every 120 frames, two seconds at 60 fps, as Sunshine settled on.
 pub(crate) fn gop(backend: Backend) -> c_int {
     match backend {
         Backend::Qsv => c_int::from(u16::MAX),
-        _ => c_int::MAX,
+        Backend::MediaFoundation => 120,
+        Backend::Nvenc | Backend::Amf | Backend::Software => c_int::MAX,
+    }
+}
+
+/// How strictly the stream keeps to its standard, when not FFmpeg's
+/// usual. Intel's encoder is not held to the standard's buffer model
+/// (NalHrdConformance off), as Sunshine drives it, the buffer being left
+/// to its driver (see [`rates`]).
+pub(crate) fn compliance(backend: Backend) -> Option<c_int> {
+    match backend {
+        Backend::Qsv => Some(sys::FF_COMPLIANCE_UNOFFICIAL),
+        Backend::Nvenc | Backend::Amf | Backend::MediaFoundation | Backend::Software => None,
     }
 }
 
@@ -342,5 +361,20 @@ mod tests {
         assert_eq!(gop(Backend::Nvenc), c_int::MAX);
         assert_eq!(gop(Backend::Qsv), 65_535);
         assert!((1..=4).contains(&software_threads()));
+    }
+
+    #[test]
+    fn media_foundation_makes_key_frames_of_its_own() {
+        // Its encoders may ignore a request: two seconds at 60 fps is the
+        // longest a player that lost a frame waits.
+        assert_eq!(gop(Backend::MediaFoundation), 120);
+    }
+
+    #[test]
+    fn only_intel_is_let_off_the_buffer_model() {
+        for backend in BACKENDS {
+            let expected = (backend == Backend::Qsv).then_some(sys::FF_COMPLIANCE_UNOFFICIAL);
+            assert_eq!(compliance(backend), expected, "{backend:?}");
+        }
     }
 }

@@ -266,4 +266,32 @@ mod tests {
         let orphan = [0, 0, 0, 1, 0x65, 0x88, 0x84, 0x00, 0x33, 0xff, 0x12, 0x34];
         assert!(!matches!(decoder.decode(&orphan), Ok(Some(_))));
     }
+
+    #[test]
+    fn an_empty_packet_is_refused_and_does_not_end_the_stream() {
+        let ff = testing::ffmpeg();
+        let mut decoder = VideoDecoder::open(&ff, VideoCodec::H264, DecodeOutput::Cpu).unwrap();
+        assert!(matches!(decoder.decode(&[]), Err(CodecError::Invalid(_))));
+
+        let mut encoder = crate::VideoEncoder::open(
+            &ff,
+            crate::EncoderConfig {
+                codec: VideoCodec::H264,
+                width: 64,
+                height: 64,
+                fps: 30,
+                bitrate_kbps: 500,
+                backend: crate::Backend::Software,
+                input: crate::Input::Cpu,
+            },
+        )
+        .unwrap();
+        let frame = encoder.blank_frame().unwrap();
+        encoder.encode(frame, true).unwrap();
+        let packet = encoder.receive().unwrap().unwrap();
+        assert!(matches!(
+            decoder.decode(&packet.data),
+            Ok(Some(DecodedFrame::Cpu(_)))
+        ));
+    }
 }

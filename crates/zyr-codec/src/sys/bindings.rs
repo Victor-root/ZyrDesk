@@ -11,6 +11,7 @@ pub const LIBAVUTIL_VERSION_MAJOR: u32 = 61;
 pub const AV_LOG_WARNING: u32 = 24;
 pub const AV_FRAME_FLAG_KEY: u32 = 2;
 pub const AV_EF_EXPLODE: u32 = 8;
+pub const FF_COMPLIANCE_UNOFFICIAL: i32 = -1;
 pub const LIBAVCODEC_VERSION_MAJOR: u32 = 63;
 pub const AV_PKT_FLAG_KEY: u32 = 1;
 pub const AV_CODEC_FLAG_LOW_DELAY: u32 = 524288;

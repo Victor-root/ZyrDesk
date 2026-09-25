@@ -52,7 +52,8 @@ const TRIED_HEIGHT: u32 = 360;
 /// then what Windows offers, then x264 (H.264 only).
 ///
 /// x264 is always tried on pictures in memory, whatever `input` says,
-/// since that is the only way it reads them.
+/// since that is the only way it reads them. Each encoder left out is
+/// named in the log, with why (see [`Ffmpeg::log_into`]).
 pub fn probe(ff: &Arc<Ffmpeg>, input: &Input, vendor: GpuVendor) -> Vec<(VideoCodec, Backend)> {
     let backends = vendor
         .backend()
@@ -60,18 +61,28 @@ pub fn probe(ff: &Arc<Ffmpeg>, input: &Input, vendor: GpuVendor) -> Vec<(VideoCo
         .chain([Backend::MediaFoundation, Backend::Software]);
     backends
         .flat_map(|backend| VideoCodec::ALL.map(|codec| (codec, backend)))
-        .filter(|(codec, backend)| backend.encoder_name(*codec).is_some())
-        .filter(|(codec, backend)| works(ff, input, *codec, *backend).unwrap_or(false))
+        .filter_map(|(codec, backend)| Some((codec, backend, backend.encoder_name(codec)?)))
+        .filter(
+            |(codec, backend, name)| match works(ff, input, *codec, *backend) {
+                Ok(()) => true,
+                Err(refused) => {
+                    crate::log::note(&format!("{name} left out by the probe: {refused}"));
+                    false
+                }
+            },
+        )
+        .map(|(codec, backend, _)| (codec, backend))
         .collect()
 }
 
-/// Whether the encoder opens and turns a picture into a key frame.
+/// Whether the encoder opens and turns a picture into a key frame, and
+/// why not.
 fn works(
     ff: &Arc<Ffmpeg>,
     input: &Input,
     codec: VideoCodec,
     backend: Backend,
-) -> Result<bool, CodecError> {
+) -> Result<(), CodecError> {
     let input = if backend == Backend::Software {
         Input::Cpu
     } else {
@@ -98,7 +109,12 @@ fn works(
             encoder.receive()?
         }
     };
-    Ok(packet.is_some_and(|packet| packet.key))
+    if !packet.is_some_and(|packet| packet.key) {
+        return Err(CodecError::Invalid(
+            "l'image d'essai n'a pas donné d'image clé".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

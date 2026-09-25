@@ -287,10 +287,23 @@ impl VideoEncoder {
     ///
     /// Its packet comes out of [`VideoEncoder::receive`], which is to be
     /// called until it says there is nothing more.
+    ///
+    /// The picture must be one this encoder handed out (in memory, one of
+    /// its size will do): the encoder reads as many rows as it was opened
+    /// for, and would read past a smaller picture.
     pub fn encode(&mut self, frame: Frame, force_key: bool) -> Result<(), CodecError> {
         let mut frame = match frame {
             Frame::Cpu(frame) => {
                 self.reads_memory()?;
+                if (frame.width(), frame.height()) != (self.width, self.height) {
+                    return Err(CodecError::Invalid(format!(
+                        "une image de {} sur {} ne va pas à un encodeur de {} sur {}",
+                        frame.width(),
+                        frame.height(),
+                        self.width,
+                        self.height
+                    )));
+                }
                 frame.frame
             }
             #[cfg(windows)]
@@ -321,6 +334,9 @@ impl VideoEncoder {
 
     /// Asks for another rate, from the next frame on when the encoder
     /// allows it.
+    ///
+    /// NVENC starts its stream again at the new rate: its next packet is
+    /// a key frame, and flagged so.
     pub fn set_bitrate(&mut self, kbps: u32) -> Result<Applied, CodecError> {
         if kbps == 0 {
             return Err(CodecError::Invalid("un débit nul".to_string()));
@@ -428,6 +444,9 @@ fn configure(fields: &mut sys::AVCodecContext, config: &EncoderConfig, slices: c
     fields.rc_buffer_size = rates.buffer;
     fields.gop_size = tuning::gop(config.backend);
     fields.keyint_min = fields.gop_size;
+    if let Some(compliance) = tuning::compliance(config.backend) {
+        fields.strict_std_compliance = compliance;
+    }
     fields.max_b_frames = 0;
     fields.flags |= (sys::AV_CODEC_FLAG_LOW_DELAY | sys::AV_CODEC_FLAG_CLOSED_GOP) as c_int;
     fields.color_range = sys::AVColorRange::AVCOL_RANGE_MPEG;
@@ -451,13 +470,13 @@ mod tests {
     const WIDTH: u32 = 320;
     const HEIGHT: u32 = 240;
 
-    fn x264(kbps: u32) -> VideoEncoder {
+    fn x264_sized(width: u32, height: u32, kbps: u32) -> VideoEncoder {
         VideoEncoder::open(
             &testing::ffmpeg(),
             EncoderConfig {
                 codec: VideoCodec::H264,
-                width: WIDTH,
-                height: HEIGHT,
+                width,
+                height,
                 fps: 30,
                 bitrate_kbps: kbps,
                 backend: Backend::Software,
@@ -465,6 +484,10 @@ mod tests {
             },
         )
         .unwrap()
+    }
+
+    fn x264(kbps: u32) -> VideoEncoder {
+        x264_sized(WIDTH, HEIGHT, kbps)
     }
 
     /// Luma of the synthetic picture number `index`: a diagonal gradient
@@ -589,6 +612,35 @@ mod tests {
         assert_eq!(encoder.set_bitrate(3_000).unwrap(), Applied::InPlace);
         let high = sizes(&mut encoder, 100);
         assert!(high > low * 4, "{low} bytes at 300 kb/s, {high} at 3000");
+    }
+
+    #[test]
+    fn a_rate_of_nothing_is_refused() {
+        let mut encoder = x264(1_000);
+        assert!(matches!(
+            encoder.set_bitrate(0),
+            Err(CodecError::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn a_picture_of_another_size_is_refused_before_the_encoder_reads_it() {
+        let mut encoder = x264(1_000);
+        let larger = x264_sized(WIDTH * 2, HEIGHT * 2, 1_000);
+        let smaller = x264_sized(WIDTH / 2, HEIGHT / 2, 1_000);
+        for other in [larger, smaller] {
+            let stranger = other.frame_for_cpu().unwrap();
+            let refused = encoder.encode(stranger.into(), false);
+            assert!(
+                matches!(refused, Err(CodecError::Invalid(_))),
+                "{:?}",
+                refused.err()
+            );
+        }
+        // Nothing reached the encoder: its own first picture is still
+        // the first frame of its stream.
+        let frame = picture(&encoder, 0);
+        assert!(encode_one(&mut encoder, frame, true).key);
     }
 
     #[test]

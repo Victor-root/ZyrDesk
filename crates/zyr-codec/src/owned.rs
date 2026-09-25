@@ -89,7 +89,7 @@ impl CodecContext {
             )
         };
         self.ff
-            .check(opened, &format!("ouverture de {}", self.name))?;
+            .check(opened, format_args!("ouverture de {}", self.name))?;
         let unknown = dictionary.left();
         if !unknown.is_empty() {
             return Err(CodecError::UnknownOptions {
@@ -110,7 +110,7 @@ impl CodecContext {
                 .avcodec_send_frame(self.raw.as_ptr(), frame.as_ptr())
         };
         self.ff
-            .check(sent, &format!("envoi d'une image à {}", self.name))?;
+            .check(sent, format_args!("envoi d'une image à {}", self.name))?;
         Ok(())
     }
 
@@ -124,7 +124,7 @@ impl CodecContext {
                 .avcodec_send_frame(self.raw.as_ptr(), ptr::null())
         };
         self.ff
-            .check(sent, &format!("fin du flux de {}", self.name))?;
+            .check(sent, format_args!("fin du flux de {}", self.name))?;
         Ok(())
     }
 
@@ -146,11 +146,21 @@ impl CodecContext {
     /// They are lent, not given: the packet points at them without
     /// owning them, which makes FFmpeg copy them, with the padding its
     /// readers need past the end, before it looks at them.
+    ///
+    /// No bytes at all is refused here: FFmpeg takes an empty packet as
+    /// the end of the stream or as a mistake, depending on where it
+    /// points, and neither is what the caller meant.
     pub(crate) fn send_bytes(
         &mut self,
         packet: &mut LentPacket,
         data: &[u8],
     ) -> Result<(), CodecError> {
+        if data.is_empty() {
+            return Err(CodecError::Invalid(format!(
+                "un paquet vide pour {}",
+                self.name
+            )));
+        }
         let size = c_int::try_from(data.len()).map_err(|_| {
             CodecError::Invalid(format!("paquet de {} octets, trop grand", data.len()))
         })?;
@@ -169,7 +179,7 @@ impl CodecContext {
         lent.data = ptr::null_mut();
         lent.size = 0;
         self.ff
-            .check(sent, &format!("envoi d'un paquet à {}", self.name))?;
+            .check(sent, format_args!("envoi d'un paquet à {}", self.name))?;
         Ok(())
     }
 
@@ -191,7 +201,7 @@ impl CodecContext {
             return Ok(false);
         }
         self.ff
-            .check(code, &format!("lecture {what} de {}", self.name))?;
+            .check(code, format_args!("lecture {what} de {}", self.name))?;
         Ok(true)
     }
 }

@@ -10,6 +10,7 @@
 //! version the bindings were generated from.
 
 use std::ffi::{CStr, c_char, c_int, c_uint};
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -22,7 +23,8 @@ use crate::sys;
 /// FFmpeg, loaded: the function tables of its three libraries.
 ///
 /// Shared by everything that uses it, behind an `Arc`, and unloaded
-/// only when the last encoder, decoder or resampler lets go of it.
+/// only when the last encoder, decoder or resampler lets go of it, and
+/// the log its lines go to (see [`Ffmpeg::log_into`]).
 pub struct Ffmpeg {
     // Dropped in declaration order, so each library is let go of before
     // the ones it leans on.
@@ -92,11 +94,15 @@ impl Ffmpeg {
         &self.version
     }
 
-    /// Sends what FFmpeg says, from warnings up, to the product's log.
+    /// Sends what FFmpeg says, from warnings up, to the product's log,
+    /// with what this crate finds on its own (encoders the probe had to
+    /// leave out, and why).
     ///
     /// FFmpeg has a single log for the whole process: the last call
-    /// decides where its lines go.
-    pub fn log_into(&self, log: &Log) {
+    /// decides where its lines go, and keeps its FFmpeg loaded until
+    /// another one takes its place, since that FFmpeg puts the lines
+    /// into words.
+    pub fn log_into(self: &Arc<Self>, log: &Log) {
         crate::log::route(self, log);
     }
 
@@ -115,7 +121,10 @@ impl Ffmpeg {
     }
 
     /// The error for a negative return of FFmpeg, the value otherwise.
-    pub(crate) fn check(&self, code: c_int, what: &str) -> Result<c_int, CodecError> {
+    ///
+    /// `what` is only put into words when FFmpeg refused: most calls
+    /// succeed, many of them once a frame.
+    pub(crate) fn check(&self, code: c_int, what: impl fmt::Display) -> Result<c_int, CodecError> {
         if code < 0 {
             return Err(CodecError::Refused {
                 what: what.to_string(),

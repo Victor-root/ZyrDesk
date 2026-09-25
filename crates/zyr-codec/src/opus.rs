@@ -252,6 +252,8 @@ mod tests {
         // Code 3 announces a count of frames in a second byte that is
         // not there.
         assert!(decoder.decode(&[0xff]).is_err());
+        // Nothing at all is refused too, and is not the end of the sound.
+        assert!(matches!(decoder.decode(&[]), Err(CodecError::Invalid(_))));
         let encoded = encoder.encode(&tone(0, OPUS_FRAME)).unwrap();
         assert_eq!(decoder.decode(&encoded).unwrap().len(), INTERLEAVED);
     }

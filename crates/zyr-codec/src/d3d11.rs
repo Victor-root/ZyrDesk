@@ -167,11 +167,22 @@ impl Surfaces {
 
     /// The frame the encoder takes: the texture itself, or for Quick Sync
     /// the surface it maps to.
+    ///
+    /// Only a texture of this pool: the encoder reads one at its own
+    /// size, whatever the size of the texture it is given.
     pub(crate) fn for_encoder(
         &self,
         ff: &Arc<Ffmpeg>,
         frame: GpuFrame,
     ) -> Result<OwnedFrame, CodecError> {
+        // SAFETY: a frame from av_hwframe_get_buffer holds a reference to
+        // the frames context it came from, alive as long as the frame.
+        let pool = unsafe { frame.frame.get().hw_frames_ctx.as_ref() };
+        if !pool.is_some_and(|pool| pool.data == self.frames.data()) {
+            return Err(CodecError::Invalid(
+                "cette texture vient d'un autre encodeur".to_string(),
+            ));
+        }
         let Some(qsv) = &self.qsv else {
             return Ok(frame.frame);
         };
