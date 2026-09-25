@@ -11,9 +11,10 @@
 //! lock screen, an administrator prompt) or a screen changes its mode.
 //! It is taken up again on the new desktop, trying every 5 ms for the
 //! first 400 ms and every 25 ms after, and the log says how long the
-//! picture was frozen. A screen that has vanished is waited for 3 s, for
-//! a mode change takes it out of the lists for a moment; after that, the
-//! main screen is filmed instead.
+//! picture was frozen; a duplication that stops again at every picture
+//! is said at a measured pace. A screen that has vanished is waited for
+//! 3 s, for a mode change takes it out of the lists for a moment; after
+//! that, the main screen is filmed instead.
 
 use std::thread;
 use std::time::{Duration, Instant};
@@ -52,6 +53,7 @@ use super::{Counter, failed};
 use crate::parts::{Aimed, Captured, Drawing, Feed, Screen, ScreenError};
 use crate::picture::{Rect, Size};
 use crate::pointer::{Kind, shape};
+use crate::throttle::Throttle;
 
 /// How often duplication is tried again at first after it stopped, and
 /// for how long.
@@ -98,6 +100,9 @@ struct Filming {
     /// Where DXGI has it, to duplicate it again without listing the
     /// screens while they have not changed.
     output: Output,
+    /// The lists `output` was found in: once they are out of date, the
+    /// screen is looked for in new ones, where it may be gone.
+    lists: IDXGIFactory1,
     area: Rect,
     /// Quarter turns of the screen, clockwise.
     rotation: u32,
@@ -140,6 +145,10 @@ pub(super) struct DuplicatedScreen {
     described: String,
     filming: Option<Filming>,
     lost: Option<Lost>,
+    /// Duplication stopping and coming back, which some screens do at
+    /// every picture for as long as a program holds them.
+    losses: Throttle,
+    returns: Throttle,
     latest: Option<Latest>,
     pointer: Pointer,
     /// Last, so that the thread leaves its class once all the rest is
@@ -184,6 +193,8 @@ impl DuplicatedScreen {
             described: String::new(),
             filming: None,
             lost: None,
+            losses: Throttle::new(SAY_EVERY),
+            returns: Throttle::new(SAY_EVERY),
             latest: None,
             pointer: Pointer::default(),
             _task: task,
@@ -265,6 +276,9 @@ impl DuplicatedScreen {
         self.filming = Some(Filming {
             display,
             output: screen.output,
+            // Every screen filmed was found in the current lists, or is
+            // the one filmed already while its lists are current.
+            lists: self.factory.clone(),
             area,
             rotation,
             duplication,
@@ -346,7 +360,8 @@ impl DuplicatedScreen {
         })
     }
 
-    /// Duplication stopped: why, said once.
+    /// Duplication stopped: why, said once, and at a measured pace when
+    /// it stops again at every picture.
     fn lose(&mut self, e: &windows::core::Error) {
         let Some(filming) = &mut self.filming else {
             return;
@@ -360,7 +375,10 @@ impl DuplicatedScreen {
             ),
             e,
         );
-        self.log.write(&why);
+        if let Some(unsaid) = self.losses.allow(Instant::now()) {
+            self.log
+                .write(&format!("{why} ({unsaid} more stops unsaid)"));
+        }
         self.lost = Some(Lost::now(why));
     }
 
@@ -433,10 +451,12 @@ impl DuplicatedScreen {
         let Some(filming) = &self.filming else {
             return Ok(None);
         };
-        // The same screen on the same card, while DXGI's lists hold: after
-        // a desktop switch, what was filmed is filmed again straight away.
+        // The same screen on the same card, while the lists it was found
+        // in hold: after a desktop switch, what was filmed is filmed again
+        // straight away. Once they no longer hold, it is looked for in new
+        // lists at every try, so that one gone for good is given up.
         // SAFETY: a question to a live factory.
-        let screen = if unsafe { self.factory.IsCurrent() }.as_bool()
+        let screen = if unsafe { filming.lists.IsCurrent() }.as_bool()
             && filming.output.card.AdapterLuid == self.device.card
         {
             Filmable {
@@ -452,11 +472,13 @@ impl DuplicatedScreen {
         if self.film(screen, Duration::ZERO)?.is_some() {
             return Ok(None);
         }
-        self.log.write(&format!(
-            "capture back after {} ms, on the desktop {}",
-            since.elapsed().as_millis(),
-            self.desktop.name()
-        ));
+        if let Some(unsaid) = self.returns.allow(Instant::now()) {
+            self.log.write(&format!(
+                "capture back after {} ms, on the desktop {} ({unsaid} more returns unsaid)",
+                since.elapsed().as_millis(),
+                self.desktop.name()
+            ));
+        }
         Ok(Some(match self.aimed() {
             Some(aimed) if Some(&aimed) != before.as_ref() => Captured::Moved(aimed),
             _ => Captured::Nothing,

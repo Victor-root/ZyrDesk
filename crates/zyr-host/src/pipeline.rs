@@ -15,6 +15,11 @@
 //! change between two frames. Each build starts a new stream, which the
 //! player hears about before its first packet.
 //!
+//! A picture that could not be handed to the link leaves a hole no
+//! player decodes past: a key frame is asked for to close it, and
+//! nothing more of that stream is encoded while it waits for the floor.
+//! The pictures in between would only crowd a link already full.
+//!
 //! The encoders are tried at start, on the graphics card the screen is
 //! captured on, while the engine waits for the player. The best one for
 //! the codec agreed is used; one that fails, at the start or later, is
@@ -30,15 +35,15 @@ use zyr_media::codec::{CodecSet, VideoCodec, negotiate};
 use zyr_media::control::{NoticeKind, ToPlayer, Wanted};
 use zyr_media::pace::{Cadence, Due, Now};
 use zyr_media::service::{Display, ToService};
-use zyr_media::video::{DEFAULT_FEC_PERCENT, OutgoingFrame, Packetizer, Packets};
+use zyr_media::video::{DEFAULT_FEC_PERCENT, OutgoingFrame, Packetizer};
 use zyr_proto::log::Log;
 
 use crate::clock::HostClock;
 use crate::input;
-use crate::link::{Outbox, Sent};
+use crate::link::{Outbox, Sent, Spares};
 use crate::parts::{Aimed, Captured, Drawing, Feed, MakeScreen, Screen, ScreenError};
 use crate::picture::{Mapping, Rect, Size, picture_size, placement};
-use crate::session::Event;
+use crate::session::{self, Event};
 use crate::sound::OPUS_BITRATE;
 use crate::throttle::Throttle;
 
@@ -101,6 +106,7 @@ pub(crate) enum Report {
 pub(crate) struct Shared {
     pub(crate) ffmpeg: Arc<Ffmpeg>,
     pub(crate) outbox: Outbox,
+    pub(crate) spares: Spares,
     pub(crate) events: mpsc::Sender<Event>,
     pub(crate) input: mpsc::Sender<input::Command>,
     pub(crate) clock: HostClock,
@@ -112,19 +118,18 @@ pub(crate) fn start(
     shared: Shared,
 ) -> std::io::Result<(mpsc::Sender<Command>, JoinHandle<()>)> {
     let (commands, received) = mpsc::channel();
-    let thread = thread::Builder::new()
-        .name("engine pictures".to_string())
-        .spawn(move || match make() {
-            Ok(screen) => Pipeline::new(screen, shared).run(&received),
-            Err(e) => {
-                shared
-                    .log
-                    .write(&format!("the screen cannot be captured: {e}"));
-                let _ = shared.events.send(Event::Pipeline(Report::NoScreen(e.0)));
-                // Nothing to do but wait to be told to stop.
-                while !matches!(received.recv(), Ok(Command::Quit) | Err(_)) {}
-            }
-        })?;
+    let events = shared.events.clone();
+    let thread = session::spawn("pictures", events, move || match make() {
+        Ok(screen) => Pipeline::new(screen, shared).run(&received),
+        Err(e) => {
+            shared
+                .log
+                .write(&format!("the screen cannot be captured: {e}"));
+            let _ = shared.events.send(Event::Pipeline(Report::NoScreen(e.0)));
+            // Nothing to do but wait to be told to stop.
+            while !matches!(received.recv(), Ok(Command::Quit) | Err(_)) {}
+        }
+    })?;
     Ok((commands, thread))
 }
 
@@ -190,6 +195,11 @@ impl KeyFrames {
             .map(|last| last + KEY_FLOOR)
     }
 
+    /// Whether one is asked for and still waits for the floor.
+    pub(crate) fn waiting(&self, now: Instant) -> bool {
+        self.deadline().is_some_and(|at| now < at)
+    }
+
     /// Whether the picture going now is to be a key frame; it counts as
     /// sent if so.
     pub(crate) fn take(&mut self, now: Instant) -> bool {
@@ -227,6 +237,10 @@ struct Encoding {
     stream: u16,
     next_frame: u32,
     placement: Rect,
+    /// A picture of this stream never reached the link, and no key frame
+    /// went since: nothing is encoded while the one asked for waits for
+    /// the floor.
+    holed: bool,
 }
 
 /// What the viewer asked for, once streaming.
@@ -259,6 +273,8 @@ struct Counts {
     /// Frames the link had no room for.
     crowded: u64,
     too_large: u64,
+    /// Pictures left out while a hole waited for its key frame.
+    skipped: u64,
     draw_failed: u64,
     streams: u64,
     /// Time from drawing to the packets being handed over, this interval.
@@ -273,8 +289,9 @@ impl Counts {
         format!(
             "pictures: {} captured, {} pointer only, {} replaced while held, {} sent fresh, \
              {} repeats, {} key frames, {} recovers ({} for older streams), {} bytes in {} \
-             datagrams, {} dropped on a full link, {} too large, {} not drawn, {} streams; \
-             draw and encode {:.2} ms on average, {:.2} ms at most",
+             datagrams, {} dropped on a full link, {} too large, {} left out until a key \
+             frame, {} not drawn, {} streams; draw and encode {:.2} ms on average, {:.2} ms at \
+             most",
             self.captured,
             self.pointer_only,
             self.held_replaced,
@@ -287,6 +304,7 @@ impl Counts {
             self.datagrams,
             self.crowded,
             self.too_large,
+            self.skipped,
             self.draw_failed,
             self.streams,
             average as f64 / 1000.0,
@@ -315,6 +333,9 @@ struct Pipeline {
     told_capture: bool,
     troubles: Throttle,
     crowded: Throttle,
+    oversized: Throttle,
+    /// Key frames asked for that the encoder did not make.
+    unkeyed: Throttle,
 }
 
 impl Pipeline {
@@ -333,6 +354,8 @@ impl Pipeline {
             told_capture: false,
             troubles: Throttle::new(REPORT_EVERY),
             crowded: Throttle::new(REPORT_EVERY),
+            oversized: Throttle::new(REPORT_EVERY),
+            unkeyed: Throttle::new(REPORT_EVERY),
         }
     }
 
@@ -701,6 +724,7 @@ impl Pipeline {
             stream: 0,
             next_frame: 0,
             placement: Rect::new(0, 0, settings.picture.width, settings.picture.height),
+            holed: false,
         })
     }
 
@@ -932,6 +956,14 @@ impl Pipeline {
         let Some(encoding) = &mut streaming.encoding else {
             return;
         };
+        // Past a hole, nothing the player could decode goes before the
+        // key frame asked for, while it waits for the floor. Only then:
+        // an encoder that ignores the request is fed all the same, so
+        // that its own key frames come in their time.
+        if encoding.holed && streaming.keys.waiting(started) {
+            self.counts.skipped += 1;
+            return;
+        }
         let drawing = Drawing {
             placement: encoding.placement,
             pointer: streaming.wanted.draw_pointer,
@@ -974,18 +1006,20 @@ impl Pipeline {
                     return;
                 }
             };
+            let sent_at = Instant::now();
             if packet.key {
                 self.counts.keys += 1;
                 streaming.keys.made(started);
-            } else if key {
-                self.shared
-                    .log
-                    .write("the encoder did not make the key frame it was asked for");
+                encoding.holed = false;
+            } else if key && let Some(unsaid) = self.unkeyed.allow(sent_at) {
+                self.shared.log.write(&format!(
+                    "the encoder did not make the key frame it was asked for ({unsaid} more \
+                     unsaid)"
+                ));
             }
             let frame = encoding.next_frame;
             encoding.next_frame = frame.wrapping_add(1);
-            let mut packets = Packets::new();
-            let sent_at = Instant::now();
+            let mut packets = self.shared.spares.take();
             let cut = streaming.packetizer.packetize(
                 &OutgoingFrame {
                     data: &packet.data,
@@ -1004,10 +1038,13 @@ impl Pipeline {
             );
             if let Err(e) = cut {
                 self.counts.too_large += 1;
-                self.shared
-                    .log
-                    .write(&format!("frame {frame} could not be sent: {e}"));
+                encoding.holed = true;
                 streaming.keys.ask();
+                if let Some(unsaid) = self.oversized.allow(sent_at) {
+                    self.shared.log.write(&format!(
+                        "frame {frame} could not be sent ({unsaid} more unsaid): {e}"
+                    ));
+                }
                 continue;
             }
             let datagrams = packets.len() as u64;
@@ -1017,9 +1054,8 @@ impl Pipeline {
                     self.counts.datagrams += datagrams;
                 }
                 Sent::Crowded => {
-                    // The player cannot decode past the hole: the next
-                    // picture starts afresh.
                     self.counts.crowded += 1;
+                    encoding.holed = true;
                     streaming.keys.ask();
                     if let Some(unsaid) = self.crowded.allow(sent_at) {
                         self.shared.log.write(&format!(
@@ -1092,6 +1128,12 @@ impl Pipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zyr_media::codec::CodecChoice;
+    use zyr_media::video::{Packets, VideoHeader};
+
+    use crate::end_to_end::{TestLog, ffmpeg};
+    use crate::fake::SyntheticScreen;
+    use crate::link;
 
     #[test]
     fn the_encoder_gets_what_is_asked_less_parity_and_sound() {
@@ -1180,6 +1222,19 @@ mod tests {
     }
 
     #[test]
+    fn a_key_frame_waits_only_while_asked_for_and_held_by_the_floor() {
+        let start = Instant::now();
+        let mut keys = KeyFrames::default();
+        keys.ask();
+        assert!(!keys.waiting(start), "the first one never waits");
+        assert!(keys.take(start));
+        assert!(!keys.waiting(start), "none asked for");
+        keys.ask();
+        assert!(keys.waiting(start + KEY_FLOOR / 2));
+        assert!(!keys.waiting(start + KEY_FLOOR));
+    }
+
+    #[test]
     fn a_key_frame_the_encoder_made_itself_answers_what_was_asked() {
         let start = Instant::now();
         let mut keys = KeyFrames::default();
@@ -1189,5 +1244,71 @@ mod tests {
         keys.ask();
         assert!(!keys.due(start + KEY_FLOOR / 2));
         assert!(keys.due(start + KEY_FLOOR));
+    }
+
+    /// Whether the frame cut into these datagrams is a key frame.
+    fn key(packets: &Packets) -> bool {
+        let first = packets.iter().next().expect("a datagram");
+        VideoHeader::read(first).expect("a video header").0.key
+    }
+
+    #[test]
+    fn past_a_hole_nothing_goes_before_the_key_frame_that_closes_it() {
+        let journal = TestLog::new("pipeline-hole");
+        // Room for one picture, which the test takes out or leaves.
+        let (outbox, spares, mut link) = link::detached(1);
+        let (events, _events) = mpsc::channel();
+        let (input, _input) = mpsc::channel();
+        let mut pipeline = Pipeline::new(
+            Box::new(SyntheticScreen::new(0)),
+            Shared {
+                ffmpeg: ffmpeg(),
+                outbox,
+                spares,
+                events,
+                input,
+                clock: HostClock::new(),
+                log: journal.log.clone(),
+            },
+        );
+        pipeline.aim();
+        pipeline.probe();
+        assert!(pipeline.obey(Command::Start {
+            wanted: Wanted {
+                width: 320,
+                height: 180,
+                fps: 30,
+                bitrate_kbps: 1_000,
+                codec: CodecChoice::Auto,
+                draw_pointer: false,
+                audio: false,
+                steady: false,
+            },
+            decodable: CodecSet::empty().with(VideoCodec::H264),
+            datagram_budget: 1161,
+        }));
+        let first = Instant::now();
+        // The stream opens on a key frame, and the next picture finds the
+        // link full: a hole.
+        pipeline.emit(Going::Repeat);
+        pipeline.emit(Going::Repeat);
+        assert_eq!(pipeline.counts.crowded, 1);
+        assert!(key(&link.try_recv().unwrap()));
+        // Within the floor of the key frame just sent, the link has room
+        // again, and nothing goes: the player could decode none of it.
+        pipeline.emit(Going::Repeat);
+        assert!(
+            Instant::now() < first + KEY_FLOOR,
+            "too slow to test within the floor"
+        );
+        assert!(link.try_recv().is_err());
+        assert_eq!(pipeline.counts.skipped, 1);
+        // Past the floor, the key frame that closes the hole, and the
+        // stream goes on from it.
+        thread::sleep(KEY_FLOOR);
+        pipeline.emit(Going::Repeat);
+        assert!(key(&link.try_recv().unwrap()));
+        pipeline.emit(Going::Repeat);
+        assert!(!key(&link.try_recv().unwrap()));
     }
 }

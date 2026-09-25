@@ -10,9 +10,16 @@
 //! they come, and the session ends when the service says stop, when the
 //! player says goodbye, or when the link closes. Whatever ends it,
 //! everything the viewer held down is let go of first.
+//!
+//! A thread of the engine that stops on a bug ends the session too,
+//! saying why: a session that went on without its pictures, its link
+//! or its input would look alive to everyone and do nothing.
 
+use std::io;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::mpsc;
-use std::thread::JoinHandle;
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use tokio::runtime::Runtime;
 use zyr_control::link::Link;
@@ -26,12 +33,40 @@ use zyr_proto::net::UNHEARD_LIMIT;
 use crate::clock::HostClock;
 use crate::link::{self, Handlers, Outbox};
 use crate::pipeline::{self, Report};
+use crate::throttle::Throttle;
 use crate::{Ending, Parts, input, sound};
+
+/// How often a line about something the player keeps doing is written.
+const SAY_EVERY: Duration = Duration::from_secs(10);
 
 /// What reaches the engine's thread.
 pub(crate) enum Event {
     Link(Heard),
     Pipeline(Report),
+    /// A thread of the engine stopped on a bug: its name, and the bug.
+    Broken(String),
+}
+
+/// Starts a thread of the engine, named `engine <name>`. A panic in it
+/// is caught at its root and handed to the engine as [`Event::Broken`].
+pub(crate) fn spawn(
+    name: &'static str,
+    events: mpsc::Sender<Event>,
+    body: impl FnOnce() + Send + 'static,
+) -> io::Result<JoinHandle<()>> {
+    thread::Builder::new()
+        .name(format!("engine {name}"))
+        .spawn(move || {
+            if let Err(panic) = panic::catch_unwind(AssertUnwindSafe(body)) {
+                let what = panic
+                    .downcast_ref::<&str>()
+                    .map(|text| (*text).to_string())
+                    .or_else(|| panic.downcast_ref::<String>().cloned())
+                    .unwrap_or_default();
+                // The engine may be gone already.
+                let _ = events.send(Event::Broken(format!("{name}: {what}")));
+            }
+        })
 }
 
 /// What the link read.
@@ -65,17 +100,20 @@ pub(crate) fn run(runtime: Runtime, link: Link, parts: Parts, log: &Log) -> Endi
     } = parts;
 
     let threads = (|| {
-        let (input, input_thread) = input::start(injector, UNHEARD_LIMIT, log.clone())?;
+        let (input, input_thread) =
+            input::start(injector, UNHEARD_LIMIT, events.clone(), log.clone())?;
         let handlers = Handlers {
             events: events.clone(),
             input: input.clone(),
         };
-        let (outbox, link_thread) = link::start(runtime, link, handlers, clock, log.clone())?;
+        let (outbox, spares, link_thread) =
+            link::start(runtime, link, handlers, clock, log.clone())?;
         let (pipeline, pipeline_thread) = pipeline::start(
             screen,
             pipeline::Shared {
                 ffmpeg: ffmpeg.clone(),
                 outbox: outbox.clone(),
+                spares,
                 events: events.clone(),
                 input: input.clone(),
                 clock,
@@ -90,8 +128,9 @@ pub(crate) fn run(runtime: Runtime, link: Link, parts: Parts, log: &Log) -> Endi
                 clock,
                 log: log.clone(),
             },
+            events.clone(),
         )?;
-        Ok::<_, std::io::Error>(Threads {
+        Ok::<_, io::Error>(Threads {
             engine: Engine::new(outbox, pipeline, sound, input, log.clone()),
             link: link_thread,
             others: vec![input_thread, pipeline_thread, sound_thread],
@@ -159,6 +198,9 @@ struct Engine {
     hello: Option<(Wanted, CodecSet)>,
     welcomed: bool,
     sound_on: bool,
+    /// Lines about what the player may say many times a second.
+    recovers: Throttle,
+    unreadable: Throttle,
 }
 
 impl Engine {
@@ -182,6 +224,8 @@ impl Engine {
             hello: None,
             welcomed: false,
             sound_on: false,
+            recovers: Throttle::new(SAY_EVERY),
+            unreadable: Throttle::new(SAY_EVERY),
         }
     }
 
@@ -196,6 +240,7 @@ impl Engine {
                 Event::Link(Heard::Unreadable(e)) => self.unreadable(e),
                 Event::Link(Heard::Ended) => Some(Ending::LinkLost),
                 Event::Pipeline(report) => self.pipeline(report),
+                Event::Broken(what) => Some(self.broken(&what)),
             };
             if let Some(ending) = ended {
                 return ending;
@@ -257,9 +302,14 @@ impl Engine {
                 None
             }
             Asked::Recover { stream, frame } => {
-                self.log.debug(|| {
-                    format!("player lost stream {stream} after frame {frame}: key frame asked")
-                });
+                if let Some(unsaid) = self.recovers.allow(Instant::now()) {
+                    self.log.debug(|| {
+                        format!(
+                            "player lost stream {stream} after frame {frame}: key frame asked \
+                             ({unsaid} more unsaid)"
+                        )
+                    });
+                }
                 let _ = self.pipeline.send(pipeline::Command::Recover { stream });
                 None
             }
@@ -286,8 +336,11 @@ impl Engine {
                 ))
             }
             other => {
-                self.log
-                    .write(&format!("a message of the player was left out: {other}"));
+                if let Some(unsaid) = self.unreadable.allow(Instant::now()) {
+                    self.log.write(&format!(
+                        "a message of the player was left out ({unsaid} more unsaid): {other}"
+                    ));
+                }
                 None
             }
         }
@@ -325,6 +378,19 @@ impl Engine {
             }
             Report::Fatal { kind, text } => Some(self.fail(kind, text)),
         }
+    }
+
+    /// A thread stopped on a bug: the session cannot go on without it.
+    fn broken(&mut self, what: &str) -> Ending {
+        self.log
+            .write(&format!("a thread of the engine stopped on a bug: {what}"));
+        self.fail(
+            NoticeKind::EncoderTrouble,
+            format!(
+                "Le moteur de l'ordinateur d'en face s'est arrêté sur une erreur interne \
+                 ({what})."
+            ),
+        )
     }
 
     /// Welcomes the player and starts the pictures, once there is a

@@ -13,7 +13,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use tokio::time::timeout;
-use zyr_codec::{DecodeOutput, DecodedFrame, Ffmpeg, OpusDecoder, VideoDecoder};
+use zyr_codec::{
+    DecodeOutput, DecodedFrame, Ffmpeg, Frame, GpuVendor, Input, OpusDecoder, VideoDecoder,
+    VideoEncoder,
+};
 use zyr_control::link::{Access, Channel, LinkListener, LinkReader, LinkWriter};
 use zyr_media::MEDIA_VERSION;
 use zyr_media::audio::read_audio;
@@ -22,12 +25,15 @@ use zyr_media::control::{
     ByeReason, ControlReader, NoticeKind, ToEngine as ToEngineControl, ToPlayer, Wanted,
 };
 use zyr_media::input::{Button, InputEvent};
-use zyr_media::service::{ToEngine as ToEngineService, ToService};
+use zyr_media::service::{Display, ToEngine as ToEngineService, ToService};
 use zyr_media::video::{Assembled, Assembler, AssemblyLimits};
 use zyr_proto::log::Log;
 
 use crate::fake::{Recorded, RecordingInjector, SilentSound, SyntheticScreen, ToneSound};
-use crate::parts::{Injected, Screen, Sound};
+use crate::parts::{
+    Aimed, Captured, Drawing, Feed, Injected, MakeScreen, Screen, ScreenError, Sound, SoundCapture,
+    SoundError,
+};
 use crate::{Ending, Parts, run};
 
 /// The log of one test: shown when the test fails, and gone either way.
@@ -43,6 +49,16 @@ impl TestLog {
             .join(format!("{test}.log"));
         let log = Log::open(&path).expect("a log file for the test");
         Self { log, path }
+    }
+
+    /// The lines written so far that hold `words`.
+    fn lines_with(&self, words: &str) -> Vec<String> {
+        std::fs::read_to_string(&self.path)
+            .expect("the test's log")
+            .lines()
+            .filter(|line| line.contains(words))
+            .map(str::to_string)
+            .collect()
     }
 }
 
@@ -66,7 +82,7 @@ const FFMPEG_VARIABLE: &str = "ZYR_FFMPEG_DIR";
 
 /// FFmpeg, from `ZYR_FFMPEG_DIR` or else `vendor/ffmpeg`: a test that
 /// needs it fails when it cannot be had, saying how to get it.
-fn ffmpeg() -> Arc<Ffmpeg> {
+pub(crate) fn ffmpeg() -> Arc<Ffmpeg> {
     static LOADED: OnceLock<Arc<Ffmpeg>> = OnceLock::new();
     Arc::clone(LOADED.get_or_init(|| {
         let dir = std::env::var_os(FFMPEG_VARIABLE)
@@ -138,22 +154,33 @@ struct Far {
     decoder: Option<(u16, VideoDecoder)>,
     pictures: Vec<Picture>,
     lost: u64,
+    /// Whether a frame of the stream was lost and no key frame came
+    /// since: as a player does, the frames in between are not decoded.
+    broken: bool,
+    /// Frames that came while broken, which no player can decode.
+    undecodable: u64,
     sounds: Vec<(u16, Vec<u8>)>,
     recorded: Recorded,
     /// Last, so that it goes after the engine it logs.
-    _log: TestLog,
+    journal: TestLog,
 }
 
 impl Far {
+    /// The engine filming a synthetic screen that changes `screen_rate`
+    /// times a second.
     async fn start(test: &str, screen_rate: u32, sound: Box<dyn Sound>) -> Self {
+        let screen: MakeScreen =
+            Box::new(move || Ok(Box::new(SyntheticScreen::new(screen_rate)) as Box<dyn Screen>));
+        Self::filming(test, screen, sound).await
+    }
+
+    async fn filming(test: &str, screen: MakeScreen, sound: Box<dyn Sound>) -> Self {
         let listener = LinkListener::create(Access::SystemOnly).unwrap();
         let name = listener.name().to_owned();
         let (injector, recorded) = RecordingInjector::new();
         let parts = Parts {
             ffmpeg: ffmpeg(),
-            screen: Box::new(move || {
-                Ok(Box::new(SyntheticScreen::new(screen_rate)) as Box<dyn Screen>)
-            }),
+            screen,
             injector: Box::new(move || Box::new(injector)),
             sound,
         };
@@ -175,9 +202,11 @@ impl Far {
             decoder: None,
             pictures: Vec::new(),
             lost: 0,
+            broken: false,
+            undecodable: 0,
             sounds: Vec::new(),
             recorded,
-            _log: log,
+            journal: log,
         }
     }
 
@@ -257,6 +286,16 @@ impl Far {
         }
     }
 
+    /// Reads the link for `span`, one frame of it every `pace`: a player
+    /// slower than the pictures.
+    async fn read_slowly(&mut self, span: Duration, pace: Duration) {
+        let deadline = Instant::now() + span;
+        while Instant::now() < deadline {
+            self.read_once(deadline).await;
+            tokio::time::sleep(pace).await;
+        }
+    }
+
     /// Reads until `enough` pictures of `stream` came.
     async fn pictures_of(&mut self, stream: u16, enough: usize) -> Vec<Picture> {
         let deadline = Instant::now() + PATIENCE;
@@ -311,6 +350,7 @@ impl Far {
                 Assembled::Frame(frame) => frame,
                 Assembled::Lost { .. } => {
                     self.lost += 1;
+                    self.broken = true;
                     continue;
                 }
             };
@@ -321,6 +361,13 @@ impl Far {
             {
                 let decoder = VideoDecoder::open(&ffmpeg(), frame.codec, DecodeOutput::Cpu);
                 self.decoder = Some((frame.stream, decoder.unwrap()));
+                self.broken = false;
+            }
+            if frame.key {
+                self.broken = false;
+            } else if self.broken {
+                self.undecodable += 1;
+                continue;
             }
             let Some((_, decoder)) = &mut self.decoder else {
                 continue;
@@ -648,7 +695,7 @@ async fn a_lost_link_lets_go_of_what_is_held() {
         writer,
         engine,
         recorded,
-        _log,
+        journal: _journal,
         ..
     } = far;
     drop((reader, writer));
@@ -776,4 +823,172 @@ async fn a_player_of_another_version_is_told_and_let_go() {
         .await;
     assert!(trouble.contains("version"), "{trouble}");
     assert!(matches!(far.ended(), Ending::Failed(_)));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_link_that_falls_behind_gets_a_key_frame_and_nothing_undecodable() {
+    let mut far = Far::start("crowded", 60, Box::new(SilentSound)).await;
+    let (_, first) = far.open(wanted()).await;
+    far.pictures_of(first, 5).await;
+    // The player stops reading, long enough for the link and the queue
+    // before it to fill, then reads slower than the pictures come: they
+    // are dropped on the way, again and again.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    far.read_slowly(Duration::from_secs(3), Duration::from_millis(40))
+        .await;
+    far.read_for(Duration::from_millis(500)).await;
+    assert!(far.lost > 0, "the link never fell behind");
+    assert_eq!(
+        far.undecodable, 0,
+        "pictures were sent past a hole before its key frame"
+    );
+    let last = far.pictures.last().unwrap().clone();
+    assert_eq!(last.stream, first, "the stream goes on");
+    assert!(
+        far.pictures
+            .iter()
+            .filter(|picture| picture.frame > 5)
+            .any(|picture| picture.key),
+        "a key frame closed the hole"
+    );
+    far.player(ToEngineControl::Bye).await;
+    assert_eq!(far.ended(), Ending::PlayerLeft);
+}
+
+/// A screen whose drawing stops on a bug.
+struct BuggyScreen(SyntheticScreen);
+
+impl Screen for BuggyScreen {
+    fn displays(&mut self) -> Vec<Display> {
+        self.0.displays()
+    }
+
+    fn aim(&mut self, display: &str) -> Result<Aimed, ScreenError> {
+        self.0.aim(display)
+    }
+
+    fn encoder_input(&self) -> Input {
+        self.0.encoder_input()
+    }
+
+    fn vendor(&self) -> GpuVendor {
+        self.0.vendor()
+    }
+
+    fn wait(&mut self, until: Instant) -> Result<Captured, ScreenError> {
+        self.0.wait(until)
+    }
+
+    fn draw(
+        &mut self,
+        _encoder: &VideoEncoder,
+        _feed: Feed,
+        _drawing: &Drawing,
+    ) -> Result<Frame, ScreenError> {
+        panic!("a bug in the drawing, on purpose");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_thread_that_stops_on_a_bug_ends_the_session_and_lets_go_of_what_is_held() {
+    let screen: MakeScreen =
+        Box::new(|| Ok(Box::new(BuggyScreen(SyntheticScreen::new(60))) as Box<dyn Screen>));
+    let mut far = Far::filming("buggy", screen, Box::new(SilentSound)).await;
+    far.service(ToEngineService::Setup {
+        datagram_budget: BUDGET,
+    })
+    .await;
+    let shift = |down| InputEvent::Key {
+        scancode: 0x2a,
+        extended: false,
+        down,
+    };
+    far.input(shift(true)).await;
+    far.player(ToEngineControl::Hello {
+        version: MEDIA_VERSION,
+        wanted: wanted(),
+        decodable: h264(),
+    })
+    .await;
+    let text = far
+        .until(|said| match said {
+            Said::Player(ToPlayer::Notice { text, .. }) => Some(text.clone()),
+            _ => None,
+        })
+        .await;
+    assert!(text.contains("a bug in the drawing"), "{text}");
+    let reason = far
+        .until(|said| match said {
+            Said::Player(ToPlayer::Bye { reason }) => Some(*reason),
+            _ => None,
+        })
+        .await;
+    assert_eq!(reason, ByeReason::Fatal);
+    assert!(matches!(far.ended(), Ending::Failed(_)));
+    let key = |down| Injected::Key {
+        scancode: 0x2a,
+        extended: false,
+        down,
+    };
+    assert_eq!(far.recorded.taken(), vec![key(true), key(false)]);
+}
+
+/// A sound card that is never there.
+struct NoSoundCard;
+
+impl Sound for NoSoundCard {
+    fn open(&mut self) -> Result<Box<dyn SoundCapture>, SoundError> {
+        Err(SoundError::Failed(
+            "aucune carte son n'est active".to_string(),
+        ))
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_missing_sound_card_is_told_once_and_written_at_a_measured_pace() {
+    let mut far = Far::start("no-sound", 60, Box::new(NoSoundCard)).await;
+    far.service(ToEngineService::Setup {
+        datagram_budget: BUDGET,
+    })
+    .await;
+    far.player(ToEngineControl::Hello {
+        version: MEDIA_VERSION,
+        wanted: Wanted {
+            audio: true,
+            ..wanted()
+        },
+        decodable: h264(),
+    })
+    .await;
+    // Tried every second: three times at least.
+    far.read_for(Duration::from_millis(2500)).await;
+    let told = far
+        .said
+        .iter()
+        .filter(|said| {
+            matches!(
+                said,
+                Said::Player(ToPlayer::Notice {
+                    kind: NoticeKind::AudioTrouble,
+                    ..
+                })
+            )
+        })
+        .count();
+    assert_eq!(told, 1);
+    assert_eq!(
+        far.journal.lines_with("sound cannot be listened to").len(),
+        1
+    );
+    // The pictures go on all the same.
+    assert!(!far.pictures.is_empty());
+    far.player(ToEngineControl::Bye).await;
+    assert_eq!(far.ended(), Ending::PlayerLeft);
+    let summary = far.journal.lines_with(" refusals");
+    let refused = summary
+        .last()
+        .and_then(|line| line.rsplit(", ").next())
+        .and_then(|count| count.strip_suffix(" refusals"))
+        .and_then(|count| count.parse::<u64>().ok());
+    assert!(refused.is_some_and(|refused| refused >= 3), "{summary:?}");
 }

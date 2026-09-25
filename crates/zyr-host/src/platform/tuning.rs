@@ -4,20 +4,26 @@
 //! watches it; timers wake to the millisecond; the process sees real
 //! pixels, which Desktop Duplication requires and without which the
 //! desktop's size would be scaled; the process's work comes first on
-//! the graphics card; and the threads that capture sit in the
-//! multimedia scheduler's classes. Each refusal is said and costs only
-//! what it was for.
+//! the graphics card, and its threads before those of the programs on
+//! the screen, which a game keeps busy (the link and the input, which
+//! sit in no multimedia class, would otherwise wait behind it); the
+//! desktop's compositor is scheduled as multimedia, so that its images
+//! come on time; and the threads that capture sit in the multimedia
+//! scheduler's classes. Each refusal is said and costs only what it was
+//! for.
 
 use windows::Wdk::Graphics::Direct3D::{
     D3DKMT_SCHEDULINGPRIORITYCLASS_HIGH, D3DKMTSetProcessSchedulingPriorityClass,
 };
 use windows::Win32::Foundation::{E_ACCESSDENIED, HANDLE};
+use windows::Win32::Graphics::Dwm::DwmEnableMMCSS;
 use windows::Win32::Media::{timeBeginPeriod, timeEndPeriod};
 use windows::Win32::System::Power::{
     ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED, SetThreadExecutionState,
 };
 use windows::Win32::System::Threading::{
     AvRevertMmThreadCharacteristics, AvSetMmThreadCharacteristicsW, GetCurrentProcess,
+    GetPriorityClass, HIGH_PRIORITY_CLASS, PROCESS_CREATION_FLAGS, SetPriorityClass,
 };
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
@@ -36,6 +42,9 @@ const TIMER_MS: u32 = 1;
 /// the screen awake belongs to.
 pub struct Tuned {
     timer: bool,
+    /// The process's class before the session's, to go back to.
+    priority_before: Option<PROCESS_CREATION_FLAGS>,
+    compositor: bool,
 }
 
 impl Tuned {
@@ -74,7 +83,38 @@ impl Tuned {
                 status.0 as u32
             ));
         }
-        Self { timer }
+        // SAFETY: the pseudo handle of this process, which is never closed;
+        // nought means the class could not be read.
+        let before = unsafe { GetPriorityClass(GetCurrentProcess()) };
+        // SAFETY: as above, and a class that needs no privilege.
+        let priority_before =
+            match unsafe { SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS) } {
+                Ok(()) => (before != 0).then_some(PROCESS_CREATION_FLAGS(before)),
+                Err(e) => {
+                    log.write(&failed(
+                        "putting this process's threads before the screen's programs",
+                        &e,
+                    ));
+                    None
+                }
+            };
+        // SAFETY: a plain flag, for as long as this process lives or until
+        // taken back on drop.
+        let compositor = match unsafe { DwmEnableMMCSS(true) } {
+            Ok(()) => true,
+            Err(e) => {
+                log.write(&failed(
+                    "scheduling the desktop's compositor as multimedia",
+                    &e,
+                ));
+                false
+            }
+        };
+        Self {
+            timer,
+            priority_before,
+            compositor,
+        }
     }
 }
 
@@ -86,6 +126,15 @@ impl Drop for Tuned {
         if self.timer {
             // SAFETY: the value given to timeBeginPeriod.
             unsafe { timeEndPeriod(TIMER_MS) };
+        }
+        if let Some(before) = self.priority_before {
+            // SAFETY: the pseudo handle of this process, and the class it
+            // had; a refusal leaves the class until the process ends.
+            let _ = unsafe { SetPriorityClass(GetCurrentProcess(), before) };
+        }
+        if self.compositor {
+            // SAFETY: a plain flag, taken back as it was given.
+            let _ = unsafe { DwmEnableMMCSS(false) };
         }
     }
 }

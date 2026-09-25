@@ -8,14 +8,16 @@
 //! through queues: the messages of the conversation first, never dropped,
 //! then sound, then pictures. Sound and pictures go through bounded
 //! queues that a media thread never waits on: what finds one full is
-//! dropped, and counted by whoever dropped it.
+//! dropped, and counted by whoever dropped it. The buffers a picture's
+//! datagrams were written from go back to the pipeline, which cuts the
+//! next pictures into them rather than into new ones.
 //!
 //! The link closes once every thread that writes to it has let go of its
 //! queues and what they left in them is out, or when it fails.
 
 use std::io;
 use std::sync::mpsc;
-use std::thread::{self, JoinHandle};
+use std::thread::JoinHandle;
 
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc as queue;
@@ -28,7 +30,7 @@ use zyr_proto::log::Log;
 
 use crate::clock::HostClock;
 use crate::input;
-use crate::session::{Asked, Event, Heard};
+use crate::session::{self, Asked, Event, Heard};
 
 /// Pictures waiting for the link at most: a few frames, more than any
 /// burst of the encoder, far less than a second.
@@ -36,6 +38,9 @@ const VIDEO_QUEUE: usize = 8;
 
 /// Sound packets waiting for the link at most: 160 ms.
 const AUDIO_QUEUE: usize = 16;
+
+/// Written buffers kept for the pipeline at most; the rest are freed.
+const SPARE_BUFFERS: usize = 2;
 
 /// What the other threads hand the link.
 #[derive(Clone)]
@@ -85,6 +90,39 @@ fn sent<T>(result: Result<(), queue::error::TrySendError<T>>) -> Sent {
     }
 }
 
+/// The buffers the link has written a picture's datagrams from, for the
+/// pipeline to cut the next pictures into: once one has grown to the
+/// largest picture, cutting allocates nothing.
+pub(crate) struct Spares {
+    written: mpsc::Receiver<Packets>,
+}
+
+impl Spares {
+    /// A written buffer, or a new one while none has come back.
+    pub(crate) fn take(&self) -> Packets {
+        self.written.try_recv().unwrap_or_default()
+    }
+}
+
+/// An outbox with no link behind it, whose pictures the test takes from
+/// a queue of `room` frames; messages and sound are dropped.
+#[cfg(test)]
+pub(crate) fn detached(room: usize) -> (Outbox, Spares, queue::Receiver<Packets>) {
+    let (reliable, _) = queue::unbounded_channel();
+    let (video, pictures) = queue::channel(room);
+    let (audio, _) = queue::channel(AUDIO_QUEUE);
+    let (_, written) = mpsc::sync_channel(SPARE_BUFFERS);
+    (
+        Outbox {
+            reliable,
+            video,
+            audio,
+        },
+        Spares { written },
+        pictures,
+    )
+}
+
 /// Where the link hands what it reads.
 pub(crate) struct Handlers {
     pub(crate) events: mpsc::Sender<Event>,
@@ -99,7 +137,7 @@ pub(crate) fn start(
     handlers: Handlers,
     clock: HostClock,
     log: Log,
-) -> io::Result<(Outbox, JoinHandle<()>)> {
+) -> io::Result<(Outbox, Spares, JoinHandle<()>)> {
     let (reliable, reliable_queue) = queue::unbounded_channel();
     let (video, video_queue) = queue::channel(VIDEO_QUEUE);
     let (audio, audio_queue) = queue::channel(AUDIO_QUEUE);
@@ -108,6 +146,7 @@ pub(crate) fn start(
         video,
         audio,
     };
+    let (spares, written) = mpsc::sync_channel(SPARE_BUFFERS);
     // Pongs have a queue of their own, which the link alone holds: the
     // others' queues closing is what ends it.
     let (pongs, pong_queue) = queue::unbounded_channel();
@@ -116,24 +155,24 @@ pub(crate) fn start(
         pongs: pong_queue,
         video: video_queue,
         audio: audio_queue,
+        spares,
     };
-    let thread = thread::Builder::new()
-        .name("engine link".to_string())
-        .spawn(move || {
-            let (reader, writer) = link.split();
-            let ended = runtime.block_on(async {
-                tokio::select! {
-                    ended = read(reader, &handlers, &pongs, clock, &log) => ended,
-                    ended = write(writer, queues) => ended,
-                }
-            });
-            if let Some(e) = &ended {
-                log.write(&format!("link failed: {e}"));
+    let events = handlers.events.clone();
+    let thread = session::spawn("link", events, move || {
+        let (reader, writer) = link.split();
+        let ended = runtime.block_on(async {
+            tokio::select! {
+                ended = read(reader, &handlers, &pongs, clock, &log) => ended,
+                ended = write(writer, queues) => ended,
             }
-            // The engine may be gone already, having ended the link.
-            let _ = handlers.events.send(Event::Link(Heard::Ended));
-        })?;
-    Ok((outbox, thread))
+        });
+        if let Some(e) = &ended {
+            log.write(&format!("link failed: {e}"));
+        }
+        // The engine may be gone already, having ended the link.
+        let _ = handlers.events.send(Event::Link(Heard::Ended));
+    })?;
+    Ok((outbox, Spares { written }, thread))
 }
 
 /// Reads the link until it closes: `None` when it closed, the error when
@@ -217,12 +256,14 @@ fn pass_on(
     let _ = handlers.events.send(Event::Link(asked));
 }
 
-/// What the link writes, from whom.
+/// What the link writes, from whom, and where the written pictures'
+/// buffers go back to.
 struct Queues {
     reliable: queue::UnboundedReceiver<(Channel, Vec<u8>)>,
     pongs: queue::UnboundedReceiver<Vec<u8>>,
     video: queue::Receiver<Packets>,
     audio: queue::Receiver<Vec<u8>>,
+    spares: mpsc::SyncSender<Packets>,
 }
 
 /// Writes what the others hand in, until none of them is left: `None`
@@ -245,6 +286,9 @@ async fn write(mut writer: LinkWriter, mut queues: Queues) -> Option<String> {
                         break;
                     }
                 }
+                // Never waits: with enough spares already, or the
+                // pipeline gone, the buffer is freed.
+                let _ = queues.spares.try_send(packets);
                 written
             }
         };

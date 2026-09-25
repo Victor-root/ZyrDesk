@@ -110,13 +110,14 @@ struct Listening {
 }
 
 impl Listening {
+    /// Opens the default card. What Windows refused, and its code, is in
+    /// the error, which the engine writes to the log at a measured pace:
+    /// a card that is not there is tried every second.
     fn open(ffmpeg: &Arc<Ffmpeg>, log: &Log) -> Result<Self, SoundError> {
         let com = Com::join()?;
         let task = ThreadTask::join(w!("Pro Audio"), log);
         let refused = |what: &str, e: windows::core::Error| {
-            let said = failed(what, &e);
-            log.write(&said);
-            SoundError::Failed(format!("la carte son ne répond pas ({said})"))
+            SoundError::Failed(format!("la carte son ne répond pas ({})", failed(what, &e)))
         };
         // SAFETY: a plain constructor on this COM thread.
         let enumerator: IMMDeviceEnumerator =
@@ -125,10 +126,10 @@ impl Listening {
         // SAFETY: plain values; the device comes back owned.
         let device =
             unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eConsole) }.map_err(|e| {
-                log.write(&failed("finding the default sound card", &e));
-                SoundError::Failed(
-                    "aucune carte son n'est active sur l'ordinateur d'en face".to_string(),
-                )
+                SoundError::Failed(format!(
+                    "aucune carte son n'est active sur l'ordinateur d'en face ({})",
+                    failed("finding the default sound card", &e)
+                ))
             })?;
         let card = id_of(&device).map_err(|e| refused("naming the default sound card", e))?;
         // SAFETY: a plain activation; the client comes back owned.
@@ -155,10 +156,7 @@ impl Listening {
         };
         // SAFETY: allocated by COM for us, used by nobody after this.
         unsafe { CoTaskMemFree(Some(mix.cast_const().cast())) };
-        let (rate, channels) = format.map_err(|why| {
-            log.write(&why);
-            SoundError::Failed(why)
-        })?;
+        let (rate, channels) = format.map_err(SoundError::Failed)?;
         initialised.map_err(|e| refused("listening to the sound card", e))?;
         // SAFETY: a client initialised above.
         let capture: IAudioCaptureClient = unsafe { client.GetService() }
@@ -170,10 +168,9 @@ impl Listening {
             None
         } else {
             let resampler = Resampler::new(ffmpeg, heard, AudioFormat::OPUS).map_err(|e| {
-                log.write(&format!(
-                    "the sound cannot be brought to 48 kHz stereo: {e}"
-                ));
-                SoundError::Failed(e.to_string())
+                SoundError::Failed(format!(
+                    "le son ne peut pas être ramené à 48 kHz stéréo ({e})"
+                ))
             })?;
             Some(resampler)
         };
@@ -277,9 +274,10 @@ impl Listening {
         if e.code() == AUDCLNT_E_DEVICE_INVALIDATED {
             return SoundError::Changed;
         }
-        let said = failed("reading what the sound card plays", &e);
-        self.log.write(&said);
-        SoundError::Failed(format!("la carte son ne répond plus ({said})"))
+        SoundError::Failed(format!(
+            "la carte son ne répond plus ({})",
+            failed("reading what the sound card plays", &e)
+        ))
     }
 }
 

@@ -12,7 +12,7 @@
 //! never written anywhere.
 
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::thread::{self, JoinHandle};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use zyr_media::input::{Held, InputEvent};
@@ -20,6 +20,7 @@ use zyr_proto::log::Log;
 
 use crate::parts::{Injected, Injector, MakeInjector};
 use crate::picture::Mapping;
+use crate::session::{self, Event};
 use crate::throttle::Throttle;
 
 /// How often the counts are written.
@@ -43,12 +44,13 @@ pub(crate) enum Command {
 pub(crate) fn start(
     make: MakeInjector,
     silence: Duration,
+    events: mpsc::Sender<Event>,
     log: Log,
 ) -> std::io::Result<(mpsc::Sender<Command>, JoinHandle<()>)> {
     let (commands, received) = mpsc::channel();
-    let thread = thread::Builder::new()
-        .name("engine input".to_string())
-        .spawn(move || Player::new(make(), log).run(&received, silence))?;
+    let thread = session::spawn("input", events, move || {
+        Player::new(make(), log).run(&received, silence);
+    })?;
     Ok((commands, thread))
 }
 
@@ -249,6 +251,8 @@ impl Player {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::thread;
+
     use crate::end_to_end::TestLog;
     use crate::fake::RecordingInjector;
     use crate::picture::{Rect, Size};
@@ -358,9 +362,11 @@ mod tests {
     fn stopping_lets_go_of_what_is_held() {
         let journal = TestLog::new("input-stopping");
         let (injector, recorded) = RecordingInjector::new();
+        let (events, _) = mpsc::channel();
         let (commands, thread) = start(
             Box::new(move || Box::new(injector)),
             UNHEARD_LIMIT,
+            events,
             journal.log.clone(),
         )
         .unwrap();
@@ -375,9 +381,11 @@ mod tests {
         let journal = TestLog::new("input-silence");
         let (injector, recorded) = RecordingInjector::new();
         let silence = Duration::from_millis(100);
+        let (events, _) = mpsc::channel();
         let (commands, thread) = start(
             Box::new(move || Box::new(injector)),
             silence,
+            events,
             journal.log.clone(),
         )
         .unwrap();

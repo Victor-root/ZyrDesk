@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 use std::sync::mpsc::{self, RecvTimeoutError, TryRecvError};
-use std::thread::{self, JoinHandle};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use zyr_codec::{Ffmpeg, OpusEncoder};
@@ -20,6 +20,7 @@ use zyr_proto::log::Log;
 use crate::clock::HostClock;
 use crate::link::{Outbox, Sent};
 use crate::parts::{Sound, SoundCapture, SoundError};
+use crate::session::{self, Event};
 use crate::throttle::Throttle;
 
 /// Opus's rate for the session's sound, in bits a second.
@@ -54,11 +55,12 @@ pub(crate) struct Shared {
 pub(crate) fn start(
     sound: Box<dyn Sound>,
     shared: Shared,
+    events: mpsc::Sender<Event>,
 ) -> std::io::Result<(mpsc::Sender<Command>, JoinHandle<()>)> {
     let (commands, received) = mpsc::channel();
-    let thread = thread::Builder::new()
-        .name("engine sound".to_string())
-        .spawn(move || Listener::new(sound, shared).run(&received))?;
+    let thread = session::spawn("sound", events, move || {
+        Listener::new(sound, shared).run(&received);
+    })?;
     Ok((commands, thread))
 }
 
@@ -70,14 +72,22 @@ struct Counts {
     crowded: u64,
     failed: u64,
     reopened: u64,
+    /// Times the sound card could not be listened to.
+    refused: u64,
 }
 
 impl Counts {
     fn said(&self) -> String {
         format!(
             "sound: {} blocks heard, {} packets sent ({} bytes), {} dropped on a full link, \
-             {} failed to encode, {} reopenings",
-            self.blocks, self.packets, self.bytes, self.crowded, self.failed, self.reopened
+             {} failed to encode, {} reopenings, {} refusals",
+            self.blocks,
+            self.packets,
+            self.bytes,
+            self.crowded,
+            self.failed,
+            self.reopened,
+            self.refused
         )
     }
 }
@@ -101,6 +111,10 @@ struct Listener {
     sequence: u16,
     counts: Counts,
     crowded: Throttle,
+    /// A sound card that cannot be listened to is tried every second,
+    /// for the whole session if need be.
+    refusals: Throttle,
+    unencoded: Throttle,
 }
 
 impl Listener {
@@ -115,6 +129,8 @@ impl Listener {
             sequence: 0,
             counts: Counts::default(),
             crowded: Throttle::new(REPORT_EVERY),
+            refusals: Throttle::new(REPORT_EVERY),
+            unencoded: Throttle::new(REPORT_EVERY),
         }
     }
 
@@ -187,9 +203,11 @@ impl Listener {
                     Ok(packet) => self.send(&packet, self.shared.clock.micros(block.at)),
                     Err(e) => {
                         self.counts.failed += 1;
-                        self.shared
-                            .log
-                            .write(&format!("10 ms of sound could not be encoded: {e}"));
+                        if let Some(unsaid) = self.unencoded.allow(Instant::now()) {
+                            self.shared.log.write(&format!(
+                                "10 ms of sound could not be encoded ({unsaid} more unsaid): {e}"
+                            ));
+                        }
                     }
                 }
             }
@@ -217,9 +235,12 @@ impl Listener {
 
     /// Says once that the sound fails, and tries again later.
     fn failed(&mut self, why: &str) {
-        self.shared
-            .log
-            .write(&format!("sound cannot be listened to: {why}"));
+        self.counts.refused += 1;
+        if let Some(unsaid) = self.refusals.allow(Instant::now()) {
+            self.shared.log.write(&format!(
+                "sound cannot be listened to ({unsaid} more refusals unsaid): {why}"
+            ));
+        }
         if !self.told {
             self.shared.outbox.player(&ToPlayer::Notice {
                 kind: NoticeKind::AudioTrouble,
