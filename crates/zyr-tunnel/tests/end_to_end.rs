@@ -1,35 +1,29 @@
-//! The whole tunnel, between two fake engines.
+//! The whole tunnel, between a fake engine and a fake player.
 //!
-//! The real engines are not needed to check what matters here: that a
-//! byte dropped in on one side comes out identical on the other, on the
-//! right port, in both directions, without either end having to know a
-//! tunnel exists.
+//! Neither the real engine nor the real player is needed to check what
+//! matters here: that what one of them writes on its local link comes out
+//! identical on the other's, on the right channel, in both directions,
+//! and that ZyrDesk's own questions are still answered beside them.
 //!
-//! Both sides run in the same process, on two distinct loopback
-//! addresses: the host engine on 127.0.0.1, the client-side listeners on
-//! the address dedicated to the device. That is exactly the addressing
-//! scheme planned for real.
+//! Everything runs in one process: both ends of the connection on
+//! loopback, and both links as the real ones are made, with the test
+//! holding the engine's end of one and the player's end of the other.
 
 use std::future::Future;
-use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use zyr_control::link::{self, Access, Channel, Link, LinkListener, LinkReader, LinkWriter};
 use zyr_proto::clipboard::{Clip, Stamp};
-use zyr_proto::net::{EnginePorts, device_loopback_addr};
-use zyr_proto::session::WantedScreen;
-use zyr_transport::{Identity, MediaProfile, TunnelEndpoint};
-use zyr_tunnel::aside::{Given, Wanted};
-use zyr_tunnel::{Answers, StreamChannel, Tunnel, aside};
+use zyr_proto::session::{Pointer, WantedScreen};
+use zyr_transport::{Bytes, Connection, Identity, MediaProfile, TunnelEndpoint};
+use zyr_tunnel::aside::{self, Given, Wanted};
+use zyr_tunnel::{Answers, ServiceEnd, StreamChannel, Tunnel, service_channel};
 
 /// Past this, nothing is getting through.
 const PATIENCE: Duration = Duration::from_secs(10);
-
-/// Where the host engine listens, as on a real machine.
-const ENGINE: IpAddr = IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
 
 async fn before_the_end<T>(work: impl Future<Output = T>) -> T {
     tokio::time::timeout(PATIENCE, work)
@@ -37,69 +31,59 @@ async fn before_the_end<T>(work: impl Future<Output = T>) -> T {
         .expect("the tunnel let nothing through")
 }
 
-/// Code the fake engine refuses, standing in for an engine that has
-/// nobody waiting on one.
-const REFUSED_PIN: &str = "9999";
+/// What the session opening says it will be served.
+const SERVED: MediaProfile = MediaProfile {
+    bits_per_second: 35_000_000,
+    frames_per_second: 120,
+};
 
-/// The host engine as the tunnel sees it: its ports, and a pairing code
-/// written down instead of handed to anything.
-struct FakeEngine {
-    ports: EnginePorts,
-    handed: Arc<std::sync::Mutex<Vec<(String, String)>>>,
+/// What the service says to the engine before anything else.
+const SETUP: &[u8] = b"setup: 1161";
+
+/// What someone had copied on the far machine before the session
+/// opened.
+const HOST_CLIPBOARD: &str = "l'adresse du serveur : 10.0.0.4";
+
+/// Two screens switched on at the far machine, the main one first, named
+/// the way the engine names them.
+const HOST_SCREENS: &str = "MONITOR\\GSM5B7F\\0003 main 2560x1440 ROG PG279Q\n\\\\.\\DISPLAY2 other \
+                            1920x1080 Dell U2412M";
+
+/// The shape of the far pointer: something other than the arrow,
+/// otherwise the round trip would prove nothing, an arrow also being
+/// what a word nobody recognises gives back.
+const HOST_POINTER: Pointer = Pointer::Text;
+
+/// What the far machine answers when the session asks it to keep its
+/// screen as it is.
+const HOST_SCREEN: (u32, u32) = (1366, 768);
+
+/// The computer being watched, as its own channel answers for it:
+/// everything asked of it written down instead of done.
+#[derive(Default)]
+struct FarComputer {
     /// Times Ctrl+Alt+Suppr was asked for. Counted rather than done:
     /// nothing here has a Windows to press it on.
-    attended: Arc<AtomicU32>,
-    /// Whether the far computer was asked to go quiet. Written down for
-    /// the same reason: nothing here has speakers to silence.
-    hushed: Arc<AtomicBool>,
-    /// Whether it was asked to lock itself, for the same reason again.
-    locked: Arc<AtomicBool>,
-    /// The rate it was last asked to serve a still screen at.
-    steady: Arc<AtomicBool>,
+    attended: AtomicU32,
+    hushed: AtomicBool,
+    locked: AtomicBool,
     /// The screen its virtual one was last asked to be, `None` standing
     /// for the ask to put it back to sleep.
-    screen: Arc<std::sync::Mutex<Option<WantedScreen>>>,
-    /// Whether its journal was emptied. Written down rather than done:
-    /// nothing here has four files to cut.
-    emptied: Arc<AtomicBool>,
+    screen: Mutex<Option<WantedScreen>>,
+    emptied: AtomicBool,
     /// Which of its screens it was last asked to be served from, `None`
-    /// standing for its main one, which is what it films to begin with.
-    filming: Arc<std::sync::Mutex<Option<String>>>,
-    /// What the session opening on it said it would be served.
-    opening: Arc<std::sync::Mutex<Option<MediaProfile>>>,
-    /// What is on its clipboard, which a session may both read and
-    /// replace.
-    clipboard: Arc<std::sync::Mutex<Option<Clip>>>,
-    /// The files its own clipboard named, as their bytes, so a piece of
-    /// one can be handed over.
-    has: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
-    /// What it wants next of what the far computer named, which is a
-    /// paste under way over there.
-    wants: Arc<std::sync::Mutex<Option<Wanted>>>,
+    /// standing for its main one.
+    filming: Mutex<Option<String>>,
+    clipboard: Mutex<Option<Clip>>,
+    /// The files its own clipboard named, as their bytes.
+    has: Mutex<Vec<Vec<u8>>>,
+    /// What it wants next of what the far computer named.
+    wants: Mutex<Option<Wanted>>,
     /// The pieces it was handed, in the order they came.
-    taken: Arc<std::sync::Mutex<Vec<Given>>>,
+    taken: Mutex<Vec<Given>>,
 }
 
-impl Answers for FakeEngine {
-    fn engine(&self) -> EnginePorts {
-        self.ports
-    }
-
-    fn a_session_is_opening(&self, serving: MediaProfile) {
-        *self.opening.lock().unwrap() = Some(serving);
-    }
-
-    fn hand_over_the_code(&self, pin: &str, name: &str) -> Result<(), String> {
-        if pin == REFUSED_PIN {
-            return Err("le moteur n'attend aucun code".to_string());
-        }
-        self.handed
-            .lock()
-            .unwrap()
-            .push((pin.to_string(), name.to_string()));
-        Ok(())
-    }
-
+impl Answers for FarComputer {
     fn secure_attention(&self) -> Result<(), String> {
         self.attended.fetch_add(1, Ordering::Relaxed);
         Ok(())
@@ -115,30 +99,13 @@ impl Answers for FakeEngine {
         Ok(())
     }
 
-    /// Like a machine whose engine cannot be asked: it reads the frame
-    /// rate when it starts, so changing it makes it start over.
-    fn serve_steady(&self, rate: bool) -> Result<zyr_tunnel::Settled, String> {
-        if self.steady.swap(rate, Ordering::Relaxed) == rate {
-            return Ok(zyr_tunnel::Settled::Already);
-        }
-        Ok(zyr_tunnel::Settled::StartingOver)
-    }
-
-    fn serve_at(&self, _kbps: u32) -> Result<(), String> {
-        Err("ce moteur-là ne se règle pas en marche".to_string())
-    }
-
-    fn draw_the_pointer(&self, _drawn: bool) -> Result<(), String> {
-        Err("ce moteur-là ne se règle pas en marche".to_string())
-    }
-
     fn screen_for_a_session(
         &self,
         wanted: Option<WantedScreen>,
     ) -> Result<Option<(u32, u32)>, String> {
         *self.screen.lock().unwrap() = wanted;
-        // What a real machine would answer when nobody wants its
-        // virtual screen: the size of its own screen.
+        // What a real machine answers when nobody wants its virtual
+        // screen: the size of its own.
         Ok(wanted
             .map(|screen| (screen.wide, screen.high))
             .or(Some(HOST_SCREEN)))
@@ -149,8 +116,8 @@ impl Answers for FakeEngine {
             return Ok(String::new());
         }
         // The sift is done where the journal is gathered: what is given
-        // back here says which sift it was given back under, which is
-        // enough to see that the sift did get across.
+        // back says which sift it was given back under, which is enough
+        // to see that the sift did get across.
         if !sift.is_empty() {
             return Ok(format!("trié par « {sift} »"));
         }
@@ -166,27 +133,17 @@ impl Answers for FakeEngine {
         Ok(())
     }
 
-    fn codecs(&self) -> Result<String, String> {
-        Ok(HOST_CODECS.to_string())
+    fn pointer(&self) -> Result<Pointer, String> {
+        Ok(HOST_POINTER)
     }
 
     fn screens(&self) -> Result<String, String> {
         Ok(HOST_SCREENS.to_string())
     }
 
-    fn pointer(&self) -> Result<zyr_proto::session::Pointer, String> {
-        Ok(HOST_POINTER)
-    }
-
-    /// What a real machine would do: it films its main screen, and its
-    /// engine has to be restarted to film another one.
-    fn film_this_screen(&self, id: Option<String>) -> Result<zyr_tunnel::Settled, String> {
-        let mut filming = self.filming.lock().unwrap();
-        if *filming == id {
-            return Ok(zyr_tunnel::Settled::Already);
-        }
-        *filming = id;
-        Ok(zyr_tunnel::Settled::StartingOver)
+    fn film_this_screen(&self, id: Option<String>) -> Result<(), String> {
+        *self.filming.lock().unwrap() = id;
+        Ok(())
     }
 
     /// What a real machine does: it takes what comes, and only gives
@@ -234,32 +191,8 @@ impl Answers for FakeEngine {
     }
 }
 
-/// What a machine with an Intel graphics card can do: no AV1. That is
-/// the case this question exists for.
-const HOST_CODECS: &str = "H.264 HEVC";
-
-/// Two screens switched on at the far machine, the main one first: that
-/// is the case that called for the question.
-const HOST_SCREENS: &str = "{aaa} main 2560x1440 ROG PG279Q\n{bbb} other 1920x1080 Dell U2412M";
-
-/// What someone had copied on the far machine before the session
-/// opened.
-const HOST_CLIPBOARD: &str = "l'adresse du serveur : 10.0.0.4";
-
-/// The shape of the far pointer: something other than the arrow,
-/// otherwise the round trip would prove nothing, an arrow also being
-/// what a word nobody recognises gives back.
-const HOST_POINTER: zyr_proto::session::Pointer = zyr_proto::session::Pointer::Text;
-
-/// What the far machine answers when the session asks it to keep its
-/// screen as it is.
-const HOST_SCREEN: (u32, u32) = (1366, 768);
-
-/// A journal the size of the ones the product really writes.
-///
-/// Well beyond what this channel accepted before it: it is the first
-/// message that weighs a page and not a line, and that is what this test
-/// exists to check.
+/// A journal the size of the ones the product really writes: a page and
+/// not a line.
 fn host_journal() -> String {
     let mut page = String::from("ZyrDesk 0.1.0\nOrdinateur       : PC du SAV");
     page.push_str("\n\n--- Le service (service.log) ---");
@@ -283,499 +216,449 @@ fn host_reach_log() -> String {
     page
 }
 
-/// The tunnel brought up on both sides, kept alive for the test.
-///
-/// Everything is dropped together at the end: the pumps stop with it.
+/// Both ends of a connection over loopback, and the endpoints under
+/// them, which have to outlive it.
+async fn connected() -> (Connection, Connection, (TunnelEndpoint, TunnelEndpoint)) {
+    let host_identity = Identity::generate().unwrap();
+    let client_identity = Identity::generate().unwrap();
+    let profile = MediaProfile::default();
+    let loopback = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0);
+    let host_endpoint = TunnelEndpoint::host(
+        &host_identity,
+        client_identity.fingerprint(),
+        profile,
+        loopback,
+    )
+    .unwrap();
+    let meeting_point = host_endpoint.local_address().unwrap();
+    let client_endpoint = TunnelEndpoint::client(
+        &client_identity,
+        host_identity.fingerprint(),
+        profile,
+        loopback,
+    )
+    .unwrap();
+    let (host_side, client_side) = tokio::join!(
+        host_endpoint.accept(),
+        client_endpoint.connect(meeting_point)
+    );
+    (
+        host_side.unwrap(),
+        client_side.unwrap(),
+        (host_endpoint, client_endpoint),
+    )
+}
+
+/// One end of a link, as a test drives it.
+struct End {
+    reads: LinkReader,
+    writes: LinkWriter,
+}
+
+impl End {
+    fn of(link: Link) -> Self {
+        let (reads, writes) = link.split();
+        Self { reads, writes }
+    }
+
+    async fn say(&mut self, channel: Channel, payload: &[u8]) {
+        self.writes.send(channel, payload).await.unwrap();
+    }
+
+    async fn next(&mut self) -> (Channel, Bytes) {
+        before_the_end(self.reads.next())
+            .await
+            .unwrap()
+            .expect("the link closed")
+    }
+
+    /// Reads the control stream until `wanted` bytes of it have come,
+    /// however the tunnel cut them up on the way.
+    async fn control(&mut self, wanted: usize) -> Vec<u8> {
+        let mut heard = Vec::new();
+        while heard.len() < wanted {
+            let (channel, payload) = self.next().await;
+            assert_eq!(channel, Channel::Control, "{payload:?}");
+            heard.extend_from_slice(&payload);
+        }
+        heard
+    }
+
+    /// Waits for the link to close, dropping whatever comes before.
+    async fn closed(&mut self) {
+        before_the_end(async { while let Ok(Some(_)) = self.reads.next().await {} }).await;
+    }
+}
+
+/// A session, open: the tunnel on both sides, the engine's end of the
+/// host's link and the player's end of the client's.
 struct Bench {
     _endpoints: (TunnelEndpoint, TunnelEndpoint),
-    _host: Tunnel,
+    /// The way, to ask the far ZyrDesk things beside the session.
+    connection: Connection,
+    host: Tunnel,
     client: Tunnel,
-    /// Address the client engine believes the host to be at.
-    client_side: IpAddr,
-    ports: EnginePorts,
-    /// The way, still open, to speak to the far ZyrDesk rather than to
-    /// its engine.
-    connection: zyr_transport::Connection,
-    /// What the host engine was handed.
-    handed: Arc<std::sync::Mutex<Vec<(String, String)>>>,
-    /// Times the far ZyrDesk was asked to press Ctrl+Alt+Suppr.
-    attended: Arc<AtomicU32>,
-    /// Whether the far ZyrDesk was asked to silence its speakers.
-    hushed: Arc<AtomicBool>,
-    /// Whether it was asked to put its lock screen up.
-    locked: Arc<AtomicBool>,
-    /// The rate it was asked to serve a still screen at.
-    steady: Arc<AtomicBool>,
-    /// The screen its virtual one was last asked to be.
-    screen: Arc<std::sync::Mutex<Option<WantedScreen>>>,
-    /// What the session opening on it said it would be served.
-    opening: Arc<std::sync::Mutex<Option<MediaProfile>>>,
-    /// Whether its journal was emptied.
-    emptied: Arc<AtomicBool>,
-    /// Which of its screens it was last asked to be served from.
-    filming: Arc<std::sync::Mutex<Option<String>>>,
-    /// What is on the far computer's clipboard.
-    clipboard: Arc<std::sync::Mutex<Option<Clip>>>,
-    /// The bytes of the files its clipboard names.
-    has: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
-    /// What it wants next of what this computer named.
-    wants: Arc<std::sync::Mutex<Option<Wanted>>>,
-    /// The pieces it was handed.
-    taken: Arc<std::sync::Mutex<Vec<Given>>>,
+    engine: End,
+    player: End,
+    /// The service's half on the host, which hears the engine.
+    host_service: ServiceEnd,
+    /// The way's half on the client, which speaks to the player.
+    client_service: ServiceEnd,
+    /// What the opening asked to be served.
+    served: MediaProfile,
+    far: Arc<FarComputer>,
 }
 
 impl Bench {
-    async fn bring_up(base: u16, device: u16) -> Self {
-        let ports = EnginePorts::new(base).unwrap();
-        let client_side = IpAddr::V4(device_loopback_addr(device).unwrap());
+    /// The real sequence, not a shortcut: the question that opens the
+    /// session, the engine brought up behind it and the service saying
+    /// its first word to it, the answer, then the player.
+    async fn bring_up() -> Self {
+        let (host_connection, client_connection, endpoints) = connected().await;
+        let far = Arc::new(FarComputer::default());
+        *far.clipboard.lock().unwrap() = Some(Clip::text(HOST_CLIPBOARD));
+        let answering: Arc<dyn Answers> = far.clone();
 
-        let host_identity = Identity::generate().unwrap();
-        let client_identity = Identity::generate().unwrap();
-        let profile = MediaProfile::default();
-        let ephemeral = SocketAddr::new(ENGINE, 0);
+        let hosting = async {
+            let opening = aside::until_a_session_opens(&host_connection, answering.clone(), None)
+                .await
+                .unwrap();
+            let listener = LinkListener::create(Access::SystemOnly).unwrap();
+            let name = listener.name().to_string();
+            let (engine, accepted) = tokio::join!(link::connect(&name), listener.accept());
+            let (side, service) = service_channel();
+            service.to_link.send(SETUP.to_vec()).await.unwrap();
+            let served = opening.serving();
+            opening.opened().await.unwrap();
+            let host = Tunnel::host(host_connection, answering, accepted.unwrap(), side, None);
+            (host, End::of(engine.unwrap()), service, served)
+        };
+        let ((host, engine, host_service, served), opened) = before_the_end(async {
+            tokio::join!(hosting, aside::ask_to_open(&client_connection, SERVED))
+        })
+        .await;
+        opened.unwrap();
 
-        let host_endpoint = TunnelEndpoint::host(
-            &host_identity,
-            client_identity.fingerprint(),
-            profile,
-            ephemeral,
-        )
-        .unwrap();
-        let meeting_point = host_endpoint.local_address().unwrap();
-        let client_endpoint = TunnelEndpoint::client(
-            &client_identity,
-            host_identity.fingerprint(),
-            profile,
-            ephemeral,
-        )
-        .unwrap();
+        let listener = LinkListener::create(Access::SystemAndInteractive).unwrap();
+        let name = listener.name().to_string();
+        let (side, client_service) = service_channel();
+        let client = Tunnel::client(client_connection.clone(), listener, side, None);
+        assert!(!client.connected());
+        let player = End::of(before_the_end(link::connect(&name)).await.unwrap());
 
-        let (host_side, client_connection) = tokio::join!(
-            host_endpoint.accept(),
-            client_endpoint.connect(meeting_point)
-        );
-
-        let handed = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let attended = Arc::new(AtomicU32::new(0));
-        let hushed = Arc::new(AtomicBool::new(false));
-        let locked = Arc::new(AtomicBool::new(false));
-        let steady = Arc::new(AtomicBool::new(false));
-        let screen: Arc<std::sync::Mutex<Option<WantedScreen>>> =
-            Arc::new(std::sync::Mutex::new(None));
-        let emptied = Arc::new(AtomicBool::new(false));
-        let filming: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
-        let opening: Arc<std::sync::Mutex<Option<MediaProfile>>> =
-            Arc::new(std::sync::Mutex::new(None));
-        let clipboard: Arc<std::sync::Mutex<Option<Clip>>> =
-            Arc::new(std::sync::Mutex::new(Some(Clip::text(HOST_CLIPBOARD))));
-        let has: Arc<std::sync::Mutex<Vec<Vec<u8>>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let wants: Arc<std::sync::Mutex<Option<Wanted>>> = Arc::new(std::sync::Mutex::new(None));
-        let taken: Arc<std::sync::Mutex<Vec<Given>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let host = Tunnel::host(
-            host_side.unwrap(),
-            ENGINE,
-            Arc::new(FakeEngine {
-                ports,
-                handed: handed.clone(),
-                attended: attended.clone(),
-                hushed: hushed.clone(),
-                locked: locked.clone(),
-                steady: steady.clone(),
-                screen: screen.clone(),
-                emptied: emptied.clone(),
-                filming: filming.clone(),
-                opening: opening.clone(),
-                clipboard: clipboard.clone(),
-                has: has.clone(),
-                wants: wants.clone(),
-                taken: taken.clone(),
-            }),
-            None,
-        )
-        .await
-        .unwrap();
-
-        // The real sequence, not a shortcut: the client learns the
-        // host's engine ports before opening the local ones that stand
-        // in for them. Nothing here is allowed to know them in advance.
-        let client_connection = client_connection.unwrap();
-        let engine = aside::ask_the_ports(&client_connection, profile)
-            .await
-            .unwrap();
-        let client = Tunnel::client(client_connection.clone(), client_side, engine, None)
-            .await
-            .unwrap();
-
-        Self {
-            _endpoints: (host_endpoint, client_endpoint),
-            _host: host,
-            client,
-            client_side,
-            ports: engine,
+        let mut bench = Self {
+            _endpoints: endpoints,
             connection: client_connection,
-            handed,
-            attended,
-            hushed,
-            locked,
-            steady,
-            screen,
-            emptied,
-            filming,
-            opening,
-            clipboard,
-            has,
-            wants,
-            taken,
-        }
+            host,
+            client,
+            engine,
+            player,
+            host_service,
+            client_service,
+            served,
+            far,
+        };
+        // What the service said before the tunnel was up is the first
+        // thing the engine hears.
+        let (channel, said) = bench.engine.next().await;
+        assert_eq!((channel, &said[..]), (Channel::Service, SETUP));
+        bench
     }
 
-    /// Address of an engine port, as the client engine sees it.
-    fn as_the_client_sees(&self, port: u16) -> SocketAddr {
-        SocketAddr::new(self.client_side, port)
+    /// Waits for the engine's stream to stand, which the player's first
+    /// word on it opens.
+    async fn the_player_speaks_first(&mut self) {
+        self.player.say(Channel::Control, b"hello").await;
+        assert_eq!(self.engine.control(5).await, b"hello");
     }
-}
-
-/// Fake host engine that echoes back whatever is written to it, in TCP.
-async fn tcp_engine(port: u16) {
-    let listener = TcpListener::bind(SocketAddr::new(ENGINE, port))
-        .await
-        .unwrap();
-    tokio::spawn(async move {
-        while let Ok((mut stream, _)) = listener.accept().await {
-            tokio::spawn(async move {
-                let (mut reading, mut writing) = stream.split();
-                let _ = tokio::io::copy(&mut reading, &mut writing).await;
-                let _ = writing.shutdown().await;
-            });
-        }
-    });
-}
-
-/// Fake host engine that answers in UDP, naming the port it was reached
-/// on: that is how we check no channel crosses another.
-async fn udp_engine(port: u16) {
-    let socket = UdpSocket::bind(SocketAddr::new(ENGINE, port))
-        .await
-        .unwrap();
-    tokio::spawn(async move {
-        let mut buffer = [0u8; 2048];
-        while let Ok((read, source)) = socket.recv_from(&mut buffer).await {
-            let answer = format!("{port}:{}", String::from_utf8_lossy(&buffer[..read]));
-            let _ = socket.send_to(answer.as_bytes(), source).await;
-        }
-    });
-}
-
-#[tokio::test]
-async fn the_client_learns_the_host_engine_ports_from_the_host() {
-    // The base port is picked by the host when its engine starts. A
-    // client that guessed it would open its stand-in ports on the wrong
-    // numbers, and the session would go nowhere with nothing to explain
-    // it.
-    let bench = Bench::bring_up(42700, 5).await;
-    assert_eq!(bench.ports.base(), 42700);
 }
 
 #[tokio::test]
 async fn the_watched_computer_learns_what_it_is_asked_to_serve() {
-    // The fault this repairs: the watched machine opens its tunnel when
-    // its service starts, long before a session exists, and so held a
-    // window worked out for a nominal bitrate whatever the bitrate
-    // really asked for. The first word of a session now tells it.
-    let bench = Bench::bring_up(42750, 6).await;
-    assert_eq!(
-        *bench.opening.lock().unwrap(),
-        Some(MediaProfile::default())
-    );
+    // The first word of a session says what it will be served, and the
+    // watched computer sizes its tunnel on it.
+    let bench = Bench::bring_up().await;
+    assert_eq!(bench.served, SERVED);
+    assert!(bench.host.connected());
+    // The player is in as soon as the tunnel has taken its link, which
+    // is what spares a way the patience given to a player never coming.
+    before_the_end(async {
+        while !bench.client.connected() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
 }
 
 #[tokio::test]
-async fn the_pairing_code_travels_through_the_tunnel() {
-    // This is what replaces a code shown on one screen and typed on
-    // the other. The tunnel has already recognised both computers by
-    // their fingerprint before opening: the code proves nothing more,
-    // and nobody has to get up any more.
-    let bench = Bench::bring_up(42850, 8).await;
+async fn the_control_stream_crosses_both_ways_whole_and_in_order() {
+    let mut bench = Bench::bring_up().await;
+    bench.the_player_speaks_first().await;
 
-    before_the_end(aside::ask_to_pair(
-        &bench.connection,
-        "0429",
-        "PC de Victor",
-    ))
-    .await
-    .unwrap();
+    // Many small messages, as the engine's control stream really is: a
+    // key press, a ping, an answer. Whatever the tunnel cuts them into,
+    // they arrive whole and in order.
+    let mut sent = Vec::new();
+    for turn in 0..500u32 {
+        let message = format!("key {turn};");
+        bench.player.say(Channel::Control, message.as_bytes()).await;
+        sent.extend_from_slice(message.as_bytes());
+    }
+    assert_eq!(bench.engine.control(sent.len()).await, sent);
 
-    let handed = bench.handed.lock().unwrap().clone();
-    assert_eq!(
-        handed,
-        vec![("0429".to_string(), "PC de Victor".to_string())]
-    );
+    bench.engine.say(Channel::Control, b"welcome").await;
+    assert_eq!(bench.player.control(7).await, b"welcome");
 }
 
 #[tokio::test]
-async fn ctrl_alt_del_travels_on_the_product_s_own_channel() {
-    // Windows keeps this combination for itself at both ends: the one
-    // watching never sees it, and the one being watched cannot receive it
-    // from an engine. So it crosses between the two halves of ZyrDesk,
-    // and no engine knows anything about it.
-    let bench = Bench::bring_up(42500, 7).await;
+async fn pictures_and_sound_arrive_on_their_own_channels_both_ways() {
+    let mut bench = Bench::bring_up().await;
+
+    // The engine's pictures and sound, to the player. The channel is
+    // what the player reads first: video landing in the sound would be
+    // noise.
+    for turn in 0..20u8 {
+        let channel = if turn % 3 == 0 {
+            Channel::Audio
+        } else {
+            Channel::Video
+        };
+        bench.engine.say(channel, &[turn; 1100]).await;
+        let (arrived_on, arrived) = bench.player.next().await;
+        assert_eq!(arrived_on, channel);
+        assert_eq!(&arrived[..], &[turn; 1100][..]);
+    }
+
+    // And the other way, which nothing uses today and the bench does.
+    bench.player.say(Channel::Video, b"echo").await;
+    let (arrived_on, arrived) = bench.engine.next().await;
+    assert_eq!((arrived_on, &arrived[..]), (Channel::Video, &b"echo"[..]));
+
+    let host = bench.host.reading();
+    let client = bench.client.reading();
+    assert_eq!(host.to_tunnel, 20);
+    assert_eq!(client.to_link, 20);
+    assert_eq!(client.to_tunnel, 1);
+    assert_eq!(host.to_link, 1);
+    assert_eq!(client.crowded_here, 0);
+    assert_eq!(host.too_large, 0);
+}
+
+#[tokio::test]
+async fn a_player_that_falls_behind_loses_the_oldest_pictures_and_holds_nothing_up() {
+    let mut bench = Bench::bring_up().await;
+    bench.the_player_speaks_first().await;
+
+    // A burst far larger than what waits for the player, and the player
+    // reading none of it: each picture numbered, so what arrives says
+    // what was kept.
+    const BURST: u32 = 8_000;
+    for number in 0..BURST {
+        let mut picture = number.to_le_bytes().to_vec();
+        picture.resize(1100, 0);
+        bench.engine.say(Channel::Video, &picture).await;
+        if number % 50 == 0 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+    // The tunnel went on reading while the player did not: the oldest
+    // were thrown away on this side, and counted.
+    before_the_end(async {
+        while bench.client.reading().crowded_here == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    // And what the engine says after the burst still gets through.
+    bench.engine.say(Channel::Control, b"still here").await;
+
+    let mut last = None;
+    let mut heard = Vec::new();
+    while last != Some(BURST - 1) || heard.len() < 10 {
+        let (channel, payload) = bench.player.next().await;
+        match channel {
+            Channel::Video => {
+                let number = u32::from_le_bytes(payload[..4].try_into().unwrap());
+                // Oldest first, and never one twice: a gap is what was
+                // thrown away, and nothing ever comes out of order.
+                if let Some(before) = last {
+                    assert!(number > before, "{number} after {before}");
+                }
+                last = Some(number);
+            }
+            Channel::Control => heard.extend_from_slice(&payload),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    assert_eq!(heard, b"still here");
+    let reading = bench.client.reading();
+    assert!(reading.crowded_here > 0, "{reading:?}");
+    assert!(reading.to_link < u64::from(BURST), "{reading:?}");
+}
+
+#[tokio::test]
+async fn the_service_hears_the_engine_and_speaks_to_it_and_the_way_to_the_player() {
+    let mut bench = Bench::bring_up().await;
+
+    bench.engine.say(Channel::Service, b"ready").await;
+    let said = before_the_end(bench.host_service.from_link.recv())
+        .await
+        .unwrap();
+    assert_eq!(&said[..], b"ready");
+
+    bench
+        .host_service
+        .to_link
+        .send(b"film: main".to_vec())
+        .await
+        .unwrap();
+    let (channel, said) = bench.engine.next().await;
+    assert_eq!((channel, &said[..]), (Channel::Service, &b"film: main"[..]));
+
+    // On the other side, the way tells the player how the tunnel stands,
+    // and hears what the player has to say to it.
+    bench
+        .client_service
+        .to_link
+        .send(b"tunnel: 12 ms".to_vec())
+        .await
+        .unwrap();
+    let (channel, said) = bench.player.next().await;
+    assert_eq!(
+        (channel, &said[..]),
+        (Channel::Service, &b"tunnel: 12 ms"[..])
+    );
+    bench.player.say(Channel::Service, b"bye").await;
+    let said = before_the_end(bench.client_service.from_link.recv())
+        .await
+        .unwrap();
+    assert_eq!(&said[..], b"bye");
+
+    // Service words never cross the tunnel: they are each side's own.
+    assert_eq!(bench.host.reading().to_link, 0);
+    assert_eq!(bench.client.reading().to_link, 0);
+}
+
+#[tokio::test]
+async fn the_player_leaving_ends_the_tunnel_on_both_sides() {
+    let mut bench = Bench::bring_up().await;
+    bench.the_player_speaks_first().await;
+
+    drop(bench.player);
+    before_the_end(bench.client.wait()).await.unwrap();
+    // The engine's stream ends with the client's tunnel, and the host's
+    // ends with it: the engine sees its link close, which is what makes
+    // it let go of whatever key it held.
+    before_the_end(bench.host.wait()).await.unwrap();
+    bench.host.close().await;
+    bench.engine.closed().await;
+}
+
+#[tokio::test]
+async fn the_engine_leaving_ends_the_tunnel_on_both_sides() {
+    let mut bench = Bench::bring_up().await;
+    bench.the_player_speaks_first().await;
+
+    drop(bench.engine);
+    before_the_end(bench.host.wait()).await.unwrap();
+    bench.host.close().await;
+    before_the_end(bench.client.wait()).await.unwrap();
+    bench.client.close().await;
+    bench.player.closed().await;
+}
+
+#[tokio::test]
+async fn a_second_opening_is_refused_and_the_session_goes_on() {
+    let mut bench = Bench::bring_up().await;
+    let refusal = before_the_end(aside::ask_to_open(&bench.connection, SERVED))
+        .await
+        .unwrap_err();
+    assert!(refusal.to_string().contains("déjà ouverte"), "{refusal}");
+
+    bench.the_player_speaks_first().await;
+    bench.engine.say(Channel::Video, b"picture").await;
+    let (channel, _) = bench.player.next().await;
+    assert_eq!(channel, Channel::Video);
+}
+
+#[tokio::test]
+async fn a_second_engine_stream_is_refused_and_counted() {
+    let mut bench = Bench::bring_up().await;
+    bench.the_player_speaks_first().await;
+
+    let (mut sending, mut receiving) = bench.connection.open_stream().await.unwrap();
+    zyr_tunnel::pump::announce(&mut sending, StreamChannel::Engine)
+        .await
+        .unwrap();
+    sending.write_all(b"intruder").await.unwrap();
+    // Nothing comes back, and nothing of it reaches the engine.
+    let heard = before_the_end(receiving.read_to_end(64)).await;
+    assert!(heard.map(|it| it.is_empty()).unwrap_or(true));
+    before_the_end(async {
+        while bench.host.reading().refused == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+
+    bench.player.say(Channel::Control, b"still mine").await;
+    assert_eq!(bench.engine.control(10).await, b"still mine");
+}
+
+#[tokio::test]
+async fn a_computer_is_answered_before_any_session_opens() {
+    // Most connections never open a session: reading a far computer's
+    // journal is a connection, two questions, and gone.
+    let (host_connection, client_connection, _endpoints) = connected().await;
+    let far: Arc<dyn Answers> = Arc::new(FarComputer::default());
+    let waiting =
+        tokio::spawn(
+            async move { aside::until_a_session_opens(&host_connection, far, None).await },
+        );
+
+    let page = before_the_end(aside::ask_for_the_journal(&client_connection, ""))
+        .await
+        .unwrap();
+    assert_eq!(page, host_journal());
+    let page = before_the_end(aside::ask_for_the_reach_log(&client_connection))
+        .await
+        .unwrap();
+    assert_eq!(page, host_reach_log());
+
+    // And no session was ever opened.
+    assert!(!waiting.is_finished());
+    waiting.abort();
+}
+
+#[tokio::test]
+async fn ctrl_alt_del_the_speakers_and_the_lock_travel_on_the_product_s_own_channel() {
+    // Windows keeps these for itself at both ends: they cross between
+    // the two halves of ZyrDesk, and no engine knows anything about them.
+    let bench = Bench::bring_up().await;
 
     before_the_end(aside::ask_for_the_secure_attention(&bench.connection))
         .await
         .unwrap();
-
-    assert_eq!(bench.attended.load(Ordering::Relaxed), 1);
-}
-
-#[tokio::test]
-async fn muting_the_host_is_asked_from_the_client() {
-    // It is whoever takes control who knows whether the room over there
-    // should go quiet, and they are not in it to go and say so. So the
-    // request crosses between the two halves of ZyrDesk, like the rest
-    // of what belongs to no engine.
-    let bench = Bench::bring_up(42950, 10).await;
+    assert_eq!(bench.far.attended.load(Ordering::Relaxed), 1);
 
     before_the_end(aside::ask_to_hush(&bench.connection, true))
         .await
         .unwrap();
-    assert!(bench.hushed.load(Ordering::Relaxed));
-
-    // And the other way, because a session can end without the far
-    // machine noticing it any other way.
+    assert!(bench.far.hushed.load(Ordering::Relaxed));
     before_the_end(aside::ask_to_hush(&bench.connection, false))
         .await
         .unwrap();
-    assert!(!bench.hushed.load(Ordering::Relaxed));
-}
-
-#[tokio::test]
-async fn locking_the_far_computer_goes_through_the_product_s_own_channel() {
-    // Windows+L does not travel: Windows handles it where no program sees
-    // it, at both ends of a session, and that is exactly what makes a
-    // lock screen worth something. So the request takes the path of
-    // Ctrl+Alt+Suppr, and the far service puts the screen up from the
-    // only place its Windows accepts it from.
-    let bench = Bench::bring_up(42750, 11).await;
+    assert!(!bench.far.hushed.load(Ordering::Relaxed));
 
     before_the_end(aside::ask_to_lock(&bench.connection))
         .await
         .unwrap();
-    assert!(bench.locked.load(Ordering::Relaxed));
-}
-
-#[tokio::test]
-async fn the_still_screen_rate_is_asked_from_the_client() {
-    // What it costs is paid over there, but the only person able to say
-    // whether the picture is smooth is the one watching it, and they are
-    // not in front of the machine that would need adjusting.
-    let bench = Bench::bring_up(42760, 13).await;
-
-    // And a change costs it a restart of its engine, which it says
-    // rather than letting the other end find out on a broken tunnel: it
-    // is the same answer as for the screen to film.
-    assert_eq!(
-        before_the_end(aside::ask_to_serve_steady(&bench.connection, true))
-            .await
-            .unwrap(),
-        zyr_tunnel::Settled::StartingOver
-    );
-    assert!(bench.steady.load(Ordering::Relaxed));
-
-    // Asked for again as it is, it costs nothing at all, which is the
-    // ordinary case: every session asks for it.
-    assert_eq!(
-        before_the_end(aside::ask_to_serve_steady(&bench.connection, true))
-            .await
-            .unwrap(),
-        zyr_tunnel::Settled::Already
-    );
-
-    assert_eq!(
-        before_the_end(aside::ask_to_serve_steady(&bench.connection, false))
-            .await
-            .unwrap(),
-        zyr_tunnel::Settled::StartingOver
-    );
-    assert!(!bench.steady.load(Ordering::Relaxed));
-}
-
-#[tokio::test]
-async fn an_engine_that_refuses_the_code_says_so_rather_than_going_quiet() {
-    // Otherwise the computer connecting would wait on an engine that
-    // is waiting for nothing, with nothing to show.
-    let bench = Bench::bring_up(42900, 9).await;
-
-    let refusal = before_the_end(aside::ask_to_pair(&bench.connection, REFUSED_PIN, "PC"))
-        .await
-        .unwrap_err();
-    assert!(
-        refusal.to_string().contains("n'attend aucun code"),
-        "{refusal}"
-    );
-
-    // And the way still holds: a failed pairing does not take the
-    // session down with it.
-    let ports = before_the_end(aside::ask_the_ports(
-        &bench.connection,
-        MediaProfile::default(),
-    ))
-    .await
-    .unwrap();
-    assert_eq!(ports.base(), 42900);
-}
-
-#[tokio::test]
-async fn a_reliable_stream_crosses_the_tunnel_both_ways() {
-    let bench = Bench::bring_up(42100, 0).await;
-    tcp_engine(bench.ports.http()).await;
-
-    let mut stream = before_the_end(TcpStream::connect(
-        bench.as_the_client_sees(bench.ports.http()),
-    ))
-    .await
-    .unwrap();
-    stream.write_all(b"pairing").await.unwrap();
-    stream.shutdown().await.unwrap();
-
-    let mut received = Vec::new();
-    before_the_end(stream.read_to_end(&mut received))
-        .await
-        .unwrap();
-    assert_eq!(received, b"pairing");
-}
-
-#[tokio::test]
-async fn a_datagram_crosses_the_tunnel_both_ways() {
-    let bench = Bench::bring_up(42200, 1).await;
-    udp_engine(bench.ports.video()).await;
-
-    let client = UdpSocket::bind(SocketAddr::new(bench.client_side, 0))
-        .await
-        .unwrap();
-    client
-        .send_to(b"ping", bench.as_the_client_sees(bench.ports.video()))
-        .await
-        .unwrap();
-
-    let mut received = [0u8; 64];
-    let (read, _) = before_the_end(client.recv_from(&mut received))
-        .await
-        .unwrap();
-    assert_eq!(
-        &received[..read],
-        format!("{}:ping", bench.ports.video()).as_bytes()
-    );
-}
-
-#[tokio::test]
-async fn each_channel_lands_on_its_own_engine_port() {
-    let bench = Bench::bring_up(42300, 2).await;
-    for port in bench.ports.udp_ports() {
-        udp_engine(port).await;
-    }
-
-    // The three channels share one datagram queue: if the header were
-    // misread, the video would land in the audio.
-    for port in bench.ports.udp_ports() {
-        let client = UdpSocket::bind(SocketAddr::new(bench.client_side, 0))
-            .await
-            .unwrap();
-        client
-            .send_to(b"ping", bench.as_the_client_sees(port))
-            .await
-            .unwrap();
-
-        let mut received = [0u8; 64];
-        let (read, _) = before_the_end(client.recv_from(&mut received))
-            .await
-            .unwrap();
-        assert_eq!(&received[..read], format!("{port}:ping").as_bytes());
-    }
-}
-
-#[tokio::test]
-async fn the_engine_web_interface_stays_out_of_the_tunnel() {
-    let bench = Bench::bring_up(42400, 3).await;
-    tcp_engine(bench.ports.web_ui()).await;
-
-    // It does run on the host side, but nothing listens for it on the
-    // client side: it is reachable only from the machine hosting it.
-    assert!(
-        TcpStream::connect(bench.as_the_client_sees(bench.ports.web_ui()))
-            .await
-            .is_err()
-    );
-}
-
-#[tokio::test]
-async fn packets_sent_before_the_engine_listens_do_not_end_the_session() {
-    // The engine opens its media ports only once the negotiation is
-    // over, so everything the tunnel relays until then lands nowhere.
-    // That must cost those packets and nothing else: ending the pump
-    // there would break the negotiation still under way on the reliable
-    // streams, and the session would fail with no visible cause.
-    let bench = Bench::bring_up(42800, 6).await;
-    let client = UdpSocket::bind(SocketAddr::new(bench.client_side, 0))
-        .await
-        .unwrap();
-
-    for _ in 0..20 {
-        client
-            .send_to(b"early", bench.as_the_client_sees(bench.ports.video()))
-            .await
-            .unwrap();
-    }
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
-    // The engine shows up late, and the session carries on.
-    udp_engine(bench.ports.video()).await;
-    client
-        .send_to(b"ping", bench.as_the_client_sees(bench.ports.video()))
-        .await
-        .unwrap();
-
-    let mut received = [0u8; 64];
-    let (read, _) = before_the_end(client.recv_from(&mut received))
-        .await
-        .unwrap();
-    assert_eq!(
-        &received[..read],
-        format!("{}:ping", bench.ports.video()).as_bytes()
-    );
-}
-
-#[tokio::test]
-async fn the_counters_follow_what_travels() {
-    let bench = Bench::bring_up(42600, 4).await;
-    udp_engine(bench.ports.audio()).await;
-    assert_eq!(bench.client.reading(), zyr_tunnel::Reading::default());
-
-    let client = UdpSocket::bind(SocketAddr::new(bench.client_side, 0))
-        .await
-        .unwrap();
-    client
-        .send_to(b"ping", bench.as_the_client_sees(bench.ports.audio()))
-        .await
-        .unwrap();
-    let mut received = [0u8; 64];
-    before_the_end(client.recv_from(&mut received))
-        .await
-        .unwrap();
-
-    let reading = bench.client.reading();
-    assert_eq!(reading.to_tunnel, 1);
-    assert_eq!(reading.to_engine, 1);
-    assert_eq!(reading.too_large, 0);
-    assert_eq!(reading.unreadable, 0);
+    assert!(bench.far.locked.load(Ordering::Relaxed));
 }
 
 #[tokio::test]
 async fn the_virtual_screen_is_asked_for_at_the_opening_and_given_back_at_the_end() {
-    // The virtual screen sleeps between sessions, which is the whole
-    // point: a machine nobody is watching has the screens its owner
-    // plugged in and not one more. So it has to be asked for, and given
-    // back.
-    let bench = Bench::bring_up(42770, 15).await;
+    let bench = Bench::bring_up().await;
 
     let asked = WantedScreen {
         wide: 3840,
@@ -785,88 +668,23 @@ async fn the_virtual_screen_is_asked_for_at_the_opening_and_given_back_at_the_en
     let showing = before_the_end(aside::ask_for_a_screen(&bench.connection, Some(asked)))
         .await
         .unwrap();
-    // The magnification travels with the size: a screen at the right size
-    // but not at the right magnification is someone else's desktop at the
-    // right resolution.
-    assert_eq!(*bench.screen.lock().unwrap(), Some(asked));
+    // The magnification travels with the size.
+    assert_eq!(*bench.far.screen.lock().unwrap(), Some(asked));
     assert_eq!(showing, Some((3840, 2160)));
 
-    // And what is asked for travels every time: it is on waking that the
-    // driver reads the sizes written for it, there is no second chance.
-    let asked = WantedScreen {
-        wide: 2560,
-        high: 1440,
-        scale: 125,
-    };
-    before_the_end(aside::ask_for_a_screen(&bench.connection, Some(asked)))
-        .await
-        .unwrap();
-    assert_eq!(*bench.screen.lock().unwrap(), Some(asked));
-
-    // And with nothing asked for, the far machine answers with its
-    // own: that is what makes "keep the host's resolution" possible,
-    // since nothing on this side can guess what is plugged in over
-    // there.
+    // With nothing asked for, the far machine answers with its own size:
+    // nothing on this side can guess what is plugged in over there.
     let showing = before_the_end(aside::ask_for_a_screen(&bench.connection, None))
         .await
         .unwrap();
-    assert_eq!(*bench.screen.lock().unwrap(), None);
+    assert_eq!(*bench.far.screen.lock().unwrap(), None);
     assert_eq!(showing, Some(HOST_SCREEN));
 }
 
 #[tokio::test]
-async fn the_far_machine_s_journal_arrives_whole() {
-    // Reading the remote computer's journal without walking over to it
-    // means the fault is diagnosed on both journals at once. So what
-    // arrives must be the whole page, lines included: a page cut short
-    // in silence reads like a complete page.
-    let bench = Bench::bring_up(42780, 16).await;
+async fn the_screens_the_pointer_and_the_screen_to_film_are_asked_while_the_picture_runs() {
+    let bench = Bench::bring_up().await;
 
-    let page = before_the_end(aside::ask_for_the_journal(&bench.connection, ""))
-        .await
-        .unwrap();
-    assert_eq!(page, host_journal());
-    // And it weighs far more than a question: that is the whole point
-    // of two separate ceilings on this channel.
-    assert!(page.len() > 20_000, "{} octets", page.len());
-
-    // The other half, and it comes from the same need: empty both
-    // journals, do again what does not work, read both. Emptying only
-    // the one at hand leaves the walk to the other machine exactly
-    // where it was.
-    before_the_end(aside::ask_to_empty_the_journal(&bench.connection))
-        .await
-        .unwrap();
-    assert!(bench.emptied.load(Ordering::Relaxed));
-
-    let page = before_the_end(aside::ask_for_the_journal(&bench.connection, ""))
-        .await
-        .unwrap();
-    assert!(page.is_empty(), "{page}");
-
-    // And the sift crosses with the question: it is done over there,
-    // before the page is cut, the only order in which a sift is worth
-    // anything.
-    bench.emptied.store(false, Ordering::Relaxed);
-    let sifted = before_the_end(aside::ask_for_the_journal(
-        &bench.connection,
-        "tag:clipboard",
-    ))
-    .await
-    .unwrap();
-    assert_eq!(sifted, "trié par « tag:clipboard »");
-
-    // And what this machine can encode, which decides what the menu over
-    // there is allowed to offer. It is the only one that knows: it is
-    // the one that encodes.
-    let named = before_the_end(aside::ask_what_it_can_encode(&bench.connection))
-        .await
-        .unwrap();
-    assert_eq!(named, HOST_CODECS);
-
-    // And this machine's screens, with the one to watch. Victor's case: two
-    // screens switched on over there, and until then no way to ask for the
-    // second one.
     let listed = before_the_end(aside::ask_what_screens_it_has(&bench.connection))
         .await
         .unwrap();
@@ -875,10 +693,6 @@ async fn the_far_machine_s_journal_arrives_whole() {
     assert_eq!(read.len(), 2);
     assert!(read[0].main);
 
-    // And the shape its pointer has right now, which is what the
-    // pointer drawn here is about to take. One more round trip, on a
-    // channel already open, for one word: it is asked several times a
-    // second while a hand is moving.
     assert_eq!(
         before_the_end(aside::ask_for_the_pointer(&bench.connection))
             .await
@@ -886,51 +700,55 @@ async fn the_far_machine_s_journal_arrives_whole() {
         HOST_POINTER
     );
 
-    // The main screen is the one it already films: every session asks
-    // for it, and almost none changes anything.
-    assert_eq!(
-        before_the_end(aside::ask_to_film_this_screen(&bench.connection, None))
-            .await
-            .unwrap(),
-        zyr_tunnel::Settled::Already
-    );
-    // The other one costs it a restart of its engine, and it says so
-    // rather than letting the other end find out on a broken tunnel.
-    assert_eq!(
-        before_the_end(aside::ask_to_film_this_screen(
-            &bench.connection,
-            Some(read[1].id.clone())
-        ))
+    // The other screen, then the main one again: its engine changes
+    // screen where it stands, and the answer is simply that it does.
+    before_the_end(aside::ask_to_film_this_screen(
+        &bench.connection,
+        Some(read[1].id.clone()),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(*bench.far.filming.lock().unwrap(), Some(read[1].id.clone()));
+    before_the_end(aside::ask_to_film_this_screen(&bench.connection, None))
         .await
-        .unwrap(),
-        zyr_tunnel::Settled::StartingOver
-    );
-    assert_eq!(*bench.filming.lock().unwrap(), Some(read[1].id.clone()));
+        .unwrap();
+    assert_eq!(*bench.far.filming.lock().unwrap(), None);
 }
 
 #[tokio::test]
-async fn what_the_far_machine_reaches_arrives_whole() {
-    // The counterpart of the journal, on the same channel and for the
-    // same reason: read from here rather than by walking over to the
-    // other machine, and whole, with its one measurement per second.
-    let bench = Bench::bring_up(42790, 17).await;
+async fn the_far_machine_s_journal_arrives_whole_and_empties() {
+    let bench = Bench::bring_up().await;
 
-    let page = before_the_end(aside::ask_for_the_reach_log(&bench.connection))
+    let page = before_the_end(aside::ask_for_the_journal(&bench.connection, ""))
         .await
         .unwrap();
-    assert_eq!(page, host_reach_log());
-    assert!(page.len() > 10_000, "{} octets", page.len());
+    assert_eq!(page, host_journal());
+    assert!(page.len() > 20_000, "{} octets", page.len());
+
+    before_the_end(aside::ask_to_empty_the_journal(&bench.connection))
+        .await
+        .unwrap();
+    assert!(bench.far.emptied.load(Ordering::Relaxed));
+    let page = before_the_end(aside::ask_for_the_journal(&bench.connection, ""))
+        .await
+        .unwrap();
+    assert!(page.is_empty(), "{page}");
+
+    // And the sift crosses with the question.
+    bench.far.emptied.store(false, Ordering::Relaxed);
+    let sifted = before_the_end(aside::ask_for_the_journal(
+        &bench.connection,
+        "tag:clipboard",
+    ))
+    .await
+    .unwrap();
+    assert_eq!(sifted, "trié par « tag:clipboard »");
 }
 
 #[tokio::test]
 async fn the_clipboard_crosses_the_tunnel_both_ways() {
-    // A shared clipboard makes no sense one way only: what is copied
-    // over there must paste here, and what is copied here must paste
-    // over there. A single message does both.
-    let bench = Bench::bring_up(42840, 20).await;
+    let bench = Bench::bring_up().await;
 
-    // What someone had copied over there, handed over because the one
-    // asking holds nothing.
     let arrived = before_the_end(aside::ask_about_the_clipboard(
         &bench.connection,
         None,
@@ -941,9 +759,7 @@ async fn the_clipboard_crosses_the_tunnel_both_ways() {
     .expect("ce qui était copié en face");
     assert_eq!(arrived.said(), Some(HOST_CLIPBOARD));
 
-    // And asked again while saying it is already held: nothing
-    // comes back. That is what keeps the feature standing, with a
-    // question asked several times a second for a whole session.
+    // Asked again while saying it is already held: nothing comes back.
     let again = before_the_end(aside::ask_about_the_clipboard(
         &bench.connection,
         None,
@@ -953,10 +769,7 @@ async fn the_clipboard_crosses_the_tunnel_both_ways() {
     .unwrap();
     assert_eq!(again, None);
 
-    // The other way: a picture copied here, heavier than a line, leaves
-    // with the question itself. It is the only message on this channel
-    // that weighs a page on the way out, and it is what the two-step
-    // reading exists to let through.
+    // The other way: a picture copied here, a page and not a line.
     let image = Clip::picture(vec![0x89; 300_000]);
     let nothing = before_the_end(aside::ask_about_the_clipboard(
         &bench.connection,
@@ -965,67 +778,39 @@ async fn the_clipboard_crosses_the_tunnel_both_ways() {
     ))
     .await
     .unwrap();
-    assert_eq!(
-        nothing, None,
-        "ce qu'on vient de donner ne doit pas revenir"
-    );
-    assert_eq!(bench.clipboard.lock().unwrap().as_ref(), Some(&image));
-
-    // And what is copied over there afterwards comes back, picture
-    // included: both ways carry the same thing.
-    let over_there = Clip::picture(vec![0x50; 200_000]);
-    *bench.clipboard.lock().unwrap() = Some(over_there.clone());
-    let received = before_the_end(aside::ask_about_the_clipboard(
-        &bench.connection,
-        None,
-        Some(image.stamp()),
-    ))
-    .await
-    .unwrap();
-    assert_eq!(received, Some(over_there));
+    assert_eq!(nothing, None);
+    assert_eq!(bench.far.clipboard.lock().unwrap().as_ref(), Some(&image));
 }
 
 #[tokio::test]
 async fn a_question_too_long_that_is_not_the_clipboard_is_refused() {
-    // The one-page ceiling is only lifted for the question that
-    // names it: without that, any unknown verb could make a
-    // computer hold on to megabytes while it has still understood
-    // nothing of what it is being told.
-    let bench = Bench::bring_up(42850, 21).await;
+    // The one-page ceiling is only lifted for the questions that name
+    // it: without that, any unknown verb could make a computer hold on
+    // to megabytes while it has still understood nothing.
+    let bench = Bench::bring_up().await;
 
     let (mut sending, mut receiving) = bench.connection.open_stream().await.unwrap();
     zyr_tunnel::pump::announce(&mut sending, StreamChannel::ZyrDesk)
         .await
         .unwrap();
-    let too_long = format!("{} pair 1234 {}", aside::VERSION, "n".repeat(8192));
+    let too_long = format!("{} journal {}", aside::VERSION, "n".repeat(8192));
     sending.write_all(too_long.as_bytes()).await.unwrap();
-    sending.shutdown().await.unwrap();
+    sending.finish().unwrap();
 
-    // The channel closes without answering anything, which is
-    // exactly what is wanted: nothing was held on to, nothing was
-    // done.
     let heard = before_the_end(receiving.read_to_end(64 * 1024)).await;
     assert!(
         heard.as_ref().map(Vec::is_empty).unwrap_or(true),
         "{heard:?}"
     );
-    assert!(bench.handed.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
 async fn the_pieces_of_a_file_cross_both_ways() {
-    // What a clipboard carries of a file is its name; the bytes follow,
-    // one piece at a time, and in the direction they are wanted. A
-    // single message carries both, as for the clipboard itself, and for
-    // the same reason: only the one who opened the way can ask for
-    // anything.
-    let bench = Bench::bring_up(42860, 22).await;
+    let bench = Bench::bring_up().await;
 
-    // The pulling way: the far machine copied, this one pastes, so
-    // it asks.
+    // The pulling way: the far machine copied, this one pastes.
     let file: Vec<u8> = (0..200_000u32).map(|at| (at % 251) as u8).collect();
-    *bench.has.lock().unwrap() = vec![b"court".to_vec(), file.clone()];
-
+    *bench.far.has.lock().unwrap() = vec![b"court".to_vec(), file.clone()];
     let mut gathered = Vec::new();
     let mut offset = 0u64;
     while (offset as usize) < file.len() {
@@ -1039,35 +824,30 @@ async fn the_pieces_of_a_file_cross_both_ways() {
                 .await
                 .unwrap();
         let given = given.expect("le morceau demandé");
-        assert_eq!(given.rank, 1);
         assert_eq!(given.from, offset);
         assert!(!given.bytes.is_empty(), "un morceau vide ne finit jamais");
         offset += given.bytes.len() as u64;
         gathered.extend_from_slice(&given.bytes);
     }
-    assert_eq!(gathered, file, "le fichier remonté n'est pas le fichier");
+    assert_eq!(gathered, file);
 
-    // And the pushing way: it is this machine that copied, and the far
-    // one that pastes, so it says what it wants and is given it. The
-    // answer to a piece given names the next piece, which makes one
-    // round trip per piece and not two.
+    // The pushing way: the far machine pastes and says what it wants.
     let asked_for = Wanted {
         rank: 0,
         from: 4096,
         how_many: 1024,
     };
-    *bench.wants.lock().unwrap() = Some(asked_for);
+    *bench.far.wants.lock().unwrap() = Some(asked_for);
     let (_, wanted) = before_the_end(aside::ask_for_pieces(&bench.connection, None, None))
         .await
         .unwrap();
     assert_eq!(wanted, Some(asked_for));
-
     let piece = Given {
         rank: 0,
         from: 4096,
         bytes: vec![0x2a; 1024],
     };
-    *bench.wants.lock().unwrap() = None;
+    *bench.far.wants.lock().unwrap() = None;
     let (_, wanted) = before_the_end(aside::ask_for_pieces(
         &bench.connection,
         None,
@@ -1075,6 +855,6 @@ async fn the_pieces_of_a_file_cross_both_ways() {
     ))
     .await
     .unwrap();
-    assert_eq!(wanted, None, "rien voulu de plus veut dire que c'est fini");
-    assert_eq!(*bench.taken.lock().unwrap(), vec![piece]);
+    assert_eq!(wanted, None);
+    assert_eq!(*bench.far.taken.lock().unwrap(), vec![piece]);
 }

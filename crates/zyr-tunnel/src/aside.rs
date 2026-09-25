@@ -1,17 +1,10 @@
 //! ZyrDesk's own channel inside the tunnel.
 //!
-//! Everything said here is the product talking to itself, never an
-//! engine. Two things travel on it today: the ports the far engine
-//! listens on, which the client cannot guess because the engine picks
-//! them when it starts, and the code the two engines have to agree on
-//! before they will speak to each other. Tomorrow it will carry the
-//! clipboard and the statistics.
-//!
-//! The pairing code is the reason nobody has to walk to the other
-//! computer any more. The engines demand that a code shown on one be
-//! typed on the other; the tunnel already knows both computers, having
-//! recognised them by fingerprint before a single byte passed, so it
-//! carries the code itself and the person is never shown one.
+//! Everything said here is the product talking to itself, never the
+//! engine. The first word of every session is said here, the one that
+//! has the watched computer bring its engine up, and so is everything
+//! the engine has no business carrying: the keys Windows keeps for
+//! itself, the speakers, the screens, the journal, the clipboard.
 //!
 //! One question, one stream, one message each way, in plain text: a
 //! channel that can be read with the eyes is a channel that can be
@@ -26,8 +19,9 @@ use std::sync::Arc;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc;
 use zyr_proto::clipboard::{Clip, Stamp};
-use zyr_proto::net::{BasePortOutOfRange, EnginePorts};
+use zyr_proto::log::Log;
 use zyr_proto::session::WantedScreen;
 use zyr_transport::{Connection, MediaProfile, RecvStream, SendStream};
 
@@ -86,13 +80,17 @@ use crate::pump;
 /// somebody typed in the box travels with the question, so that the far
 /// computer keeps the lines that answer it before it cuts its journal
 /// down to a page, which is the only order in which a sift is worth
-/// anything.
-pub const VERSION: u32 = 21;
+/// anything. Version 22 is the product's own engine: the first word of a
+/// session opens it rather than asking where one listens, the pairing
+/// code is gone with the engines that wanted one, and the rate, the
+/// cadence of a still screen, the pointer drawn into the picture and the
+/// codecs travel between the player and the engine and no longer here.
+pub const VERSION: u32 = 22;
 
 /// Longest question this channel takes.
 ///
-/// It carries port numbers, a four-digit code and a machine name.
-/// Anything longer is not one of ours, with the one exception below.
+/// It carries a rate, a size and a screen's name. Anything longer is not
+/// one of ours, with the one exception below.
 const LONGEST_QUESTION: usize = 512;
 
 /// Longest answer this channel takes.
@@ -153,35 +151,15 @@ const NONE: &str = "none";
 
 /// What the host side answers on ZyrDesk's own channel.
 ///
-/// The tunnel knows engines by their ports and nothing else. Whoever
-/// holds an engine hands over this and keeps the engine to itself, which
-/// is what stops the tunnel from having to know how an engine is driven.
+/// Whoever holds the engine of a session hands over this and keeps the
+/// engine to itself, which is what stops the tunnel from having to know
+/// how an engine is driven. Everything but the pointer is called where
+/// blocking is allowed.
+///
+/// The first word of a session is not among these: it is handed back
+/// whole by [`until_a_session_opens`], since what answers it is the
+/// engine being brought up, and the tunnel is only started once it is.
 pub trait Answers: Send + Sync + 'static {
-    /// Ports the local engine listens on.
-    fn engine(&self) -> EnginePorts;
-
-    /// A session is opening on this computer, and that is what it asked
-    /// to be served.
-    ///
-    /// Told to the transport and to nothing else: the two engines settle
-    /// the rate between themselves a moment later, and this end has no
-    /// business asking its own for anything yet. What it changes is the
-    /// window the tunnel holds open, which until this was worked out from
-    /// a rate nobody had asked for.
-    ///
-    /// It comes with the ports because that question is the first word of
-    /// a session and there is no earlier one: a window is wanted before
-    /// the first picture, not after it.
-    fn a_session_is_opening(&self, serving: MediaProfile);
-
-    /// Hands a pairing code to the local engine.
-    ///
-    /// It hands back once the engine has taken the code, and not before:
-    /// the computer asking has already started its own engine and is
-    /// waiting on this. Blocking is expected, and it is called where
-    /// blocking is allowed.
-    fn hand_over_the_code(&self, pin: &str, name: &str) -> Result<(), String>;
-
     /// Presses Ctrl+Alt+Suppr on this computer.
     ///
     /// It travels here and not through the engines, and that is not a
@@ -215,49 +193,6 @@ pub trait Answers: Send + Sync + 'static {
     /// lower from outside the desk is a lock screen worth something.
     fn lock_the_screen(&self) -> Result<(), String>;
 
-    /// Decides whether this computer resends a still screen at full rate
-    /// while somebody is watching it.
-    ///
-    /// Asked from the far end and not settled here, for the same reason
-    /// the speakers are: the only person who can tell whether the picture
-    /// feels smooth is the one looking at it, and they are not in front
-    /// of the machine that would have to be told. What it costs is paid
-    /// here, so the ask is a request and not an order: an answer of no is
-    /// an answer.
-    ///
-    /// Asked of the engine that runs, which takes it where it stands. An
-    /// engine that cannot be asked, one of an older build or one that has
-    /// stopped answering, is started over instead, and starting over
-    /// takes the tunnel with it: the answer says which of the two
-    /// happened, exactly as the screen to film below does, rather than
-    /// leaving the far end to find out from a way that broke underneath
-    /// it.
-    fn serve_steady(&self, rate: bool) -> Result<Settled, String>;
-
-    /// Serves the session's picture at that rate from now on.
-    ///
-    /// Asked of the engine that runs, which costs it a new encoder and
-    /// costs the session watching it nothing at all. The rate is the one
-    /// thing here that is not written down: it was negotiated when the
-    /// stream started, it is asked of the stream that runs, and the next
-    /// stream announces its own.
-    ///
-    /// A no is an engine that cannot be asked, and the far end then opens
-    /// its picture again, which is what every change of rate cost before
-    /// this existed.
-    fn serve_at(&self, kbps: u32) -> Result<(), String>;
-
-    /// Draws this computer's own pointer into the picture it sends, or
-    /// stops drawing it.
-    ///
-    /// Said by whoever is watching, and said again at every turn of
-    /// their watch rather than flipped when it changes. The switch lives
-    /// in the engine, which was started with the service and outlives
-    /// every session: a session that ended without putting it back left
-    /// the next one to guess, and a guess is what put two pointers on a
-    /// screen, or none.
-    fn draw_the_pointer(&self, drawn: bool) -> Result<(), String>;
-
     /// Wakes this computer's virtual screen for a session that wants a
     /// picture like that one, or puts it back to sleep.
     ///
@@ -269,10 +204,10 @@ pub trait Answers: Send + Sync + 'static {
     /// something a remote desktop is entitled to leave behind.
     ///
     /// Asked at the opening of a session and answered before the picture
-    /// is opened, because the far engine has to find that screen. A no is
-    /// an answer and never fails a session: a computer with no virtual
-    /// screen serves what its own screen can draw, which is what every
-    /// computer did before this existed.
+    /// is opened, because the picture is made at the size this answers. A
+    /// no is an answer and never fails a session: a computer with no
+    /// virtual screen serves what its own screen can draw, which is what
+    /// every computer did before this existed.
     ///
     /// Answers the size this computer is going to be showing, which is
     /// the size that was asked for when there is a virtual screen to
@@ -330,20 +265,6 @@ pub trait Answers: Send + Sync + 'static {
     /// what the same computer may already do here.
     fn empty_the_journal(&self) -> Result<(), String>;
 
-    /// Which pictures this computer's engine can actually make.
-    ///
-    /// The codec is chosen by whoever is watching and encoded here, and
-    /// this end is the only one that knows whether it can. Asking for one
-    /// it cannot make breaks nothing: the two engines agree on another
-    /// between themselves and the session opens. What was wrong is that
-    /// nothing said so, and the menu over there went on showing a choice
-    /// that had not been honoured since the session began.
-    ///
-    /// An empty answer is « it has not said » and never « none »: a
-    /// computer that could encode nothing could not be watched at all, so
-    /// that answer would be about the reading and not about the machine.
-    fn codecs(&self) -> Result<String, String>;
-
     /// What shape the pointer has on this computer right now.
     ///
     /// A desktop says what it is about to do through this and almost
@@ -372,9 +293,9 @@ pub trait Answers: Send + Sync + 'static {
     /// screens anybody asks to be served from, and offering them would
     /// offer a black picture.
     ///
-    /// Named by this computer and by nothing else. The identifier is a
-    /// digest its own engine computes, and the far end has no business
-    /// recomputing it: it reads the list and hands one of them back.
+    /// Named by this computer and by nothing else: the far end reads the
+    /// list and hands one of the names back. Empty is « it has not said »,
+    /// which is an engine that has not finished starting.
     fn screens(&self) -> Result<String, String>;
 
     /// Serves this computer's picture from that screen from now on.
@@ -384,13 +305,10 @@ pub trait Answers: Send + Sync + 'static {
     /// the screen a previous session picked would be a machine rearranged
     /// by having been looked at.
     ///
-    /// Answers whether it is already filming that screen, or whether its
-    /// engine has to start over to do it. The engine reads which screen
-    /// to film once, when it starts, so there is no third answer; and
-    /// starting over takes the tunnel with it, which is why the answer
-    /// says so plainly rather than leaving the far end to find out from a
-    /// broken way.
-    fn film_this_screen(&self, id: Option<String>) -> Result<Settled, String>;
+    /// The engine of the session changes screen where it stands: nothing
+    /// starts over, and the picture is on the other screen within the
+    /// second.
+    fn film_this_screen(&self, id: Option<String>) -> Result<(), String>;
 
     /// Takes what was copied over there, and hands back what was copied
     /// here.
@@ -561,46 +479,22 @@ fn some_of<T>(
     }
 }
 
-/// What a computer answers when it is told something its engine takes
-/// where it stands when it can, and starts over for when it cannot.
-///
-/// Two of them: which of its screens to film, and whether it resends a
-/// still screen at full rate. Both are asked of the engine that runs, and
-/// an engine that cannot be asked is started over, which takes the tunnel
-/// with it: so both have the same two answers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Settled {
-    /// It is that way already, or is being made that way where it stands,
-    /// and the session may go on.
-    Already,
-    /// Its engine has to start over, which takes this tunnel with it. The
-    /// far end waits and comes back.
-    StartingOver,
-}
-
 /// What one ZyrDesk asks the other.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Question {
-    /// Which ports your engine listens on, for a session that will be
-    /// served like that.
+    /// Open a session: bring your engine up for a picture served like
+    /// that.
     ///
     /// The shape of the picture travels with the question because the
     /// window the far computer holds open is worked out from it, and this
     /// is the first word of every session.
-    Ports { serving: MediaProfile },
-    /// Take this code and hand it to your engine. The name is what the
-    /// far computer will file this one under.
-    Pair { pin: String, name: String },
+    Open { serving: MediaProfile },
     /// Press Ctrl+Alt+Suppr on yourself.
     SecureAttention,
     /// Go quiet, or play again, for as long as this session lasts.
     Hush { quiet: bool },
     /// Put your lock screen up.
     Lock,
-    /// Resend a still screen at full rate, or stop doing it.
-    Steady { rate: bool },
-    /// Serve the picture at this rate, in kilobits a second, from now on.
-    Bitrate { kbps: u32 },
     /// Wake your virtual screen for a picture like this one, or, with
     /// nothing asked for, put it back to sleep.
     Screen { wanted: Option<WantedScreen> },
@@ -616,17 +510,8 @@ pub enum Question {
     ReachLog,
     /// Empty your journal, so what comes after is only what comes after.
     EmptyTheJournal,
-    /// Which pictures your engine can actually make.
-    Codecs,
     /// What shape your pointer has right now.
     Pointer,
-    /// Draw your own pointer into the picture from now on, or stop.
-    ///
-    /// Said and never toggled. The switch it reaches is a key
-    /// combination away, and that road has neither of the two things
-    /// this one has: nobody can read where a toggle stands, and the one
-    /// in an engine outlives every session and is shared by all of them.
-    DrawYourPointer { drawn: bool },
     /// Which screens you are showing on.
     Screens,
     /// Serve your picture from that screen, or, with nothing named, from
@@ -650,97 +535,58 @@ pub enum Question {
 /// What comes back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Told {
-    Ports(EnginePorts),
-    /// The far engine took the code.
-    Paired,
+    /// The far computer's engine is up, and waiting for the player.
+    Opened,
     /// The far computer pressed it.
     Attended,
     /// The far computer's speakers are as they were asked to be.
     Hushed,
     /// The far computer's screen is being locked.
     Locked,
-    /// The far computer's engine is serving at the rate it was asked.
-    Rated,
-    /// The far computer's engine draws its pointer, or does not, exactly
-    /// as it was told.
-    PointerDrawn,
     /// The far computer's virtual screen is where it was asked to be,
     /// and it is showing this size. Absent when that computer could not
     /// measure itself, which leaves the asking end on what it guessed.
-    Screen {
-        size: Option<(u32, u32)>,
-    },
+    Screen { size: Option<(u32, u32)> },
     /// The far computer's journal, whole.
-    Journal {
-        text: String,
-    },
+    Journal { text: String },
     /// What the far computer has measured of its own access to the
     /// Internet, whole.
-    ReachLog {
-        text: String,
-    },
+    ReachLog { text: String },
     /// The far computer's journal is empty.
     Emptied,
-    /// What the far computer's engine can encode, in the product's own
-    /// spelling, one name after another. Empty is « it has not said »
-    /// and never « none »: a computer that could encode nothing could
-    /// not be watched at all.
-    Codecs {
-        named: String,
-    },
     /// The shape this computer's pointer has right now.
-    Pointer {
-        shape: zyr_proto::session::Pointer,
-    },
+    Pointer { shape: zyr_proto::session::Pointer },
     /// The screens the far computer is showing on, one to a line. Empty
     /// is « it has not said », which is a computer whose engine has not
     /// finished starting.
-    Screens {
-        listed: String,
-    },
+    Screens { listed: String },
     /// What was copied on the far computer, or nothing when it holds the
     /// very thing the question said it already had, and nothing again
     /// when it holds nothing at all.
-    Clipboard {
-        theirs: Option<Clip>,
-    },
+    Clipboard { theirs: Option<Clip> },
     /// The piece that was asked for, and what the far computer wants next
     /// of what this one named.
     Pieces {
         given: Option<Given>,
         wanted: Option<Wanted>,
     },
-    /// The far computer is as it was asked to be, or is starting its
-    /// engine over to be it.
-    ///
-    /// The answer to both of the questions its engine only reads at
-    /// startup: which screen to film, and the rate a still screen is
-    /// served at. Which one it answers is whichever was asked.
-    Settled {
-        how: Settled,
-    },
+    /// The far computer's engine films the screen it was asked to.
+    Filming,
 }
 
 impl fmt::Display for Question {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            // The name comes last and takes the whole of what is left,
-            // spaces and all: no escaping, and nothing to get wrong.
-            Question::Pair { pin, name } => write!(f, "{VERSION} pair {pin} {name}"),
             // In the words the rest of the product uses for them:
             // kilobits a second, and pictures a second.
-            Question::Ports { serving } => write!(
+            Question::Open { serving } => write!(
                 f,
-                "{VERSION} ports {} {}",
+                "{VERSION} open {} {}",
                 serving.bits_per_second / 1_000,
                 serving.frames_per_second
             ),
             Question::SecureAttention => write!(f, "{VERSION} sas"),
             Question::Lock => write!(f, "{VERSION} lock"),
-            Question::Steady { rate } => {
-                write!(f, "{VERSION} steady {}", if *rate { "on" } else { "off" })
-            }
-            Question::Bitrate { kbps } => write!(f, "{VERSION} bitrate {kbps}"),
             Question::Screen { wanted } => match wanted {
                 Some(screen) => write!(f, "{VERSION} screen {screen}"),
                 None => write!(f, "{VERSION} screen none"),
@@ -748,13 +594,12 @@ impl fmt::Display for Question {
             Question::Journal { sift } => write!(f, "{VERSION} journal {sift}"),
             Question::ReachLog => write!(f, "{VERSION} reach"),
             Question::EmptyTheJournal => write!(f, "{VERSION} empty-journal"),
-            Question::Codecs => write!(f, "{VERSION} codecs"),
             Question::Pointer => write!(f, "{VERSION} pointer"),
             Question::Screens => write!(f, "{VERSION} screens"),
             // « main » rather than nothing at all, so a question that
             // names no screen still reads as a question: the identifiers
-            // themselves are the far computer's own digests, written
-            // between braces, and none of them can be that word.
+            // themselves are device paths, full of backslashes, and none
+            // of them can be that word.
             Question::FilmThisScreen { id } => match id {
                 Some(id) => write!(f, "{VERSION} film {id}"),
                 None => write!(f, "{VERSION} film main"),
@@ -785,13 +630,6 @@ impl fmt::Display for Question {
                 half("asking", asking),
                 half("giving", giving)
             ),
-            Question::DrawYourPointer { drawn } => {
-                write!(
-                    f,
-                    "{VERSION} drawpointer {}",
-                    if *drawn { "yes" } else { "no" }
-                )
-            }
         }
     }
 }
@@ -799,13 +637,10 @@ impl fmt::Display for Question {
 impl fmt::Display for Told {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Told::Ports(engine) => write!(f, "{VERSION} ports {}", engine.base()),
-            Told::Paired => write!(f, "{VERSION} paired"),
+            Told::Opened => write!(f, "{VERSION} opened"),
             Told::Attended => write!(f, "{VERSION} attended"),
             Told::Hushed => write!(f, "{VERSION} hushed"),
             Told::Locked => write!(f, "{VERSION} locked"),
-            Told::Rated => write!(f, "{VERSION} rated"),
-            Told::PointerDrawn => write!(f, "{VERSION} pointerdrawn"),
             Told::Screen { size } => match size {
                 Some((wide, high)) => write!(f, "{VERSION} screen {wide}x{high}"),
                 None => write!(f, "{VERSION} screen none"),
@@ -817,7 +652,6 @@ impl fmt::Display for Told {
             // Whole as well, and for the same reason.
             Told::ReachLog { text } => write!(f, "{VERSION} reach {text}"),
             Told::Emptied => write!(f, "{VERSION} emptied"),
-            Told::Codecs { named } => write!(f, "{VERSION} codecs {named}"),
             Told::Pointer { shape } => write!(f, "{VERSION} pointer {shape}"),
             // One screen to a line, whole, for the reason the journal
             // above travels whole: this channel ends a message by closing
@@ -834,14 +668,7 @@ impl fmt::Display for Told {
                 half("given", given),
                 half("wanted", wanted)
             ),
-            Told::Settled { how } => write!(
-                f,
-                "{VERSION} settled {}",
-                match how {
-                    Settled::Already => "already",
-                    Settled::StartingOver => "starting-over",
-                }
-            ),
+            Told::Filming => write!(f, "{VERSION} filming"),
         }
     }
 }
@@ -864,18 +691,9 @@ impl Question {
         let said = after_the_version(message)?;
         let (verb, rest) = split_first(said);
         match verb {
-            "ports" => served(rest).map(|serving| Question::Ports { serving }),
+            "open" => served(rest).map(|serving| Question::Open { serving }),
             "sas" => Ok(Question::SecureAttention),
             "lock" => Ok(Question::Lock),
-            "steady" => match rest {
-                "on" => Ok(Question::Steady { rate: true }),
-                "off" => Ok(Question::Steady { rate: false }),
-                other => Err(format!("« {other} » ne dit ni oui ni non")),
-            },
-            "bitrate" => rest
-                .parse()
-                .map(|kbps| Question::Bitrate { kbps })
-                .map_err(|_| format!("« {rest} » n'est pas un débit")),
             "screen" => match rest {
                 "none" => Ok(Question::Screen { wanted: None }),
                 asked => asked.parse().map(|screen| Question::Screen {
@@ -887,7 +705,6 @@ impl Question {
             }),
             "reach" => Ok(Question::ReachLog),
             "empty-journal" => Ok(Question::EmptyTheJournal),
-            "codecs" => Ok(Question::Codecs),
             "pointer" => Ok(Question::Pointer),
             "screens" => Ok(Question::Screens),
             "film" => Ok(Question::FilmThisScreen {
@@ -922,23 +739,6 @@ impl Question {
                 "play" => Ok(Question::Hush { quiet: false }),
                 other => Err(format!("« {other} » ne dit ni de se taire ni de jouer")),
             },
-            "drawpointer" => match rest {
-                "yes" => Ok(Question::DrawYourPointer { drawn: true }),
-                "no" => Ok(Question::DrawYourPointer { drawn: false }),
-                other => Err(format!(
-                    "« {other} » ne dit ni de dessiner le curseur ni de s'en abstenir"
-                )),
-            },
-            "pair" => {
-                let (pin, name) = split_first(rest);
-                if pin.is_empty() || name.is_empty() {
-                    return Err("appairage sans code ni nom".to_string());
-                }
-                Ok(Question::Pair {
-                    pin: pin.to_string(),
-                    name: name.to_string(),
-                })
-            }
             other => Err(format!("question inconnue « {other} »")),
         }
     }
@@ -949,20 +749,10 @@ impl Told {
         let said = after_the_version(message).map_err(unreadable)?;
         let (verb, rest) = split_first(said);
         match verb {
-            "ports" => {
-                let base: u16 = rest
-                    .parse()
-                    .map_err(|_| unreadable(format!("port « {rest} »")))?;
-                let engine = EnginePorts::new(base)
-                    .map_err(|e: BasePortOutOfRange| unreadable(e.to_string()))?;
-                Ok(Ok(Told::Ports(engine)))
-            }
-            "paired" => Ok(Ok(Told::Paired)),
+            "opened" => Ok(Ok(Told::Opened)),
             "attended" => Ok(Ok(Told::Attended)),
             "hushed" => Ok(Ok(Told::Hushed)),
             "locked" => Ok(Ok(Told::Locked)),
-            "rated" => Ok(Ok(Told::Rated)),
-            "pointerdrawn" => Ok(Ok(Told::PointerDrawn)),
             "screen" => Ok(Ok(Told::Screen {
                 size: match rest {
                     "none" | "" => None,
@@ -979,9 +769,6 @@ impl Told {
                 text: rest.to_string(),
             })),
             "emptied" => Ok(Ok(Told::Emptied)),
-            "codecs" => Ok(Ok(Told::Codecs {
-                named: rest.to_string(),
-            })),
             // A shape this build does not know is the ordinary arrow
             // and never a refusal: the reading cannot fail, and that
             // is on purpose.
@@ -1001,15 +788,7 @@ impl Told {
                     wanted: some_of(wanted, Wanted::read).map_err(unreadable)?,
                 }))
             }
-            "settled" => match rest {
-                "already" => Ok(Ok(Told::Settled {
-                    how: Settled::Already,
-                })),
-                "starting-over" => Ok(Ok(Told::Settled {
-                    how: Settled::StartingOver,
-                })),
-                other => Err(unreadable(format!("« settled {other} » ne dit rien"))),
-            },
+            "filming" => Ok(Ok(Told::Filming)),
             "no" => Ok(Err(rest.to_string())),
             other => Err(unreadable(format!("réponse inconnue « {other} »"))),
         }
@@ -1119,28 +898,14 @@ pub async fn ask(connection: &Connection, question: &Question) -> io::Result<Tol
     }
 }
 
-/// Asks for the far engine's ports, and refuses anything else.
+/// Opens a session on the far computer, which brings its engine up.
 ///
 /// What this session will be served goes with it: it is the first word
-/// of a session, and the far computer sizes its tunnel on it.
-pub async fn ask_the_ports(
-    connection: &Connection,
-    serving: MediaProfile,
-) -> io::Result<EnginePorts> {
-    match ask(connection, &Question::Ports { serving }).await? {
-        Told::Ports(engine) => Ok(engine),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
-    }
-}
-
-/// Hands the far computer the code its engine is waiting for.
-pub async fn ask_to_pair(connection: &Connection, pin: &str, name: &str) -> io::Result<()> {
-    let question = Question::Pair {
-        pin: pin.to_string(),
-        name: name.to_string(),
-    };
-    match ask(connection, &question).await? {
-        Told::Paired => Ok(()),
+/// of a session, and the far computer sizes its tunnel on it. Answered
+/// once that engine is up, or with the reason it could not be.
+pub async fn ask_to_open(connection: &Connection, serving: MediaProfile) -> io::Result<()> {
+    match ask(connection, &Question::Open { serving }).await? {
+        Told::Opened => Ok(()),
         other => Err(unreadable(format!("réponse hors sujet : {other}"))),
     }
 }
@@ -1167,24 +932,6 @@ pub async fn ask_to_hush(connection: &Connection, quiet: bool) -> io::Result<()>
     }
 }
 
-/// Asks the far ZyrDesk's engine to draw its own pointer into the
-/// picture, or to stop drawing it.
-///
-/// Said and never toggled, which is the whole reason it travels here
-/// rather than as the key combination the engine also answers to. A
-/// toggle cannot be read: the one in that engine outlives every session
-/// and is shared by all of them, so a session that ended without putting
-/// it back left the next one turning it the wrong way while believing
-/// the opposite. Said, asking twice for the same thing asks for nothing,
-/// and a session that opens by saying what it wants is right whatever
-/// the one before it did.
-pub async fn ask_to_draw_the_pointer(connection: &Connection, drawn: bool) -> io::Result<()> {
-    match ask(connection, &Question::DrawYourPointer { drawn }).await? {
-        Told::PointerDrawn => Ok(()),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
-    }
-}
-
 /// Asks the far ZyrDesk to put its lock screen up.
 ///
 /// The nearest thing there is to Windows+L on the far computer, and it
@@ -1199,44 +946,12 @@ pub async fn ask_to_lock(connection: &Connection) -> io::Result<()> {
     }
 }
 
-/// Asks the far ZyrDesk to resend a still screen at full rate, or to
-/// stop doing it.
-///
-/// Asked at the opening of every session, and again whenever the person
-/// changes their mind in the middle of one: the far engine takes it where
-/// it stands. An engine that cannot be asked is started over instead, and
-/// an engine starting over in the middle of a session is that session
-/// going: the answer says which of the two happened, exactly as the
-/// screen to film does, and the caller waits and comes back when it is
-/// the second.
-pub async fn ask_to_serve_steady(connection: &Connection, rate: bool) -> io::Result<Settled> {
-    match ask(connection, &Question::Steady { rate }).await? {
-        Told::Settled { how } => Ok(how),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
-    }
-}
-
-/// Asks the far ZyrDesk to serve the picture at that rate from now on.
-///
-/// Asked in the middle of a session and nowhere else: at its opening the
-/// rate travels with the stream, negotiated between the two engines, and
-/// this is the one road to change it afterwards without stopping the
-/// picture. A no is an engine over there that cannot be asked, and the
-/// caller opens its picture again, which is what every change of rate
-/// cost before this existed.
-pub async fn ask_to_serve_at(connection: &Connection, kbps: u32) -> io::Result<()> {
-    match ask(connection, &Question::Bitrate { kbps }).await? {
-        Told::Rated => Ok(()),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
-    }
-}
-
 /// Asks the far ZyrDesk to wake its virtual screen for a picture like
 /// that one, or, with nothing asked for, to leave its own screen alone.
 ///
 /// Answered before the picture is opened and not alongside it: the far
-/// engine has to find that screen, and it can only find one that is
-/// already there.
+/// engine films that screen, and it can only film one that is already
+/// there.
 ///
 /// Answers the size that computer will be showing, which is what makes
 /// « leave it as it is » possible at all: nothing this end knows says
@@ -1312,18 +1027,6 @@ pub async fn ask_to_empty_the_journal(connection: &Connection) -> io::Result<()>
     }
 }
 
-/// Asks the far ZyrDesk which pictures its engine can make.
-///
-/// Asked while a session is open, since that is when it can be acted on:
-/// the answer decides what the menu of that session may offer, and a
-/// codec that computer cannot make has no business being offered.
-pub async fn ask_what_it_can_encode(connection: &Connection) -> io::Result<String> {
-    match ask(connection, &Question::Codecs).await? {
-        Told::Codecs { named } => Ok(named),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
-    }
-}
-
 /// Asks the far ZyrDesk which screens it is showing on.
 ///
 /// Asked while a session is open, since that is when it can be acted on:
@@ -1339,18 +1042,14 @@ pub async fn ask_what_screens_it_has(connection: &Connection) -> io::Result<Stri
 /// Asks the far ZyrDesk to serve its picture from that screen, or, with
 /// nothing named, from its main one.
 ///
-/// Asked at the opening of every session and never in the middle of one.
-/// The far engine reads which screen to film when it starts and never
-/// again, so a change of it starts that engine over, and an engine
-/// starting over takes the tunnel with it: the answer says which of the
-/// two happened, and the caller waits and comes back when it is the
-/// second.
+/// Its engine changes screen where it stands, so this may be asked at
+/// any moment of a session and costs it nothing but the new screen.
 pub async fn ask_to_film_this_screen(
     connection: &Connection,
     id: Option<String>,
-) -> io::Result<Settled> {
+) -> io::Result<()> {
     match ask(connection, &Question::FilmThisScreen { id }).await? {
-        Told::Settled { how } => Ok(how),
+        Told::Filming => Ok(()),
         other => Err(unreadable(format!("réponse hors sujet : {other}"))),
     }
 }
@@ -1398,7 +1097,104 @@ pub async fn ask_for_pieces(
     }
 }
 
-/// Answers whatever the other ZyrDesk asks. Host side.
+/// The first word of a session, heard and not answered yet.
+///
+/// Answered once the engine it asks for is up, or once it is known that
+/// it will not be: the far end waits on this answer, and whatever it
+/// says next goes to that engine.
+pub struct Opening {
+    serving: MediaProfile,
+    answer: SendStream,
+}
+
+impl Opening {
+    /// What the session opening asks to be served.
+    pub fn serving(&self) -> MediaProfile {
+        self.serving
+    }
+
+    /// Tells the far end its session is open.
+    pub async fn opened(self) -> io::Result<()> {
+        say(self.answer, Ok(Told::Opened)).await
+    }
+
+    /// Tells the far end why it is not, in words written to be read.
+    pub async fn refused(self, reason: &str) -> io::Result<()> {
+        say(self.answer, Err(reason.to_string())).await
+    }
+}
+
+/// Answers the far computer until it asks to open a session, and hands
+/// that question back unanswered. Host side.
+///
+/// Most connections never ask: a computer fetching this one's journal
+/// asks for it and goes. Every question is answered on a task of its own,
+/// as it is once the session is open, so a slow one holds up nothing,
+/// and those still being answered when the session opens are answered
+/// all the same.
+///
+/// The engine's own stream has nowhere to go before its engine is up,
+/// and is refused.
+pub async fn until_a_session_opens(
+    connection: &Connection,
+    answering: Arc<dyn Answers>,
+    log: Option<&Log>,
+) -> io::Result<Opening> {
+    let (heard, mut opening) = mpsc::channel(1);
+    loop {
+        tokio::select! {
+            Some(opening) = opening.recv() => return Ok(opening),
+            accepted = connection.accept_stream() => {
+                let (sending, mut receiving) = accepted.map_err(io::Error::other)?;
+                let answering = answering.clone();
+                let heard = heard.clone();
+                let log = log.cloned();
+                tokio::spawn(async move {
+                    let outcome = match pump::read_announcement(&mut receiving).await {
+                        Ok(StreamChannel::ZyrDesk) => {
+                            before_the_opening(sending, receiving, answering, heard).await
+                        }
+                        Ok(StreamChannel::Engine) => Err(io::Error::other(
+                            "le flux du moteur est arrivé avant l'ouverture de la session",
+                        )),
+                        Err(e) => Err(e),
+                    };
+                    if let (Err(e), Some(log)) = (outcome, &log) {
+                        log.write(&format!("a stream before the session opened was refused: {e}"));
+                    }
+                });
+            }
+        }
+    }
+}
+
+/// One question asked before the session opens: the opening itself is
+/// handed back, everything else answered here.
+async fn before_the_opening(
+    sending: SendStream,
+    mut receiving: RecvStream,
+    answering: Arc<dyn Answers>,
+    heard: mpsc::Sender<Opening>,
+) -> io::Result<()> {
+    let said = a_question(&mut receiving).await?;
+    let told = match Question::parse(&said) {
+        Ok(Question::Open { serving }) => {
+            return heard
+                .send(Opening {
+                    serving,
+                    answer: sending,
+                })
+                .await
+                .map_err(|_| io::Error::other("une autre ouverture est déjà en cours"));
+        }
+        Ok(question) => attended(question, answering).await,
+        Err(refusal) => Err(refusal),
+    };
+    say(sending, told).await
+}
+
+/// Answers whatever the other ZyrDesk asks once its session is open.
+/// Host side.
 pub async fn answer(
     sending: SendStream,
     mut receiving: RecvStream,
@@ -1460,25 +1256,18 @@ fn carries_a_page(head: &[u8]) -> bool {
 
 /// Does what was asked, on a thread where waiting is allowed.
 ///
-/// Handing a code to an engine talks to it over the network and waits
-/// for its answer: doing that on the runtime's own threads would hold up
-/// every session this computer is serving.
+/// Most of what is asked starts a program in another Windows session or
+/// reads a disk, and waits for it: doing that on the runtime's own
+/// threads would hold up every session this computer is serving.
 async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Told, String> {
     match question {
-        Question::Ports { serving } => {
-            answering.a_session_is_opening(serving);
-            Ok(Told::Ports(answering.engine()))
-        }
-        Question::Pair { pin, name } => {
-            tokio::task::spawn_blocking(move || answering.hand_over_the_code(&pin, &name))
-                .await
-                .map_err(|e| format!("l'appairage n'a pas pu être mené : {e}"))?
-                .map(|()| Told::Paired)
-        }
-        // Off the thread that carries the tunnel, like the pairing above
-        // and for the same reason: pressing this starts a program in
-        // another Windows session and waits for it, which is a long time
-        // to hold a channel every other session is queueing behind.
+        // A session already stands on this tunnel, with its engine: a
+        // second one would have nowhere to go.
+        Question::Open { .. } => Err("une session est déjà ouverte sur ce tunnel".to_string()),
+        // Off the thread that carries the tunnel: pressing this starts a
+        // program in another Windows session and waits for it, which is a
+        // long time to hold a channel every other session is queueing
+        // behind.
         Question::SecureAttention => {
             tokio::task::spawn_blocking(move || answering.secure_attention())
                 .await
@@ -1500,28 +1289,6 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
             .await
             .map_err(|e| format!("le verrouillage n'a pas pu être mené : {e}"))?
             .map(|()| Told::Locked),
-        // Off the thread as well: saying yes writes a file and asks an
-        // engine over a socket.
-        Question::Steady { rate } => {
-            tokio::task::spawn_blocking(move || answering.serve_steady(rate))
-                .await
-                .map_err(|e| format!("la cadence n'a pas pu être réglée : {e}"))?
-                .map(|how| Told::Settled { how })
-        }
-        // Off it too: the engine is asked over a socket, and waited for.
-        Question::Bitrate { kbps } => tokio::task::spawn_blocking(move || answering.serve_at(kbps))
-            .await
-            .map_err(|e| format!("le débit n'a pas pu être réglé : {e}"))?
-            .map(|()| Told::Rated),
-        // Off the thread as well: it is one call to the engine over the
-        // loopback, short but not instant, and this channel answers
-        // every other question of a session on the same threads.
-        Question::DrawYourPointer { drawn } => {
-            tokio::task::spawn_blocking(move || answering.draw_the_pointer(drawn))
-                .await
-                .map_err(|e| format!("le curseur n'a pas pu être réglé : {e}"))?
-                .map(|()| Told::PointerDrawn)
-        }
         // Off it too, and this one takes the longest of them all: waking
         // a screen is Windows starting a device, and the answer is not
         // sent until it has, because the computer asking opens its
@@ -1557,25 +1324,19 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
         // for the length of a session, and handing each one to another
         // thread would cost more than the answer.
         Question::Pointer => answering.pointer().map(|shape| Told::Pointer { shape }),
-        // And off it as well: the answer is read from what the engine
-        // wrote down when it started, which is a file on a disk.
-        Question::Codecs => tokio::task::spawn_blocking(move || answering.codecs())
-            .await
-            .map_err(|e| format!("les codecs n'ont pas pu être lus : {e}"))?
-            .map(|named| Told::Codecs { named }),
-        // Off it as well, and for the same reason as the codecs: the list
-        // is read from what the engine wrote down when it started.
+        // Off it as well: the list is kept under a lock the engine's own
+        // messages take too.
         Question::Screens => tokio::task::spawn_blocking(move || answering.screens())
             .await
             .map_err(|e| format!("les écrans n'ont pas pu être lus : {e}"))?
             .map(|listed| Told::Screens { listed }),
-        // And off it too: it writes down which screen to film, which the
-        // watch holding the engine reads a moment later.
+        // And off it too: telling the engine may wait for room on its
+        // link.
         Question::FilmThisScreen { id } => {
             tokio::task::spawn_blocking(move || answering.film_this_screen(id))
                 .await
                 .map_err(|e| format!("l'écran à filmer n'a pas pu être choisi : {e}"))?
-                .map(|how| Told::Settled { how })
+                .map(|()| Told::Filming)
         }
         // Off the thread as well: it writes what came down on a disk and
         // reads what is there from another file, and a clip is a page.
@@ -1610,40 +1371,22 @@ async fn say(mut sending: SendStream, told: Result<Told, String>) -> io::Result<
 mod tests {
     use super::*;
 
-    fn ports(base: u16) -> EnginePorts {
-        EnginePorts::new(base).unwrap()
-    }
-
     #[test]
     fn every_question_survives_the_round_trip() {
         for question in [
             // What a session says about itself when opening: that is
             // where the watched computer gets the size of its window
             // from.
-            Question::Ports {
+            Question::Open {
                 serving: MediaProfile {
                     bits_per_second: 80_000_000,
                     frames_per_second: 144,
                 },
             },
-            Question::Pair {
-                pin: "0429".to_string(),
-                // A computer name holds spaces more often than one
-                // would think, and it travels at the end of the
-                // message for that very reason.
-                name: "PC de Victor".to_string(),
-            },
             Question::SecureAttention,
             Question::Hush { quiet: true },
             Question::Hush { quiet: false },
-            Question::DrawYourPointer { drawn: true },
-            Question::DrawYourPointer { drawn: false },
             Question::Lock,
-            Question::Steady { rate: true },
-            Question::Steady { rate: false },
-            // The bitrate is asked for in the middle of a session, in
-            // kilobits per second, as the far engine reads it.
-            Question::Bitrate { kbps: 20_000 },
             // The magnification travels stuck to the size: a screen at
             // the right size without it is someone else's desktop at
             // the right resolution.
@@ -1672,13 +1415,18 @@ mod tests {
             },
             Question::ReachLog,
             Question::EmptyTheJournal,
-            Question::Codecs,
+            Question::Pointer,
             Question::Screens,
             // Nothing named means the main screen, and that is what every
             // session asks for as long as nobody has said otherwise.
             Question::FilmThisScreen { id: None },
             Question::FilmThisScreen {
-                id: Some("{daeac860-f4db-5208-b1f5-cf59444fb768}".to_string()),
+                id: Some(
+                    r"MONITOR\GSM5B7F\{4d36e96e-e325-11ce-bfc1-08002be10318}\0003".to_string(),
+                ),
+            },
+            Question::FilmThisScreen {
+                id: Some(r"\\.\DISPLAY3".to_string()),
             },
             // The clipboard, which is the only question to carry
             // something both ways at once. The four cases are there
@@ -1754,13 +1502,10 @@ mod tests {
     #[test]
     fn every_answer_survives_the_round_trip() {
         for told in [
-            Told::Ports(ports(42000)),
-            Told::Paired,
+            Told::Opened,
             Told::Attended,
             Told::Hushed,
-            Told::PointerDrawn,
             Told::Locked,
-            Told::Rated,
             Told::Screen {
                 size: Some((1920, 1200)),
             },
@@ -1779,29 +1524,20 @@ mod tests {
                 text: "8.8.8.8:53 answered in 8 ms\n8.8.8.8:53 said nothing in 1000 ms".to_string(),
             },
             Told::Emptied,
-            Told::Codecs {
-                named: "H.264 HEVC".to_string(),
-            },
-            // Nothing said is not "none": the two have to cross
-            // the channel without being mistaken for each other.
-            Told::Codecs {
-                named: String::new(),
+            Told::Pointer {
+                shape: zyr_proto::session::Pointer::Text,
             },
             // The list of screens travels whole, one line per screen,
             // like the journal and for the same reason.
             Told::Screens {
-                listed: "{aaa} main 2560x1440 ROG PG279Q\n{bbb} other 1920x1080 Dell U2412M"
+                listed: "MONITOR\\GSM5B7F\\0003 main 2560x1440 ROG PG279Q\n\\\\.\\DISPLAY2 other \
+                         1920x1080 Dell U2412M"
                     .to_string(),
             },
             Told::Screens {
                 listed: String::new(),
             },
-            Told::Settled {
-                how: Settled::Already,
-            },
-            Told::Settled {
-                how: Settled::StartingOver,
-            },
+            Told::Filming,
             // Nothing is not the same thing as an empty clipboard:
             // nothing means "you already have it", and emptying the far
             // one is never asked for.
@@ -1854,7 +1590,7 @@ mod tests {
         // that this test does not start talking about today's version
         // every time one is added.
         let newer = VERSION + 1;
-        let refusal = Question::parse(&format!("{newer} ports")).unwrap_err();
+        let refusal = Question::parse(&format!("{newer} open 20000 60")).unwrap_err();
         assert!(
             refusal.contains(&newer.to_string()) && refusal.contains("version"),
             "{refusal}"
@@ -1866,27 +1602,24 @@ mod tests {
     }
 
     #[test]
-    fn a_pairing_without_a_code_is_refused() {
-        assert!(Question::parse(&format!("{VERSION} pair")).is_err());
-        assert!(Question::parse(&format!("{VERSION} pair 0429")).is_err());
-    }
-
-    #[test]
-    fn a_rate_that_is_not_a_number_is_refused() {
-        // An unreadable bitrate must not become zero, which would mean "the
-        // one the stream negotiated": it is refused, saying why.
-        for said in ["bitrate", "bitrate beaucoup", "bitrate -5"] {
+    fn an_opening_that_does_not_say_what_it_asks_for_is_refused() {
+        // A rate that will not read must not become nought, which would
+        // size the far computer's window on nothing: it is refused,
+        // saying why.
+        for said in ["open", "open 20000", "open beaucoup 60", "open -5 60"] {
             let refusal = Question::parse(&format!("{VERSION} {said}")).unwrap_err();
-            assert!(refusal.contains("débit"), "sur « {said} » : {refusal}");
+            assert!(refusal.contains("session"), "sur « {said} » : {refusal}");
         }
     }
 
     #[test]
-    fn a_port_outside_the_engine_range_is_refused() {
-        // A wrong port would send the client's local ports anywhere
-        // at all: better to say so than to open them and wait.
-        assert!(Told::parse(&format!("{VERSION} ports 80")).is_err());
-        assert!(Told::parse(&format!("{VERSION} ports pas-un-nombre")).is_err());
+    fn the_questions_of_the_engines_that_are_gone_are_refused() {
+        // A client of the previous dialect is stopped by the version
+        // first; these are what a client of this one could never say.
+        for said in ["ports 20000 60", "pair 0429 PC", "bitrate 20000", "codecs"] {
+            let refusal = Question::parse(&format!("{VERSION} {said}")).unwrap_err();
+            assert!(refusal.contains("question inconnue"), "{refusal}");
+        }
     }
 
     #[test]

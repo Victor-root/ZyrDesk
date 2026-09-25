@@ -85,10 +85,10 @@ mod tests {
 
     #[test]
     fn an_empty_payload_stays_carriable() {
-        let frame = encode(DatagramChannel::Control, &[]);
+        let frame = encode(DatagramChannel::Audio, &[]);
         assert_eq!(
             decode(&frame).unwrap(),
-            Landed::Channel(DatagramChannel::Control, [].as_slice())
+            Landed::Channel(DatagramChannel::Audio, [].as_slice())
         );
     }
 
@@ -101,6 +101,7 @@ mod tests {
     fn malformed_frames_are_refused() {
         assert_eq!(decode(&[]), Err(FrameError::Empty));
         assert!(matches!(decode(&[4, 1, 2]), Err(FrameError::Channel(_))));
+        assert!(matches!(decode(&[2, 1, 2]), Err(FrameError::Channel(_))));
         assert!(matches!(decode(&[99]), Err(FrameError::Channel(_))));
     }
 }

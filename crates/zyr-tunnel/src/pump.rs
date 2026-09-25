@@ -1,265 +1,112 @@
-//! Moving bytes between the engines and the tunnel.
+//! Moving bytes between the local link and the tunnel.
 //!
-//! This module does not know which side it sits on. It moves bytes
-//! between a local endpoint, which talks to an engine over loopback, and
-//! the encrypted connection. Both ends of the tunnel use it under the
-//! same rules; only the assembly differs.
+//! This module does not know which side it sits on. It moves what one
+//! engine's link carries to and from the encrypted connection, under the
+//! same rules on both ends of the tunnel: the control stream rides the
+//! engine's reliable stream, the picture and the sound ride datagrams,
+//! in whichever direction they come, and the service's own words go to
+//! the service. Only the assembly differs.
 
 use std::io;
-use std::net::SocketAddr;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use socket2::{Domain, Protocol, Socket, Type};
-use tokio::io::AsyncWriteExt;
-use tokio::net::{TcpStream, UdpSocket};
-use zyr_proto::net::EnginePorts;
-use zyr_transport::{Connection, DatagramError, RecvStream, SendStream};
+use tokio::sync::mpsc;
+use zyr_control::link::{Channel, LinkReader, LinkWriter};
+use zyr_transport::{Bytes, Connection, DatagramError, RecvStream, SendStream};
 
 use crate::channel::{DatagramChannel, StreamChannel};
 use crate::frame;
+use crate::queue::DatagramQueue;
+use crate::service::ServiceSide;
 
-/// No UDP datagram can be larger than this.
+/// Largest piece of the engine's stream handed over in one frame.
 ///
-/// The buffer is sized never to truncate: a truncation would pass for a
-/// valid packet and silently corrupt the stream.
-const BUFFER: usize = 65_535;
+/// The control stream carries small messages, a few dozen bytes each; a
+/// piece this size is several of them read at once, far under what one
+/// frame of the link may carry.
+const PIECE: usize = 64 * 1024;
 
-/// Buffers we ask the sockets that talk to the engine for.
+/// Control messages that may wait, in each direction, for the other end
+/// to take them.
 ///
-/// The system default, often 64 KiB, is only about ten milliseconds of
-/// video at a common rate: the pump being starved of CPU for the length
-/// of one preemption is enough for the kernel to drop packets. It does
-/// so silently, with neither the tunnel nor the transport able to count
-/// it, which makes that loss particularly painful to diagnose. Four
-/// mebibytes comfortably cover a scheduling hiccup.
-const SOCKET_BUFFER: usize = 4 * 1024 * 1024;
+/// Reliable, so never dropped: a full queue makes whoever feeds it wait,
+/// which only happens to a session whose other end has stopped reading.
+pub(crate) const CONTROL_WAITING: usize = 256;
 
-/// Consecutive failures one channel puts up with before giving up.
-///
-/// A datagram lost to a passing system hiccup must not end a session,
-/// and a socket that has genuinely broken must not spin forever.
-const TOLERATED_FAILURES: u32 = 64;
-
-/// Opens a UDP socket sized for a video stream.
-///
-/// The system may grant only part of what is asked, or refuse: it then
-/// keeps its own value, which stays usable.
-///
-/// To be called from a running async runtime: the socket has to register
-/// with it to be watched.
-pub fn open_socket(address: SocketAddr) -> io::Result<UdpSocket> {
-    let domain = match address {
-        SocketAddr::V4(_) => Domain::IPV4,
-        SocketAddr::V6(_) => Domain::IPV6,
-    };
-    let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
-    let _ = socket.set_recv_buffer_size(SOCKET_BUFFER);
-    let _ = socket.set_send_buffer_size(SOCKET_BUFFER);
-    socket.set_nonblocking(true)?;
-    ignore_unreachable_reports(&socket)?;
-    socket.bind(&address.into())?;
-    UdpSocket::from_std(socket.into())
-}
-
-/// Stops Windows from failing a receive because of an earlier send.
-///
-/// Sending a datagram to a port nobody listens on draws an ICMP reply,
-/// and Windows hands that back as an error on the *next* receive, on a
-/// socket which is otherwise perfectly fine. The engine only opens its
-/// media ports once the session negotiation is over, so the first
-/// packets the tunnel relays necessarily land nowhere: without this, the
-/// pump dies in the middle of the handshake and takes the session with
-/// it. Every other system keeps those reports away from an unconnected
-/// socket; this asks Windows to do the same.
-#[cfg(windows)]
-fn ignore_unreachable_reports(socket: &Socket) -> io::Result<()> {
-    use std::os::windows::io::AsRawSocket;
-    use windows_sys::Win32::Networking::WinSock::{SIO_UDP_CONNRESET, SOCKET, WSAIoctl};
-
-    let report: u32 = 0;
-    let mut answered: u32 = 0;
-    // Safe: the socket is ours and open, and the value read from lives
-    // until the call returns.
-    let outcome = unsafe {
-        WSAIoctl(
-            socket.as_raw_socket() as SOCKET,
-            SIO_UDP_CONNRESET,
-            (&raw const report).cast(),
-            size_of::<u32>() as u32,
-            std::ptr::null_mut(),
-            0,
-            &mut answered,
-            std::ptr::null_mut(),
-            None,
-        )
-    };
-    if outcome != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
-}
-
-#[cfg(not(windows))]
-fn ignore_unreachable_reports(_socket: &Socket) -> io::Result<()> {
-    Ok(())
-}
-
-/// Tunnel counters, read by the measurement bench.
+/// Tunnel counters, read by the watch over a session and by the bench.
 #[derive(Debug, Default)]
 pub struct Counters {
     to_tunnel: AtomicU64,
-    to_engine: AtomicU64,
+    to_link: AtomicU64,
+    control_to_tunnel: AtomicU64,
+    control_to_link: AtomicU64,
     too_large: AtomicU64,
     crowded: AtomicU64,
+    crowded_here: AtomicU64,
     no_recipient: AtomicU64,
     unreadable: AtomicU64,
     refused: AtomicU64,
+    service_dropped: AtomicU64,
 }
 
 /// Snapshot of the counters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Reading {
+    /// Datagrams off the link, handed to the connection.
     pub to_tunnel: u64,
-    pub to_engine: u64,
-    /// Packets refused for exceeding what the path accepts. Anything but
-    /// zero means the packet size asked of the engine is too big for the
-    /// path.
+    /// Datagrams off the connection, written onto the link.
+    pub to_link: u64,
+    /// Pieces of the engine's control stream sent into the tunnel.
+    pub control_to_tunnel: u64,
+    /// Pieces of the engine's control stream written onto the link.
+    pub control_to_link: u64,
+    /// Datagrams refused for exceeding what the path accepts. Anything
+    /// but zero means the engine packs more than the tunnel told it the
+    /// path takes.
     pub too_large: u64,
-    /// Packets handed to a send queue that had no room left for them.
+    /// Datagrams handed to a send queue that had no room left for them.
     /// The transport took each of them by throwing an older one away,
     /// silently: this is the count of those holes in the picture.
     pub crowded: u64,
-    /// Packets that arrived for a channel the local engine has not yet
-    /// spoken on.
+    /// Datagrams thrown away on this side, the oldest first, because
+    /// whoever is at the other end of the link was not taking them fast
+    /// enough.
+    pub crowded_here: u64,
+    /// Datagrams that arrived before anybody was at the other end of the
+    /// link to take them.
     pub no_recipient: u64,
     /// Datagrams whose header names no known channel.
     pub unreadable: u64,
-    /// Packets the system refused to hand over or to send. A few at the
-    /// start of a session are normal: the engine has not opened its
-    /// media ports yet.
+    /// Streams turned away: a second engine stream, or one that never
+    /// said what it was.
     pub refused: u64,
+    /// Service messages the service did not take in time.
+    pub service_dropped: u64,
 }
 
 impl Counters {
-    fn bump(counter: &AtomicU64) {
+    pub(crate) fn bump(counter: &AtomicU64) {
         counter.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn refused(&self) {
+        Self::bump(&self.refused);
     }
 
     pub fn reading(&self) -> Reading {
         Reading {
             to_tunnel: self.to_tunnel.load(Ordering::Relaxed),
-            to_engine: self.to_engine.load(Ordering::Relaxed),
+            to_link: self.to_link.load(Ordering::Relaxed),
+            control_to_tunnel: self.control_to_tunnel.load(Ordering::Relaxed),
+            control_to_link: self.control_to_link.load(Ordering::Relaxed),
             too_large: self.too_large.load(Ordering::Relaxed),
             crowded: self.crowded.load(Ordering::Relaxed),
+            crowded_here: self.crowded_here.load(Ordering::Relaxed),
             no_recipient: self.no_recipient.load(Ordering::Relaxed),
             unreadable: self.unreadable.load(Ordering::Relaxed),
             refused: self.refused.load(Ordering::Relaxed),
+            service_dropped: self.service_dropped.load(Ordering::Relaxed),
         }
-    }
-}
-
-/// UDP end of one channel: the engine on one side, the tunnel on the other.
-#[derive(Debug)]
-pub struct EnginePort {
-    socket: UdpSocket,
-    /// Where to reach the engine.
-    engine: Mutex<Option<SocketAddr>>,
-    /// On the client side the engine picks its source port and may
-    /// change it from one session to the next, so the address is read
-    /// again on every packet. On the host side it is fixed by the
-    /// engine's listening port and never moves.
-    follows_the_source: bool,
-}
-
-impl EnginePort {
-    /// Host-side end: the engine listens at a known address.
-    pub fn towards_engine(engine: SocketAddr) -> io::Result<Self> {
-        let socket = open_socket(SocketAddr::new(engine.ip(), 0))?;
-        Ok(Self {
-            socket,
-            engine: Mutex::new(Some(engine)),
-            follows_the_source: false,
-        })
-    }
-
-    /// Client-side end: the engine comes to us, on the port it believes
-    /// belongs to the remote host.
-    pub fn from_engine(listen: SocketAddr) -> io::Result<Self> {
-        let socket = open_socket(listen)?;
-        Ok(Self {
-            socket,
-            engine: Mutex::new(None),
-            follows_the_source: true,
-        })
-    }
-
-    pub fn local_address(&self) -> io::Result<SocketAddr> {
-        self.socket.local_addr()
-    }
-
-    fn destination(&self) -> Option<SocketAddr> {
-        *self.engine.lock().expect("engine address lock")
-    }
-
-    /// Waits for a packet from the engine.
-    pub async fn receive(&self, buffer: &mut [u8]) -> io::Result<usize> {
-        let (read, source) = self.socket.recv_from(buffer).await?;
-        if self.follows_the_source {
-            *self.engine.lock().expect("engine address lock") = Some(source);
-        }
-        Ok(read)
-    }
-
-    /// Hands the engine what came out of the tunnel.
-    ///
-    /// Returns `false` when the engine has not spoken on this channel
-    /// yet: there is then nobody to hand the packet to.
-    pub async fn send(&self, payload: &[u8]) -> io::Result<bool> {
-        let Some(destination) = self.destination() else {
-            return Ok(false);
-        };
-        self.socket.send_to(payload, destination).await?;
-        Ok(true)
-    }
-}
-
-/// The three UDP ends of one side of the tunnel.
-///
-/// Built together so each channel necessarily lands on the right engine
-/// port.
-#[derive(Debug)]
-pub struct DatagramPorts([EnginePort; DatagramChannel::ALL.len()]);
-
-impl DatagramPorts {
-    /// Host side: each channel talks to the matching engine port.
-    pub fn towards_engine(engine: std::net::IpAddr, ports: EnginePorts) -> io::Result<Self> {
-        Self::bring_up(ports, |port| {
-            EnginePort::towards_engine(SocketAddr::new(engine, port))
-        })
-    }
-
-    /// Client side: each channel listens where the engine believes the
-    /// host to be.
-    pub fn from_engine(listen: std::net::IpAddr, ports: EnginePorts) -> io::Result<Self> {
-        Self::bring_up(ports, |port| {
-            EnginePort::from_engine(SocketAddr::new(listen, port))
-        })
-    }
-
-    fn bring_up(
-        ports: EnginePorts,
-        mut open: impl FnMut(u16) -> io::Result<EnginePort>,
-    ) -> io::Result<Self> {
-        let mut opened = Vec::with_capacity(DatagramChannel::ALL.len());
-        for channel in DatagramChannel::ALL {
-            opened.push(open(channel.port(ports))?);
-        }
-        Ok(Self(opened.try_into().expect("one port per known channel")))
-    }
-
-    pub fn port(&self, channel: DatagramChannel) -> &EnginePort {
-        &self.0[channel.rank()]
     }
 }
 
@@ -279,76 +126,6 @@ pub async fn read_announcement(receiving: &mut RecvStream) -> io::Result<StreamC
     StreamChannel::from_identifier(head[0]).map_err(io::Error::other)
 }
 
-/// Moves bytes between a local connection and a tunnel stream.
-///
-/// Each direction stops at its own end of stream without cutting the
-/// other: an engine that has finished talking is still waiting for the
-/// answer.
-pub async fn relay_stream(
-    mut local: TcpStream,
-    mut sending: SendStream,
-    mut receiving: RecvStream,
-) -> io::Result<()> {
-    let (mut local_read, mut local_write) = local.split();
-
-    let upward = async {
-        tokio::io::copy(&mut local_read, &mut sending).await?;
-        sending.shutdown().await
-    };
-    let downward = async {
-        tokio::io::copy(&mut receiving, &mut local_write).await?;
-        local_write.shutdown().await
-    };
-
-    tokio::try_join!(upward, downward)?;
-    Ok(())
-}
-
-/// Carries into the tunnel everything the engine sends on one channel.
-pub async fn collect_datagrams(
-    channel: DatagramChannel,
-    port: &EnginePort,
-    connection: &Connection,
-    counters: &Counters,
-) -> io::Result<()> {
-    let mut buffer = vec![0u8; BUFFER];
-    let mut failures = 0;
-    loop {
-        // A refused packet concerns that packet alone. Ending the pump
-        // here would end the whole session, video and all, over one
-        // datagram the system did not want.
-        let read = match port.receive(&mut buffer).await {
-            Ok(read) => {
-                failures = 0;
-                read
-            }
-            Err(e) => {
-                Counters::bump(&counters.refused);
-                failures += 1;
-                if failures > TOLERATED_FAILURES {
-                    return Err(e);
-                }
-                continue;
-            }
-        };
-        let framed = frame::encode(channel, &buffer[..read]);
-        // Asked before handing over rather than deduced afterwards: the
-        // transport makes room by throwing the oldest away and says
-        // nothing, so this is the only moment that loss can be counted.
-        if connection.send_queue_room() < framed.len() {
-            Counters::bump(&counters.crowded);
-        }
-        match connection.send_datagram(framed.into()) {
-            Ok(()) => Counters::bump(&counters.to_tunnel),
-            // The path narrowed since the packet size was asked of the
-            // engine. Dropping beats fragmenting: the video protocol's
-            // error correction exists for this.
-            Err(DatagramError::TooLarge) => Counters::bump(&counters.too_large),
-            Err(e) => return Err(io::Error::other(e)),
-        }
-    }
-}
-
 /// Sends a datagram carrying nothing, only to have it acknowledged.
 ///
 /// A road the junction switches to is invisible to the connection above
@@ -364,20 +141,183 @@ pub fn nudge(connection: &Connection) -> io::Result<()> {
         .map_err(io::Error::other)
 }
 
-/// Hands the engines the datagrams that come out of the tunnel.
+/// Everything between one link and the connection, until either ends.
 ///
-/// One reader for the three channels: a connection's datagrams arrive
-/// through a single queue, and the header says whom to give them to.
-pub async fn distribute_datagrams(
+/// The link closing is the ordinary end of a session; the engine's
+/// stream ending is the other side's. The three halves run in one task,
+/// so that the moment one of them stops, the link is let go of with
+/// them.
+pub(crate) async fn between(
+    link: zyr_control::link::Link,
+    engine_stream: impl Future<Output = io::Result<(SendStream, RecvStream)>>,
     connection: &Connection,
-    ports: &DatagramPorts,
+    datagrams: &DatagramQueue,
+    service: ServiceSide,
     counters: &Counters,
 ) -> io::Result<()> {
-    let mut failures = 0;
+    let (reader, writer) = link.split();
+    let ServiceSide { outgoing, incoming } = service;
+    let (towards_the_stream, from_the_link) = mpsc::channel(CONTROL_WAITING);
+    let (towards_the_link, from_the_stream) = mpsc::channel(CONTROL_WAITING);
+    tokio::select! {
+        read = off_the_link(reader, &towards_the_stream, connection, &incoming, counters) => read,
+        written = onto_the_link(writer, from_the_stream, datagrams, outgoing, counters) => written,
+        carried = along_the_stream(engine_stream, &towards_the_link, from_the_link, counters) => carried,
+    }
+}
+
+/// Hands every frame the link carries to where it belongs.
+async fn off_the_link(
+    mut reader: LinkReader,
+    towards_the_stream: &mpsc::Sender<Bytes>,
+    connection: &Connection,
+    service: &mpsc::Sender<Bytes>,
+    counters: &Counters,
+) -> io::Result<()> {
+    while let Some((channel, payload)) = reader.next().await? {
+        match channel {
+            Channel::Control => towards_the_stream
+                .send(payload)
+                .await
+                .map_err(|_| io::Error::other("le flux du moteur s'est fermé"))?,
+            // Never waited for: a service that stopped reading must not
+            // hold up the picture travelling on the same link.
+            Channel::Service => {
+                if service.try_send(payload).is_err() {
+                    Counters::bump(&counters.service_dropped);
+                }
+            }
+            Channel::Video | Channel::Audio => {
+                if let Some(datagram) = DatagramChannel::off_the_link(channel) {
+                    into_the_tunnel(datagram, &payload, connection, counters)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Hands one datagram of the link to the connection.
+fn into_the_tunnel(
+    channel: DatagramChannel,
+    payload: &[u8],
+    connection: &Connection,
+    counters: &Counters,
+) -> io::Result<()> {
+    let framed = frame::encode(channel, payload);
+    // Asked before handing over rather than deduced afterwards: the
+    // transport makes room by throwing the oldest away and says nothing,
+    // so this is the only moment that loss can be counted.
+    if connection.send_queue_room() < framed.len() {
+        Counters::bump(&counters.crowded);
+    }
+    match connection.send_datagram(framed.into()) {
+        Ok(()) => Counters::bump(&counters.to_tunnel),
+        // The path narrowed below what the engine was told it takes.
+        // Dropping beats fragmenting: the picture's own error correction
+        // exists for this.
+        Err(DatagramError::TooLarge) => Counters::bump(&counters.too_large),
+        Err(e) => return Err(io::Error::other(e)),
+    }
+    Ok(())
+}
+
+/// Writes onto the link what comes for it: the control stream first,
+/// then the service, then the datagrams.
+///
+/// What the service said before the tunnel was up goes before anything
+/// else, which is what lets the service speak first on a link it hands
+/// over.
+async fn onto_the_link(
+    mut writer: LinkWriter,
+    mut from_the_stream: mpsc::Receiver<Bytes>,
+    datagrams: &DatagramQueue,
+    mut service: mpsc::Receiver<Vec<u8>>,
+    counters: &Counters,
+) -> io::Result<()> {
+    while let Ok(said) = service.try_recv() {
+        writer.send(Channel::Service, &said).await?;
+    }
+    loop {
+        tokio::select! {
+            biased;
+            Some(piece) = from_the_stream.recv() => {
+                writer.send(Channel::Control, &piece).await?;
+                Counters::bump(&counters.control_to_link);
+            }
+            Some(said) = service.recv() => writer.send(Channel::Service, &said).await?,
+            (channel, payload) = datagrams.pop() => {
+                writer.send(channel.on_the_link(), &payload).await?;
+                Counters::bump(&counters.to_link);
+            }
+        }
+    }
+}
+
+/// Carries the engine's control stream both ways, once it exists.
+///
+/// Until then, what the link says on it waits in its queue: nothing of a
+/// reliable stream is ever dropped.
+async fn along_the_stream(
+    engine_stream: impl Future<Output = io::Result<(SendStream, RecvStream)>>,
+    towards_the_link: &mpsc::Sender<Bytes>,
+    from_the_link: mpsc::Receiver<Bytes>,
+    counters: &Counters,
+) -> io::Result<()> {
+    let (sending, receiving) = engine_stream.await?;
+    tokio::select! {
+        read = stream_to_link(receiving, towards_the_link) => read,
+        written = link_to_stream(sending, from_the_link, counters) => written,
+    }
+}
+
+/// The far end's control stream, piece by piece, towards the link. Its
+/// end is the far end leaving.
+async fn stream_to_link(
+    mut receiving: RecvStream,
+    towards_the_link: &mpsc::Sender<Bytes>,
+) -> io::Result<()> {
+    while let Some(piece) = receiving
+        .read_chunk(PIECE, true)
+        .await
+        .map_err(io::Error::other)?
+    {
+        towards_the_link
+            .send(piece.bytes)
+            .await
+            .map_err(|_| io::Error::other("le lien s'est fermé"))?;
+    }
+    Ok(())
+}
+
+async fn link_to_stream(
+    mut sending: SendStream,
+    mut from_the_link: mpsc::Receiver<Bytes>,
+    counters: &Counters,
+) -> io::Result<()> {
+    while let Some(piece) = from_the_link.recv().await {
+        sending.write_all(&piece).await.map_err(io::Error::other)?;
+        Counters::bump(&counters.control_to_tunnel);
+    }
+    Ok(())
+}
+
+/// Hands the link the datagrams that come out of the tunnel.
+///
+/// Never waits on the link: what comes off the connection is queued,
+/// and the queue throws the oldest away when whoever reads the link
+/// falls behind. Before anybody is at the other end of the link, there
+/// is nobody to hand anything to.
+pub(crate) async fn out_of_the_tunnel(
+    connection: &Connection,
+    datagrams: &DatagramQueue,
+    somebody_there: &AtomicBool,
+    counters: &Counters,
+) -> io::Result<()> {
     loop {
         let received = connection.read_datagram().await.map_err(io::Error::other)?;
-        let (channel, payload) = match frame::decode(&received) {
-            Ok(frame::Landed::Channel(channel, payload)) => (channel, payload),
+        let channel = match frame::decode(&received) {
+            Ok(frame::Landed::Channel(channel, _)) => channel,
             // Asked for nothing, and its arrival was the whole point.
             Ok(frame::Landed::Nudge) => continue,
             Err(_) => {
@@ -385,109 +325,11 @@ pub async fn distribute_datagrams(
                 continue;
             }
         };
-        // The engine opens its media ports late: the first packets of a
-        // session are handed to nobody, and on some systems that is
-        // reported as an error. It concerns one packet, never the
-        // session.
-        match ports.port(channel).send(payload).await {
-            Ok(true) => {
-                failures = 0;
-                Counters::bump(&counters.to_engine);
-            }
-            Ok(false) => Counters::bump(&counters.no_recipient),
-            Err(e) => {
-                Counters::bump(&counters.refused);
-                failures += 1;
-                if failures > TOLERATED_FAILURES {
-                    return Err(e);
-                }
-            }
+        if !somebody_there.load(Ordering::Relaxed) {
+            Counters::bump(&counters.no_recipient);
+            continue;
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn local(port: u16) -> SocketAddr {
-        SocketAddr::from(([127, 0, 0, 1], port))
-    }
-
-    #[tokio::test]
-    async fn the_engine_sockets_can_absorb_a_burst() {
-        // The system may trim what we ask for, but it must not stay at
-        // an ordinary socket's default: a burst of frames would swamp
-        // it, and packets lost there are counted nowhere.
-        let socket = open_socket(local(0)).unwrap();
-        let raw = Socket::from(socket.into_std().unwrap());
-        assert!(
-            raw.recv_buffer_size().unwrap() >= 128 * 1024,
-            "receive buffer of {} bytes",
-            raw.recv_buffer_size().unwrap()
-        );
-    }
-
-    #[tokio::test]
-    async fn a_host_side_port_targets_the_engine_without_waiting() {
-        let engine = UdpSocket::bind(local(0)).await.unwrap();
-        let address = engine.local_addr().unwrap();
-
-        let port = EnginePort::towards_engine(address).unwrap();
-        assert!(port.send(b"ping").await.unwrap());
-
-        let mut received = [0u8; 16];
-        let (read, _) = engine.recv_from(&mut received).await.unwrap();
-        assert_eq!(&received[..read], b"ping");
-    }
-
-    #[tokio::test]
-    async fn a_client_side_port_waits_for_the_engine_to_speak_first() {
-        let port = EnginePort::from_engine(local(0)).unwrap();
-        let address = port.local_address().unwrap();
-
-        // Nothing has arrived yet: there is nobody to answer.
-        assert!(!port.send(b"frame").await.unwrap());
-
-        let engine = UdpSocket::bind(local(0)).await.unwrap();
-        engine.send_to(b"ping", address).await.unwrap();
-
-        let mut received = [0u8; 16];
-        assert_eq!(port.receive(&mut received).await.unwrap(), 4);
-        assert!(port.send(b"frame").await.unwrap());
-
-        let (read, _) = engine.recv_from(&mut received).await.unwrap();
-        assert_eq!(&received[..read], b"frame");
-    }
-
-    #[tokio::test]
-    async fn a_client_side_port_follows_an_engine_that_changes_source() {
-        let port = EnginePort::from_engine(local(0)).unwrap();
-        let address = port.local_address().unwrap();
-        let mut received = [0u8; 16];
-
-        let first = UdpSocket::bind(local(0)).await.unwrap();
-        first.send_to(b"a", address).await.unwrap();
-        port.receive(&mut received).await.unwrap();
-
-        // New engine session, new source port. The answers must follow,
-        // or they leave towards a dead port.
-        let second = UdpSocket::bind(local(0)).await.unwrap();
-        second.send_to(b"b", address).await.unwrap();
-        port.receive(&mut received).await.unwrap();
-
-        port.send(b"frame").await.unwrap();
-        let (read, _) = second.recv_from(&mut received).await.unwrap();
-        assert_eq!(&received[..read], b"frame");
-    }
-
-    #[tokio::test]
-    async fn each_channel_lands_on_the_expected_engine_port() {
-        let ports = EnginePorts::new(42500).unwrap();
-        let opened = DatagramPorts::from_engine([127, 0, 0, 1].into(), ports).unwrap();
-        for channel in DatagramChannel::ALL {
-            let bound = opened.port(channel).local_address().unwrap().port();
-            assert_eq!(bound, channel.port(ports));
-        }
+        let dropped = datagrams.push(channel, received.slice(1..));
+        counters.crowded_here.fetch_add(dropped, Ordering::Relaxed);
     }
 }

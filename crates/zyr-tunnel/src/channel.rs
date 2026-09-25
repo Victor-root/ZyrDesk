@@ -1,25 +1,20 @@
-//! The engines' streams, and how they are told apart inside the tunnel.
+//! What travels inside the tunnel, and how each kind is told apart.
 //!
-//! The engines talk over seven ports: four in TCP, three in UDP. The
-//! tunnel carries them all inside a single connection, which leaves one
-//! port to open in a firewall and one path to establish.
+//! Two natures of traffic, kept apart exactly as they are. The engine's
+//! control stream needs everything to arrive, in order: it takes one
+//! reliable stream. The picture and the sound are worth nothing late:
+//! they take datagrams, never retransmitted, which is what keeps a lost
+//! packet from holding up every packet behind it.
 //!
-//! The distinction between the two natures of traffic is kept exactly as
-//! it is. The TCP streams carry negotiation and pairing: they need
-//! everything to arrive, in order, so they take reliable streams. The
-//! UDP streams carry video, audio and inputs: a late frame is worth
-//! nothing, so they take datagrams, never retransmitted. Putting them
-//! through a reliable stream would add retransmissions and head-of-line
-//! blocking, exactly what the engines' protocol has always avoided.
+//! ZyrDesk's own questions take a reliable stream each, beside the
+//! engine's.
 
-use zyr_proto::net::EnginePorts;
+use zyr_control::link::Channel;
 
 /// Real-time streams, carried as unreliable datagrams.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DatagramChannel {
     Video,
-    /// Keyboard and mouse inputs, and session state feedback.
-    Control,
     Audio,
 }
 
@@ -36,116 +31,77 @@ impl std::fmt::Display for UnknownChannel {
 impl std::error::Error for UnknownChannel {}
 
 impl DatagramChannel {
-    pub const ALL: [DatagramChannel; 3] = [
-        DatagramChannel::Video,
-        DatagramChannel::Control,
-        DatagramChannel::Audio,
-    ];
+    pub const ALL: [DatagramChannel; 2] = [DatagramChannel::Video, DatagramChannel::Audio];
 
-    /// Leading byte that names the channel inside a datagram.
+    /// Leading byte that names the channel inside a datagram. The same
+    /// number as the link's own channel, so a datagram changes carrier
+    /// and never its name.
     pub fn identifier(self) -> u8 {
         match self {
             DatagramChannel::Video => 1,
-            DatagramChannel::Control => 2,
             DatagramChannel::Audio => 3,
-        }
-    }
-
-    /// Place of the channel in `ALL`, to hold one thing per channel.
-    pub fn rank(self) -> usize {
-        match self {
-            DatagramChannel::Video => 0,
-            DatagramChannel::Control => 1,
-            DatagramChannel::Audio => 2,
         }
     }
 
     pub fn from_identifier(byte: u8) -> Result<Self, UnknownChannel> {
         match byte {
             1 => Ok(DatagramChannel::Video),
-            2 => Ok(DatagramChannel::Control),
             3 => Ok(DatagramChannel::Audio),
             other => Err(UnknownChannel(other)),
         }
     }
 
-    /// Engine port this channel corresponds to.
-    pub fn port(self, ports: EnginePorts) -> u16 {
+    /// The channel of the local link these datagrams travel on.
+    pub fn on_the_link(self) -> Channel {
         match self {
-            DatagramChannel::Video => ports.video(),
-            DatagramChannel::Control => ports.control(),
-            DatagramChannel::Audio => ports.audio(),
+            DatagramChannel::Video => Channel::Video,
+            DatagramChannel::Audio => Channel::Audio,
         }
     }
 
-    pub fn from_port(port: u16, ports: EnginePorts) -> Option<Self> {
-        Self::ALL.into_iter().find(|c| c.port(ports) == port)
+    /// The datagram channel a frame of the local link belongs to, when
+    /// it is one of them.
+    pub fn off_the_link(channel: Channel) -> Option<Self> {
+        match channel {
+            Channel::Video => Some(DatagramChannel::Video),
+            Channel::Audio => Some(DatagramChannel::Audio),
+            Channel::Control | Channel::Service => None,
+        }
     }
 }
 
 /// Reliable streams, carried as ordered streams.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StreamChannel {
-    /// Discovery and start of pairing, in the clear on the engine side.
-    EngineHttp,
-    /// Pairing and session control, encrypted on the engine side.
-    EngineHttps,
-    /// Session negotiation.
-    Rtsp,
-    /// ZyrDesk's own channel: versions, pairing code, clipboard,
-    /// statistics.
+    /// The engine's control stream, between the player and the engine:
+    /// one per session, opened by the side watching.
+    Engine,
+    /// ZyrDesk's own channel: one question per stream.
     ZyrDesk,
 }
 
 impl StreamChannel {
-    pub const ALL: [StreamChannel; 4] = [
-        StreamChannel::EngineHttp,
-        StreamChannel::EngineHttps,
-        StreamChannel::Rtsp,
-        StreamChannel::ZyrDesk,
-    ];
+    pub const ALL: [StreamChannel; 2] = [StreamChannel::Engine, StreamChannel::ZyrDesk];
 
     pub fn identifier(self) -> u8 {
         match self {
-            StreamChannel::EngineHttp => 1,
-            StreamChannel::EngineHttps => 2,
-            StreamChannel::Rtsp => 3,
+            StreamChannel::Engine => 1,
             StreamChannel::ZyrDesk => 4,
         }
     }
 
     pub fn from_identifier(byte: u8) -> Result<Self, UnknownChannel> {
         match byte {
-            1 => Ok(StreamChannel::EngineHttp),
-            2 => Ok(StreamChannel::EngineHttps),
-            3 => Ok(StreamChannel::Rtsp),
+            1 => Ok(StreamChannel::Engine),
             4 => Ok(StreamChannel::ZyrDesk),
             other => Err(UnknownChannel(other)),
         }
-    }
-
-    /// Engine port, except for ZyrDesk's own channel.
-    pub fn port(self, ports: EnginePorts) -> Option<u16> {
-        match self {
-            StreamChannel::EngineHttp => Some(ports.http()),
-            StreamChannel::EngineHttps => Some(ports.https()),
-            StreamChannel::Rtsp => Some(ports.rtsp()),
-            StreamChannel::ZyrDesk => None,
-        }
-    }
-
-    pub fn from_port(port: u16, ports: EnginePorts) -> Option<Self> {
-        Self::ALL.into_iter().find(|c| c.port(ports) == Some(port))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn ports() -> EnginePorts {
-        EnginePorts::new(42000).unwrap()
-    }
 
     #[test]
     fn the_datagram_identifiers_make_the_round_trip() {
@@ -164,77 +120,30 @@ mod tests {
     }
 
     #[test]
-    fn no_identifier_is_shared() {
-        let mut seen: Vec<u8> = DatagramChannel::ALL
-            .iter()
-            .map(|c| c.identifier())
-            .collect();
-        seen.sort_unstable();
-        seen.dedup();
-        assert_eq!(seen.len(), DatagramChannel::ALL.len());
-
-        let mut seen: Vec<u8> = StreamChannel::ALL.iter().map(|c| c.identifier()).collect();
-        seen.sort_unstable();
-        seen.dedup();
-        assert_eq!(seen.len(), StreamChannel::ALL.len());
-    }
-
-    #[test]
-    fn the_rank_names_the_right_channel() {
-        // Without this, whatever is held per channel would get mixed up.
+    fn a_datagram_keeps_its_number_from_the_link_to_the_tunnel() {
+        // The link and the tunnel number the picture and the sound the
+        // same way: a datagram changing carrier must never change name.
         for channel in DatagramChannel::ALL {
-            assert_eq!(DatagramChannel::ALL[channel.rank()], channel);
+            let on_the_link = channel.on_the_link();
+            assert_eq!(on_the_link as u8, channel.identifier());
+            assert_eq!(DatagramChannel::off_the_link(on_the_link), Some(channel));
         }
+        assert_eq!(DatagramChannel::off_the_link(Channel::Control), None);
+        assert_eq!(DatagramChannel::off_the_link(Channel::Service), None);
     }
 
     #[test]
     fn an_unknown_identifier_is_refused() {
-        assert_eq!(DatagramChannel::from_identifier(0), Err(UnknownChannel(0)));
-        assert!(DatagramChannel::from_identifier(200).is_err());
-        assert!(StreamChannel::from_identifier(0).is_err());
-        assert!(StreamChannel::from_identifier(9).is_err());
-    }
-
-    #[test]
-    fn the_channels_target_the_expected_engine_ports() {
-        let ports = ports();
-        assert_eq!(DatagramChannel::Video.port(ports), ports.video());
-        assert_eq!(DatagramChannel::Control.port(ports), ports.control());
-        assert_eq!(DatagramChannel::Audio.port(ports), ports.audio());
-        assert_eq!(StreamChannel::EngineHttp.port(ports), Some(ports.http()));
-        assert_eq!(StreamChannel::EngineHttps.port(ports), Some(ports.https()));
-        assert_eq!(StreamChannel::Rtsp.port(ports), Some(ports.rtsp()));
-        assert_eq!(StreamChannel::ZyrDesk.port(ports), None);
-    }
-
-    #[test]
-    fn every_engine_port_is_covered() {
-        let ports = ports();
-        for port in ports.udp_ports() {
-            assert!(
-                DatagramChannel::from_port(port, ports).is_some(),
-                "UDP port {port} with no channel"
+        // Nought is the nudge, and two was the engines' control channel,
+        // which now travels reliably.
+        for byte in [0, 2, 4, 200] {
+            assert_eq!(
+                DatagramChannel::from_identifier(byte),
+                Err(UnknownChannel(byte))
             );
         }
-        // The engine's web interface is deliberately not carried: it
-        // stays out of reach from the other computer.
-        for port in ports
-            .tcp_ports()
-            .into_iter()
-            .filter(|&p| p != ports.web_ui())
-        {
-            assert!(
-                StreamChannel::from_port(port, ports).is_some(),
-                "TCP port {port} with no channel"
-            );
+        for byte in [0, 2, 3, 9] {
+            assert!(StreamChannel::from_identifier(byte).is_err(), "{byte}");
         }
-        assert!(StreamChannel::from_port(ports.web_ui(), ports).is_none());
-    }
-
-    #[test]
-    fn a_foreign_port_belongs_to_no_channel() {
-        let ports = ports();
-        assert!(DatagramChannel::from_port(80, ports).is_none());
-        assert!(StreamChannel::from_port(80, ports).is_none());
     }
 }

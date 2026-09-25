@@ -1,24 +1,26 @@
 //! The tunnel at work, on one side or the other.
 //!
-//! Both sides do the same job, mirrored. On the client side the engine
-//! believes it is reaching the remote computer: it actually finds local
-//! ports that pour everything into the encrypted connection. On the host
-//! side, what comes out is handed to the engine over loopback as though
-//! it came from the network. Neither engine knows a tunnel exists.
+//! Both sides do the same job, mirrored. On each, one engine talks to
+//! the service through a local link, and the tunnel carries what that
+//! link says to the other computer and back: the host engine on one
+//! side, the player on the other. Neither of them opens a socket, and
+//! neither knows a tunnel exists.
 
 use std::io;
-use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
-use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::oneshot;
 use tokio::task::JoinSet;
+use zyr_control::link::{Link, LinkListener};
 use zyr_proto::log::Log;
-use zyr_proto::net::EnginePorts;
 use zyr_transport::{Connection, RecvStream, SendStream};
 
 use crate::aside::{self, Answers};
-use crate::channel::{DatagramChannel, StreamChannel};
-use crate::pump::{self, Counters, DatagramPorts, Reading};
+use crate::channel::StreamChannel;
+use crate::pump::{self, Counters, Reading};
+use crate::queue::DatagramQueue;
+use crate::service::ServiceSide;
 
 /// What this crate's lines are filed under.
 const TAG: &str = "tunnel";
@@ -26,75 +28,143 @@ const TAG: &str = "tunnel";
 /// One side of the tunnel, pumps running.
 ///
 /// Everything stops when it is dropped: the pumps have no reason to
-/// outlive the session they serve.
+/// outlive the session they serve. [`Tunnel::close`] stops them and waits
+/// until they have let go of the link, for whoever needs the other end
+/// to see it closed before going on.
 pub struct Tunnel {
     tasks: JoinSet<io::Result<()>>,
     counters: Arc<Counters>,
+    somebody_there: Arc<AtomicBool>,
 }
 
+/// The engine's stream, handed from whoever accepts it to whoever
+/// carries it. Taken once: a second one is refused.
+type EngineStream = Arc<Mutex<Option<oneshot::Sender<(SendStream, RecvStream)>>>>;
+
 impl Tunnel {
-    /// Host side: what comes out of the tunnel is handed to the local
-    /// engine.
+    /// Host side: the engine of this session is on the other end of
+    /// `engine`, and the player on the far computer opens the engine's
+    /// stream towards it.
     ///
-    /// `answering` is the local engine seen from the tunnel: its ports,
-    /// and what it can be asked on ZyrDesk's own channel.
+    /// `answering` answers ZyrDesk's own channel for this session. The
+    /// session is already open: it was opened by the question
+    /// [`aside::until_a_session_opens`] handed back, and a second opening
+    /// is refused.
     ///
     /// `log` says what it did while it did it, for a stream that goes
-    /// quiet without a word: the ordinary end of a session already says
-    /// why elsewhere, and this is for the one that never says anything
-    /// at all. `None` where nobody is watching, a benchmark or a test.
-    pub async fn host(
+    /// quiet without a word. `None` where nobody is watching, a benchmark
+    /// or a test.
+    ///
+    /// Called within a tokio runtime, which the pumps are spawned on.
+    pub fn host(
         connection: Connection,
-        engine: IpAddr,
         answering: Arc<dyn Answers>,
+        engine: Link,
+        service: ServiceSide,
         log: Option<Log>,
-    ) -> io::Result<Self> {
+    ) -> Self {
         let log = log.map(|log| log.about(TAG));
-        let ports = answering.engine();
-        let datagrams = Arc::new(DatagramPorts::towards_engine(engine, ports)?);
         let counters = Arc::new(Counters::default());
-        let mut tasks = datagram_pumps(&connection, &datagrams, &counters);
+        let somebody_there = Arc::new(AtomicBool::new(true));
+        let datagrams = Arc::new(DatagramQueue::default());
+        let (handing, handed) = oneshot::channel();
+        let engine_stream: EngineStream = Arc::new(Mutex::new(Some(handing)));
 
-        let towards_engine = connection.clone();
-        tasks
-            .spawn(async move { serve_the_streams(&towards_engine, engine, answering, log).await });
+        let mut tasks = JoinSet::new();
+        tasks.spawn(out_of_the_tunnel(
+            connection.clone(),
+            datagrams.clone(),
+            somebody_there.clone(),
+            counters.clone(),
+        ));
+        {
+            let connection = connection.clone();
+            let counters = counters.clone();
+            tasks.spawn(async move {
+                serve_the_streams(&connection, answering, engine_stream, &counters, log).await
+            });
+        }
+        {
+            let counters = counters.clone();
+            tasks.spawn(async move {
+                let accepted = async {
+                    handed
+                        .await
+                        .map_err(|_| io::Error::other("le flux du moteur n'est jamais arrivé"))
+                };
+                pump::between(
+                    engine,
+                    accepted,
+                    &connection,
+                    &datagrams,
+                    service,
+                    &counters,
+                )
+                .await
+            });
+        }
 
-        Ok(Self { tasks, counters })
+        Self {
+            tasks,
+            counters,
+            somebody_there,
+        }
     }
 
-    /// Client side: what the local engine sends goes into the tunnel.
+    /// Client side: the player connects to `player`, and its session
+    /// runs through the engine's stream this side opens once it has.
     ///
-    /// See `host` for what `log` is.
-    pub async fn client(
+    /// Handed back at once: the player is started with the link's name
+    /// and connects a moment later. How long it may take is the caller's
+    /// to decide, reading [`Tunnel::connected`]; the tunnel waits for as
+    /// long as it lives.
+    ///
+    /// Called within a tokio runtime, which the pumps are spawned on.
+    pub fn client(
         connection: Connection,
-        listen: IpAddr,
-        ports: EnginePorts,
+        player: LinkListener,
+        service: ServiceSide,
         log: Option<Log>,
-    ) -> io::Result<Self> {
+    ) -> Self {
         let log = log.map(|log| log.about(TAG));
-        // The listeners are open before we hand back: the engine may
-        // show up the instant the session is announced to it.
-        let mut listeners = Vec::new();
-        for channel in StreamChannel::ALL {
-            let Some(port) = channel.port(ports) else {
-                continue;
-            };
-            let bound = TcpListener::bind(SocketAddr::new(listen, port)).await?;
-            listeners.push((channel, bound));
-        }
-
-        let datagrams = Arc::new(DatagramPorts::from_engine(listen, ports)?);
         let counters = Arc::new(Counters::default());
-        let mut tasks = datagram_pumps(&connection, &datagrams, &counters);
+        let somebody_there = Arc::new(AtomicBool::new(false));
+        let datagrams = Arc::new(DatagramQueue::default());
 
-        for (channel, bound) in listeners {
-            let towards_tunnel = connection.clone();
-            let log = log.clone();
-            tasks
-                .spawn(async move { carry_the_streams(channel, bound, towards_tunnel, log).await });
+        let mut tasks = JoinSet::new();
+        tasks.spawn(out_of_the_tunnel(
+            connection.clone(),
+            datagrams.clone(),
+            somebody_there.clone(),
+            counters.clone(),
+        ));
+        {
+            let counters = counters.clone();
+            let somebody_there = somebody_there.clone();
+            tasks.spawn(async move {
+                let link = player.accept().await?;
+                somebody_there.store(true, Ordering::Relaxed);
+                if let Some(log) = &log {
+                    log.write(&match link.peer_process() {
+                        Some(process) => format!("the player connected, process {process}"),
+                        None => "the player connected".to_string(),
+                    });
+                }
+                let opened = async {
+                    let (mut sending, receiving) =
+                        connection.open_stream().await.map_err(io::Error::other)?;
+                    pump::announce(&mut sending, StreamChannel::Engine).await?;
+                    Ok((sending, receiving))
+                };
+                pump::between(link, opened, &connection, &datagrams, service, &counters).await
+            });
         }
 
-        Ok(Self { tasks, counters })
+        Self {
+            tasks,
+            counters,
+            somebody_there,
+        }
     }
 
     pub fn reading(&self) -> Reading {
@@ -109,10 +179,17 @@ impl Tunnel {
         self.counters.clone()
     }
 
+    /// Whether somebody is at the other end of the link: always on the
+    /// host, whose engine was connected before its tunnel started, and
+    /// once the player has connected on the client.
+    pub fn connected(&self) -> bool {
+        self.somebody_there.load(Ordering::Relaxed)
+    }
+
     /// Waits for the tunnel to stop, and says why it stopped.
     ///
-    /// The pumps run for as long as the connection holds: the first one
-    /// to hand back signals the end of the session.
+    /// The pumps run for as long as the link and the connection hold:
+    /// the first one to hand back signals the end of the session.
     pub async fn wait(&mut self) -> io::Result<()> {
         match self.tasks.join_next().await {
             Some(outcome) => stopped_because(outcome),
@@ -129,6 +206,13 @@ impl Tunnel {
     pub fn stopped(&mut self) -> Option<io::Result<()>> {
         self.tasks.try_join_next().map(stopped_because)
     }
+
+    /// Stops every pump and waits until they are gone, the link with
+    /// them: once this returns, the other end of the link has been let
+    /// go of.
+    pub async fn close(mut self) {
+        self.tasks.shutdown().await;
+    }
 }
 
 /// What a pump handing back means, a panic in it included.
@@ -136,170 +220,80 @@ fn stopped_because(outcome: Result<io::Result<()>, tokio::task::JoinError>) -> i
     outcome.map_err(io::Error::other)?
 }
 
-/// The UDP pumps, identical on both sides.
-fn datagram_pumps(
-    connection: &Connection,
-    datagrams: &Arc<DatagramPorts>,
-    counters: &Arc<Counters>,
-) -> JoinSet<io::Result<()>> {
-    let mut tasks = JoinSet::new();
-
-    // One reader for the three channels: a connection's datagrams arrive
-    // through a single queue.
-    let reading_connection = connection.clone();
-    let reading_ports = datagrams.clone();
-    let reading_counters = counters.clone();
-    tasks.spawn(async move {
-        pump::distribute_datagrams(&reading_connection, &reading_ports, &reading_counters).await
-    });
-
-    for channel in DatagramChannel::ALL {
-        let connection = connection.clone();
-        let ports = datagrams.clone();
-        let counters = counters.clone();
-        tasks.spawn(async move {
-            pump::collect_datagrams(channel, ports.port(channel), &connection, &counters).await
-        });
-    }
-
-    tasks
+async fn out_of_the_tunnel(
+    connection: Connection,
+    datagrams: Arc<DatagramQueue>,
+    somebody_there: Arc<AtomicBool>,
+    counters: Arc<Counters>,
+) -> io::Result<()> {
+    pump::out_of_the_tunnel(&connection, &datagrams, &somebody_there, &counters).await
 }
 
-/// Hands the engine the reliable streams that arrive from the tunnel.
+/// Takes the reliable streams the far computer opens: its questions, and
+/// the engine's stream, once.
 async fn serve_the_streams(
     connection: &Connection,
-    engine: IpAddr,
     answering: Arc<dyn Answers>,
+    engine_stream: EngineStream,
+    counters: &Arc<Counters>,
     log: Option<Log>,
 ) -> io::Result<()> {
-    let mut sessions = JoinSet::new();
+    let mut streams = JoinSet::new();
     loop {
         let (sending, receiving) = connection.accept_stream().await.map_err(io::Error::other)?;
-
-        // One stream's failure stays on that stream: a botched pairing
-        // must not take the running session with it.
-        let answering = answering.clone();
-        let log = log.clone();
-        sessions.spawn(async move {
-            let _ = hand_to_the_engine(sending, receiving, engine, answering, log).await;
-        });
-        while sessions.try_join_next().is_some() {}
+        // One stream's failure stays on that stream: a question that
+        // goes wrong must not take the running session with it.
+        streams.spawn(one_stream(
+            sending,
+            receiving,
+            answering.clone(),
+            engine_stream.clone(),
+            counters.clone(),
+            log.clone(),
+        ));
+        while streams.try_join_next().is_some() {}
     }
 }
 
-async fn hand_to_the_engine(
+async fn one_stream(
     sending: SendStream,
     mut receiving: RecvStream,
-    engine: IpAddr,
     answering: Arc<dyn Answers>,
+    engine_stream: EngineStream,
+    counters: Arc<Counters>,
     log: Option<Log>,
-) -> io::Result<()> {
-    let channel = match pump::read_announcement(&mut receiving).await {
-        Ok(channel) => channel,
+) {
+    match pump::read_announcement(&mut receiving).await {
+        Ok(StreamChannel::ZyrDesk) => {
+            if let (Err(e), Some(log)) = (aside::answer(sending, receiving, answering).await, &log)
+            {
+                log.debug(|| format!("a question went unanswered: {e}"));
+            }
+        }
+        Ok(StreamChannel::Engine) => {
+            let handing = engine_stream.lock().expect("flux du moteur").take();
+            match handing {
+                Some(handing) => {
+                    if let Some(log) = &log {
+                        log.debug(|| "the player opened the engine's stream".to_string());
+                    }
+                    // Refused only once the pumps are gone, which is the
+                    // session ending anyway.
+                    let _ = handing.send((sending, receiving));
+                }
+                None => {
+                    counters.refused();
+                    if let Some(log) = &log {
+                        log.write("a second engine stream was refused: a session carries one");
+                    }
+                }
+            }
+        }
         Err(e) => {
+            counters.refused();
             if let Some(log) = &log {
                 log.write(&format!("a stream from the tunnel never named itself: {e}"));
             }
-            return Err(e);
         }
-    };
-    let Some(port) = channel.port(answering.engine()) else {
-        // ZyrDesk's own channel goes to no engine: it is the tunnel
-        // talking to the tunnel, and this is where it answers.
-        return aside::answer(sending, receiving, answering).await;
-    };
-
-    if let Some(log) = &log {
-        log.debug(|| {
-            format!("{channel:?}: reaching this computer's own engine at {engine}:{port}")
-        });
-    }
-    let local = match TcpStream::connect(SocketAddr::new(engine, port)).await {
-        Ok(local) => local,
-        Err(e) => {
-            if let Some(log) = &log {
-                log.write(&format!(
-                    "{channel:?}: the engine at {engine}:{port} would not take it: {e}"
-                ));
-            }
-            return Err(e);
-        }
-    };
-    local.set_nodelay(true)?;
-    if let Some(log) = &log {
-        log.debug(|| format!("{channel:?}: connected, carrying it to and from the engine"));
-    }
-    let outcome = pump::relay_stream(local, sending, receiving).await;
-    how_it_ended(log.as_ref(), channel, &outcome);
-    outcome
-}
-
-/// Carries into the tunnel the connections the local engine opens.
-async fn carry_the_streams(
-    channel: StreamChannel,
-    listener: TcpListener,
-    connection: Connection,
-    log: Option<Log>,
-) -> io::Result<()> {
-    let mut sessions = JoinSet::new();
-    loop {
-        let (local, _) = listener.accept().await?;
-        local.set_nodelay(true)?;
-
-        let connection = connection.clone();
-        let log = log.clone();
-        sessions.spawn(async move {
-            let _ = carry_to_the_tunnel(channel, local, connection, log).await;
-        });
-        while sessions.try_join_next().is_some() {}
-    }
-}
-
-async fn carry_to_the_tunnel(
-    channel: StreamChannel,
-    local: TcpStream,
-    connection: Connection,
-    log: Option<Log>,
-) -> io::Result<()> {
-    if let Some(log) = &log {
-        log.debug(|| {
-            format!("{channel:?}: the local engine reached it, opening the tunnel's own stream")
-        });
-    }
-    let (mut sending, receiving) = match connection.open_stream().await {
-        Ok(stream) => stream,
-        Err(e) => {
-            if let Some(log) = &log {
-                log.write(&format!(
-                    "{channel:?}: the tunnel would not open a stream: {e}"
-                ));
-            }
-            return Err(io::Error::other(e));
-        }
-    };
-    pump::announce(&mut sending, channel).await?;
-    if let Some(log) = &log {
-        log.debug(|| {
-            format!("{channel:?}: named to the far computer, carrying it to and from the engine")
-        });
-    }
-    let outcome = pump::relay_stream(local, sending, receiving).await;
-    how_it_ended(log.as_ref(), channel, &outcome);
-    outcome
-}
-
-/// Says how a stream ended, and in which voice.
-///
-/// The two are not the same news at all. A stream that simply ran out is
-/// the ordinary end of every one of the twenty a session opens, and
-/// twenty lines of it drown whatever else happened; one that was cut is
-/// the thing somebody opened the journal to find.
-fn how_it_ended(log: Option<&Log>, channel: StreamChannel, outcome: &io::Result<()>) {
-    let Some(log) = log else {
-        return;
-    };
-    match outcome {
-        Ok(()) => log.debug(|| format!("{channel:?}: both ends are done")),
-        Err(e) => log.write(&format!("{channel:?}: stopped: {e}")),
     }
 }
