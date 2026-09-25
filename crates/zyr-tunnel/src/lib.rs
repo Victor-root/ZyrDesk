@@ -3,6 +3,7 @@
 
 pub mod aside;
 pub mod channel;
+mod flow;
 pub mod frame;
 pub mod pump;
 pub mod queue;

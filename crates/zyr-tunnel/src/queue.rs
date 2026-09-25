@@ -10,6 +10,7 @@
 
 use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
 use zyr_transport::Bytes;
@@ -40,43 +41,50 @@ pub struct DatagramQueue {
 
 #[derive(Debug, Default)]
 struct Waiting {
-    datagrams: VecDeque<(DatagramChannel, Bytes)>,
+    /// Each with when it was queued.
+    datagrams: VecDeque<(DatagramChannel, Bytes, Instant)>,
     bytes: usize,
 }
 
 impl DatagramQueue {
     /// Queues a datagram, throwing the oldest away while there is no room
-    /// for it. Answers how many were thrown away.
-    pub fn push(&self, channel: DatagramChannel, payload: Bytes) -> u64 {
+    /// for it. Answers how many were thrown away, and how many bytes are
+    /// left waiting.
+    pub fn push(&self, channel: DatagramChannel, payload: Bytes) -> (u64, usize) {
         let mut dropped = 0;
+        let left;
         {
             let mut waiting = self.waiting.lock().expect("datagrammes en attente");
             waiting.bytes += weight(&payload);
-            waiting.datagrams.push_back((channel, payload));
+            waiting
+                .datagrams
+                .push_back((channel, payload, Instant::now()));
             while waiting.bytes > ROOM {
-                let Some((_, oldest)) = waiting.datagrams.pop_front() else {
+                let Some((_, oldest, _)) = waiting.datagrams.pop_front() else {
                     break;
                 };
                 waiting.bytes -= weight(&oldest);
                 dropped += 1;
             }
+            left = waiting.bytes;
         }
         self.arrived.notify_one();
-        dropped
+        (dropped, left)
     }
 
-    /// Waits for the oldest datagram, and takes it.
+    /// Waits for the oldest datagram, and takes it, with how long it
+    /// waited.
     ///
     /// Safe to abandon while waiting: nothing is taken until it is handed
     /// back.
-    pub async fn pop(&self) -> (DatagramChannel, Bytes) {
+    pub async fn pop(&self) -> (DatagramChannel, Bytes, Duration) {
         loop {
             let arrived = self.arrived.notified();
             {
                 let mut waiting = self.waiting.lock().expect("datagrammes en attente");
-                if let Some((channel, payload)) = waiting.datagrams.pop_front() {
+                if let Some((channel, payload, queued)) = waiting.datagrams.pop_front() {
                     waiting.bytes -= weight(&payload);
-                    return (channel, payload);
+                    return (channel, payload, queued.elapsed());
                 }
             }
             arrived.await;
@@ -101,10 +109,10 @@ mod tests {
             } else {
                 DatagramChannel::Audio
             };
-            assert_eq!(queue.push(channel, datagram(100, mark)), 0);
+            assert_eq!(queue.push(channel, datagram(100, mark)).0, 0);
         }
         for mark in 0..10 {
-            let (channel, payload) = queue.pop().await;
+            let (channel, payload, _) = queue.pop().await;
             assert_eq!(payload[0], mark);
             assert_eq!(channel == DatagramChannel::Video, mark % 2 == 0);
         }
@@ -116,11 +124,12 @@ mod tests {
         let size = 1200;
         let fits = ROOM / weight(&datagram(size, 0));
         for turn in 0..fits + 5 {
-            let dropped = queue.push(DatagramChannel::Video, datagram(size, (turn % 251) as u8));
+            let (dropped, _) =
+                queue.push(DatagramChannel::Video, datagram(size, (turn % 251) as u8));
             assert_eq!(dropped, u64::from(turn >= fits), "turn {turn}");
         }
         // What is left starts five datagrams in: the newest are kept.
-        let (_, first) = queue.pop().await;
+        let (_, first, _) = queue.pop().await;
         assert_eq!(first[0], 5);
     }
 
@@ -132,16 +141,19 @@ mod tests {
         let queue = DatagramQueue::default();
         let fits = ROOM / weight(&Bytes::new());
         for _ in 0..fits {
-            assert_eq!(queue.push(DatagramChannel::Audio, Bytes::new()), 0);
+            assert_eq!(queue.push(DatagramChannel::Audio, Bytes::new()).0, 0);
         }
-        assert_eq!(queue.push(DatagramChannel::Audio, Bytes::new()), 1);
+        assert_eq!(queue.push(DatagramChannel::Audio, Bytes::new()).0, 1);
     }
 
     #[tokio::test]
     async fn a_datagram_larger_than_the_room_empties_the_queue_of_itself() {
         let queue = DatagramQueue::default();
         queue.push(DatagramChannel::Audio, datagram(10, 1));
-        assert_eq!(queue.push(DatagramChannel::Video, datagram(ROOM + 1, 2)), 2);
+        assert_eq!(
+            queue.push(DatagramChannel::Video, datagram(ROOM + 1, 2)).0,
+            2
+        );
         let waited = tokio::time::timeout(std::time::Duration::from_millis(20), queue.pop()).await;
         assert!(waited.is_err(), "nothing should be left waiting");
     }
@@ -154,8 +166,10 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             pushing.push(DatagramChannel::Audio, datagram(8, 7));
         });
-        let (channel, payload) = queue.pop().await;
+        let (channel, payload, waited) = queue.pop().await;
         assert_eq!(channel, DatagramChannel::Audio);
         assert_eq!(payload[0], 7);
+        // Popped the moment it came: it hardly waited.
+        assert!(waited < std::time::Duration::from_millis(20), "{waited:?}");
     }
 }

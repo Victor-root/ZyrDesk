@@ -138,6 +138,28 @@ pub struct Carrying {
     pub round_trip: Duration,
 }
 
+/// What went over the path under a connection, counted since it opened.
+///
+/// For whoever writes what a second carried: the differences between two
+/// readings are that second. Packets against the times the system was
+/// asked to send or to receive tells how many went out or came in
+/// together, which is what a picture leaving in one burst looks like.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Traffic {
+    pub packets_sent: u64,
+    /// Times the system was handed packets to send.
+    pub sends: u64,
+    pub packets_received: u64,
+    /// Times the system handed packets over.
+    pub receives: u64,
+    /// Packets the transport saw lost on the path.
+    pub lost: u64,
+    pub round_trip: Duration,
+    /// The shortest round trip seen on the path: what is above it is
+    /// queueing somewhere on the way.
+    pub least_round_trip: Duration,
+}
+
 /// A datagram could not be handed over.
 #[derive(Debug)]
 pub enum DatagramError {
@@ -680,6 +702,20 @@ impl Connection {
             lost: stats.path.lost_packets,
             window: stats.path.cwnd,
             round_trip: stats.path.rtt,
+        }
+    }
+
+    /// What went over the path so far.
+    pub fn traffic(&self) -> Traffic {
+        let stats = self.inner.stats();
+        Traffic {
+            packets_sent: stats.udp_tx.datagrams,
+            sends: stats.udp_tx.ios,
+            packets_received: stats.udp_rx.datagrams,
+            receives: stats.udp_rx.ios,
+            lost: stats.path.lost_packets,
+            round_trip: stats.path.rtt,
+            least_round_trip: stats.path.min_rtt,
         }
     }
 

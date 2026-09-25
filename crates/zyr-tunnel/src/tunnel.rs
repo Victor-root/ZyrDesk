@@ -18,6 +18,7 @@ use zyr_transport::{Connection, RecvStream, SendStream};
 
 use crate::aside::{self, Answers};
 use crate::channel::StreamChannel;
+use crate::flow::{self, Flow};
 use crate::pump::{self, Counters, Reading};
 use crate::queue::DatagramQueue;
 use crate::service::ServiceSide;
@@ -77,17 +78,20 @@ impl Tunnel {
     ) -> Self {
         let log = log.map(|log| log.about(TAG));
         let counters = Arc::new(Counters::default());
+        let flow = Arc::new(Flow::default());
         let somebody_there = Arc::new(AtomicBool::new(true));
         let datagrams = Arc::new(DatagramQueue::default());
         let (handing, handed) = oneshot::channel();
         let engine_stream: EngineStream = Arc::new(Mutex::new(Some(handing)));
 
         let mut tasks = JoinSet::new();
+        watch_the_flow(&mut tasks, &connection, &flow, log.as_ref());
         tasks.spawn(out_of_the_tunnel(
             connection.clone(),
             datagrams.clone(),
             somebody_there.clone(),
             counters.clone(),
+            flow.clone(),
         ));
         {
             let connection = connection.clone();
@@ -111,6 +115,7 @@ impl Tunnel {
                     &datagrams,
                     service,
                     &counters,
+                    &flow,
                 )
                 .await
             });
@@ -140,15 +145,18 @@ impl Tunnel {
     ) -> Self {
         let log = log.map(|log| log.about(TAG));
         let counters = Arc::new(Counters::default());
+        let flow = Arc::new(Flow::default());
         let somebody_there = Arc::new(AtomicBool::new(false));
         let datagrams = Arc::new(DatagramQueue::default());
 
         let mut tasks = JoinSet::new();
+        watch_the_flow(&mut tasks, &connection, &flow, log.as_ref());
         tasks.spawn(out_of_the_tunnel(
             connection.clone(),
             datagrams.clone(),
             somebody_there.clone(),
             counters.clone(),
+            flow.clone(),
         ));
         {
             let counters = counters.clone();
@@ -168,7 +176,16 @@ impl Tunnel {
                     pump::announce(&mut sending, StreamChannel::Engine).await?;
                     Ok((sending, receiving))
                 };
-                pump::between(link, opened, &connection, &datagrams, service, &counters).await
+                pump::between(
+                    link,
+                    opened,
+                    &connection,
+                    &datagrams,
+                    service,
+                    &counters,
+                    &flow,
+                )
+                .await
             });
         }
 
@@ -242,8 +259,26 @@ async fn out_of_the_tunnel(
     datagrams: Arc<DatagramQueue>,
     somebody_there: Arc<AtomicBool>,
     counters: Arc<Counters>,
+    flow: Arc<Flow>,
 ) -> io::Result<()> {
-    pump::out_of_the_tunnel(&connection, &datagrams, &somebody_there, &counters).await
+    pump::out_of_the_tunnel(&connection, &datagrams, &somebody_there, &counters, &flow).await
+}
+
+/// Writes what went through this side every second, where somebody reads
+/// the journal. Never ends by itself: the tunnel stopping stops it.
+fn watch_the_flow(
+    tasks: &mut JoinSet<io::Result<()>>,
+    connection: &Connection,
+    flow: &Arc<Flow>,
+    log: Option<&Log>,
+) {
+    if let Some(log) = log {
+        let (connection, flow, log) = (connection.clone(), flow.clone(), log.clone());
+        tasks.spawn(async move {
+            flow::watch(connection, flow, log).await;
+            Ok(())
+        });
+    }
 }
 
 /// Takes the reliable streams the far computer opens: its questions, and

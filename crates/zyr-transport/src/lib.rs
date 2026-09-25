@@ -19,7 +19,7 @@ pub mod trust;
 pub use congestion::{FASTEST, Media, MediaController, MediaProfile, Sending};
 pub use endpoint::{
     Bytes, Carrying, Connection, DatagramError, EndpointError, Knocking, RecvStream, SendStream,
-    TunnelEndpoint,
+    Traffic, TunnelEndpoint,
 };
 pub use identity::{AllowedPeers, Fingerprint, Identity, signed_by};
 pub use junction::{Junction, Road, card_of, is_card};

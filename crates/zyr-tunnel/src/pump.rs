@@ -9,13 +9,14 @@
 
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc;
 use zyr_control::link::{Channel, LinkReader, LinkWriter};
 use zyr_transport::{Bytes, Connection, DatagramError, RecvStream, SendStream};
 
 use crate::channel::{DatagramChannel, StreamChannel};
+use crate::flow::Flow;
 use crate::frame;
 use crate::queue::DatagramQueue;
 use crate::service::ServiceSide;
@@ -164,13 +165,21 @@ pub(crate) async fn between(
     datagrams: &DatagramQueue,
     service: ServiceSide,
     counters: &Counters,
+    flow: &Flow,
 ) -> io::Result<()> {
     let (reader, writer) = link.split();
     let ServiceSide { outgoing, incoming } = service;
     let (towards_the_stream, from_the_link) = mpsc::channel(CONTROL_WAITING);
     let (towards_the_link, from_the_stream) = mpsc::channel(CONTROL_WAITING);
-    let reading = off_the_link(reader, towards_the_stream, connection, &incoming, counters);
-    let writing = onto_the_link(writer, from_the_stream, datagrams, outgoing, counters);
+    let reading = off_the_link(
+        reader,
+        towards_the_stream,
+        connection,
+        &incoming,
+        counters,
+        flow,
+    );
+    let writing = onto_the_link(writer, from_the_stream, datagrams, outgoing, counters, flow);
     let carrying = along_the_stream(engine_stream, towards_the_link, from_the_link, counters);
     tokio::pin!(reading, writing, carrying);
     tokio::select! {
@@ -212,6 +221,7 @@ async fn off_the_link(
     connection: &Connection,
     service: &mpsc::Sender<Bytes>,
     counters: &Counters,
+    flow: &Flow,
 ) -> io::Result<()> {
     while let Some((channel, payload)) = reader.next().await? {
         match channel {
@@ -228,7 +238,7 @@ async fn off_the_link(
             }
             Channel::Video | Channel::Audio => {
                 if let Some(datagram) = DatagramChannel::off_the_link(channel) {
-                    into_the_tunnel(datagram, &payload, connection, counters)?;
+                    into_the_tunnel(datagram, &payload, connection, counters, flow)?;
                 }
             }
         }
@@ -242,16 +252,22 @@ fn into_the_tunnel(
     payload: &[u8],
     connection: &Connection,
     counters: &Counters,
+    flow: &Flow,
 ) -> io::Result<()> {
     let framed = frame::encode(channel, payload);
+    let bytes = framed.len();
     // Asked before handing over rather than deduced afterwards: the
     // transport makes room by throwing the oldest away and says nothing,
     // so this is the only moment that loss can be counted.
-    if connection.send_queue_room() < framed.len() {
+    let room = connection.send_queue_room();
+    if room < bytes {
         Counters::bump(&counters.crowded);
     }
     match connection.send_datagram(framed.into()) {
-        Ok(()) => Counters::bump(&counters.to_tunnel),
+        Ok(()) => {
+            Counters::bump(&counters.to_tunnel);
+            flow.handed_to_the_tunnel(bytes, room);
+        }
         // The path narrowed below what the engine was told it takes.
         // Dropping beats fragmenting: the picture's own error correction
         // exists for this.
@@ -274,6 +290,7 @@ async fn onto_the_link(
     datagrams: &DatagramQueue,
     mut service: mpsc::Receiver<Vec<u8>>,
     counters: &Counters,
+    flow: &Flow,
 ) -> io::Result<()> {
     while let Ok(said) = service.try_recv() {
         writer.send(Channel::Service, &said).await?;
@@ -289,8 +306,10 @@ async fn onto_the_link(
                 Counters::bump(&counters.control_to_link);
             }
             Some(said) = service.recv() => writer.send(Channel::Service, &said).await?,
-            (channel, payload) = datagrams.pop() => {
+            (channel, payload, waited) = datagrams.pop() => {
+                let writing = Instant::now();
                 writer.send(channel.on_the_link(), &payload).await?;
+                flow.onto_the_link(payload.len(), waited, writing.elapsed());
                 Counters::bump(&counters.to_link);
             }
         }
@@ -384,6 +403,7 @@ pub(crate) async fn out_of_the_tunnel(
     datagrams: &DatagramQueue,
     somebody_there: &AtomicBool,
     counters: &Counters,
+    flow: &Flow,
 ) -> io::Result<()> {
     loop {
         let received = connection.read_datagram().await.map_err(io::Error::other)?;
@@ -400,7 +420,8 @@ pub(crate) async fn out_of_the_tunnel(
             Counters::bump(&counters.no_recipient);
             continue;
         }
-        let dropped = datagrams.push(channel, received.slice(1..));
+        let (dropped, waiting) = datagrams.push(channel, received.slice(1..));
         counters.crowded_here.fetch_add(dropped, Ordering::Relaxed);
+        flow.queued(waiting);
     }
 }
