@@ -34,7 +34,7 @@ Le tunnel, les identités, le relais, le serveur, l'écran virtuel, le presse-pa
 ## 3. Le trajet d'une image
 
 1. **Capture.** Le moteur hôte demande à Windows la dernière image de l'écran choisi, directement dans la mémoire de la carte graphique. Il la reçoit dès que Windows l'a composée.
-2. **Cadence.** Une image capturée part tout de suite, sauf si elle arrive plus vite que la cadence de la session (alors seule la plus récente part). Quand l'écran ne bouge plus et que « Fluide » est choisi, l'image précédente est renvoyée à la cadence exacte de la session, pour que le curseur et la qualité s'affinent ; une vraie image ne cède jamais sa place à une répétition.
+2. **Cadence.** Une image capturée part tout de suite, sauf si elle arrive plus vite que la cadence de la session (alors seule la plus récente part). Quand l'écran ne bouge plus et que « Fluide » est choisi, l'image précédente est renvoyée à la cadence exacte de la session, pour que le curseur et la qualité s'affinent ; une vraie image ne cède jamais sa place à une répétition. Avec « Économe », rien n'est renvoyé : l'hôte dit seulement au client, dix fois par seconde, que l'écran n'a pas bougé depuis la dernière image envoyée. Sans cela, le client prendrait ce silence pour une image figée.
 3. **Conversion.** La carte graphique convertit l'image du format de l'écran vers celui des encodeurs (NV12, couleurs BT.709), la met à la taille de la session et y dessine le curseur quand c'est l'hôte qui doit le montrer. Une seule passe, sans que l'image quitte la carte.
 4. **Encodage.** L'encodeur matériel de la carte (ou x264 en secours) encode l'image sans image différée, sans anticipation et avec un débit qu'une image ne dépasse pas. Une image clé n'est produite qu'au début et quand le client la demande.
 5. **Découpe et correction d'erreurs.** L'image encodée est découpée en paquets qui tiennent dans le tunnel, et 20 % de paquets de réparation sont ajoutés (Reed-Solomon) : n'importe quels paquets en nombre suffisant reconstruisent l'image, sans rien redemander. Une petite image part en paquets d'un peu plus de la moitié de la taille permise : le transport ne peut alors jamais en ranger deux dans le même envoi, et une perte n'emporte qu'un morceau, jamais un morceau et sa réparation ensemble ([D223](DECISIONS.md)).
@@ -63,7 +63,7 @@ La souris « Bureau » envoie une position absolue et le client montre son propr
 
 | Canal | Contenu | Fiabilité |
 |---|---|---|
-| Flux « moteur » | Messages du lecteur et du moteur hôte : demande de session, changements en direct, demande d'image clé, touches et souris, mesure de l'aller-retour | Fiable et ordonné |
+| Flux « moteur » | Messages du lecteur et du moteur hôte : demande de session, changements en direct, demande d'image clé, écran immobile, touches et souris, mesure de l'aller-retour | Fiable et ordonné |
 | Datagrammes « vidéo » | Paquets d'images et paquets de réparation | Non fiable, réparé par la correction d'erreurs |
 | Datagrammes « son » | Tranches Opus numérotées | Non fiable, tranche perdue remplacée |
 | Canal ZyrDesk | Les questions du produit, inchangées : écran de l'hôte, débit, codecs, presse-papiers, fichiers, journal, Ctrl+Alt+Suppr, verrouillage | Fiable |

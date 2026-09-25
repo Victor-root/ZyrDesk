@@ -128,6 +128,12 @@ impl Recovery {
         self.decoded = frame;
     }
 
+    /// Whether that frame of that stream is the last one decoded, and
+    /// nothing broke since.
+    pub fn has(&self, stream: u16, frame: u32) -> bool {
+        self.stream == Some(stream) && !self.needs_key && self.decoded == frame
+    }
+
     /// The assembler gave a frame of `stream` up.
     pub fn lost(&mut self, stream: u16, now: Instant) -> Option<Recover> {
         self.follow(stream);
@@ -383,6 +389,14 @@ impl<P: Presenter> Video<P> {
         self.assemble(arrived, now);
     }
 
+    /// The host says its screen has not changed since that frame: if it
+    /// is the one this player has, the picture shown is still current.
+    pub fn still(&mut self, stream: u16, frame: u32, now: Instant) {
+        if self.recovery.has(stream, frame) {
+            lock(&self.tally).still(now);
+        }
+    }
+
     /// When [`Video::settle`] has something to do with no new datagram.
     pub fn next_wakeup(&self) -> Option<Instant> {
         match (self.assembler.next_deadline(), self.recovery.next_resend()) {
@@ -632,6 +646,8 @@ pub enum VideoInput {
     /// A wake-up: the surface changed size. The size itself waits in a
     /// slot of its own, only the newest one mattering.
     Resized,
+    /// The host's screen has not changed since that frame.
+    Still { stream: u16, frame: u32 },
 }
 
 /// The video thread, once its presenter is made, until the link lets go
@@ -692,6 +708,7 @@ fn take<P: Presenter>(video: &mut Video<P>, message: VideoInput) {
             video.take(&datagram, arrived, Instant::now());
         }
         VideoInput::Resized => {}
+        VideoInput::Still { stream, frame } => video.still(stream, frame, Instant::now()),
     }
 }
 
@@ -871,6 +888,26 @@ mod tests {
         assert_eq!(video.counters.decoded, 4);
         assert_eq!(video.counters.unshown, 3);
         assert_eq!(video.counters.checksum, Some(looks[3]));
+    }
+
+    #[test]
+    fn a_still_screen_keeps_the_picture_current_only_if_it_is_the_one_here() {
+        let (packets, _) = h264(4, &[]);
+        let mut video = video(Recording::default());
+        let at = Instant::now();
+        let ms = |n: u64| at + Duration::from_millis(n);
+        for (n, packet) in packets.iter().enumerate() {
+            frame_in(&mut video, 1, n as u32, packet, at);
+        }
+        video.settle(at);
+        let since = |video: &Video<Recording>, now| lock(&video.tally).measures(now).since_frame_ms;
+
+        video.still(1, 3, ms(1_000));
+        assert_eq!(since(&video, ms(1_010)), Some(10.0));
+        // A frame this player never had, or one of another stream.
+        video.still(1, 4, ms(2_000));
+        video.still(2, 3, ms(2_000));
+        assert_eq!(since(&video, ms(2_010)), Some(1_010.0));
     }
 
     #[test]

@@ -38,7 +38,8 @@ pub struct Measures {
     pub dropped_network_pct: Option<f64>,
     /// Frames decoded but never shown, a newer one taking their turn.
     pub dropped_jitter_pct: Option<f64>,
-    /// Since the last frame reached the decoder.
+    /// Since the last frame reached the decoder, or since the host last
+    /// said its screen had not changed from that frame.
     pub since_frame_ms: Option<f64>,
     /// From capture on the host to display here.
     pub latency_ms: Option<f64>,

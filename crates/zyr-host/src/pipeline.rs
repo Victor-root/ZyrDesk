@@ -876,6 +876,10 @@ impl Pipeline {
             let going = match due {
                 Due::EmitHeld => streaming.held.take().unwrap_or(Going::Repeat),
                 Due::Repeat => Going::Repeat,
+                Due::Still => {
+                    self.still();
+                    return;
+                }
             };
             self.emit(going);
             return;
@@ -1071,6 +1075,24 @@ impl Pipeline {
         self.counts.work_us += worked;
         self.counts.work_max_us = self.counts.work_max_us.max(worked);
         self.counts.worked += 1;
+    }
+
+    /// Tells the player the screen has not changed since the last frame
+    /// sent.
+    fn still(&self) {
+        let Some(encoding) = self
+            .streaming
+            .as_ref()
+            .and_then(|streaming| streaming.encoding.as_ref())
+        else {
+            return;
+        };
+        if let Some(frame) = encoding.next_frame.checked_sub(1) {
+            self.shared.outbox.player(&ToPlayer::Still {
+                stream: encoding.stream,
+                frame,
+            });
+        }
     }
 
     /// The encoder failed in the middle of a stream: the next one takes

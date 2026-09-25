@@ -15,10 +15,20 @@
 //! period on that grid. Repeats never hold a capture back: the 7/8 rule
 //! counts captured images only.
 //!
+//! Without `steady`, a still screen sends nothing, and the player is
+//! told instead, every [`STILL_EVERY`], that the picture it has is still
+//! the screen: a player that hears nothing for a while takes the picture
+//! for frozen, and the two must not be confused.
+//!
 //! Every decision takes the time as an argument, so that the cadence can
 //! be tested against a simulated clock.
 
 use std::time::{Duration, Instant};
+
+/// How often a still screen that is not sent again is said to be still:
+/// well within the third of a second after which the player takes a
+/// silent picture for frozen.
+pub const STILL_EVERY: Duration = Duration::from_millis(100);
 
 /// What to do with an image just captured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +45,9 @@ pub enum Due {
     EmitHeld,
     /// The screen is still: the last picture is to be sent again.
     Repeat,
+    /// The screen is still and nothing is sent again: the player is to
+    /// be told its picture is still the screen.
+    Still,
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +60,7 @@ pub struct Cadence {
     last_sent: Option<Instant>,
     holding: bool,
     next_repeat: Option<Instant>,
+    next_still: Option<Instant>,
 }
 
 impl Cadence {
@@ -59,17 +73,18 @@ impl Cadence {
             last_sent: None,
             holding: false,
             next_repeat: None,
+            next_still: None,
         }
     }
 
     pub fn set_fps(&mut self, fps: u32) {
         self.period = period_of(fps);
-        self.restart_repeats();
+        self.restart_idle();
     }
 
     pub fn set_steady(&mut self, steady: bool) {
         self.steady = steady;
-        self.restart_repeats();
+        self.restart_idle();
     }
 
     pub fn on_captured(&mut self, now: Instant) -> Now {
@@ -94,7 +109,14 @@ impl Cadence {
             self.captured_went(now);
             return Some(Due::EmitHeld);
         }
-        let at = self.next_repeat.filter(|at| self.steady && now >= *at)?;
+        if !self.steady {
+            self.next_still.filter(|at| now >= *at)?;
+            // From now and not from the point missed: a loop woken late
+            // says it once.
+            self.next_still = now.checked_add(STILL_EVERY);
+            return Some(Due::Still);
+        }
+        let at = self.next_repeat.filter(|at| now >= *at)?;
         self.last_sent = Some(now);
         // The next point of the grid after now: a loop woken late skips
         // the points it missed rather than sending them in a burst. What
@@ -112,7 +134,7 @@ impl Cadence {
         } else if self.steady {
             self.next_repeat
         } else {
-            None
+            self.next_still
         }
     }
 
@@ -125,13 +147,16 @@ impl Cadence {
         self.captured_sent = Some(at);
         self.last_sent = Some(at);
         self.holding = false;
-        self.restart_repeats();
+        self.restart_idle();
     }
 
-    fn restart_repeats(&mut self) {
+    /// What goes while the screen stays still, counted again from the
+    /// last picture sent.
+    fn restart_idle(&mut self) {
         self.next_repeat = self
             .last_sent
             .and_then(|at| at.checked_add(self.period + self.period / 8));
+        self.next_still = self.last_sent.and_then(|at| at.checked_add(STILL_EVERY));
     }
 }
 
@@ -151,6 +176,7 @@ mod tests {
         Captured,
         Held,
         Repeat,
+        Still,
     }
 
     fn us(n: u64) -> Duration {
@@ -182,6 +208,7 @@ mod tests {
                 let what = match cadence.due(at) {
                     Some(Due::EmitHeld) => Sent::Held,
                     Some(Due::Repeat) => Sent::Repeat,
+                    Some(Due::Still) => Sent::Still,
                     None => panic!("woken at {:?} for nothing", at - start),
                 };
                 sent.push((at - start, what));
@@ -213,8 +240,12 @@ mod tests {
         let captures = source(Duration::from_secs(1) / 60, 10, us(1_000), &mut noise);
         let mut cadence = Cadence::new(60, false);
         let sent = run(&mut cadence, &captures, Duration::from_secs(11));
-        assert_eq!(sent.len(), captures.len());
-        for ((at, what), captured) in sent.iter().zip(&captures) {
+        let pictures: Vec<_> = sent
+            .iter()
+            .filter(|(_, what)| *what != Sent::Still)
+            .collect();
+        assert_eq!(pictures.len(), captures.len());
+        for ((at, what), captured) in pictures.iter().zip(&captures) {
             assert_eq!((*at, *what), (*captured, Sent::Captured));
         }
     }
@@ -269,11 +300,25 @@ mod tests {
     }
 
     #[test]
-    fn a_still_screen_is_not_repeated_otherwise() {
+    fn a_still_screen_is_said_still_otherwise() {
         let mut cadence = Cadence::new(60, false);
         let sent = run(&mut cadence, &[Duration::ZERO], Duration::from_secs(5));
-        assert_eq!(sent, vec![(Duration::ZERO, Sent::Captured)]);
-        assert_eq!(cadence.next_wakeup(), None);
+        assert_eq!(sent[0], (Duration::ZERO, Sent::Captured));
+        assert_eq!(sent.len(), 51);
+        for (n, (at, what)) in sent.iter().enumerate().skip(1) {
+            assert_eq!((*at, *what), (STILL_EVERY * n as u32, Sent::Still));
+        }
+    }
+
+    #[test]
+    fn a_loop_woken_late_says_still_once() {
+        let at = Instant::now();
+        let mut cadence = Cadence::new(60, false);
+        cadence.on_captured(at);
+        let late = at + STILL_EVERY * 10;
+        assert_eq!(cadence.due(late), Some(Due::Still));
+        assert_eq!(cadence.due(late), None);
+        assert_eq!(cadence.next_wakeup(), Some(late + STILL_EVERY));
     }
 
     #[test]
@@ -301,7 +346,7 @@ mod tests {
         let period = Duration::from_secs(1) / 60;
         let captures = [us(0), us(1_000), us(2_000), us(3_000), us(40_000)];
         let mut cadence = Cadence::new(60, false);
-        let sent = run(&mut cadence, &captures, Duration::from_secs(1));
+        let sent = run(&mut cadence, &captures, Duration::from_millis(100));
         assert_eq!(
             sent,
             vec![
@@ -355,8 +400,9 @@ mod tests {
         cadence.set_steady(true);
         assert_eq!(cadence.next_wakeup(), Some(sent + period + period / 8));
         cadence.set_steady(false);
-        assert_eq!(cadence.next_wakeup(), None);
-        assert_eq!(cadence.due(sent + period * 5), None);
+        assert_eq!(cadence.next_wakeup(), Some(sent + STILL_EVERY));
+        assert_eq!(cadence.due(sent + STILL_EVERY - us(1)), None);
+        assert_eq!(cadence.due(sent + STILL_EVERY), Some(Due::Still));
     }
 
     #[test]

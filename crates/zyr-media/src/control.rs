@@ -33,6 +33,7 @@
 //! 3  Pong       sent_us u64 (echoed), host_us u64
 //! 4  Notice     kind u8, text (UTF-8, the rest of the body)
 //! 5  Bye        reason u8
+//! 6  Still      stream u16, frame u32 (the last frame sent)
 //! ```
 
 use std::marker::PhantomData;
@@ -213,6 +214,12 @@ pub enum ToPlayer {
     Bye {
         reason: ByeReason,
     },
+    /// The screen has not changed since that frame, the last one sent,
+    /// and nothing is sent again while it stays still.
+    Still {
+        stream: u16,
+        frame: u32,
+    },
 }
 
 /// A message a [`ControlReader`] can read.
@@ -360,6 +367,7 @@ const STREAMING: u8 = 2;
 const PONG: u8 = 3;
 const NOTICE: u8 = 4;
 const PLAYER_BYE: u8 = 5;
+const STILL: u8 = 6;
 
 impl ToPlayer {
     /// Appends the message, framed, to what `out` holds.
@@ -399,6 +407,10 @@ impl ToPlayer {
                 out.extend_from_slice(clipped(text, MAX_CONTROL_MESSAGE - 2).as_bytes());
             }),
             ToPlayer::Bye { reason } => framed(out, PLAYER_BYE, |out| out.push(reason.wire())),
+            ToPlayer::Still { stream, frame } => framed(out, STILL, |out| {
+                out.extend_from_slice(&stream.to_le_bytes());
+                out.extend_from_slice(&frame.to_le_bytes());
+            }),
         }
     }
 }
@@ -440,6 +452,10 @@ impl ControlMessage for ToPlayer {
             }
             PLAYER_BYE => ToPlayer::Bye {
                 reason: ByeReason::from_wire(reader.u8()?).ok_or(WireError::Invalid("reason"))?,
+            },
+            STILL => ToPlayer::Still {
+                stream: reader.u16()?,
+                frame: reader.u32()?,
             },
             _ => return Ok(None),
         };
@@ -640,6 +656,10 @@ mod tests {
             },
             ToPlayer::Bye {
                 reason: ByeReason::Fatal,
+            },
+            ToPlayer::Still {
+                stream: 7,
+                frame: u32::MAX,
             },
         ]
     }

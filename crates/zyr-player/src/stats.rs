@@ -135,6 +135,12 @@ impl Tally {
         self.lost.add(now, 1.0);
     }
 
+    /// The host said its screen has not changed since the frame decoded
+    /// last: the picture is as current as if it had just come.
+    pub fn still(&mut self, now: Instant) {
+        self.last_frame = Some(now);
+    }
+
     /// A frame reached the decoder, which took that long with it.
     pub fn decoded(&mut self, now: Instant, took: Duration) {
         self.last_frame = Some(now);

@@ -359,6 +359,11 @@ impl Session {
                 self.last_notice = Some(text.clone());
                 self.events.say(Event::Notice(text));
             }
+            ToPlayer::Still { stream, frame } => {
+                // Dropped with the thread behind: its picture is then
+                // not current anyway.
+                let _ = self.video.try_send(VideoInput::Still { stream, frame });
+            }
             ToPlayer::Bye { reason } => {
                 self.log
                     .write(&format!("the engine says goodbye: {reason:?}"));
