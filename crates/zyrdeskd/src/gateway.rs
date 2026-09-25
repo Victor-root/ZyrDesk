@@ -1195,6 +1195,9 @@ async fn one_session(
         log.write(&format!(
             "the session from {from} went before it was told it was open: {e}"
         ));
+        // The link first, as at every end: it is what tells the engine to
+        // go, and an engine never told is only ever taken.
+        drop(running.link);
         let_the_engine_go(running.launched, &log).await;
         return;
     }
@@ -1339,6 +1342,7 @@ async fn bring_up_the_engine(
         .tell(&ToEngine::Setup { datagram_budget })
         .and_then(|()| engine.film_now());
     if let Err(refused) = first_words {
+        drop(link);
         let_the_engine_go(launched, log).await;
         return Err(refused);
     }
@@ -1402,7 +1406,7 @@ async fn let_the_engine_go(launched: Box<dyn Launched>, log: &Log) {
 
 /// An error, with the system's own number for it when it gave one: the
 /// number is what names the fault in Microsoft's documentation.
-fn with_its_code(e: &io::Error) -> String {
+pub(crate) fn with_its_code(e: &io::Error) -> String {
     match e.raw_os_error() {
         Some(code) => format!("{e} (0x{:08X})", code as u32),
         None => e.to_string(),
@@ -1671,6 +1675,23 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&folder);
     }
+
+    #[test]
+    fn a_refusal_carries_the_systems_own_number_as_microsoft_writes_it() {
+        let denied = io::Error::from_raw_os_error(5);
+        assert_eq!(with_its_code(&denied), format!("{denied} (0x00000005)"));
+        // An HRESULT reads the way the documentation prints it, sign bit
+        // and all, rather than as a negative number nobody can look up.
+        let hresult = io::Error::from_raw_os_error(0x8007_0005_u32 as i32);
+        assert!(
+            with_its_code(&hresult).ends_with("(0x80070005)"),
+            "{}",
+            with_its_code(&hresult)
+        );
+        // A refusal the system did not number carries no number.
+        assert_eq!(with_its_code(&io::Error::other("refusé")), "refusé");
+    }
+
     /// An engine standing in for the real one: it joins the link it is
     /// given from a thread of its own, says what a real one says when it
     /// starts, echoes the control stream, and writes down what it is told.

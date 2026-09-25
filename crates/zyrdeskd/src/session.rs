@@ -13,14 +13,15 @@
 //! but would forbid capturing the secure desktop: elevation prompts and
 //! the sign-in screen would stay black.
 //!
-//! The process we start is locked inside a job object set to kill it
-//! along with its parent. Without that, a service stopping abruptly
-//! would leave an orphan engine behind, invisible and impossible to take
-//! back in hand.
+//! The process we start is born inside a job object set to kill it along
+//! with its parent. Without that, a service stopping abruptly would leave
+//! an orphan engine behind, invisible and impossible to take back in
+//! hand.
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::{OsStr, OsString, c_void};
 use std::fmt;
 use std::io;
+use std::marker::PhantomData;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -39,20 +40,22 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::Environment::{CreateEnvironmentBlock, DestroyEnvironmentBlock};
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-    SetInformationJobObject,
+    CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JobObjectExtendedLimitInformation, SetInformationJobObject,
 };
 use windows_sys::Win32::System::RemoteDesktop::{WTSGetActiveConsoleSessionId, WTSQueryUserToken};
 use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessAsUserW, DETACHED_PROCESS,
-    GetCurrentProcess, GetExitCodeProcess, OpenProcessToken, PROCESS_INFORMATION,
-    STARTF_USESTDHANDLES, STARTUPINFOW, TerminateProcess, WaitForSingleObject,
+    DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
+    GetExitCodeProcess, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
+    OpenProcessToken, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
+    PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW,
+    UpdateProcThreadAttribute, WaitForSingleObject,
 };
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
 
-use crate::gateway::{Launched, Launcher};
+use crate::gateway::{Launched, Launcher, with_its_code};
 
 /// Value Windows returns when no session is attached to the screen.
 const NO_SESSION: u32 = 0xFFFF_FFFF;
@@ -297,14 +300,138 @@ impl Launched for SessionProcess {
             return Ok(None);
         }
         if waited != WAIT_OBJECT_0 {
-            return Err(io::Error::last_os_error());
+            return Err(refusal_of("WaitForSingleObject"));
         }
         let mut code: u32 = 0;
         // Safe: the handle is valid and the code is written into a local.
         if unsafe { GetExitCodeProcess(self.process.0, &mut code) } == 0 {
-            return Err(io::Error::last_os_error());
+            return Err(refusal_of("GetExitCodeProcess"));
         }
         Ok(Some(code))
+    }
+}
+
+/// What the system just refused, named by the call that refused it and
+/// with its own number for the refusal.
+///
+/// One line of the journal then says which step broke and why, where the
+/// bare message would leave a person with « Accès refusé » and a dozen
+/// calls to choose from.
+fn refusal_of(call: &str) -> io::Error {
+    let refused = io::Error::last_os_error();
+    io::Error::new(
+        refused.kind(),
+        format!("{call}: {}", with_its_code(&refused)),
+    )
+}
+
+/// How many things a process is given at its birth: the handles it
+/// inherits and the job it is born in.
+const BIRTH_ATTRIBUTES: u32 = 2;
+
+/// What a process is handed at its birth beyond its startup information:
+/// the only handles it inherits, and the job it is born in.
+///
+/// Both answer a service that starts programs from several threads at
+/// once. Told to inherit with no list, a process takes every inheritable
+/// handle of the service at that moment, those another thread is handing
+/// to a program of its own included: holding the writing end of a pipe
+/// the service reads until it closes, an engine keeps that reader waiting
+/// for as long as its session lasts. And started outside its job, then
+/// put into it, a process spends a moment held by nothing, which a
+/// service falling over at that moment turns into an engine nobody can
+/// reach.
+///
+/// Borrows the handles and the job it names: Windows reads them where
+/// they stand when the process starts, so they must neither move nor
+/// close until then.
+struct Birth<'a> {
+    /// The list Windows fills, as large as it asked for. Words and not
+    /// bytes, so it sits where the structure inside it wants to.
+    list: Vec<usize>,
+    named: PhantomData<&'a [HANDLE]>,
+}
+
+impl<'a> Birth<'a> {
+    fn new(inherited: &'a [HANDLE], job: &'a HANDLE) -> io::Result<Self> {
+        let mut size = 0usize;
+        // Safe: asked without a list, the call only says how large one
+        // has to be, refusing as it does.
+        unsafe {
+            InitializeProcThreadAttributeList(std::ptr::null_mut(), BIRTH_ATTRIBUTES, 0, &mut size)
+        };
+        if size == 0 {
+            return Err(refusal_of("InitializeProcThreadAttributeList"));
+        }
+        let mut list = vec![0usize; size.div_ceil(size_of::<usize>())];
+        // Safe: the memory is ours, and as large as Windows asked for.
+        let made = unsafe {
+            InitializeProcThreadAttributeList(
+                list.as_mut_ptr().cast(),
+                BIRTH_ATTRIBUTES,
+                0,
+                &mut size,
+            )
+        };
+        if made == 0 {
+            return Err(refusal_of("InitializeProcThreadAttributeList"));
+        }
+        let mut birth = Self {
+            list,
+            named: PhantomData,
+        };
+        birth.give(
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+            inherited.as_ptr().cast(),
+            size_of_val(inherited),
+            "UpdateProcThreadAttribute (handles inherited)",
+        )?;
+        birth.give(
+            PROC_THREAD_ATTRIBUTE_JOB_LIST,
+            std::ptr::from_ref(job).cast(),
+            size_of::<HANDLE>(),
+            "UpdateProcThreadAttribute (job)",
+        )?;
+        Ok(birth)
+    }
+
+    fn give(
+        &mut self,
+        attribute: u32,
+        value: *const c_void,
+        size: usize,
+        call: &str,
+    ) -> io::Result<()> {
+        // Safe: the list is ready, and what it is given outlives it, which
+        // the lifetime of this structure holds it to.
+        let given = unsafe {
+            UpdateProcThreadAttribute(
+                self.list(),
+                0,
+                attribute as usize,
+                value,
+                size,
+                std::ptr::null_mut(),
+                std::ptr::null(),
+            )
+        };
+        if given == 0 {
+            return Err(refusal_of(call));
+        }
+        Ok(())
+    }
+
+    /// The list, as the startup information carries it.
+    fn list(&mut self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
+        self.list.as_mut_ptr().cast()
+    }
+}
+
+impl Drop for Birth<'_> {
+    fn drop(&mut self) {
+        // Safe: a `Birth` only exists once its list was made ready, and
+        // it is let go of here only.
+        unsafe { DeleteProcThreadAttributeList(self.list()) };
     }
 }
 
@@ -329,25 +456,20 @@ fn start_in_session(launch: &Launch, session: u32) -> io::Result<SessionProcess>
     // said about a fault was therefore gone minutes later, which is
     // exactly when somebody comes looking for it.
     let log = inheritable_file(launch.log.as_os_str(), FILE_APPEND_DATA, OPEN_ALWAYS)?;
+    let inherited = [nothing.0, log.0];
+    let mut birth = Birth::new(&inherited, &job.0)?;
 
     let mut line = command_line(launch.exe, launch.arguments);
     let mut desktop: Vec<u16> = wide(DESKTOP);
     let folder: Option<Vec<u16>> = launch.working_dir.map(|path| wide(path.as_os_str()));
-
-    let mut startup: STARTUPINFOW = unsafe { std::mem::zeroed() };
-    startup.cb = size_of::<STARTUPINFOW>() as u32;
-    startup.lpDesktop = desktop.as_mut_ptr();
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdInput = nothing.0;
-    startup.hStdOutput = log.0;
-    startup.hStdError = log.0;
-
-    let mut started: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
+    let startup = startup_with(desktop.as_mut_ptr(), inherited, &mut birth);
+    let mut started = PROCESS_INFORMATION::default();
 
     // A new console would open a black window on the user's screen; the
     // engine's output already goes to our log file.
-    // Safe: every buffer lives until the call returns, and both handles
-    // it hands back are taken in charge straight away.
+    // Safe: every buffer, the list and what it names live until the call
+    // returns, and both handles it hands back are taken in charge
+    // straight away.
     let obtained = unsafe {
         CreateProcessAsUserW(
             token.0,
@@ -356,35 +478,46 @@ fn start_in_session(launch: &Launch, session: u32) -> io::Result<SessionProcess>
             std::ptr::null(),
             std::ptr::null(),
             1,
-            CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
+            CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
             environment.0,
             folder.as_ref().map_or(std::ptr::null(), |f| f.as_ptr()),
-            &startup,
+            (&raw const startup).cast(),
             &mut started,
         )
     };
     if obtained == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(refusal_of("CreateProcessAsUserW"));
     }
-
-    let process = Handle(started.hProcess);
     drop(Handle(started.hThread));
-
-    // Safe: both handles are valid at this point.
-    if unsafe { AssignProcessToJobObject(job.0, process.0) } == 0 {
-        let failure = io::Error::last_os_error();
-        // Held by nothing, this engine would outlive the service with
-        // nobody able to reach it: it is ended here instead.
-        // Safe: the handle is valid and belongs to us alone.
-        unsafe { TerminateProcess(process.0, 1) };
-        return Err(failure);
-    }
+    // The list names the job, which is kept from here on.
+    drop(birth);
 
     Ok(SessionProcess {
         _job: job,
-        process,
+        process: Handle(started.hProcess),
         identifier: started.dwProcessId,
     })
+}
+
+/// Startup information for a process whose input is the first of those
+/// handles and whose output, both streams of it, is the second: the two
+/// its birth lets it inherit. On that desktop, or on its parent's when
+/// none is named.
+fn startup_with(
+    desktop: *mut u16,
+    [input, output]: [HANDLE; 2],
+    birth: &mut Birth,
+) -> STARTUPINFOEXW {
+    let mut startup = STARTUPINFOEXW::default();
+    // The extended size, which is what tells Windows the list follows.
+    startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+    startup.StartupInfo.lpDesktop = desktop;
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup.StartupInfo.hStdInput = input;
+    startup.StartupInfo.hStdOutput = output;
+    startup.StartupInfo.hStdError = output;
+    startup.lpAttributeList = birth.list();
+    startup
 }
 
 /// Moves this computer's speakers, and says whether they really moved.
@@ -623,7 +756,7 @@ fn start_a_helper(argument: &str, whose: Whose) -> io::Result<()> {
         )
     };
     if obtained == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(refusal_of("CreateProcessAsUserW"));
     }
     // Both handles are let go of at once: this program is not waited for
     // and not ended by anybody, so there is nothing to hold.
@@ -912,7 +1045,7 @@ fn errand_code(session: u32, arguments: &[String], refused: &str) -> io::Result<
         )
     };
     if obtained == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(refusal_of("CreateProcessAsUserW"));
     }
     let asking = Handle(started.hProcess);
     drop(Handle(started.hThread));
@@ -926,7 +1059,7 @@ fn errand_code(session: u32, arguments: &[String], refused: &str) -> io::Result<
     let mut code: u32 = 0;
     // Safe: the handle is valid and the code is written into a local.
     if unsafe { GetExitCodeProcess(asking.0, &mut code) } == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(refusal_of("GetExitCodeProcess"));
     }
     Ok((
         code,
@@ -955,7 +1088,7 @@ fn the_person_at(session: u32) -> io::Result<Handle> {
     // Safe: the handle it hands back is taken in charge right after. It
     // asks for a right only the system holds, which the service is.
     if unsafe { WTSQueryUserToken(session, &mut theirs) } == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(refusal_of("WTSQueryUserToken"));
     }
     Ok(Handle(theirs))
 }
@@ -973,7 +1106,7 @@ fn service_token_for(session: u32) -> io::Result<Handle> {
         )
     };
     if obtained == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(refusal_of("OpenProcessToken"));
     }
     let current = Handle(current);
 
@@ -995,7 +1128,7 @@ fn service_token_for(session: u32) -> io::Result<Handle> {
         )
     };
     if obtained == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(refusal_of("DuplicateTokenEx"));
     }
     let copy = Handle(copy);
 
@@ -1010,7 +1143,7 @@ fn service_token_for(session: u32) -> io::Result<Handle> {
         )
     };
     if obtained == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(refusal_of("SetTokenInformation"));
     }
 
     Ok(copy)
@@ -1022,7 +1155,7 @@ fn environment_of(token: &Handle) -> io::Result<Environment> {
     // Safe: the token is valid, and the block it hands back is taken in
     // charge right after.
     if unsafe { CreateEnvironmentBlock(&mut block, token.0, 0) } == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(refusal_of("CreateEnvironmentBlock"));
     }
     Ok(Environment(block))
 }
@@ -1033,7 +1166,7 @@ fn job_object() -> io::Result<Handle> {
     // hands back is taken in charge right after.
     let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
     if job.is_null() {
-        return Err(io::Error::last_os_error());
+        return Err(refusal_of("CreateJobObjectW"));
     }
     let job = Handle(job);
 
@@ -1051,7 +1184,7 @@ fn job_object() -> io::Result<Handle> {
         )
     };
     if obtained == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(refusal_of("SetInformationJobObject"));
     }
     Ok(job)
 }
@@ -1102,7 +1235,10 @@ fn inheritable_file(
         )
     };
     if file == INVALID_HANDLE_VALUE {
-        return Err(io::Error::last_os_error());
+        return Err(refusal_of(&format!(
+            "CreateFileW {}",
+            Path::new(path).display()
+        )));
     }
     Ok(Handle(file))
 }
@@ -1194,5 +1330,129 @@ mod tests {
         // Whatever this machine answers, the sentinel never comes back
         // out as a session number.
         assert_ne!(session_on_screen(), Some(NO_SESSION));
+    }
+
+    /// A file of one test's own, in the temporary folder.
+    fn scratch(what: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "zyrdeskd-session-{what}-{}.log",
+            zyr_proto::random::alphanumeric_string(8)
+        ))
+    }
+
+    /// Starts `cmd.exe` on that command the way an engine is started, the
+    /// other session apart: born in its job, inheriting what its birth
+    /// lists and nothing else, saying what it says into that file.
+    fn born(command: &str, output: &Path) -> SessionProcess {
+        let job = job_object().unwrap();
+        let nothing = inheritable_file(OsStr::new(NOTHING), GENERIC_READ, OPEN_EXISTING).unwrap();
+        let log = inheritable_file(output.as_os_str(), FILE_APPEND_DATA, OPEN_ALWAYS).unwrap();
+        let inherited = [nothing.0, log.0];
+        let mut birth = Birth::new(&inherited, &job.0).unwrap();
+        let startup = startup_with(std::ptr::null_mut(), inherited, &mut birth);
+        let mut line = wide(format!("cmd.exe /d /c {command}"));
+        let mut started = PROCESS_INFORMATION::default();
+        // Safe: as in `start_in_session`.
+        let obtained = unsafe {
+            windows_sys::Win32::System::Threading::CreateProcessW(
+                std::ptr::null(),
+                line.as_mut_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1,
+                CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
+                std::ptr::null(),
+                std::ptr::null(),
+                (&raw const startup).cast(),
+                &mut started,
+            )
+        };
+        assert_ne!(obtained, 0, "{}", refusal_of("CreateProcessW"));
+        drop(Handle(started.hThread));
+        drop(birth);
+        SessionProcess {
+            _job: job,
+            process: Handle(started.hProcess),
+            identifier: started.dwProcessId,
+        }
+    }
+
+    /// Long enough that only being taken ends it within a test.
+    const LINGERING: &str = "ping -n 30 127.0.0.1";
+
+    #[test]
+    fn a_process_says_what_it_says_where_it_is_told_and_goes_with_its_code() {
+        let output = scratch("said");
+        let started = born("echo born here& exit 7", &output);
+        let went = Box::new(started).let_go(Duration::from_secs(10)).unwrap();
+        assert_eq!(went, Some(7));
+        let said = std::fs::read_to_string(&output).unwrap();
+        assert!(said.contains("born here"), "{said:?}");
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn a_process_is_born_in_its_job_and_taken_with_it() {
+        use windows_sys::Win32::System::JobObjects::IsProcessInJob;
+        use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE};
+
+        let output = scratch("job");
+        let started = born(LINGERING, &output);
+        let mut inside = 0;
+        // Safe: both handles stay open for as long as `started`.
+        let asked = unsafe { IsProcessInJob(started.process.0, started._job.0, &mut inside) };
+        assert_ne!(asked, 0, "{}", refusal_of("IsProcessInJob"));
+        assert_ne!(inside, 0, "the process was born outside its job");
+
+        // Safe: the handle is taken in charge right after.
+        let watching = Handle(unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, started.identifier) });
+        assert!(!watching.0.is_null(), "{}", refusal_of("OpenProcess"));
+        let went = Box::new(started)
+            .let_go(Duration::from_millis(200))
+            .unwrap();
+        assert_eq!(went, None, "it was not meant to go by itself");
+        // Safe: the handle is ours and the wait is bounded.
+        let gone = unsafe { WaitForSingleObject(watching.0, 10_000) };
+        assert_eq!(gone, WAIT_OBJECT_0, "the job did not take it");
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn a_process_inherits_what_its_birth_lists_and_nothing_else() {
+        use std::io::Read;
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::{HANDLE_FLAG_INHERIT, SetHandleInformation};
+
+        // The writing end of a pipe the service would be reading, left
+        // inheritable by whoever started a program of their own at that
+        // moment, and listed nowhere.
+        let (mut reading, writing) = std::io::pipe().unwrap();
+        // Safe: the handle is the pipe's own and open.
+        let marked = unsafe {
+            SetHandleInformation(
+                writing.as_raw_handle(),
+                HANDLE_FLAG_INHERIT,
+                HANDLE_FLAG_INHERIT,
+            )
+        };
+        assert_ne!(marked, 0, "{}", refusal_of("SetHandleInformation"));
+
+        let output = scratch("inherited");
+        let started = born(LINGERING, &output);
+        drop(writing);
+        // The only writer left is the one the process would hold had it
+        // taken what it was not given: the reading ends at once, and not
+        // when the process does.
+        let (ended, end) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut rest = Vec::new();
+            let _ = ended.send(reading.read_to_end(&mut rest).map(|_| rest));
+        });
+        let read = end
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the process holds a handle it was never given");
+        assert!(read.unwrap().is_empty());
+        let _ = Box::new(started).let_go(Duration::ZERO);
+        let _ = std::fs::remove_file(&output);
     }
 }
