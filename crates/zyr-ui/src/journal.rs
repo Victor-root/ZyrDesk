@@ -26,11 +26,13 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use zyr_control::{Answer, Request};
+use zyr_proto::fact::Fact;
 use zyr_proto::journal::Journal;
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 use zyr_proto::sifting::Sifting;
 
+use crate::desk::fingerprint_of;
 use crate::service;
 
 /// This computer's journal, ready to be copied out.
@@ -45,7 +47,7 @@ pub async fn journal(sift: &str) -> String {
     };
     match service::ask(&asking).await {
         Ok(Answer::Journal(text)) => text,
-        Ok(other) => gathered_here(&service::unexpected(other), sift),
+        Ok(other) => gathered_here(&other.unexpected(), sift),
         // A service that is not answering is exactly when a journal is
         // wanted, so the files are gathered here instead. What is lost
         // is what only the service knew, and its silence is written in
@@ -60,30 +62,27 @@ pub async fn journal(sift: &str) -> String {
 /// to it, and one that is asleep or gone answers nothing at all. The
 /// refusal that comes back then is the same one a session would have
 /// been refused with, which is what makes it worth reading.
-pub async fn far_journal(
-    host: String,
-    fingerprint: String,
-    sift: String,
-) -> Result<String, String> {
-    let peer = fingerprint
-        .trim()
-        .parse()
-        .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
-    note(&format!("journal demandé à {peer}"));
+pub async fn far_journal(host: String, fingerprint: String, sift: String) -> Result<String, Fact> {
+    let peer = fingerprint_of(&fingerprint)?;
+    note(&format!("journal asked of {peer}"));
     match service::ask(&Request::FarJournal { host, peer, sift }).await {
         Ok(Answer::Journal(text)) => Ok(text),
-        Ok(other) => Err(service::unexpected(other)),
+        Ok(other) => Err(other.unexpected()),
         Err(reason) => {
-            note(&format!("journal de {peer} non obtenu : {reason}"));
+            note(&format!("journal of {peer} not obtained: {reason}"));
             Err(reason)
         }
     }
 }
 
 /// What this window can gather on its own, the service being silent.
-fn gathered_here(reason: &str, sift: &str) -> String {
+///
+/// Its silence is written as the fact it is, on one line like every
+/// fact: the journal lines up its tags, and a folded reason would break
+/// the column.
+fn gathered_here(reason: &Fact, sift: &str) -> String {
     let mut journal = Journal::of_this_computer();
-    journal.says("Service", &reason.replace('\n', " "));
+    journal.says("Service", &reason.to_string());
     journal.sifted(&Sifting::of(sift))
 }
 
@@ -96,20 +95,17 @@ fn gathered_here(reason: &str, sift: &str) -> String {
 /// Done here rather than through the service, which the far one has to
 /// go through: this one has to work when the service does not answer,
 /// and that is when a fresh page is wanted most.
-pub fn clear_journal() -> Result<(), String> {
+pub fn clear_journal() -> Result<(), Fact> {
     let refused = zyr_proto::journal::emptied();
 
     // Written after the emptying, so the journal opens on the moment it
     // was cleared rather than on nothing at all.
-    note("journal vidé");
+    note("journal emptied");
 
     if refused.is_empty() {
         return Ok(());
     }
-    Err(format!(
-        "une partie du journal n'a pas pu être vidée :\n  {}",
-        refused.join("\n  ")
-    ))
+    Err(Fact::new("window.journal_partly_emptied").with("files", refused.join("\n  ")))
 }
 
 /// Empties another computer's journal.
@@ -118,19 +114,16 @@ pub fn clear_journal() -> Result<(), String> {
 /// a fault is found by emptying both journals, doing the thing that goes
 /// wrong, and reading both. Emptying only the one within arm's reach
 /// leaves the walk to the other machine exactly where it was.
-pub async fn clear_far_journal(host: String, fingerprint: String) -> Result<(), String> {
-    let peer = fingerprint
-        .trim()
-        .parse()
-        .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
+pub async fn clear_far_journal(host: String, fingerprint: String) -> Result<(), Fact> {
+    let peer = fingerprint_of(&fingerprint)?;
     match service::ask(&Request::ClearFarJournal { host, peer }).await {
         Ok(Answer::Done) => {
-            note(&format!("journal de {peer} vidé"));
+            note(&format!("journal of {peer} emptied"));
             Ok(())
         }
-        Ok(other) => Err(service::unexpected(other)),
+        Ok(other) => Err(other.unexpected()),
         Err(reason) => {
-            note(&format!("journal de {peer} non vidé : {reason}"));
+            note(&format!("journal of {peer} not emptied: {reason}"));
             Err(reason)
         }
     }
@@ -180,7 +173,7 @@ pub fn note(what: &str) {
 
 /// Says which build this window is, the moment it opens.
 pub fn opened() {
-    note(&format!("fenêtre ouverte, {}", zyr_proto::version_line()));
+    note(&format!("window opened, {}", zyr_proto::version_line()));
 }
 
 #[cfg(test)]
@@ -192,18 +185,15 @@ mod tests {
         // It is precisely when the service does not answer that the
         // journal gets opened: the page must come all the same, and say
         // what is missing rather than leave a blank.
-        let text = gathered_here(
-            "le service ZyrDesk ne tourne pas.\n  Lancez « zyrdeskd status ».",
-            "",
-        );
-        assert!(text.contains("Service"), "{text}");
-        assert!(text.contains("ne tourne pas"), "{text}");
+        let silence = Fact::new("service.broken").with("detail", "the pipe\nbroke");
+        let text = gathered_here(&silence, "");
         // On one line: the journal lines up its tags, and a folded
         // reason would break the column.
         let service = text
             .lines()
             .find(|line| line.starts_with("Service"))
-            .expect("une ligne de service");
-        assert!(service.contains("zyrdeskd status"), "{service}");
+            .expect("a line for the service");
+        assert!(service.contains("service.broken"), "{service}");
+        assert!(service.contains("broke"), "{service}");
     }
 }

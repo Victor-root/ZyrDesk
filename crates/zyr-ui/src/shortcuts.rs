@@ -26,6 +26,8 @@ use std::io;
 use std::path::Path;
 use std::str::FromStr;
 
+use zyr_proto::fact::Fact;
+
 /// What this module's lines are filed under.
 const TAG: &str = "keys";
 
@@ -241,7 +243,7 @@ pub fn read(path: &Path) -> io::Result<Bound> {
 fn read_or_shipped(path: &Path) -> Bound {
     read(path).unwrap_or_else(|e| {
         note(&format!(
-            "raccourcis illisibles ({e}), combinaisons d'origine en attendant"
+            "shortcuts unreadable ({e}), the shipped combinations meanwhile"
         ));
         Bound::out_of_the_box()
     })
@@ -274,8 +276,8 @@ fn read_lines(contents: &str) -> Bound {
 
 pub fn write(path: &Path, bound: &Bound) -> io::Result<()> {
     let mut text = String::from(
-        "# Raccourcis clavier de ZyrDesk, un par ligne.\n\
-         # Une ligne absente veut dire qu'aucune touche n'est attribuée.\n",
+        "# ZyrDesk's keyboard shortcuts, one per line.\n\
+         # A line left out means no key is given.\n",
     );
     for (doing, combination) in bound.in_force() {
         text.push_str(&format!("{} {combination}\n", doing.name()));
@@ -399,20 +401,20 @@ pub fn engraved() -> Vec<(Doing, Option<String>)> {
 
 /// A combination as a person reads it.
 ///
-/// The held keys carry the French keyboard's word here, whereas
+/// The held keys carry the words of the person's keyboard here, whereas
 /// `Display` carries the file's: one is for reading, the other for
 /// reading back, and mixing them up would change what is written on the
 /// disk.
 fn spelled(combination: &Combination) -> String {
     let mut written = String::new();
     for (held, name) in [
-        (combination.held.ctrl, "Ctrl"),
-        (combination.held.alt, "Alt"),
-        (combination.held.shift, "Maj"),
-        (combination.held.win, "Win"),
+        (combination.held.ctrl, zyr_i18n::say!("key.ctrl")),
+        (combination.held.alt, zyr_i18n::say!("key.alt")),
+        (combination.held.shift, zyr_i18n::say!("key.shift")),
+        (combination.held.win, zyr_i18n::say!("key.win")),
     ] {
         if held {
-            written.push_str(name);
+            written.push_str(&name);
             written.push_str(" + ");
         }
     }
@@ -459,21 +461,18 @@ fn engraved_key(key: &str) -> String {
 
 /// Gives a key to one thing, or takes its key away when nothing is
 /// given.
-pub fn bind(doing: Doing, wanted: Option<Combination>) -> Result<(), String> {
+pub fn bind(doing: Doing, wanted: Option<Combination>) -> Result<(), Fact> {
     if let Some(read) = &wanted
         && !read.stands()
     {
-        return Err(
-            "cette combinaison ne peut pas être prise : il faut au moins une touche \
-                    tenue, et une touche que ZyrDesk sait placer sur un clavier."
-                .to_string(),
-        );
+        return Err(Fact::new("window.combination_refused"));
     }
 
     let path = zyr_proto::paths::keyboard_shortcuts();
-    let mut bound = read(&path).map_err(|e| e.to_string())?;
+    let mut bound =
+        read(&path).map_err(|e| Fact::new("window.shortcuts_unreadable").with("detail", e))?;
     bound.set(doing, wanted);
-    write(&path, &bound).map_err(|e| e.to_string())?;
+    write(&path, &bound).map_err(|e| Fact::new("window.shortcuts_not_saved").with("detail", e))?;
     listen_again();
     Ok(())
 }
@@ -517,7 +516,7 @@ pub fn listen(app: crate::app::App) {
             )
         };
         // SAFETY: no argument, and the answer is this thread's own name.
-        *BOARD.lock().expect("fil des raccourcis") = Some(unsafe { GetCurrentThreadId() });
+        *BOARD.lock().expect("shortcuts' thread") = Some(unsafe { GetCurrentThreadId() });
         while hold_them(&app) {}
     });
 }
@@ -527,7 +526,7 @@ pub fn listen(app: crate::app::App) {
 pub fn listen_again() {
     use windows_sys::Win32::UI::WindowsAndMessaging::PostThreadMessageW;
 
-    let Some(thread) = *BOARD.lock().expect("fil des raccourcis") else {
+    let Some(thread) = *BOARD.lock().expect("shortcuts' thread") else {
         return;
     };
     // SAFETY: the name is one this program gave itself above, and the
@@ -557,7 +556,7 @@ fn hold_them(app: &crate::app::App) -> bool {
         let key = unsafe { MapVirtualKeyW(u32::from(scan), MAPVK_VSC_TO_VK) };
         if key == 0 {
             note(&format!(
-                "raccourci {combination} : ce clavier n'a pas cette touche"
+                "shortcut {combination}: this keyboard has no such key"
             ));
             continue;
         }
@@ -578,17 +577,14 @@ fn hold_them(app: &crate::app::App) -> bool {
         // SAFETY: no window, so the combination belongs to this thread,
         // and the identifier is ours and unique within it.
         if unsafe { RegisterHotKey(null_mut(), id, modifiers, key) } != 0 {
-            note(&format!(
-                "raccourci {combination} tenu pour {}",
-                doing.name()
-            ));
+            note(&format!("shortcut {combination} held for {}", doing.name()));
             taken.push((id, doing));
         } else {
             // Said out loud: another program holding the same
             // combination is the ordinary reason, and from the outside
             // it looks exactly like a shortcut that does nothing.
             note(&format!(
-                "raccourci {combination} refusé par Windows, sans doute déjà pris ailleurs"
+                "shortcut {combination} refused by Windows, most likely taken elsewhere already"
             ));
         }
     }
@@ -628,7 +624,7 @@ fn do_it(app: &crate::app::App, doing: Doing) {
     match doing {
         Doing::Menu => {
             if let Err(e) = crate::floating::show_the_menu(app) {
-                note(&format!("raccourci du menu sans effet : {e}"));
+                note(&format!("menu shortcut did nothing: {e}"));
             }
         }
         Doing::End => on_the_session(app, crate::floating::Act::End),
@@ -638,7 +634,7 @@ fn do_it(app: &crate::app::App, doing: Doing) {
         Doing::NextScreen => {
             crate::app::spawn(async move {
                 if let Err(e) = crate::session::watch_the_next_far_screen().await {
-                    note(&format!("raccourci d'écran sans effet : {e}"));
+                    note(&format!("screen shortcut did nothing: {e}"));
                 }
             });
         }
@@ -652,7 +648,7 @@ fn on_the_session(app: &crate::app::App, act: crate::floating::Act) {
     let app = app.clone();
     crate::app::spawn(async move {
         if let Err(e) = crate::floating::ask(&app, act).await {
-            note(&format!("raccourci sans effet : {e}"));
+            note(&format!("shortcut did nothing: {e}"));
         }
     });
 }
@@ -670,7 +666,7 @@ mod tests {
     #[test]
     fn the_shipped_combination_is_the_one_that_brings_the_button_back() {
         let bound = Bound::out_of_the_box();
-        let menu = bound.menu.expect("le menu a une combinaison d'origine");
+        let menu = bound.menu.expect("the menu has a shipped combination");
         assert_eq!(menu.to_string(), "Alt+Backquote");
         assert!(menu.stands());
         assert!(bound.end.is_none());
@@ -682,7 +678,7 @@ mod tests {
         for text in ["Alt+Backquote", "Ctrl+Alt+Shift+KeyQ", "Win+F5"] {
             let combination: Combination = text.parse().expect(text);
             assert_eq!(combination.to_string(), text);
-            assert!(combination.stands(), "sur « {text} »");
+            assert!(combination.stands(), "on « {text} »");
         }
     }
 
@@ -703,14 +699,14 @@ mod tests {
     #[test]
     fn what_is_written_comes_back_the_same() {
         let mut bound = Bound::out_of_the_box();
-        bound.end = Some("Ctrl+Alt+Shift+KeyQ".parse().expect("combinaison"));
+        bound.end = Some("Ctrl+Alt+Shift+KeyQ".parse().expect("a combination"));
         let folder = std::env::temp_dir().join(format!(
-            "zyrdesk-raccourcis-{}",
+            "zyrdesk-shortcuts-{}",
             zyr_proto::random::alphanumeric_string(8)
         ));
         let path = folder.join("keyboard-shortcuts.conf");
-        write(&path, &bound).expect("écriture");
-        assert_eq!(read(&path).expect("lecture"), bound);
+        write(&path, &bound).expect("written");
+        assert_eq!(read(&path).expect("read back"), bound);
         let _ = fs::remove_dir_all(&folder);
     }
 
@@ -724,7 +720,7 @@ mod tests {
 
     #[test]
     fn a_line_nobody_can_read_costs_only_that_line() {
-        let bound = read_lines("bidule Alt+KeyA\nmenu Alt+KeyM\n");
+        let bound = read_lines("whatsit Alt+KeyA\nmenu Alt+KeyM\n");
         assert_eq!(bound.menu.expect("menu").to_string(), "Alt+KeyM");
     }
 

@@ -14,6 +14,8 @@
 use std::path::PathBuf;
 
 use zyr_control::{Account, Answer, Attach, Device, Holdup, OfAccount, Request};
+use zyr_proto::fact::Fact;
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::paths;
 
 use crate::service;
@@ -73,14 +75,13 @@ pub struct Standing {
     /// The build the service is running, which is not always this
     /// window's own.
     pub service_build: String,
-    /// Set when the service could not be asked, in words meant to be
-    /// shown as they are.
-    pub unreachable: Option<String>,
+    /// Set when the service could not be asked, and why.
+    pub unreachable: Option<Fact>,
 }
 
 impl Standing {
     /// What is still true when the service is not there.
-    fn without_the_service(reason: String) -> Self {
+    fn without_the_service(reason: Fact) -> Self {
         Self {
             name: zyr_proto::machine::name(),
             fingerprint: String::new(),
@@ -178,17 +179,14 @@ pub async fn watching() -> Vec<Watcher> {
 /// does today, except aimed at the one computer rather than at whoever
 /// happens to be connected. Nothing is asked of the far computer first:
 /// there is no channel to ask it anything on before its session exists.
-pub async fn kick(fingerprint: String) -> Result<(), String> {
-    let peer = fingerprint
-        .trim()
-        .parse()
-        .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
+pub async fn kick(fingerprint: String) -> Result<(), Fact> {
+    let peer = fingerprint_of(&fingerprint)?;
     match service::ask(&Request::Kick { peer }).await? {
         Answer::Done => {
-            note(&format!("{peer} déconnecté"));
+            note(&format!("{peer} disconnected"));
             Ok(())
         }
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
@@ -197,10 +195,10 @@ pub async fn kick(fingerprint: String) -> Result<(), String> {
 ///
 /// Told apart from a service that cannot be asked: without a link the
 /// settings offer to make one, and without a service they say so.
-pub async fn account() -> Result<Option<Account>, String> {
+pub async fn account() -> Result<Option<Account>, Fact> {
     match service::ask(&Request::Account).await? {
         Answer::Account(account) => Ok(account),
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
@@ -216,31 +214,31 @@ pub enum Attached {
 /// Attaches this computer to an account, through the service, which is
 /// what holds this computer's key and keeps the link once the window is
 /// gone.
-pub async fn attach(attach: Attach) -> Result<Attached, String> {
+pub async fn attach(attach: Attach) -> Result<Attached, Fact> {
     let server = attach.server.clone();
     match service::ask(&Request::Attach(attach)).await? {
         Answer::Done => {
-            note(&format!("cet ordinateur est rattaché à {server}"));
+            note(&format!("this computer is attached to {server}"));
             Ok(Attached::Done)
         }
         Answer::Unpinned { presented } => {
             note(&format!(
-                "{server} présente une clé que personne ne garantit ({presented}), à confirmer"
+                "{server} presents a key nobody vouches for ({presented}), to be confirmed"
             ));
             Ok(Attached::Unpinned(presented.to_string()))
         }
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
 /// Takes this computer off its account.
-pub async fn detach() -> Result<(), String> {
+pub async fn detach() -> Result<(), Fact> {
     match service::ask(&Request::Detach).await? {
         Answer::Done => {
-            note("cet ordinateur est détaché de son compte");
+            note("this computer is detached from its account");
             Ok(())
         }
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
@@ -258,26 +256,26 @@ pub async fn devices() -> Vec<Device> {
 }
 
 /// Renames a device of the account, at the server.
-pub async fn rename_device(device: String, name: String) -> Result<(), String> {
+pub async fn rename_device(device: String, name: String) -> Result<(), Fact> {
     match service::ask(&Request::RenameDevice { device, name }).await? {
         Answer::Done => Ok(()),
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
 /// Revokes a device of the account: it no longer speaks for the account,
 /// and its sessions close.
-pub async fn revoke_device(device: String) -> Result<(), String> {
+pub async fn revoke_device(device: String) -> Result<(), Fact> {
     match service::ask(&Request::RevokeDevice {
         device: device.clone(),
     })
     .await?
     {
         Answer::Done => {
-            note(&format!("appareil {device} révoqué"));
+            note(&format!("device {device} revoked"));
             Ok(())
         }
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
@@ -285,18 +283,18 @@ pub async fn revoke_device(device: String) -> Result<(), String> {
 ///
 /// Answers with what to show if it could not be done: a switch that
 /// moved without anything happening behind it would be a lie.
-pub async fn set_hosting(on: bool) -> Result<(), String> {
+pub async fn set_hosting(on: bool) -> Result<(), Fact> {
     match service::ask(&Request::SetHosting { on }).await? {
         Answer::Done => Ok(()),
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
 /// Decides whether the ZyrDesk of this network are let in on sight.
-pub async fn set_trust(on: bool) -> Result<(), String> {
+pub async fn set_trust(on: bool) -> Result<(), Fact> {
     match service::ask(&Request::SetTrust { on }).await? {
         Answer::Done => Ok(()),
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
@@ -304,19 +302,19 @@ pub async fn set_trust(on: bool) -> Result<(), String> {
 ///
 /// The door is reopened on it, which ends a session opened towards this
 /// computer, like the way it serves.
-pub async fn set_ecn(on: bool) -> Result<(), String> {
+pub async fn set_ecn(on: bool) -> Result<(), Fact> {
     match service::ask(&Request::SetEcn { on }).await? {
         Answer::Done => Ok(()),
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
 /// Decides whether the door listens on the product's own port. Reopens
 /// the door as well.
-pub async fn set_fixed_port(on: bool) -> Result<(), String> {
+pub async fn set_fixed_port(on: bool) -> Result<(), Fact> {
     match service::ask(&Request::SetFixedPort { on }).await? {
         Answer::Done => Ok(()),
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
@@ -327,10 +325,10 @@ pub async fn set_fixed_port(on: bool) -> Result<(), String> {
 /// anybody has signed in, and this window starts with the session, so
 /// the icon is there to say so. Turned off, nothing of this product runs
 /// until somebody opens it.
-pub async fn set_at_boot(on: bool) -> Result<(), String> {
+pub async fn set_at_boot(on: bool) -> Result<(), Fact> {
     match service::ask(&Request::SetAtBoot { on }).await? {
         Answer::Done => {}
-        other => return Err(service::unexpected(other)),
+        other => return Err(other.unexpected()),
     }
     if let Err(e) = crate::startup::with_windows(on) {
         // The two halves move together or not at all: the service half
@@ -338,15 +336,15 @@ pub async fn set_at_boot(on: bool) -> Result<(), String> {
         // would answer at power-on with no window anywhere to say so.
         let put_back = service::ask(&Request::SetAtBoot { on: !on }).await;
         note(&format!(
-            "démarrage avec Windows non enregistré ({e}), service remis : {}",
-            if put_back.is_ok() { "oui" } else { "non" }
+            "starting with Windows not saved ({e}), service put back: {}",
+            if put_back.is_ok() { "yes" } else { "no" }
         ));
         return Err(e);
     }
     note(if on {
-        "ZyrDesk reviendra avec Windows"
+        "ZyrDesk will come back with Windows"
     } else {
-        "ZyrDesk ne reviendra pas tout seul"
+        "ZyrDesk will not come back on its own"
     });
     Ok(())
 }
@@ -356,10 +354,10 @@ pub async fn set_at_boot(on: bool) -> Result<(), String> {
 /// Asked of the service rather than of Windows: stopping a service the
 /// ordinary way wants administrator rights, and a product that asked for
 /// them every time somebody quit would be unusable.
-pub async fn stop_service() -> Result<(), String> {
+pub async fn stop_service() -> Result<(), Fact> {
     match service::ask(&Request::Stop).await? {
         Answer::Done => Ok(()),
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
@@ -377,11 +375,8 @@ pub async fn authorize(
     fingerprint: String,
     host: Option<String>,
     name: Option<String>,
-) -> Result<(), String> {
-    let peer = fingerprint
-        .trim()
-        .parse()
-        .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
+) -> Result<(), Fact> {
+    let peer = fingerprint_of(&fingerprint)?;
     let host = host
         .map(|host| host.trim().to_string())
         .filter(|host| !host.is_empty());
@@ -391,10 +386,10 @@ pub async fn authorize(
 
     match service::ask(&Request::Authorize { peer, host, name }).await? {
         Answer::Done => {
-            note(&format!("{peer} écrit dans la liste"));
+            note(&format!("{peer} written into the list"));
             Ok(())
         }
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
@@ -403,17 +398,14 @@ pub async fn authorize(
 /// And out of the list of those allowed in, at the same time: one that
 /// disappeared from the screen while still being able to reach this
 /// computer would be a promise the product does not keep.
-pub async fn forget(fingerprint: String) -> Result<(), String> {
-    let peer = fingerprint
-        .trim()
-        .parse()
-        .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
+pub async fn forget(fingerprint: String) -> Result<(), Fact> {
+    let peer = fingerprint_of(&fingerprint)?;
     match service::ask(&Request::Forget { peer }).await? {
         Answer::Done => {
-            note(&format!("{peer} oublié"));
+            note(&format!("{peer} forgotten"));
             Ok(())
         }
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
@@ -423,9 +415,9 @@ pub async fn forget(fingerprint: String) -> Result<(), String> {
 /// the one prompt the person ever sees: a service is what makes this
 /// computer reachable before anybody has signed in, and Windows lets no
 /// program register one on its own.
-pub async fn start_service() -> Result<(), String> {
+pub async fn start_service() -> Result<(), Fact> {
     let program = service_program()?;
-    note(&format!("mise en service demandée : {}", program.display()));
+    note(&format!("setting the service up: {}", program.display()));
 
     // On a thread where waiting is allowed: this holds until the person
     // has answered the elevation prompt and the service has started.
@@ -433,36 +425,40 @@ pub async fn start_service() -> Result<(), String> {
         .await
         .map_err(|e| {
             // What broke is a thread of ours, in words meant for a log:
-            // the person gets a sentence, the journal gets the detail.
-            note(&format!("mise en service interrompue : {e}"));
-            "la mise en service ne s'est pas terminée. Le journal dit pourquoi.".to_string()
+            // the person is told it did not finish, the journal why.
+            note(&format!("setting the service up broke off: {e}"));
+            Fact::new("window.setup_interrupted")
         })?;
     note(&match &outcome {
-        Ok(()) => "service mis en place".to_string(),
-        Err(reason) => format!("service non mis en place : {reason}"),
+        Ok(()) => "service set up".to_string(),
+        Err(reason) => format!("service not set up: {reason}"),
     });
     outcome
+}
+
+/// A fingerprint as it was typed or copied, or why it is not one.
+pub fn fingerprint_of(typed: &str) -> Result<Fingerprint, Fact> {
+    typed
+        .trim()
+        .parse()
+        .map_err(|_| Fact::new("window.fingerprint_malformed"))
 }
 
 /// The service program, beside this one.
 ///
 /// The two are built and shipped together, so this is where it is;
 /// looking for it anywhere else would be guessing.
-fn service_program() -> Result<PathBuf, String> {
-    let here =
-        std::env::current_exe().map_err(|e| format!("ce programme ne sait pas où il est : {e}"))?;
+fn service_program() -> Result<PathBuf, Fact> {
+    let here = crate::app::this_program()?;
     let program = here.with_file_name(paths::executable_name("zyrdeskd"));
     if !program.is_file() {
-        return Err(format!(
-            "le service ZyrDesk est introuvable à côté de cette fenêtre :\n  {}",
-            program.display()
-        ));
+        return Err(Fact::new("window.service_missing").with("path", program.display()));
     }
     Ok(program)
 }
 
 #[cfg(windows)]
-fn set_up(program: &std::path::Path) -> Result<(), String> {
+fn set_up(program: &std::path::Path) -> Result<(), Fact> {
     crate::elevated::run(program, "setup")
 }
 
@@ -470,11 +466,11 @@ fn set_up(program: &std::path::Path) -> Result<(), String> {
 /// Windows one, and this exists so the rest stays compiled and checked
 /// everywhere.
 #[cfg(not(windows))]
-fn set_up(_program: &std::path::Path) -> Result<(), String> {
-    Err("le service ZyrDesk n'existe que sous Windows".to_string())
+fn set_up(_program: &std::path::Path) -> Result<(), Fact> {
+    Err(Fact::new("window.windows_only"))
 }
 
-async fn asked() -> Result<Standing, String> {
+async fn asked() -> Result<Standing, Fact> {
     match service::ask(&Request::Standing).await? {
         Answer::Standing(standing) => Ok(Standing {
             name: zyr_proto::machine::name(),
@@ -490,7 +486,7 @@ async fn asked() -> Result<Standing, String> {
             service_build: standing.build,
             unreachable: None,
         }),
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
@@ -502,7 +498,7 @@ mod tests {
     fn a_service_that_does_not_answer_leaves_the_switches_down() {
         // Otherwise the window would show a computer as reachable when
         // nothing is running to reach it.
-        let standing = Standing::without_the_service("le service ne tourne pas".to_string());
+        let standing = Standing::without_the_service(Fact::new("service.not_running"));
         assert!(!standing.hosting);
         assert!(!standing.wanted);
         assert!(!standing.trusting);

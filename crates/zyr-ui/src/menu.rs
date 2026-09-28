@@ -35,6 +35,7 @@ use crate::settings::{Offered, SessionMenu};
 use crate::shortcuts::Doing;
 use crate::win32::pointer_in;
 use zyr_player::Measures;
+use zyr_proto::fact::Fact;
 
 /// What this module files its journal lines under.
 const TAG: &str = "floating";
@@ -495,7 +496,7 @@ static CARD_WIDTH: AtomicU32 = AtomicU32::new(0);
 ///
 /// Said on the card, in red: a switch that rightly refuses and simply
 /// does not flip is a broken switch, even when it is perfectly right.
-static REFUSAL: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+static REFUSAL: Mutex<Option<(Fact, Instant)>> = Mutex::new(None);
 
 /// How tall this refusal is, measured when drawing, as the card is.
 static REFUSAL_HEIGHT: AtomicU32 = AtomicU32::new(0);
@@ -513,14 +514,14 @@ const REFUSAL_TIME: Duration = Duration::from_secs(20);
 /// again often, and a refusal from an hour ago would read like the one
 /// for the click just made.
 fn refusal_to_say() -> Option<String> {
-    let mut refusal = REFUSAL.lock().expect("refus du menu");
+    let mut refusal = REFUSAL.lock().expect("menu's refusal");
     if refusal
         .as_ref()
         .is_some_and(|(_, since)| since.elapsed() >= REFUSAL_TIME)
     {
         *refusal = None;
     }
-    refusal.as_ref().map(|(said, _)| said.clone())
+    refusal.as_ref().map(|(why, _)| zyr_i18n::fact(why))
 }
 
 /// The round of the settings watch, which stops the
@@ -2578,12 +2579,12 @@ fn say_the_click(label: &str) {
 /// On the card and in the journal. On the card because that is where the
 /// person who has just clicked is looking, and in the journal because the
 /// card closes and a sentence read once cannot be found again.
-fn say_the_refusal(refusal: Result<(), String>) {
+fn say_the_refusal(refusal: Result<(), Fact>) {
     let Err(refusal) = refusal else {
         return;
     };
-    note(&format!("menu du bouton flottant : {refusal}"));
-    *REFUSAL.lock().expect("refus du menu") = Some((refusal, Instant::now()));
+    note(&format!("floating button's menu: {refusal}"));
+    *REFUSAL.lock().expect("menu's refusal") = Some((refusal, Instant::now()));
     if let Some(app) = PROGRAM.lock().expect("programme du menu").clone() {
         redraw(&app);
     }

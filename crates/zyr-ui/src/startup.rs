@@ -15,6 +15,8 @@
 // compiled and checked, it is simply called by nobody.
 #![cfg_attr(not(windows), allow(dead_code))]
 
+use zyr_proto::fact::Fact;
+
 /// Where Windows looks for what to start with a session.
 #[cfg(windows)]
 const WHERE: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -26,22 +28,22 @@ const ENTRY: &str = "ZyrDesk";
 
 /// Decides whether ZyrDesk starts with the session.
 #[cfg(windows)]
-pub fn with_windows(on: bool) -> Result<(), String> {
-    let program =
-        std::env::current_exe().map_err(|e| format!("ce programme ne sait pas où il est : {e}"))?;
-    if on {
+pub fn with_windows(on: bool) -> Result<(), Fact> {
+    let program = crate::app::this_program()?;
+    let done = if on {
         written(&format!("\"{}\"", program.display()))
     } else {
         erased()
-    }
+    };
+    done.map_err(|detail| Fact::new("window.startup_not_saved").with("detail", detail))
 }
 
 /// Outside Windows there is nothing to start with a session: the product
 /// is a Windows one, and this exists so the rest stays compiled and
 /// checked everywhere.
 #[cfg(not(windows))]
-pub fn with_windows(_on: bool) -> Result<(), String> {
-    Err("le démarrage avec Windows n'existe que sous Windows".to_string())
+pub fn with_windows(_on: bool) -> Result<(), Fact> {
+    Err(Fact::new("window.windows_only"))
 }
 
 #[cfg(windows)]
@@ -61,7 +63,7 @@ fn written(command: &str) -> Result<(), String> {
         let mut key = std::ptr::null_mut();
         let opened = RegOpenKeyExW(HKEY_CURRENT_USER, path.as_ptr(), 0, KEY_SET_VALUE, &mut key);
         if opened != ERROR_SUCCESS {
-            return Err(format!("le registre a refusé l'ouverture ({opened})"));
+            return Err(format!("the registry refused to open ({opened})"));
         }
         let written = RegSetValueExW(
             key,
@@ -74,7 +76,7 @@ fn written(command: &str) -> Result<(), String> {
         );
         RegCloseKey(key);
         if written != ERROR_SUCCESS {
-            return Err(format!("le registre a refusé l'écriture ({written})"));
+            return Err(format!("the registry refused to write ({written})"));
         }
     }
     Ok(())
@@ -95,13 +97,13 @@ fn erased() -> Result<(), String> {
         let mut key = std::ptr::null_mut();
         let opened = RegOpenKeyExW(HKEY_CURRENT_USER, path.as_ptr(), 0, KEY_SET_VALUE, &mut key);
         if opened != ERROR_SUCCESS {
-            return Err(format!("le registre a refusé l'ouverture ({opened})"));
+            return Err(format!("the registry refused to open ({opened})"));
         }
         let erased = RegDeleteValueW(key, name.as_ptr());
         RegCloseKey(key);
         // Already absent is the state that was asked for, reached.
         if erased != ERROR_SUCCESS && erased != ERROR_FILE_NOT_FOUND {
-            return Err(format!("le registre a refusé l'effacement ({erased})"));
+            return Err(format!("the registry refused to erase ({erased})"));
         }
     }
     Ok(())

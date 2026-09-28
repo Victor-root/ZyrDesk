@@ -17,6 +17,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use zyr_proto::fact::Fact;
 use zyr_proto::paths;
 
 /// A folder the window is allowed to name.
@@ -27,11 +28,11 @@ enum Which {
 }
 
 impl Which {
-    fn read(named: &str) -> Result<Self, String> {
+    fn read(named: &str) -> Result<Self, Fact> {
         match named {
             "logs" => Ok(Which::Logs),
             "ffmpeg" => Ok(Which::Ffmpeg),
-            other => Err(format!("dossier inconnu : {other}")),
+            other => Err(Fact::new("window.unknown_folder").with("name", other)),
         }
     }
 
@@ -60,11 +61,11 @@ pub fn logs_folder() -> String {
 
 /// Opens one of them, so a problem can be looked at without anyone
 /// having to be told where to click.
-pub fn open_folder(which: String) -> Result<(), String> {
+pub fn open_folder(which: String) -> Result<(), Fact> {
     let folder = Which::read(&which)?.path();
     std::fs::create_dir_all(&folder)
-        .map_err(|e| format!("le dossier n'a pas pu être créé : {e}"))?;
-    shown(&folder).map_err(|e| format!("le dossier n'a pas pu être ouvert : {e}"))
+        .map_err(|e| Fact::new("window.folder_not_made").with("detail", e))?;
+    shown(&folder).map_err(|e| Fact::new("window.folder_not_opened").with("detail", e))
 }
 
 #[cfg(windows)]
@@ -100,7 +101,7 @@ mod tests {
         let logs = Which::read("logs").unwrap().path();
         assert!(
             logs.starts_with(paths::data_dir()),
-            "{} hors du dossier",
+            "{} outside the folder",
             logs.display()
         );
         assert_eq!(Which::read("ffmpeg").unwrap().path(), paths::ffmpeg_dir());

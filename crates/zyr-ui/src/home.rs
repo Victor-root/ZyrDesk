@@ -28,6 +28,7 @@ use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 
 use zyr_broker::rest::Access;
 use zyr_control::{Account, Attach, Device, Registering};
+use zyr_proto::fact::Fact;
 
 use crate::app::App;
 
@@ -4051,7 +4052,7 @@ fn set_the_combination(app: &App, doing: Doing, combination: Option<Combination>
     state.listening = None;
     state.trouble = None;
     if let Err(refusal) = crate::shortcuts::bind(doing, combination) {
-        state.trouble = Some(refusal);
+        state.trouble = Some(zyr_i18n::fact(&refusal));
     }
     drop(state);
     if let Some(seen) = SEEN.lock().expect("accueil").as_mut() {
@@ -4689,7 +4690,7 @@ fn remedy_it(app: &App, rank: usize) {
             let app = app.clone();
             crate::app::spawn(async move {
                 if let Err(reason) = crate::desk::start_service().await {
-                    notice(&app, &reason, true);
+                    notice(&app, &zyr_i18n::fact(&reason), true);
                 }
                 reread(&app).await;
                 redraw(&app);
@@ -4702,7 +4703,7 @@ fn remedy_it(app: &App, rank: usize) {
 
 fn open_a_folder(app: &App, which: &'static str) {
     if let Err(reason) = crate::folders::open_folder(which.to_string()) {
-        notice(app, &reason, true);
+        notice(app, &zyr_i18n::fact(&reason), true);
     }
 }
 
@@ -4742,7 +4743,7 @@ fn push(app: &App, button: Toggle) {
             }
         };
         if let Err(reason) = target {
-            say_the_trouble(&app, &reason);
+            say_the_trouble(&app, &zyr_i18n::fact(&reason));
         }
         STATE
             .lock()
@@ -4783,7 +4784,7 @@ fn pick(app: &App, target: Pick, rank: usize) {
         })
         .await;
         if let Err(reason) = done {
-            say_the_trouble(&app, &reason);
+            say_the_trouble(&app, &zyr_i18n::fact(&reason));
         }
         reread(&app).await;
         redraw(&app);
@@ -4794,9 +4795,7 @@ fn pick(app: &App, target: Pick, rank: usize) {
 ///
 /// The whole set goes to the service so that it never has to guess
 /// what stayed.
-async fn write_the_settings(
-    change: impl FnOnce(&mut crate::settings::Chosen),
-) -> Result<(), String> {
+async fn write_the_settings(change: impl FnOnce(&mut crate::settings::Chosen)) -> Result<(), Fact> {
     let mut chosen = crate::settings::Chosen::of(crate::settings::preferred().await);
     change(&mut chosen);
     crate::settings::choose(chosen).await
@@ -4828,7 +4827,7 @@ fn connect(app: &App) {
         )
         .await;
         if let Err(reason) = written {
-            notice(&app, &reason, true);
+            notice(&app, &zyr_i18n::fact(&reason), true);
             return;
         }
         reread(&app).await;
@@ -4867,7 +4866,7 @@ fn forget(app: &App, fingerprint: String) {
     crate::app::spawn(async move {
         if let Err(reason) = crate::desk::forget(fingerprint).await {
             act(&app, Target::Close);
-            notice(&app, &reason, true);
+            notice(&app, &zyr_i18n::fact(&reason), true);
             return;
         }
         reread(&app).await;
@@ -4880,7 +4879,7 @@ fn disconnect(app: &App, fingerprint: String) {
     let app = app.clone();
     crate::app::spawn(async move {
         if let Err(reason) = crate::desk::kick(fingerprint).await {
-            notice(&app, &reason, true);
+            notice(&app, &zyr_i18n::fact(&reason), true);
             return;
         }
         reread(&app).await;
@@ -5011,7 +5010,7 @@ fn attach(app: &App, pinning: Option<String>) {
                     false
                 }
                 Err(reason) => {
-                    state.trouble = Some(reason);
+                    state.trouble = Some(zyr_i18n::fact(&reason));
                     false
                 }
             }
@@ -5052,7 +5051,7 @@ fn detach(app: &App) {
     let app = app.clone();
     crate::app::spawn(async move {
         if let Err(reason) = crate::desk::detach().await {
-            say_the_trouble(&app, &reason);
+            say_the_trouble(&app, &zyr_i18n::fact(&reason));
         }
         reread(&app).await;
         redraw(&app);
@@ -5106,7 +5105,7 @@ fn rename(app: &App) {
     let app = app.clone();
     crate::app::spawn(async move {
         if let Err(reason) = crate::desk::rename_device(device, new_name).await {
-            say_the_trouble(&app, &reason);
+            say_the_trouble(&app, &zyr_i18n::fact(&reason));
         }
         reread(&app).await;
         redraw(&app);
@@ -5138,7 +5137,7 @@ fn revoke(app: &App, rank: usize) {
     let app = app.clone();
     crate::app::spawn(async move {
         if let Err(reason) = crate::desk::revoke_device(device.id).await {
-            say_the_trouble(&app, &reason);
+            say_the_trouble(&app, &zyr_i18n::fact(&reason));
         }
         reread(&app).await;
         redraw(&app);
@@ -5151,13 +5150,13 @@ fn revoke(app: &App, rank: usize) {
 ///
 /// Called by what drives the session: the window is the only one
 /// that can say how far along something is that has no picture yet.
-pub fn step(app: &App, detail: &str) {
+pub fn step(app: &App, detail: &Fact) {
     {
         let mut state = STATE.lock().expect("accueil");
         let Some(opening) = state.opening.as_mut() else {
             return;
         };
-        opening.detail = detail.to_string();
+        opening.detail = zyr_i18n::fact(detail);
     }
     redraw(app);
 }
@@ -5202,8 +5201,8 @@ pub fn put_the_opening_away(app: &App) {
 }
 
 /// A session that ended badly, or that could not open.
-pub fn failed(app: &App, text: &str) {
-    notice(app, text, true);
+pub fn failed(app: &App, why: &Fact) {
+    notice(app, &zyr_i18n::fact(why), true);
     put_the_opening_away(app);
 }
 
@@ -5296,7 +5295,7 @@ fn reread_the_journal(app: &App, after: After) {
             // Shown in the journal itself: that is where the person who
             // has just clicked is looking, and a computer that does not
             // answer is already half the answer.
-            .unwrap_or_else(|reason| reason),
+            .unwrap_or_else(|reason| zyr_i18n::fact(&reason)),
         };
         // Reaching a distant machine takes as long as it takes: the
         // journal may have been closed, or switched to another computer
@@ -5406,7 +5405,10 @@ fn empty_the_journal(app: &App) {
             }
         };
         if let Err(reason) = done {
-            STATE.lock().expect("accueil").lines = reason.lines().map(str::to_string).collect();
+            STATE.lock().expect("accueil").lines = zyr_i18n::fact(&reason)
+                .lines()
+                .map(str::to_string)
+                .collect();
             redraw(&app);
             return;
         }

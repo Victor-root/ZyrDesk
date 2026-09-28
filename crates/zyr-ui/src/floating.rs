@@ -33,7 +33,10 @@
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
 use std::time::Duration;
 
+use zyr_proto::fact::Fact;
+
 use crate::app::App;
+use crate::session::none_under_way;
 
 // What the button did goes into the same journal as everything else: it
 // has nowhere else to say it, standing behind the picture, and a menu
@@ -135,23 +138,6 @@ pub enum Act {
     /// all times rather than only when they have something to say.
     Badges,
     End,
-}
-
-impl std::fmt::Display for Act {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Act::Fullscreen => "plein écran",
-            Act::Stats => "statistiques",
-            Act::MouseMode => "mode de la souris",
-            Act::SecureAttention => "Ctrl+Alt+Suppr",
-            Act::LockScreen => "verrouillage de l'ordinateur distant",
-            Act::Sound => "son de la session",
-            Act::SystemKeys => "touches système",
-            Act::Clipboard => "presse-papiers partagé",
-            Act::Badges => "voyants montrés en permanence",
-            Act::End => "fin de la session",
-        })
-    }
 }
 
 /// The session the button belongs to.
@@ -385,7 +371,9 @@ pub fn where_it_was_left() {
     };
     if let (Some(dx), Some(dy)) = (read("x"), read("y")) {
         nudged_to(dx, dy);
-        note(&format!("bouton flottant repris à {dx}, {dy} du coin"));
+        note(&format!(
+            "floating button taken back at {dx}, {dy} from the corner"
+        ));
     }
 }
 
@@ -397,14 +385,14 @@ pub fn where_it_was_left() {
 fn leave_it_there() {
     let (dx, dy) = nudge();
     let written = format!(
-        "# Où le bouton flottant d'une session a été posé, en pixels\n\
-         # réels depuis le coin haut droit de l'image.\n\
-         # Écrit par ZyrDesk, peut se corriger à la main.\n\
+        "# Where the floating button of a session was put down, in real\n\
+         # pixels from the top right corner of the picture.\n\
+         # Written by ZyrDesk, can be corrected by hand.\n\
          x = {dx}\n\
          y = {dy}\n"
     );
     if let Err(e) = zyr_proto::files::replace(&zyr_proto::paths::floating_button(), &written) {
-        note(&format!("place du bouton flottant non retenue : {e}"));
+        note(&format!("floating button's place not kept: {e}"));
     }
 }
 
@@ -636,9 +624,9 @@ pub fn lower(app: &App) {
 ///
 /// The two windows it is made of go away together, the logo and the
 /// card: one left standing would be a button half put away.
-pub fn hide(app: &App) -> Result<(), String> {
+pub fn hide(app: &App) -> Result<(), Fact> {
     if !a_session_is_up(app) {
-        return Err("le bouton flottant n'est plus là".to_string());
+        return Err(Fact::new("window.button_gone"));
     }
     HIDDEN.store(true, Ordering::Relaxed);
     #[cfg(windows)]
@@ -801,9 +789,9 @@ fn held_inside(
 ///
 /// Both ways round, because one combination that only opens leaves the
 /// hand reaching for the mouse to undo what the keyboard just did.
-pub fn show_the_menu(app: &App) -> Result<(), String> {
+pub fn show_the_menu(app: &App) -> Result<(), Fact> {
     if !a_session_is_up(app) {
-        return Err("aucune session en cours".to_string());
+        return Err(none_under_way());
     }
     // Asked for again with the menu already open is asking to be rid of
     // it. Everything below is about getting to a menu, and none of it is
@@ -875,14 +863,14 @@ pub fn the_figures_are_shown(app: &App) -> bool {
 /// The watch reads this at its own turn, eighty milliseconds away, so
 /// nothing has to be told: they are there, or gone, before the hand has
 /// left the menu.
-fn always_show_the_badges(app: &App) -> Result<(), String> {
+fn always_show_the_badges(app: &App) -> Result<(), Fact> {
     let state = app.floating();
     let held = !state.badges.load(Ordering::Relaxed);
     state.badges.store(held, Ordering::Relaxed);
     note(if held {
-        "voyants : tenus à l'écran, allumés ou éteints selon ce qu'ils lisent"
+        "badges: held on screen, lit or dim by what they read"
     } else {
-        "voyants : rendus à eux-mêmes, ils ne se montrent qu'en cas de besoin"
+        "badges: left to themselves, they only show when needed"
     });
     Ok(())
 }
@@ -896,7 +884,7 @@ fn always_show_the_badges(app: &App) -> Result<(), String> {
 /// from the settings at every turn of their watch. So throwing it is
 /// writing it down, and the sharing starts or stops within the quarter
 /// of a second that follows.
-async fn share_the_clipboard(app: &App) -> Result<(), String> {
+async fn share_the_clipboard(app: &App) -> Result<(), Fact> {
     let state = app.floating();
     let shared = !state.clipboard.load(Ordering::Relaxed);
     state.clipboard.store(shared, Ordering::Relaxed);
@@ -909,15 +897,15 @@ async fn share_the_clipboard(app: &App) -> Result<(), String> {
 ///
 /// For this session only, like the badges held up: the settings screen
 /// says whether a session opens with them.
-fn show_the_figures(app: &App) -> Result<(), String> {
+fn show_the_figures(app: &App) -> Result<(), Fact> {
     if !a_session_is_up(app) {
-        return Err("aucune session en cours".to_string());
+        return Err(none_under_way());
     }
     let shown = !app.floating().figures.fetch_xor(true, Ordering::Relaxed);
     note(if shown {
-        "statistiques montrées sur l'image"
+        "figures shown over the picture"
     } else {
-        "statistiques retirées de l'image"
+        "figures taken off the picture"
     });
     keep_up_with_the_picture(app);
     Ok(())
@@ -931,24 +919,24 @@ fn show_the_figures(app: &App) -> Result<(), String> {
 /// picture in a game, which is the only pointer a game shows, and to
 /// stop on a desktop, where this computer draws it with no round trip
 /// behind the hand.
-fn change_the_mouse(app: &App) -> Result<(), String> {
+fn change_the_mouse(app: &App) -> Result<(), Fact> {
     if !a_session_is_up(app) {
-        return Err("aucune session en cours".to_string());
+        return Err(none_under_way());
     }
     let game = !crate::video::in_a_game();
     crate::video::play_a_game(app, game);
     crate::session::ask_the_player(|settings, _| settings.absolute_mouse = !game);
     note(if game {
-        "souris de jeu : le mouvement va à la session, l'ordinateur distant dessine son curseur"
+        "game mouse: the movement goes to the session, the far computer draws its pointer"
     } else {
-        "souris de bureau : la position va à la session, le curseur est dessiné ici"
+        "desktop mouse: the position goes to the session, the pointer is drawn here"
     });
     Ok(())
 }
 
 /// Gives the system's keys to the session, or back to this computer, and
 /// remembers where they were left: that is where the next session opens.
-async fn change_the_keyboard() -> Result<(), String> {
+async fn change_the_keyboard() -> Result<(), Fact> {
     let theirs = !crate::system_keys::immersive();
     crate::system_keys::switch(theirs);
     crate::settings::remember_system_keys(theirs).await;
@@ -966,20 +954,20 @@ pub fn hushed() -> Option<bool> {
 /// plays, and the person who asked is not asking for silence in a room
 /// they are not in: they are asking for silence in theirs. Nothing else
 /// playing here is touched.
-fn hush_the_session() -> Result<(), String> {
-    let player = crate::session::player().ok_or("aucune session en cours")?;
+fn hush_the_session() -> Result<(), Fact> {
+    let player = crate::session::player().ok_or_else(none_under_way)?;
     let quiet = !player.muted();
     player.set_muted(quiet);
     note(if quiet {
-        "son de la session coupé"
+        "session's sound hushed"
     } else {
-        "son de la session rendu"
+        "session's sound given back"
     });
     Ok(())
 }
 
 /// Does what the menu or a shortcut asks of the session.
-pub async fn ask(app: &App, act: Act) -> Result<(), String> {
+pub async fn ask(app: &App, act: Act) -> Result<(), Fact> {
     match act {
         // Covering the screen is still a session matter: the shortcut is
         // registered with the system for the whole life of the program,
@@ -987,7 +975,7 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
         // and write that down as the choice for the next session.
         Act::Fullscreen => {
             if !a_session_is_up(app) {
-                return Err("aucune session en cours".to_string());
+                return Err(none_under_way());
             }
             crate::picture::toggle_the_screen(app)
         }
@@ -1031,7 +1019,7 @@ fn the_menu_is_open() -> bool {
 /// is handled here rather than among the keystrokes: it has no letter and
 /// no place on a keyboard, and never will.
 ///
-async fn press_ctrl_alt_del_over_there() -> Result<(), String> {
+async fn press_ctrl_alt_del_over_there() -> Result<(), Fact> {
     let way = the_way_of_this_session().await?;
     crate::service::ask(&zyr_control::Request::SecureAttention { way })
         .await
@@ -1050,7 +1038,7 @@ async fn press_ctrl_alt_del_over_there() -> Result<(), String> {
 /// So it goes round the same way Ctrl+Alt+Suppr does, and for the same
 /// reason: some things a session needs have no letter, no place on a
 /// keyboard, and never will.
-async fn lock_over_there() -> Result<(), String> {
+async fn lock_over_there() -> Result<(), Fact> {
     let way = the_way_of_this_session().await?;
     // Timed from here because here is where the picture is watched. The
     // far computer says what its own half cost, and the two together say
@@ -1059,8 +1047,8 @@ async fn lock_over_there() -> Result<(), String> {
     let asked_at = std::time::Instant::now();
     let answer = crate::service::ask(&zyr_control::Request::LockScreen { way }).await;
     note(&format!(
-        "verrouillage de l'ordinateur distant : {} en {} ms",
-        if answer.is_ok() { "fait" } else { "refusé" },
+        "far computer's lock screen: {} in {} ms",
+        if answer.is_ok() { "done" } else { "refused" },
         asked_at.elapsed().as_millis()
     ));
     answer.map(|_| ())
@@ -1070,13 +1058,13 @@ async fn lock_over_there() -> Result<(), String> {
 ///
 /// Asked of the service, which knows every session of this computer: the
 /// one this program holds, and failing that the first.
-async fn the_way_of_this_session() -> Result<zyr_control::WayId, String> {
+async fn the_way_of_this_session() -> Result<zyr_control::WayId, Fact> {
     let sessions = crate::session::sessions().await;
     let ours = sessions
         .iter()
         .find(|session| session.process == std::process::id())
         .or_else(|| sessions.first())
-        .ok_or("aucune session en cours")?;
+        .ok_or_else(none_under_way)?;
     Ok(zyr_control::WayId(ours.way))
 }
 
@@ -1087,15 +1075,15 @@ async fn the_way_of_this_session() -> Result<zyr_control::WayId, String> {
 /// being raced for, the far computer being asked for its screen. Closing
 /// then is closing that, and it is said before anything else so the
 /// opening reads it at its very next step.
-fn end_the_session(app: &App) -> Result<(), String> {
+fn end_the_session(app: &App) -> Result<(), Fact> {
     if !crate::session::opening() {
-        return Err("aucune session en cours".to_string());
+        return Err(none_under_way());
     }
     // Said before the player stops, and never taken back: a session
     // reported as broken to whoever just closed it would be a lie.
     Floating::closing(app, true);
     if crate::session::close() {
-        note("fermeture de la session demandée");
+        note("closing the session asked for");
     }
     Ok(())
 }
@@ -1152,8 +1140,8 @@ fn put_the_button(picture: (i32, i32, i32, i32), anchor: (i32, i32)) {
     let up = !HIDDEN.load(Ordering::Relaxed);
     if SHOWN.swap(up, Ordering::Relaxed) != up {
         note(&format!(
-            "bouton flottant {}",
-            if up { "montré" } else { "retiré" }
+            "floating button {}",
+            if up { "shown" } else { "taken away" }
         ));
     }
     crate::logo::shown_now(up);
@@ -1268,9 +1256,9 @@ mod tests {
             let hung = hung_from(image, (0, 0), button, MARGIN);
             assert!(
                 hung.0 >= image.0 && hung.0 <= image.2,
-                "sur {image:?} : {hung:?}"
+                "on {image:?}: {hung:?}"
             );
-            assert!(hung.1 >= image.1, "sur {image:?} : {hung:?}");
+            assert!(hung.1 >= image.1, "on {image:?}: {hung:?}");
         }
     }
 
@@ -1328,15 +1316,6 @@ mod tests {
         let narrow = (0, 0, 200, 1_080);
         assert!(!opens_rightwards(narrow, (150, 16), width));
         assert!(opens_rightwards(narrow, (50, 16), width));
-    }
-
-    #[test]
-    fn there_is_one_way_to_end_a_session_and_not_two() {
-        // A session could be left with the far desktop open, or closed
-        // with it handed back. Carrying that difference up to the person
-        // would leave them a session neither running nor over. One single
-        // line of the menu ends it, and it carries one single act.
-        assert_eq!(Act::End.to_string(), "fin de la session");
     }
 
     #[test]

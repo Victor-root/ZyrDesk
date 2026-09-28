@@ -17,6 +17,7 @@ use windows_sys::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, 
 use windows_sys::Win32::System::Threading::{GetExitCodeProcess, INFINITE, WaitForSingleObject};
 use windows_sys::Win32::UI::Shell::{SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW};
 use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
+use zyr_proto::fact::Fact;
 
 /// What Windows says when the person turns the prompt down.
 const REFUSED: i32 = 1223;
@@ -61,7 +62,7 @@ impl Drop for Com {
 ///
 /// Waiting is the point: without it the window would announce a service
 /// that is not there yet, or one that never started at all.
-pub fn run(program: &Path, arguments: &str) -> Result<(), String> {
+pub fn run(program: &Path, arguments: &str) -> Result<(), Fact> {
     let _com = Com::entered();
 
     let verb = crate::win32::wide("runas");
@@ -79,8 +80,8 @@ pub fn run(program: &Path, arguments: &str) -> Result<(), String> {
     if unsafe { ShellExecuteExW(&mut about) } == 0 {
         let refused = std::io::Error::last_os_error();
         return Err(match refused.raw_os_error() {
-            Some(REFUSED) => "les droits administrateur ont été refusés.".to_string(),
-            _ => format!("Windows n'a pas lancé le service : {refused}"),
+            Some(REFUSED) => Fact::new("window.elevation_refused"),
+            _ => Fact::new("window.elevation_failed").with("detail", refused),
         });
     }
 
@@ -89,7 +90,7 @@ pub fn run(program: &Path, arguments: &str) -> Result<(), String> {
         // Started with nothing to watch it by: saying it worked would be
         // a guess, and the window would go on to show a service that may
         // not be there.
-        return Err("Windows n'a rien dit de ce qu'il a lancé".to_string());
+        return Err(Fact::new("window.elevation_silent"));
     }
     let outcome = waited(running);
     unsafe { CloseHandle(running) };
@@ -97,14 +98,14 @@ pub fn run(program: &Path, arguments: &str) -> Result<(), String> {
 }
 
 /// Waits for the elevated program, and reads what it made of it.
-fn waited(running: HANDLE) -> Result<(), String> {
+fn waited(running: HANDLE) -> Result<(), Fact> {
     if unsafe { WaitForSingleObject(running, INFINITE) } != WAIT_OBJECT_0 {
-        return Err("l'attente de la mise en service a échoué".to_string());
+        return Err(Fact::new("window.setup_wait_failed"));
     }
 
     let mut code: u32 = 0;
     if unsafe { GetExitCodeProcess(running, &mut code) } == 0 {
-        return Err("la mise en service n'a pas dit comment elle s'est terminée".to_string());
+        return Err(Fact::new("window.setup_no_code"));
     }
     if code == 0 {
         return Ok(());
@@ -115,15 +116,7 @@ fn waited(running: HANDLE) -> Result<(), String> {
     // nothing is the worst referral there is: an hour goes on searching
     // the place where there is nothing to find.
     if code >= CRASHED {
-        return Err(format!(
-            "le service s'est arrêté brutalement pendant sa mise en place \
-             (0x{code:08X}), sans rien écrire.\n  \
-             Lancez-le à la main dans une fenêtre administrateur pour voir ce \
-             qu'il dit :\n  zyrdeskd setup"
-        ));
+        return Err(Fact::new("window.setup_crashed").with("code", format!("{code:08X}")));
     }
-    Err(format!(
-        "la mise en service a échoué (code {code}).\n  \
-         Le journal en dit plus."
-    ))
+    Err(Fact::new("window.setup_failed").with("code", code))
 }

@@ -144,3 +144,50 @@ player.no_ffmpeg = le lecteur ne trouve pas FFmpeg : {detail}
 player.no_link = le lecteur ne joint pas le service : {detail}
 player.not_started = le lecteur ne peut pas démarrer : {detail}
 player.windows_only = le lecteur ne dessine dans une fenêtre que sous Windows
+
+# The window, and what it asks of this computer.
+window.windows_only = ZyrDesk ne fait cela que sous Windows
+window.no_location = ce programme ne sait pas où il est : {detail}
+window.gone = la fenêtre de ZyrDesk n'est plus là
+window.not_answering = la fenêtre de ZyrDesk n'a pas répondu : {detail}
+window.picture_refused = la fenêtre de l'image n'a pas pu s'ouvrir (erreur {code})
+window.fingerprint_malformed = cette empreinte n'a pas la forme attendue
+window.not_offered = {value} ne fait pas partie des choix proposés pour {setting}
+window.button_gone = le bouton flottant n'est plus là
+window.unknown_folder = dossier inconnu : {name}
+window.folder_not_made = le dossier n'a pas pu être créé : {detail}
+window.folder_not_opened = le dossier n'a pas pu être ouvert : {detail}
+window.journal_partly_emptied = une partie du journal n'a pas pu être vidée :\n  {files}
+window.combination_refused = cette combinaison ne peut pas être prise : il faut au moins une touche tenue, et une touche que ZyrDesk sait placer sur un clavier.
+window.shortcuts_unreadable = les raccourcis clavier n'ont pas pu être lus : {detail}
+window.shortcuts_not_saved = les raccourcis clavier n'ont pas pu être enregistrés : {detail}
+
+# Setting the service up, and starting with Windows.
+window.service_missing = le service ZyrDesk est introuvable à côté de cette fenêtre :\n  {path}
+window.setup_interrupted = la mise en service ne s'est pas terminée. Le journal dit pourquoi.
+window.elevation_refused = les droits administrateur ont été refusés.
+window.elevation_failed = Windows n'a pas lancé le service : {detail}
+window.elevation_silent = Windows n'a rien dit de ce qu'il a lancé
+window.setup_wait_failed = l'attente de la mise en service a échoué
+window.setup_no_code = la mise en service n'a pas dit comment elle s'est terminée
+window.setup_crashed = le service s'est arrêté brutalement pendant sa mise en place (0x{code}), sans rien écrire.\n  Lancez-le à la main dans une fenêtre administrateur pour voir ce qu'il dit :\n  zyrdeskd setup
+window.setup_failed = la mise en service a échoué (code {code}).\n  Le journal en dit plus.
+window.startup_not_saved = le démarrage avec Windows n'a pas pu être enregistré : {detail}
+
+# A session, as the window opens and plays it.
+window.no_session = aucune session en cours
+window.session_already_open = une session est déjà en cours
+window.no_journal = le journal de la fenêtre ne s'ouvre pas, le lecteur n'a pas où écrire
+window.far_getting_ready = Tunnel établi, l'ordinateur distant se prépare…
+window.no_sound_here = Cet ordinateur n'a pas de sortie audio : la session sera muette.
+window.link_lost = La connexion avec l'ordinateur distant a été perdue.
+window.link_lost_early = La connexion avec l'ordinateur distant a été perdue avant la première image.
+window.host_left_early = L'ordinateur distant a fermé la session avant la première image.
+window.session_did_not_hold = La session n'a pas tenu : l'image a été reprise {times} fois de suite sans que la session tienne.\n  Le réseau entre les deux ordinateurs ne la porte pas en ce moment.
+window.picture_not_back = {because}\n  L'image a été reprise {times} fois de suite sans que la session tienne.
+
+# The keys held in a keyboard shortcut, as the keyboard names them.
+key.ctrl = Ctrl
+key.alt = Alt
+key.shift = Maj
+key.win = Win

@@ -21,6 +21,7 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use zyr_control::{Answer, Request};
+use zyr_proto::fact::Fact;
 use zyr_proto::session::{
     Asked, CODECS_OFFERED, Codec, DisplayMode, FarScreen, Preferred, RATES_OFFERED, SIZES_OFFERED,
     Screen,
@@ -125,15 +126,15 @@ pub async fn settings(app: crate::app::App) -> Settings {
 }
 
 /// Changes what every session from now on looks like.
-pub async fn choose(chosen: Chosen) -> Result<(), String> {
+pub async fn choose(chosen: Chosen) -> Result<(), Fact> {
     write_down(chosen.laid_over(preferred().await)).await
 }
 
 /// The three lines of the session menu, as they stand.
 ///
-/// Machine values and not words: what a size or a rate is called in
-/// French is the window's business, and the window is where the rest of
-/// what a person reads is written.
+/// Machine values and not words: what a size or a rate is called in the
+/// person's language is the window's business, and the window is where
+/// the rest of what a person reads is written.
 #[derive(PartialEq)]
 pub struct SessionChoice {
     pub asked: String,
@@ -322,40 +323,44 @@ fn offered(screen: &FarScreen) -> OfferedScreen {
 /// and none of them costs the picture.
 ///
 /// A value the product does not offer is refused rather than written
-/// down. These come from a list the product handed over itself, so a
-/// value from anywhere else is a window and a service that no longer
-/// agree, and quietly keeping it would hide that.
+/// down, and one that cannot even be read is not offered either. These
+/// come from a list the product handed over itself, so a value from
+/// anywhere else is a window and a service that no longer agree, and
+/// quietly keeping it would hide that.
 pub async fn choose_session(
     app: crate::app::App,
     which: String,
     value: String,
-) -> Result<SessionChoice, String> {
+) -> Result<SessionChoice, Fact> {
+    let not_offered = || {
+        Fact::new("window.not_offered")
+            .with("setting", &which)
+            .with("value", &value)
+    };
     let mut preferred = preferred().await;
     let changed = match which.as_str() {
         "asked" => {
-            let asked = value.parse::<Asked>()?;
-            if !SIZES_OFFERED.contains(&asked) {
-                return Err(format!("taille non proposée : {value}"));
-            }
-            preferred.asked = asked;
+            preferred.asked = value
+                .parse::<Asked>()
+                .ok()
+                .filter(|asked| SIZES_OFFERED.contains(asked))
+                .ok_or_else(not_offered)?;
             Changed::Size
         }
         "bitrate" => {
-            let rate = value
+            preferred.bitrate_kbps = value
                 .parse::<u32>()
-                .map_err(|_| format!("débit illisible : {value}"))?;
-            if !RATES_OFFERED.contains(&rate) {
-                return Err(format!("débit non proposé : {value}"));
-            }
-            preferred.bitrate_kbps = rate;
+                .ok()
+                .filter(|rate| RATES_OFFERED.contains(rate))
+                .ok_or_else(not_offered)?;
             Changed::Rate
         }
         "codec" => {
-            let codec = value.parse::<Codec>()?;
-            if !CODECS_OFFERED.contains(&codec) {
-                return Err(format!("codec non proposé : {value}"));
-            }
-            preferred.codec = codec;
+            preferred.codec = value
+                .parse::<Codec>()
+                .ok()
+                .filter(|codec| CODECS_OFFERED.contains(codec))
+                .ok_or_else(not_offered)?;
             Changed::Codec
         }
         // Written down in no settings file, so it never reaches the
@@ -367,12 +372,10 @@ pub async fn choose_session(
         // and applied later: its engine changes the screen it films where
         // it stands, so there is nothing to apply and nothing to reopen.
         "screen" => {
-            let Some(picked) = crate::session::the_far_screens()
+            let picked = crate::session::the_far_screens()
                 .into_iter()
                 .find(|screen| screen.id == value)
-            else {
-                return Err(format!("écran non proposé : {value}"));
-            };
+                .ok_or_else(not_offered)?;
             // Its main screen is what a session asks for when it asks for
             // nothing, so picking it by hand is asking for nothing: said
             // any other way, that computer serves its main screen to
@@ -390,11 +393,11 @@ pub async fn choose_session(
             match value.as_str() {
                 "on" => preferred.steady_far_rate = true,
                 "off" => preferred.steady_far_rate = false,
-                other => return Err(format!("cadence non proposée : {other}")),
+                _ => return Err(not_offered()),
             }
             Changed::SteadyFarRate
         }
-        other => return Err(format!("réglage inconnu : {other}")),
+        _ => return Err(not_offered()),
     };
     write_down(preferred).await?;
     crate::session::take_where_it_stands(app.clone(), changed, preferred).await?;
@@ -406,10 +409,10 @@ pub async fn choose_session(
 
 /// Hands a whole set of preferences to the service, which is the one
 /// thing that writes them down.
-async fn write_down(preferred: Preferred) -> Result<(), String> {
+async fn write_down(preferred: Preferred) -> Result<(), Fact> {
     match service::ask(&Request::Choose { preferred }).await? {
         Answer::Done => Ok(()),
-        other => Err(service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
@@ -431,10 +434,7 @@ async fn remember(named: &str, said: String, change: impl FnOnce(&mut Preferred)
     }
     match service::ask(&Request::Choose { preferred }).await {
         Ok(Answer::Done) => note(&said),
-        Ok(other) => note(&format!(
-            "{named} not written down: {}",
-            service::unexpected(other)
-        )),
+        Ok(other) => note(&format!("{named} not written down: {}", other.unexpected())),
         Err(reason) => note(&format!("{named} not written down: {reason}")),
     }
 }

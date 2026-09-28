@@ -27,9 +27,11 @@ use std::time::{Duration, Instant};
 use crate::app::App;
 use zyr_control::{Answer, Request};
 use zyr_player::{Ending, Event, Measures, Player, Surface};
+use zyr_proto::fact::Fact;
 use zyr_proto::session::{FarScreen, Preferred, SessionSettings, WantedScreen};
 use zyr_session::{Opened, Step, Wanted};
 
+use crate::desk::fingerprint_of;
 use crate::floating::Floating;
 use crate::service;
 
@@ -120,6 +122,12 @@ pub fn opening() -> bool {
     OPENING.load(Ordering::Relaxed)
 }
 
+/// What is answered to something asked of a session when none is under
+/// way.
+pub fn none_under_way() -> Fact {
+    Fact::new("window.no_session")
+}
+
 /// What the thread driving a session hears while its picture plays: what
 /// its player says, and the person closing the session.
 enum Heard {
@@ -147,7 +155,7 @@ static PLAYING: Mutex<Option<Playing>> = Mutex::new(None);
 pub fn player() -> Option<Player> {
     PLAYING
         .lock()
-        .expect("session jouée")
+        .expect("played session")
         .as_ref()
         .map(|playing| playing.player.clone())
 }
@@ -165,7 +173,7 @@ pub fn measures() -> Measures {
 /// a session means.
 pub fn ask_the_player(change: impl FnOnce(&mut SessionSettings, &mut bool)) {
     let (wanted, codec) = {
-        let mut playing = PLAYING.lock().expect("session jouée");
+        let mut playing = PLAYING.lock().expect("played session");
         let Some(playing) = playing.as_mut() else {
             return;
         };
@@ -175,14 +183,14 @@ pub fn ask_the_player(change: impl FnOnce(&mut SessionSettings, &mut bool)) {
         (wanted, playing.settings.codec)
     };
     note(&format!(
-        "le lecteur demande maintenant {}x{} à {} images/s, {} Mb/s en {codec}, curseur \
-         dessiné là-bas : {}, écran immobile renvoyé : {}",
+        "the player now asks for {}x{} at {} frames/s, {} Mb/s in {codec}, pointer drawn \
+         over there: {}, still screen sent again: {}",
         wanted.width,
         wanted.height,
         wanted.fps,
         wanted.bitrate_kbps / 1000,
-        if wanted.draw_pointer { "oui" } else { "non" },
-        if wanted.steady { "oui" } else { "non" },
+        if wanted.draw_pointer { "yes" } else { "no" },
+        if wanted.steady { "yes" } else { "no" },
     ));
 }
 
@@ -194,7 +202,7 @@ pub fn ask_the_player(change: impl FnOnce(&mut SessionSettings, &mut bool)) {
 pub fn close() -> bool {
     PLAYING
         .lock()
-        .expect("session jouée")
+        .expect("played session")
         .as_ref()
         .is_some_and(|playing| playing.drive.send(Heard::Close).is_ok())
 }
@@ -229,7 +237,7 @@ static FAR_SCREENS: Mutex<Vec<FarScreen>> = Mutex::new(Vec::new());
 /// Empty is that computer's main screen. The two are one answer said two
 /// ways, so picking the main screen by hand writes nothing here.
 pub fn the_far_screen() -> Option<String> {
-    FAR_SCREEN.lock().expect("écran d'en face").clone()
+    FAR_SCREEN.lock().expect("far screen").clone()
 }
 
 /// The same, under the name the menu marks it by.
@@ -255,7 +263,7 @@ pub fn the_far_screen_named() -> String {
 /// Moved only once that computer has answered: a mark on a screen nobody
 /// is filming would be the one thing in this menu that lies.
 pub fn ask_for_the_far_screen(id: Option<String>) {
-    *FAR_SCREEN.lock().expect("écran d'en face") = id;
+    *FAR_SCREEN.lock().expect("far screen") = id;
 }
 
 /// Watches that screen of the far computer from now on, or its main one
@@ -266,10 +274,8 @@ pub fn ask_for_the_far_screen(id: Option<String>) {
 /// reinitialization of its capture and costs this end nothing at all.
 /// The picture is on the other screen within the second, and the session
 /// never stops.
-pub async fn watch_the_far_screen(id: Option<String>) -> Result<(), String> {
-    let way = the_way_in_use()
-        .await
-        .ok_or("aucune session en cours".to_string())?;
+pub async fn watch_the_far_screen(id: Option<String>) -> Result<(), Fact> {
+    let way = the_way_in_use().await.ok_or_else(none_under_way)?;
     match crate::service::ask(&Request::FilmFarScreen {
         way,
         id: id.clone(),
@@ -277,10 +283,10 @@ pub async fn watch_the_far_screen(id: Option<String>) -> Result<(), String> {
     .await?
     {
         Answer::Done => {}
-        other => return Err(crate::service::unexpected(other)),
+        other => return Err(other.unexpected()),
     }
     ask_for_the_far_screen(id);
-    note("écran de l'ordinateur distant changé sans rien relancer");
+    note("far computer's screen changed without restarting anything");
     Ok(())
 }
 
@@ -290,7 +296,7 @@ pub async fn watch_the_far_screen(id: Option<String>) -> Result<(), String> {
 /// What the shortcut does. A far computer with one screen has nothing to
 /// move to, and that is not a failure: it is the ordinary machine, and
 /// the key is simply quiet on it.
-pub async fn watch_the_next_far_screen() -> Result<(), String> {
+pub async fn watch_the_next_far_screen() -> Result<(), Fact> {
     // Asked of the far computer when this end has never asked: the list
     // is filled when the menu is opened, and a key that only worked
     // after somebody had opened the menu once would be a key that
@@ -329,7 +335,7 @@ fn the_one_after<'a>(screens: &'a [FarScreen], watched: &str) -> Option<&'a FarS
 
 /// The far computer's screens, as it last named them.
 pub fn the_far_screens() -> Vec<FarScreen> {
-    FAR_SCREENS.lock().expect("écrans d'en face").clone()
+    FAR_SCREENS.lock().expect("far screens").clone()
 }
 
 /// Writes down what the far computer answered about its screens.
@@ -346,7 +352,7 @@ pub fn remember_the_far_screens(screens: &[FarScreen]) {
     if screens.is_empty() {
         return;
     }
-    *FAR_SCREENS.lock().expect("écrans d'en face") = screens.to_vec();
+    *FAR_SCREENS.lock().expect("far screens") = screens.to_vec();
 }
 
 /// One of the settings a session takes where it stands, once it has been
@@ -376,7 +382,7 @@ pub async fn take_where_it_stands(
     app: App,
     changed: Changed,
     preferred: Preferred,
-) -> Result<(), String> {
+) -> Result<(), Fact> {
     if player().is_none() {
         return Ok(());
     }
@@ -394,7 +400,7 @@ pub async fn take_where_it_stands(
 /// Gives the session the size chosen now: the far computer's screen
 /// first, then the player. Our own window takes the new shape when the
 /// player says the new stream has it.
-async fn become_that_size(app: &App, preferred: Preferred) -> Result<(), String> {
+async fn become_that_size(app: &App, preferred: Preferred) -> Result<(), Fact> {
     let Some(way) = the_way_in_use().await else {
         return Ok(());
     };
@@ -415,10 +421,10 @@ async fn become_that_size(app: &App, preferred: Preferred) -> Result<(), String>
             size: Some((wide, high)),
         }) => (wide, high),
         Ok(Answer::Showing { size: None }) => (guessed.width, guessed.height),
-        Ok(other) => return Err(crate::service::unexpected(other)),
+        Ok(other) => return Err(other.unexpected()),
         Err(reason) => {
             note(&format!(
-                "l'ordinateur distant n'a pas préparé son écran : {reason}"
+                "the far computer did not prepare its screen: {reason}"
             ));
             (guessed.width, guessed.height)
         }
@@ -440,17 +446,14 @@ pub async fn connect(
     host: String,
     fingerprint: String,
     only_here: bool,
-) -> Result<(), String> {
-    let peer = fingerprint
-        .trim()
-        .parse()
-        .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
+) -> Result<(), Fact> {
+    let peer = fingerprint_of(&fingerprint)?;
 
     // One at a time, held here and not merely on the screen. Taken
     // before anything moves, and given back by `finish`, which every
     // road out of `drive` ends at.
     if crate::floating::a_session_is_up(&app) || OPENING.swap(true, Ordering::SeqCst) {
-        return Err("une session est déjà en cours".to_string());
+        return Err(Fact::new("window.session_already_open"));
     }
 
     // Nobody has closed a session that has not begun. Read and put down
@@ -464,7 +467,7 @@ pub async fn connect(
     // names one screen of one particular computer, so carrying it over
     // would be asking this one for a screen that is not its own.
     ask_for_the_far_screen(None);
-    FAR_SCREENS.lock().expect("écrans d'en face").clear();
+    FAR_SCREENS.lock().expect("far screens").clear();
 
     let preferred = crate::settings::preferred().await;
     // The window takes the screen before anything else does, so the
@@ -648,13 +651,6 @@ impl ComingBack {
     fn tried(&self) -> bool {
         self.in_a_row > 0
     }
-
-    fn how_it_went(&self) -> String {
-        format!(
-            "l'image a été reprise {} fois de suite sans que la session tienne",
-            self.in_a_row
-        )
-    }
 }
 
 /// Says what is happening, and waits out the moment the far computer
@@ -716,7 +712,7 @@ fn asked_afresh(app: &App, wanted: &mut Wanted, preferred: &mut Preferred) {
 /// brought back the same way, and `ComingBack` says how long that is worth
 /// trying.
 fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
-    note(&format!("session demandée vers {}", wanted.host));
+    note(&format!("session asked for towards {}", wanted.host));
     let mut coming_back = ComingBack::none();
     loop {
         let mut opening = Opening::begins();
@@ -741,10 +737,10 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
             // left standing, since no session will end to take it.
             Err(zyr_session::Error::Abandoned) => {
                 Floating::was_closed_on_purpose(app);
-                note("ouverture abandonnée : la session a été fermée avant l'image");
-                return finish(app, true, String::new());
+                note("opening abandoned: the session was closed before the picture");
+                return finish(app, None);
             }
-            Err(e) => Err(zyr_i18n::fact(&e.fact())),
+            Err(e) => Err(e.fact()),
         };
         let showing = match started {
             Ok(showing) => showing,
@@ -761,12 +757,12 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
 
         let on_purpose = Floating::was_closed_on_purpose(app);
         note(&if on_purpose {
-            format!("session fermée volontairement, le lecteur a dit {ended:?}")
+            format!("session closed on purpose, the player said {ended:?}")
         } else {
-            format!("session terminée : {ended:?}")
+            format!("session over: {ended:?}")
         });
         if on_purpose {
-            return finish(app, true, String::new());
+            return finish(app, None);
         }
 
         // A player that ended before its first picture is an opening that
@@ -774,7 +770,7 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
         // stood.
         let Some(held) = shown else {
             let Some(reason) = before_the_picture(&ended) else {
-                return finish(app, true, String::new());
+                return finish(app, None);
             };
             match failed_to_open(app, reason, &mut coming_back) {
                 Then::Again => {
@@ -791,7 +787,7 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
         // see is a picture that goes and returns.
         if coming_back.after(&ended, held) {
             note(&format!(
-                "la session est tombée toute seule, l'image est reprise ({} sur {})",
+                "the session fell over on its own, the picture is brought back ({} of {})",
                 coming_back.in_a_row, COMES_BACK_IN_A_ROW
             ));
             if !hold_on_before_coming_back(app, &coming_back) {
@@ -802,22 +798,13 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
         }
 
         return match ended {
-            Ending::Asked | Ending::HostLeft => finish(app, true, String::new()),
+            Ending::Asked | Ending::HostLeft => finish(app, None),
             _ if coming_back.tried() => finish(
                 app,
-                false,
-                format!(
-                    "La session n'a pas tenu : {}.\n  \
-                     Le réseau entre les deux ordinateurs ne la porte pas en ce moment.",
-                    coming_back.how_it_went()
-                ),
+                Some(Fact::new("window.session_did_not_hold").with("times", coming_back.in_a_row)),
             ),
-            Ending::LinkLost => finish(
-                app,
-                false,
-                "La connexion avec l'ordinateur distant a été perdue.".into(),
-            ),
-            Ending::EngineFailed(reason) => finish(app, false, zyr_i18n::fact(&reason)),
+            Ending::LinkLost => finish(app, Some(Fact::new("window.link_lost"))),
+            Ending::EngineFailed(reason) => finish(app, Some(reason)),
         };
     }
 }
@@ -836,11 +823,8 @@ enum Then {
 /// not the end of them: the far computer can still be holding the session
 /// that just fell over, which it learns of by its own patience running
 /// out. Any other opening that fails is told where the person sees it.
-fn failed_to_open(app: &App, reason: String, coming_back: &mut ComingBack) -> Then {
-    note(&format!(
-        "session non ouverte : {}",
-        reason.replace('\n', " ")
-    ));
+fn failed_to_open(app: &App, reason: Fact, coming_back: &mut ComingBack) -> Then {
+    note(&format!("session not opened: {reason}"));
     if coming_back.again() {
         if !hold_on_before_coming_back(app, coming_back) {
             closed_during_the_pause(app);
@@ -851,28 +835,26 @@ fn failed_to_open(app: &App, reason: String, coming_back: &mut ComingBack) -> Th
     if coming_back.tried() {
         finish(
             app,
-            false,
-            format!("{reason}\n  {}", coming_back.how_it_went()),
+            Some(
+                Fact::new("window.picture_not_back")
+                    .with("times", coming_back.in_a_row)
+                    .because(&reason),
+            ),
         );
     } else {
-        finish(app, false, reason);
+        finish(app, Some(reason));
     }
     Then::Over
 }
 
 /// What a session that ended before its first picture has to say, or
 /// nothing when it was closed from here.
-fn before_the_picture(ended: &Ending) -> Option<String> {
+fn before_the_picture(ended: &Ending) -> Option<Fact> {
     match ended {
         Ending::Asked => None,
-        Ending::HostLeft => {
-            Some("L'ordinateur distant a fermé la session avant la première image.".to_string())
-        }
-        Ending::LinkLost => Some(
-            "La connexion avec l'ordinateur distant a été perdue avant la première image."
-                .to_string(),
-        ),
-        Ending::EngineFailed(reason) => Some(zyr_i18n::fact(reason)),
+        Ending::HostLeft => Some(Fact::new("window.host_left_early")),
+        Ending::LinkLost => Some(Fact::new("window.link_lost_early")),
+        Ending::EngineFailed(reason) => Some(reason.clone()),
     }
 }
 
@@ -887,14 +869,13 @@ struct Showing {
 
 impl Showing {
     /// Makes the picture's window and starts the player in it.
-    fn start(app: &App, opened: Opened, preferred: &Preferred) -> Result<Showing, String> {
+    fn start(app: &App, opened: Opened, preferred: &Preferred) -> Result<Showing, Fact> {
         let Opened {
             link,
             settings,
             way,
         } = opened;
-        let log = crate::journal::the_log()
-            .ok_or("le journal de la fenêtre ne s'ouvre pas, le lecteur n'a pas où écrire")?;
+        let log = crate::journal::the_log().ok_or_else(|| Fact::new("window.no_journal"))?;
         let window = crate::video::open(app)?;
         let (said, heard) = channel();
         let told = said.clone();
@@ -912,16 +893,16 @@ impl Showing {
             Ok(player) => player,
             Err(e) => {
                 crate::video::close(app);
-                return Err(zyr_i18n::fact(&e.fact()));
+                return Err(e.fact());
             }
         };
-        note(&format!("lecteur branché sur {link}"));
+        note(&format!("player plugged into {link}"));
         // The switches of this window start where the settings put them,
         // and the mouse where the session was opened with it.
         crate::floating::adopt(app, preferred);
         crate::system_keys::start_as(preferred.system_keys);
         crate::video::play_a_game(app, !settings.absolute_mouse);
-        *PLAYING.lock().expect("session jouée") = Some(Playing {
+        *PLAYING.lock().expect("played session") = Some(Playing {
             player: player.clone(),
             settings,
             steady,
@@ -967,7 +948,7 @@ impl Showing {
                 // over on this side all the same.
                 Err(RecvTimeoutError::Timeout) => {
                     note(&format!(
-                        "le lecteur ne s'est pas arrêté en {} s, la session est fermée ici",
+                        "the player did not stop within {} s, the session is closed here",
                         CLOSING_SHOWS.as_secs()
                     ));
                     break Ending::Asked;
@@ -980,7 +961,7 @@ impl Showing {
                     width,
                     height,
                 } => {
-                    note(&format!("flux en {} {width}x{height}", codec.name()));
+                    note(&format!("stream in {} {width}x{height}", codec.name()));
                     crate::picture::takes_the_shape(app, (width, height));
                 }
                 Event::FirstPicture => {
@@ -995,7 +976,7 @@ impl Showing {
                         // this is the whole of what a session that used
                         // to die looks like now.
                         note(&format!(
-                            "l'image est revenue après {} reprise(s), la session continue",
+                            "the picture came back after {} attempt(s), the session goes on",
                             coming_back.try_number()
                         ));
                     }
@@ -1004,16 +985,16 @@ impl Showing {
                     // and closes should this program go without a word.
                     if let Err(reason) = way.hold() {
                         note(&format!(
-                            "le service ne compte pas cette session parmi les siennes : {reason}"
+                            "the service does not count this session among its own: {reason}"
                         ));
                     }
                 }
                 Event::Notice(fact) => {
-                    note(&format!("le lecteur dit : {fact}"));
+                    note(&format!("the player says: {fact}"));
                     // Before the picture, the opening screen is what the
                     // person is reading.
                     if shown_at.is_none() {
-                        crate::home::step(app, &zyr_i18n::fact(&fact));
+                        crate::home::step(app, &fact);
                     }
                 }
                 Event::Ended(ending) => break ending,
@@ -1022,7 +1003,7 @@ impl Showing {
         // The picture first, so that nothing hangs a button over it again
         // while the rest is put away.
         crate::video::close(app);
-        *PLAYING.lock().expect("session jouée") = None;
+        *PLAYING.lock().expect("played session") = None;
         crate::system_keys::give_them_back();
         crate::floating::lower(app);
         crate::picture::shut_the_pointer_in(crate::picture::Cage::Free);
@@ -1039,12 +1020,9 @@ impl Showing {
 pub fn end_it(app: &App) {
     let asked = app.clone();
     crate::app::spawn(async move {
-        note("session terminée par la fenêtre");
+        note("session ended by the window");
         if let Err(reason) = crate::floating::ask(&asked, crate::floating::Act::End).await {
-            note(&format!(
-                "la session n'a pas pu être terminée : {}",
-                reason.replace('\n', " ")
-            ));
+            note(&format!("the session could not be ended: {reason}"));
         }
     });
 }
@@ -1056,17 +1034,15 @@ pub fn end_it(app: &App) {
 /// silence its own speakers has nothing to do with what the person is
 /// waiting for, and putting it there would replace « the picture is
 /// coming » with a sentence about sound.
-fn told(step: Step) -> Option<String> {
-    Some(match step {
-        Step::Reached => "Tunnel établi, l'ordinateur distant se prépare…".to_string(),
-        Step::NoSoundCardHere => {
-            "Cet ordinateur n'a pas de sortie audio : la session sera muette.".to_string()
-        }
+fn told(step: Step) -> Option<Fact> {
+    match step {
+        Step::Reached => Some(Fact::new("window.far_getting_ready")),
+        Step::NoSoundCardHere => Some(Fact::new("window.no_sound_here")),
         Step::SpeakersLeftAlone { .. }
         | Step::ScreenLeftAlone { .. }
         | Step::FarScreenLeftAlone { .. }
-        | Step::ScreenOverThere { .. } => return None,
-    })
+        | Step::ScreenOverThere { .. } => None,
+    }
 }
 
 /// How long an opening took, in its parts.
@@ -1121,11 +1097,11 @@ impl Opening {
     fn how_long_it_took(&self) -> String {
         let since = |from: Option<Duration>, to: Option<Duration>| match (from, to) {
             (Some(from), Some(to)) => format!("{} ms", to.saturating_sub(from).as_millis()),
-            _ => "non mesuré".to_string(),
+            _ => "not measured".to_string(),
         };
         format!(
-            "image à l'écran {} après la demande : {} pour joindre l'ordinateur distant, {} à lui \
-             demander ce qu'il faut, {} du lecteur jusqu'à la première image",
+            "picture on screen {} after the request: {} to reach the far computer, {} to ask \
+             it what is needed, {} from the player to the first picture",
             since(Some(Duration::ZERO), self.shown),
             since(Some(Duration::ZERO), self.reached),
             since(self.reached, self.opened),
@@ -1142,19 +1118,19 @@ impl Opening {
 /// afterwards, when there is nothing left on screen to look at.
 fn written(step: &Step) -> String {
     match step {
-        Step::Reached => "tunnel ouvert".to_string(),
-        Step::NoSoundCardHere => "cet ordinateur n'a pas de sortie audio".to_string(),
+        Step::Reached => "tunnel open".to_string(),
+        Step::NoSoundCardHere => "this computer has no audio output".to_string(),
         Step::SpeakersLeftAlone { refused } => {
-            format!("les enceintes de l'ordinateur distant restent allumées : {refused}")
+            format!("the far computer's speakers stay on: {refused}")
         }
         Step::ScreenLeftAlone { refused } => {
-            format!("l'ordinateur distant n'a pas réveillé son écran virtuel : {refused}")
+            format!("the far computer did not wake its virtual screen: {refused}")
         }
-        Step::ScreenOverThere { wide, high } => format!(
-            "l'ordinateur distant affiche {wide}x{high}, c'est ce qui est demandé au lecteur"
-        ),
+        Step::ScreenOverThere { wide, high } => {
+            format!("the far computer shows {wide}x{high}, which is what the player is asked for")
+        }
         Step::FarScreenLeftAlone { refused } => {
-            format!("l'ordinateur distant garde l'écran qu'il filme : {refused}")
+            format!("the far computer keeps the screen it films: {refused}")
         }
     }
 }
@@ -1167,14 +1143,14 @@ fn written(step: &Step) -> String {
 /// knowing which of the two sides it was already on.
 fn how_the_window_stands(when: &str) {
     if crate::main_window::handle() == 0 {
-        note(&format!("{when} : plus de fenêtre d'accueil"));
+        note(&format!("{when}: no home window any more"));
         return;
     }
     fn say(what: bool) -> &'static str {
-        if what { "oui" } else { "non" }
+        if what { "yes" } else { "no" }
     }
     note(&format!(
-        "{when} : accueil à l'écran={} plein écran={}",
+        "{when}: home on screen={} whole screen={}",
         say(crate::main_window::on_screen()),
         say(crate::main_window::holds_the_screen()),
     ));
@@ -1186,12 +1162,14 @@ fn how_the_window_stands(when: &str) {
 /// will end to take it: nothing was playing when they pressed the cross.
 fn closed_during_the_pause(app: &App) {
     Floating::was_closed_on_purpose(app);
-    note("reprise abandonnée : la session a été fermée pendant l'attente");
-    finish(app, true, String::new());
+    note("coming back abandoned: the session was closed during the wait");
+    finish(app, None);
 }
 
-fn finish(app: &App, ok: bool, message: String) {
-    how_the_window_stands("fin de session, avant");
+/// Puts everything back once a session is over, and says why when it
+/// ended badly or never opened.
+fn finish(app: &App, trouble: Option<Fact>) {
+    how_the_window_stands("end of session, before");
     OPENING.store(false, Ordering::SeqCst);
     // Taken down here rather than left to the watch. The watch comes
     // round once a second, and until it does the button hangs over a
@@ -1208,18 +1186,15 @@ fn finish(app: &App, ok: bool, message: String) {
     // the session or by the system, which takes a window covering the
     // whole screen down when the front leaves it.
     crate::show_home(app);
-    if ok {
-        crate::home::put_the_opening_away(app);
-    } else {
-        crate::home::failed(app, &message);
+    match trouble {
+        None => crate::home::put_the_opening_away(app),
+        Some(why) => crate::home::failed(app, &why),
     }
-    how_the_window_stands("fin de session, après");
+    how_the_window_stands("end of session, after");
 }
 
 #[cfg(test)]
 mod tests {
-    use zyr_proto::fact::Fact;
-
     use super::*;
 
     /// A session that fell over the instant it opened.
@@ -1236,7 +1211,7 @@ mod tests {
         for attempt in 1..=COMES_BACK_IN_A_ROW {
             assert!(
                 coming_back.after(&fell_over(), Duration::from_secs(2)),
-                "reprise {attempt}"
+                "coming back {attempt}"
             );
             assert_eq!(coming_back.in_a_row, attempt);
         }
@@ -1288,7 +1263,7 @@ mod tests {
         // A comeback that does not open is one of its tries, and they are
         // counted apart because they cost half a minute each.
         for attempt in 1..=OPENINGS_MISSED_IN_A_ROW {
-            assert!(coming_back.again(), "essai manqué {attempt}");
+            assert!(coming_back.again(), "missed attempt {attempt}");
         }
         assert!(!coming_back.again());
 
@@ -1307,13 +1282,12 @@ mod tests {
             Ending::LinkLost,
             Ending::EngineFailed(Fact::new("engine.no_encoder")),
         ] {
-            let said = before_the_picture(&ended).unwrap();
-            assert!(!said.is_empty(), "{ended:?}");
+            assert!(before_the_picture(&ended).is_some(), "{ended:?}");
         }
         let failed = Fact::new("player.graphics_gone").with("detail", "the card went away");
         assert_eq!(
             before_the_picture(&Ending::EngineFailed(failed.clone())),
-            Some(zyr_i18n::fact(&failed))
+            Some(failed)
         );
     }
 
@@ -1322,13 +1296,13 @@ mod tests {
         let mut opening = Opening::begins();
         // Nothing reached: every part says it was not measured rather
         // than a figure of nought.
-        assert!(opening.how_long_it_took().contains("non mesuré"));
+        assert!(opening.how_long_it_took().contains("not measured"));
         opening.reached(&Step::Reached);
         opening.opened();
         opening.shown();
         let said = opening.how_long_it_took();
-        assert!(!said.contains("non mesuré"), "{said}");
-        assert!(said.contains("jusqu'à la première image"), "{said}");
+        assert!(!said.contains("not measured"), "{said}");
+        assert!(said.contains("to the first picture"), "{said}");
     }
 
     fn far_screen(id: &str, main: bool) -> FarScreen {
@@ -1344,26 +1318,26 @@ mod tests {
     #[test]
     fn the_shortcut_goes_round_the_far_computers_screens() {
         let screens = [
-            far_screen("un", true),
-            far_screen("deux", false),
-            far_screen("trois", false),
+            far_screen("one", true),
+            far_screen("two", false),
+            far_screen("three", false),
         ];
-        for (watched, expected) in [("un", "deux"), ("deux", "trois"), ("trois", "un")] {
+        for (watched, expected) in [("one", "two"), ("two", "three"), ("three", "one")] {
             assert_eq!(
                 the_one_after(&screens, watched).map(|screen| screen.id.as_str()),
                 Some(expected),
-                "depuis « {watched} »"
+                "from « {watched} »"
             );
         }
         // A screen the list does not know is a list that has changed
         // under the session: the round starts again from the first.
         assert_eq!(
-            the_one_after(&screens, "parti").map(|screen| screen.id.as_str()),
-            Some("deux")
+            the_one_after(&screens, "gone").map(|screen| screen.id.as_str()),
+            Some("two")
         );
         // And a computer with a single screen has nowhere to go, which
         // is not a fault: the key simply stays silent.
-        assert!(the_one_after(&screens[..1], "un").is_none());
+        assert!(the_one_after(&screens[..1], "one").is_none());
         assert!(the_one_after(&[], "").is_none());
     }
 }

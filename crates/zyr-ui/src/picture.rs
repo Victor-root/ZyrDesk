@@ -22,6 +22,7 @@
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
 
 use crate::app::App;
+use zyr_proto::fact::Fact;
 use zyr_proto::session::{DisplayMode, Screen};
 
 /// What this module files its journal lines under.
@@ -124,9 +125,9 @@ pub fn let_go(app: &App) {
 /// Puts our window on the whole screen, or takes it back off.
 ///
 /// The picture follows it, being its inside.
-pub fn take_the_screen(app: &App, whole: bool) -> Result<(), String> {
+pub fn take_the_screen(app: &App, whole: bool) -> Result<(), Fact> {
     if crate::main_window::handle() == 0 {
-        return Err("la fenêtre de ZyrDesk n'est plus là".to_string());
+        return Err(Fact::new("window.gone"));
     }
     // The window writes down what it is becoming before it moves, never
     // after: taking the screen is what makes the system ask which frame
@@ -154,7 +155,7 @@ pub fn take_the_screen(app: &App, whole: bool) -> Result<(), String> {
 /// it was. A session ending hands the screen back but leaves the window
 /// the size it is: taking somebody's window down a size after they have
 /// spent an hour in it is not ours to do.
-pub fn take_the_screen_for_a_session(app: &App, whole: bool) -> Result<(), String> {
+pub fn take_the_screen_for_a_session(app: &App, whole: bool) -> Result<(), Fact> {
     take_the_window_in_hand(app);
     take_the_screen(app, whole)?;
     if whole {
@@ -170,10 +171,7 @@ pub fn take_the_screen_for_a_session(app: &App, whole: bool) -> Result<(), Strin
 /// applies what was decided before, the other takes the screen back at
 /// the end of a session. So this is the only one that writes anything
 /// down, and what it writes is what the next session opens as.
-pub fn toggle_the_screen(app: &App) -> Result<(), String> {
-    if crate::main_window::handle() == 0 {
-        return Err("la fenêtre de ZyrDesk n'est plus là".to_string());
-    }
+pub fn toggle_the_screen(app: &App) -> Result<(), Fact> {
     let whole = !crate::main_window::holds_the_screen();
     take_the_screen(app, whole)?;
 

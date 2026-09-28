@@ -189,6 +189,18 @@ macro_rules! say {
     };
 }
 
+/// A key, written out where a text cannot be asked for yet: a label in
+/// a table fixed at compile time, said with [`text`] where it is drawn.
+///
+/// Nothing but the key itself: the mark is what lets the tests of this
+/// brick check it against the texts, like every key [`say!`] asks for.
+#[macro_export]
+macro_rules! key {
+    ($key:literal) => {
+        $key
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -384,6 +396,7 @@ mod tests {
             }
             let asked = written_after(&source, "say!(")
                 .into_iter()
+                .chain(written_after(&source, "key!("))
                 .chain(written_after(&source, "Fact::new("));
             for key in asked {
                 assert!(

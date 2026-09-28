@@ -39,6 +39,7 @@
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 
 use zyr_player::{Button, InputEvent};
+use zyr_proto::fact::Fact;
 
 use crate::app::App;
 
@@ -242,14 +243,16 @@ fn send(event: InputEvent) {
 /// On the thread that owns the main window, since a window belongs to the
 /// thread that made it; this waits for it there, and is called from the
 /// thread that drives the session, which may wait.
-pub fn open(app: &App) -> Result<isize, String> {
+pub fn open(app: &App) -> Result<isize, Fact> {
+    let not_answering = |detail: String| Fact::new("window.not_answering").with("detail", detail);
     let (said, heard) = std::sync::mpsc::channel();
     app.run_on_main_thread(move || {
         let _ = said.send(build());
-    })?;
+    })
+    .map_err(not_answering)?;
     heard
         .recv_timeout(std::time::Duration::from_secs(5))
-        .map_err(|_| "la fenêtre de ZyrDesk n'a pas répondu".to_string())?
+        .map_err(|e| not_answering(e.to_string()))?
 }
 
 /// Puts the picture on screen, the player having drawn its first one, and
@@ -287,7 +290,7 @@ pub fn play_a_game(app: &App, game: bool) {
 }
 
 #[cfg(windows)]
-fn build() -> Result<isize, String> {
+fn build() -> Result<isize, Fact> {
     use windows_sys::Win32::Foundation::{GetLastError, HWND, RECT};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::Input::Ime::ImmAssociateContext;
@@ -297,7 +300,7 @@ fn build() -> Result<isize, String> {
 
     let outer = crate::main_window::handle() as HWND;
     if outer.is_null() {
-        return Err("la fenêtre de ZyrDesk n'est plus là".to_string());
+        return Err(Fact::new("window.gone"));
     }
     let mut inside = RECT {
         left: 0,
@@ -354,11 +357,9 @@ fn build() -> Result<isize, String> {
         // SAFETY: no argument; the error of the call just above.
         let code = unsafe { GetLastError() };
         note(&format!(
-            "fenêtre de l'image refusée par Windows (CreateWindowExW, erreur {code})"
+            "picture's window refused by Windows (CreateWindowExW, error {code})"
         ));
-        return Err(format!(
-            "la fenêtre de l'image n'a pas pu s'ouvrir (erreur {code})"
-        ));
+        return Err(Fact::new("window.picture_refused").with("code", code));
     }
     // No input method of this computer on the picture: the keys go over
     // there by their place, and the far computer's own input method is
@@ -381,8 +382,8 @@ fn build() -> Result<isize, String> {
 }
 
 #[cfg(not(windows))]
-fn build() -> Result<isize, String> {
-    Err("l'image ne s'affiche que sous Windows".to_string())
+fn build() -> Result<isize, Fact> {
+    Err(Fact::new("window.windows_only"))
 }
 
 /// Shows the window above the home canvas, over the whole inside, and

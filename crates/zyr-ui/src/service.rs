@@ -5,10 +5,11 @@
 //! reconnect, for a channel that answers in less time than a frame.
 //!
 //! Nothing here interprets an answer: what comes back is handed to
-//! whoever asked. A refusal comes back as a fact, and is handed on in the
-//! words of the person's language.
+//! whoever asked, a refusal included, as the fact it is. Whoever shows it
+//! to the person puts it into words.
 
 use zyr_control::{Answer, Request, Service};
+use zyr_proto::fact::Fact;
 
 /// What this module files its journal lines under.
 const TAG: &str = "service";
@@ -19,10 +20,10 @@ fn note(what: &str) {
 }
 
 /// Asks one thing, and waits for the one answer.
-pub async fn ask(request: &Request) -> Result<Answer, String> {
-    let mut service = Service::join().await.map_err(|e| said(&e))?;
-    match service.ask(request).await.map_err(|e| said(&e))? {
-        Answer::Refused(fact) => Err(zyr_i18n::fact(&fact)),
+pub async fn ask(request: &Request) -> Result<Answer, Fact> {
+    let mut service = Service::join().await.map_err(|e| e.fact())?;
+    match service.ask(request).await.map_err(|e| e.fact())? {
+        Answer::Refused(fact) => Err(fact),
         answer => Ok(answer),
     }
 }
@@ -31,24 +32,13 @@ pub async fn ask(request: &Request) -> Result<Answer, String> {
 pub async fn list<T>(
     request: &Request,
     read: impl Fn(Answer) -> Option<T>,
-) -> Result<Vec<T>, String> {
-    let mut service = Service::join().await.map_err(|e| said(&e))?;
+) -> Result<Vec<T>, Fact> {
+    let mut service = Service::join().await.map_err(|e| e.fact())?;
     let found = service
         .ask_for_a_list(request)
         .await
-        .map_err(|e| said(&e))?;
+        .map_err(|e| e.fact())?;
     Ok(found.into_iter().filter_map(read).collect())
-}
-
-/// Why the service could not be asked, in words.
-fn said(failed: &zyr_control::ControlError) -> String {
-    zyr_i18n::fact(&failed.fact())
-}
-
-/// What to say when the service answers something else entirely: the two
-/// halves of the product were not installed at the same time.
-pub fn unexpected(answer: Answer) -> String {
-    zyr_i18n::fact(&answer.unexpected())
 }
 
 /// Puts the service back on its feet, if it is not already standing.

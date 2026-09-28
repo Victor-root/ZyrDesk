@@ -147,3 +147,50 @@ player.no_ffmpeg = the player finds no FFmpeg: {detail}
 player.no_link = the player does not reach the service: {detail}
 player.not_started = the player cannot start: {detail}
 player.windows_only = the player only draws into a window on Windows
+
+# The window, and what it asks of this computer.
+window.windows_only = ZyrDesk only does this on Windows
+window.no_location = this program does not know where it is: {detail}
+window.gone = ZyrDesk's window is no longer there
+window.not_answering = ZyrDesk's window did not answer: {detail}
+window.picture_refused = the picture's window could not open (error {code})
+window.fingerprint_malformed = this fingerprint does not have the expected form
+window.not_offered = {value} is not one of the choices offered for {setting}
+window.button_gone = the floating button is no longer there
+window.unknown_folder = unknown folder: {name}
+window.folder_not_made = the folder could not be created: {detail}
+window.folder_not_opened = the folder could not be opened: {detail}
+window.journal_partly_emptied = part of the journal could not be emptied:\n  {files}
+window.combination_refused = this combination cannot be taken: it needs at least one key held, and a key ZyrDesk knows how to place on a keyboard.
+window.shortcuts_unreadable = the keyboard shortcuts could not be read: {detail}
+window.shortcuts_not_saved = the keyboard shortcuts could not be saved: {detail}
+
+# Setting the service up, and starting with Windows.
+window.service_missing = the ZyrDesk service cannot be found beside this window:\n  {path}
+window.setup_interrupted = setting the service up did not finish. The journal says why.
+window.elevation_refused = administrator rights were refused.
+window.elevation_failed = Windows did not start the service: {detail}
+window.elevation_silent = Windows said nothing of what it started
+window.setup_wait_failed = waiting for the service to be set up failed
+window.setup_no_code = setting the service up did not say how it ended
+window.setup_crashed = the service stopped abruptly while being set up (0x{code}), without writing anything.\n  Run it by hand in an administrator window to see what it says:\n  zyrdeskd setup
+window.setup_failed = setting the service up failed (code {code}).\n  The journal says more.
+window.startup_not_saved = starting with Windows could not be saved: {detail}
+
+# A session, as the window opens and plays it.
+window.no_session = no session under way
+window.session_already_open = a session is already under way
+window.no_journal = the window's journal does not open, the player has nowhere to write
+window.far_getting_ready = Tunnel up, the far computer is getting ready…
+window.no_sound_here = This computer has no audio output: the session will be silent.
+window.link_lost = The connection with the far computer was lost.
+window.link_lost_early = The connection with the far computer was lost before the first picture.
+window.host_left_early = The far computer closed the session before the first picture.
+window.session_did_not_hold = The session did not hold: the picture was brought back {times} times in a row without the session holding.\n  The network between the two computers cannot carry it right now.
+window.picture_not_back = {because}\n  The picture was brought back {times} times in a row without the session holding.
+
+# The keys held in a keyboard shortcut, as the keyboard names them.
+key.ctrl = Ctrl
+key.alt = Alt
+key.shift = Shift
+key.win = Win

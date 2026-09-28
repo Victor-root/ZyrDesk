@@ -28,6 +28,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicIsize, Ordering};
 
+use zyr_proto::fact::Fact;
+
 use crate::floating::Floating;
 use crate::tray::Shown;
 
@@ -221,6 +223,11 @@ pub fn run() {
 
 #[cfg(not(windows))]
 pub fn run() {}
+
+/// Where this program is, which is where what ships with it is.
+pub fn this_program() -> Result<std::path::PathBuf, Fact> {
+    std::env::current_exe().map_err(|e| Fact::new("window.no_location").with("detail", e))
+}
 
 /// Stops the program.
 ///

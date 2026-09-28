@@ -63,12 +63,14 @@ mod main_window;
 /// everything else that draws.
 #[cfg(not(windows))]
 mod home {
+    use zyr_proto::fact::Fact;
+
     use crate::app::App;
 
-    pub fn step(_app: &App, _detail: &str) {}
+    pub fn step(_app: &App, _detail: &Fact) {}
     pub fn coming_back(_app: &App, _attempt: u32) {}
     pub fn put_the_opening_away(_app: &App) {}
-    pub fn failed(_app: &App, _text: &str) {}
+    pub fn failed(_app: &App, _why: &Fact) {}
 }
 
 mod picture;
