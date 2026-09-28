@@ -159,7 +159,7 @@ const WATCH_STEP: Duration = Duration::from_millis(100);
 /// picture is worth having anyway, so the refusal is written down as a
 /// `Step` and stepped over. Somebody closing the window is not one of
 /// those, and reported as a refusal it was read as one: the opening
-/// wrote « les enceintes restent allumées » and carried on towards a
+/// wrote « the far computer's speakers stay on » and carried on towards a
 /// picture nobody was waiting for any more.
 enum GaveUp {
     /// The service, or the far computer through it, said no.
@@ -633,17 +633,20 @@ mod tests {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .expect("exécuteur du service d'essai");
+                .expect("the test service's runtime starts");
             runtime.block_on(async move {
-                let mut door = Door::open(&listening).expect("canal d'essai");
-                opened.send(()).expect("canal d'essai annoncé");
-                let mut heard = door.accept().await.expect("un appel");
+                let mut door = Door::open(&listening).expect("the test channel opens");
+                opened.send(()).expect("the test channel is announced");
+                let mut heard = door.accept().await.expect("a call");
                 while let Ok(Some(line)) = heard.hear().await {
-                    let request = Request::parse(&line).expect("une demande lisible");
+                    let request = Request::parse(&line).expect("a readable request");
                     let answer = answering(&request);
                     writing.lock().unwrap().push(request);
                     match answer {
-                        Some(answer) => heard.say(&answer.to_string()).await.expect("répondu"),
+                        Some(answer) => heard
+                            .say(&answer.to_string())
+                            .await
+                            .expect("the answer is sent"),
                         // Held without an answer: a service still
                         // chasing the far computer.
                         None => std::future::pending::<()>().await,
@@ -651,7 +654,7 @@ mod tests {
                 }
             });
         });
-        when_open.recv().expect("canal d'essai ouvert");
+        when_open.recv().expect("the test channel is open");
         (channel, asked)
     }
 
@@ -697,9 +700,9 @@ mod tests {
         fn new(what: &str) -> Self {
             let folder = std::env::temp_dir()
                 .join(format!("zyr-session-ffmpeg-{}-{what}", std::process::id()));
-            std::fs::create_dir_all(&folder).expect("dossier d'essai");
+            std::fs::create_dir_all(&folder).expect("the test folder is made");
             for file in Ffmpeg::missing_from(&folder) {
-                std::fs::write(file, b"").expect("fichier d'essai");
+                std::fs::write(file, b"").expect("a test file is written");
             }
             Self(folder)
         }
@@ -716,11 +719,9 @@ mod tests {
         // Checked first, since everything after it asks the far computer
         // to change something: the service stands ready, and hears
         // nothing at all.
-        let (channel, asked) = a_service("sans-ffmpeg", willing);
-        let nowhere = std::env::temp_dir().join(format!(
-            "zyr-session-ffmpeg-{}-nulle-part",
-            std::process::id()
-        ));
+        let (channel, asked) = a_service("no-ffmpeg", willing);
+        let nowhere =
+            std::env::temp_dir().join(format!("zyr-session-ffmpeg-{}-nowhere", std::process::id()));
         let mut steps = Vec::new();
         let outcome = opened_on(
             &nowhere,
@@ -741,8 +742,8 @@ mod tests {
 
     #[test]
     fn an_opening_tells_the_far_computer_what_it_wants_in_order() {
-        let (channel, asked) = a_service("ordre", willing);
-        let ffmpeg = FfmpegHere::new("ordre");
+        let (channel, asked) = a_service("order", willing);
+        let ffmpeg = FfmpegHere::new("order");
         let wanted = wanted();
         let mut steps = Vec::new();
         let opened = opened_on(
@@ -752,7 +753,7 @@ mod tests {
             &mut |step| steps.push(step),
             &|| true,
         )
-        .expect("une voie ouverte");
+        .expect("an open way");
 
         assert_eq!(opened.link, r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1");
         // The size the far computer said wins over the one asked for, and
@@ -810,7 +811,7 @@ mod tests {
         // The way is tied to this process once its player plays, and
         // given back when it is let go of.
         let Opened { mut way, .. } = opened;
-        way.hold().expect("tenue");
+        way.hold().expect("the way is held");
         drop(way);
         let asked = until_asked(&asked, 6);
         assert_eq!(
@@ -827,14 +828,14 @@ mod tests {
 
     #[test]
     fn a_session_that_leaves_the_far_screen_alone_asks_for_none_and_takes_its_size() {
-        let (channel, asked) = a_service("sans-ecran", willing);
-        let ffmpeg = FfmpegHere::new("sans-ecran");
+        let (channel, asked) = a_service("no-screen", willing);
+        let ffmpeg = FfmpegHere::new("no-screen");
         let wanted = Wanted {
             wants_a_screen_over_there: false,
             ..wanted()
         };
         let opened =
-            opened_on(&ffmpeg.0, &channel, &wanted, &mut |_| {}, &|| true).expect("ouverte");
+            opened_on(&ffmpeg.0, &channel, &wanted, &mut |_| {}, &|| true).expect("an open way");
         assert_eq!(
             (opened.settings.width, opened.settings.height),
             (2560, 1440)
@@ -850,14 +851,14 @@ mod tests {
 
     #[test]
     fn a_refused_way_is_the_end_of_the_opening() {
-        let (channel, _) = a_service("refus", |_| {
+        let (channel, _) = a_service("refusal", |_| {
             Some(Answer::Refused(
                 Fact::new("reach.nobody_answered")
                     .with("host", "192.168.1.20")
                     .with("waited", 15),
             ))
         });
-        let ffmpeg = FfmpegHere::new("refus");
+        let ffmpeg = FfmpegHere::new("refusal");
         let mut steps = Vec::new();
         let outcome = opened_on(
             &ffmpeg.0,
@@ -879,8 +880,8 @@ mod tests {
         // Let go of once the far computer has been asked everything: the
         // way was open by then, and is released rather than left to the
         // service's patience.
-        let (channel, asked) = a_service("lachee-apres", willing);
-        let ffmpeg = FfmpegHere::new("lachee-apres");
+        let (channel, asked) = a_service("let-go-after", willing);
+        let ffmpeg = FfmpegHere::new("let-go-after");
         let reached = std::sync::atomic::AtomicBool::new(false);
         let outcome = opened_on(
             &ffmpeg.0,
@@ -908,14 +909,14 @@ mod tests {
         // here, it is exactly a computer being chased for thirty
         // seconds, and that is where the whole time of an opening
         // went. Nothing in that wait looked at the cross.
-        let (channel, _) = a_service("lachee", |_| None);
+        let (channel, _) = a_service("let-go", |_| None);
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
         let mut service = runtime
             .block_on(Service::join_on(&channel))
-            .expect("joindre le service d'essai");
+            .expect("the test service is joined");
 
         // Let go at the third glance, which requires there to have been
         // three: the question is asked during the wait, and not once
@@ -947,7 +948,7 @@ mod tests {
         // computer refuses to go quiet, to change screen, and the
         // picture is worth having all the same. Giving up takes the same
         // way back and is not one of those; handed back as a refusal, it
-        // was written "les enceintes restent allumées" and the opening
+        // was written "the far computer's speakers stay on" and the opening
         // carried on towards a picture nobody was waiting for any more.
         assert!(matches!(GaveUp::Abandoned.refusal(), Err(Error::Abandoned)));
         assert!(matches!(
