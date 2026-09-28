@@ -22,8 +22,8 @@ use std::ffi::{OsStr, OsString, c_void};
 use std::fmt;
 use std::io;
 use std::marker::PhantomData;
-use std::os::windows::ffi::OsStrExt;
-use std::path::Path;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{
@@ -43,14 +43,18 @@ use windows_sys::Win32::System::JobObjects::{
     CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JobObjectExtendedLimitInformation, SetInformationJobObject,
 };
-use windows_sys::Win32::System::RemoteDesktop::{WTSGetActiveConsoleSessionId, WTSQueryUserToken};
+use windows_sys::Win32::System::RemoteDesktop::{
+    WTS_CURRENT_SERVER_HANDLE, WTS_PROCESS_INFOW, WTSEnumerateProcessesW, WTSFreeMemory,
+    WTSGetActiveConsoleSessionId, WTSQuerySessionInformationW, WTSQueryUserToken, WTSUserName,
+};
 use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessAsUserW, DETACHED_PROCESS,
     DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
     GetExitCodeProcess, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
-    OpenProcessToken, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
-    PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW,
-    UpdateProcThreadAttribute, WaitForSingleObject,
+    OpenProcess, OpenProcessToken, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+    PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW, STARTF_USESTDHANDLES,
+    STARTUPINFOEXW, STARTUPINFOW, UpdateProcThreadAttribute, WaitForSingleObject,
 };
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
@@ -183,6 +187,117 @@ pub fn session_on_screen() -> Option<u32> {
     // Safe: the function takes nothing and returns an integer.
     let session = unsafe { WTSGetActiveConsoleSessionId() };
     (session != NO_SESSION).then_some(session)
+}
+
+/// The product's window, a program beside this one.
+const THE_WINDOW: &str = "ZyrDesk.exe";
+
+/// Whether ZyrDesk's window runs in that session.
+///
+/// It is what puts the icon beside the clock, from the moment it starts
+/// to the moment it ends, however it ends: running in the session on
+/// screen, it is in front of whoever sits at this computer. Known by its
+/// whole path, beside this program, and not by its name alone: another
+/// program that happens to be called the same shows nobody anything.
+pub fn shown_in(session: u32) -> io::Result<bool> {
+    let the_window = std::env::current_exe()?.with_file_name(THE_WINDOW);
+    let mut listed: *mut WTS_PROCESS_INFOW = std::ptr::null_mut();
+    let mut count = 0u32;
+    // Safe: the list the system makes comes back through the two slots,
+    // and is freed below exactly once.
+    let asked =
+        unsafe { WTSEnumerateProcessesW(WTS_CURRENT_SERVER_HANDLE, 0, 1, &mut listed, &mut count) };
+    if asked == 0 {
+        return Err(refusal_of("WTSEnumerateProcessesW"));
+    }
+    if listed.is_null() {
+        return Ok(false);
+    }
+    // Safe: the entries the call above wrote, read before the list is
+    // freed.
+    let processes = unsafe { std::slice::from_raw_parts(listed, count as usize) };
+    let shown = processes
+        .iter()
+        .filter(|process| process.SessionId == session)
+        // Safe: a name the list carries, ended by a nought, alive until
+        // the list is freed.
+        .filter(|process| {
+            unsafe { wide_text(process.pProcessName) }.eq_ignore_ascii_case(THE_WINDOW)
+        })
+        .any(|process| {
+            image_of(process.ProcessId).is_some_and(|image| same_file(&image, &the_window))
+        });
+    // Safe: the list the call made, freed once and not read after.
+    unsafe { WTSFreeMemory(listed.cast()) };
+    Ok(shown)
+}
+
+/// Whether somebody is signed in at that session, rather than Windows
+/// asking who is there.
+pub fn somebody_signed_in(session: u32) -> io::Result<bool> {
+    let mut name: *mut u16 = std::ptr::null_mut();
+    let mut size = 0u32;
+    // Safe: the text the system makes comes back through the two slots,
+    // and is freed below exactly once.
+    let asked = unsafe {
+        WTSQuerySessionInformationW(
+            WTS_CURRENT_SERVER_HANDLE,
+            session,
+            WTSUserName,
+            &mut name,
+            &mut size,
+        )
+    };
+    if asked == 0 {
+        return Err(refusal_of("WTSQuerySessionInformationW"));
+    }
+    // Safe: the name the call made, ended by a nought, read once, then
+    // freed once.
+    let signed_in = !unsafe { wide_text(name) }.is_empty();
+    unsafe { WTSFreeMemory(name.cast()) };
+    Ok(signed_in)
+}
+
+/// The file a running program was started from.
+fn image_of(process: u32) -> Option<PathBuf> {
+    // Safe: a refused or finished process gives a null handle, which its
+    // guard leaves alone; a real one is closed by it.
+    let handle = Handle(unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process) });
+    if handle.0.is_null() {
+        return None;
+    }
+    let mut path = [0u16; 1024];
+    let mut length = path.len() as u32;
+    // Safe: the handle is live, and the slot is ours with its length in
+    // letters given alongside it.
+    let read = unsafe {
+        QueryFullProcessImageNameW(handle.0, PROCESS_NAME_WIN32, path.as_mut_ptr(), &mut length)
+    };
+    (read != 0).then(|| PathBuf::from(OsString::from_wide(&path[..length as usize])))
+}
+
+/// Whether two paths name the same file, as Windows reads them: with no
+/// regard to case.
+fn same_file(one: &Path, other: &Path) -> bool {
+    one.to_string_lossy().to_lowercase() == other.to_string_lossy().to_lowercase()
+}
+
+/// A text the system wrote, ended by a nought.
+///
+/// # Safety
+///
+/// `text` is null, or points at letters ending with a nought.
+unsafe fn wide_text(text: *const u16) -> String {
+    if text.is_null() {
+        return String::new();
+    }
+    let mut length = 0;
+    // Safe: as the caller vouches, a nought comes before the end.
+    while unsafe { *text.add(length) } != 0 {
+        length += 1;
+    }
+    // Safe: the letters just counted.
+    String::from_utf16_lossy(unsafe { std::slice::from_raw_parts(text, length) })
 }
 
 /// Starts the engine of each incoming session in the session attached

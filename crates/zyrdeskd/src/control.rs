@@ -75,13 +75,13 @@ pub struct Answering {
 
 /// Whether Windows starts the service on its own.
 #[cfg(windows)]
-fn at_boot() -> bool {
+pub(crate) fn at_boot() -> bool {
     crate::service::starts_with_windows().unwrap_or(false)
 }
 
 /// Outside Windows there is no service to start.
 #[cfg(not(windows))]
-fn at_boot() -> bool {
+pub(crate) fn at_boot() -> bool {
     false
 }
 

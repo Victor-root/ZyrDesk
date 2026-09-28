@@ -101,7 +101,9 @@ impl Standing {
 /// How a holdup is named on the way to the window.
 fn named(holdup: Holdup) -> &'static str {
     match holdup {
-        Holdup::Starting => "starting",
+        // A window asking is itself what the service waits to see on the
+        // screen: from here, the door is only a moment from opening.
+        Holdup::Starting | Holdup::Unseen => "starting",
         Holdup::EngineMissing => "engineMissing",
     }
 }
@@ -510,7 +512,7 @@ mod tests {
 
     #[test]
     fn every_holdup_has_a_name_the_window_knows() {
-        for holdup in [Holdup::Starting, Holdup::EngineMissing] {
+        for holdup in [Holdup::Starting, Holdup::EngineMissing, Holdup::Unseen] {
             let name = named(holdup);
             assert!(!name.is_empty());
             assert!(!name.contains('-'), "{name}");

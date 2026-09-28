@@ -51,6 +51,9 @@ pub enum Holdup {
     /// FFmpeg is missing from `vendor/ffmpeg`, and the engine cannot make
     /// a picture without it.
     EngineMissing,
+    /// ZyrDesk is not running where the screen is, so nobody at this
+    /// computer would see it being taken over.
+    Unseen,
 }
 
 impl Holdup {
@@ -58,6 +61,7 @@ impl Holdup {
         match self {
             Holdup::Starting => "starting",
             Holdup::EngineMissing => "engine-missing",
+            Holdup::Unseen => "unseen",
         }
     }
 
@@ -66,6 +70,7 @@ impl Holdup {
     fn read(said: &str) -> Self {
         match said {
             "engine-missing" => Holdup::EngineMissing,
+            "unseen" => Holdup::Unseen,
             _ => Holdup::Starting,
         }
     }
@@ -1714,7 +1719,7 @@ mod tests {
         // update it.
         assert_eq!(Holdup::read("un-empechement-inedit"), Holdup::Starting);
         assert_eq!(Holdup::read(""), Holdup::Starting);
-        for holdup in [Holdup::Starting, Holdup::EngineMissing] {
+        for holdup in [Holdup::Starting, Holdup::EngineMissing, Holdup::Unseen] {
             assert_eq!(Holdup::read(holdup.spelled()), holdup);
         }
     }

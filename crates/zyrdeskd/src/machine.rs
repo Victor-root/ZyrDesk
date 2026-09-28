@@ -226,6 +226,9 @@ impl Machine {
                 "activé, mais FFmpeg manque dans vendor/ffmpeg : aucune image ne peut être faite"
                     .to_string()
             }
+            Some(Holdup::Unseen) => "activé, mais ZyrDesk n'est pas ouvert à l'écran de cet \
+                                     ordinateur : personne ici ne verrait une prise en main"
+                .to_string(),
         }
     }
 

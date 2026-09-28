@@ -12,6 +12,14 @@
 //! switches user. The supervisor watches it and opens the door again in
 //! the new one, because an engine left in a dead session shows nothing
 //! at all.
+//!
+//! Nor is the door ever open unseen. This computer can be taken over
+//! only while ZyrDesk runs where its screen is, its icon beside the clock
+//! for whoever sits there; the door closes the moment it stops, and the
+//! sessions with it. The one exception is a computer nobody has signed in
+//! to yet, whose owner asked it to start with Windows: there is no desk
+//! there to show an icon on, and reaching it before anyone signs in is
+//! precisely what they asked for.
 
 // Outside Windows nothing calls this module: the service does not exist
 // there. It stays compiled and tested everywhere, the logic having
@@ -61,6 +69,11 @@ const SESSION_SETTLING: Duration = Duration::from_secs(1);
 /// checking; and doing so every second would be noise.
 const ENGINE_WATCH: Duration = Duration::from_secs(5);
 
+/// How long ZyrDesk has to come back by itself when somebody signs in
+/// during a session opened from the sign-in screen: Windows starts it
+/// with the rest of what the person asked for, once their desktop is up.
+const COMING_BACK: Duration = Duration::from_secs(60);
+
 /// How often a desk nobody is watching any more is tried again.
 ///
 /// Slower than the rest of the watch on purpose: putting a desk back is
@@ -80,6 +93,93 @@ fn screen_session() -> Option<u32> {
 #[cfg(not(windows))]
 fn screen_session() -> Option<u32> {
     Some(0)
+}
+
+/// What the screen shows of ZyrDesk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Seen {
+    /// Its window runs where the screen is, and its icon with it.
+    Shown,
+    /// Nobody is signed in: Windows is asking who is there.
+    NobodySignedIn,
+    /// Somebody is signed in, and ZyrDesk is not running in front of
+    /// them.
+    Hidden,
+}
+
+/// What the screen of that session shows of ZyrDesk.
+#[cfg(windows)]
+fn seen_in(session: u32) -> Result<Seen, String> {
+    if crate::session::shown_in(session).map_err(|e| e.to_string())? {
+        return Ok(Seen::Shown);
+    }
+    Ok(
+        if crate::session::somebody_signed_in(session).map_err(|e| e.to_string())? {
+            Seen::Hidden
+        } else {
+            Seen::NobodySignedIn
+        },
+    )
+}
+
+/// Outside Windows there is no screen and no service: the supervisor
+/// stays compiled and tested everywhere, and nothing is hidden there.
+#[cfg(not(windows))]
+fn seen_in(_session: u32) -> Result<Seen, String> {
+    Ok(Seen::Shown)
+}
+
+/// Whether this computer may be taken over, from what its screen shows
+/// and whether it starts with Windows, read only when it matters.
+fn may_be_taken(seen: Seen, at_boot: impl FnOnce() -> bool) -> bool {
+    match seen {
+        Seen::Shown => true,
+        Seen::NobodySignedIn => at_boot(),
+        Seen::Hidden => false,
+    }
+}
+
+/// Why this computer may not be taken over, in one line of the journal.
+fn why_unseen(seen: &Result<Seen, String>) -> String {
+    match seen {
+        Ok(Seen::NobodySignedIn) => "nobody is signed in and ZyrDesk does not start with \
+                                     Windows"
+            .to_string(),
+        Ok(_) => "ZyrDesk is not running on this computer's screen, so nobody here would see \
+                  a session"
+            .to_string(),
+        Err(e) => format!("whether ZyrDesk is on this computer's screen cannot be told ({e})"),
+    }
+}
+
+/// Whether the open door may stay open, look after look.
+///
+/// As [`may_be_taken`] says, with one allowance: somebody who signs in
+/// while the door is open from the sign-in screen leaves ZyrDesk
+/// [`COMING_BACK`] to reappear on their desktop, as it does by itself
+/// when it starts with Windows. A window that goes away later is given
+/// nothing: the door closes at once.
+#[derive(Default)]
+struct Watched {
+    nobody_before: bool,
+    signed_in_at: Option<Instant>,
+}
+
+impl Watched {
+    fn allows(&mut self, seen: Seen, at_boot: impl FnOnce() -> bool, now: Instant) -> bool {
+        if self.nobody_before && seen != Seen::NobodySignedIn {
+            self.signed_in_at = Some(now);
+        }
+        if seen == Seen::Shown {
+            self.signed_in_at = None;
+        }
+        self.nobody_before = seen == Seen::NobodySignedIn;
+        may_be_taken(seen, at_boot)
+            || (seen == Seen::Hidden
+                && self
+                    .signed_in_at
+                    .is_some_and(|at| now.duration_since(at) < COMING_BACK))
+    }
 }
 
 /// How each session's engine is started in that session.
@@ -200,6 +300,8 @@ enum Closed {
     WireChanged,
     /// FFmpeg went missing: no engine could make a picture.
     FfmpegGone,
+    /// ZyrDesk is no longer on the screen for anyone to see.
+    Unseen,
 }
 
 /// Why the supervisor handed back.
@@ -301,6 +403,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     let mut screenless = false;
     let mut refused = false;
     let mut ffmpegless = false;
+    let mut unseen = false;
 
     loop {
         if order.stop_asked() {
@@ -373,6 +476,29 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         };
         screenless = false;
 
+        let seen = seen_in(session);
+        if !seen
+            .as_ref()
+            .is_ok_and(|seen| may_be_taken(*seen, crate::control::at_boot))
+        {
+            if !unseen {
+                log.write(&format!(
+                    "{}: this computer cannot be reached",
+                    why_unseen(&seen)
+                ));
+                unseen = true;
+                machine.hosting.held_by(Holdup::Unseen);
+            }
+            if !wait(SESSION_SETTLING, order) {
+                return End::Asked;
+            }
+            continue;
+        }
+        if unseen {
+            log.write("ZyrDesk is on this computer's screen, it can be reached again");
+            unseen = false;
+        }
+
         let closed = match one_door_life(session, &around) {
             Ok(closed) => closed,
             Err(reason) => {
@@ -394,6 +520,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
                 }
             }
             Closed::NoLongerWanted | Closed::WireChanged | Closed::FfmpegGone => {}
+            Closed::Unseen => unseen = true,
         }
     }
 }
@@ -520,6 +647,7 @@ fn one_door_life(session: u32, around: &Around<'_>) -> Result<Closed, String> {
     let closed = watch_the_door(&gateway, session, wire, machine, order, log);
     machine.hosting.held_by(match closed {
         Closed::FfmpegGone => Holdup::EngineMissing,
+        Closed::Unseen => Holdup::Unseen,
         _ => Holdup::Starting,
     });
     gateway.close();
@@ -540,11 +668,33 @@ fn watch_the_door(
     // Apart from the one above: this one paces trying again after a
     // refusal, and the two would otherwise reset each other.
     let mut last_sleep_try = Instant::now() - SCREEN_WATCH;
+    let mut watched = Watched::default();
+    let mut coming_back = false;
     loop {
         if order.stop_asked() {
             log.write("stop asked for, the door closes");
             return Closed::Asked;
         }
+
+        // Nobody is ever taken over unseen: the window going away closes
+        // the door, and every session through it, before anything else.
+        let seen = seen_in(session);
+        let allowed = seen
+            .as_ref()
+            .is_ok_and(|seen| watched.allows(*seen, crate::control::at_boot, Instant::now()));
+        if !allowed {
+            log.write(&format!("{}, the door closes", why_unseen(&seen)));
+            return Closed::Unseen;
+        }
+        let waiting = seen == Ok(Seen::Hidden);
+        if waiting && !coming_back {
+            log.write(&format!(
+                "somebody signed in during a session: ZyrDesk has {} seconds to come back on \
+                 screen before the door closes",
+                COMING_BACK.as_secs()
+            ));
+        }
+        coming_back = waiting;
 
         if !machine.remembered.remote_access() {
             log.write("remote access turned off, the door closes");
@@ -655,6 +805,41 @@ mod tests {
         // before this wait was over.
         assert!(!wait(Duration::from_secs(30), &order));
         assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn this_computer_is_taken_over_only_where_zyrdesk_is_seen() {
+        let never = || panic!("starting with Windows matters only before anyone signs in");
+        assert!(may_be_taken(Seen::Shown, never));
+        assert!(!may_be_taken(Seen::Hidden, never));
+        // Before anybody signs in, only when its owner asked for it.
+        assert!(may_be_taken(Seen::NobodySignedIn, || true));
+        assert!(!may_be_taken(Seen::NobodySignedIn, || false));
+    }
+
+    #[test]
+    fn somebody_signing_in_during_a_session_leaves_zyrdesk_a_minute_to_come_back() {
+        let at = Instant::now();
+        let mut watched = Watched::default();
+        assert!(watched.allows(Seen::NobodySignedIn, || true, at));
+        // Signed in: the window is not up yet, and has its minute.
+        assert!(watched.allows(Seen::Hidden, || true, at + Duration::from_secs(1)));
+        assert!(watched.allows(Seen::Hidden, || true, at + Duration::from_secs(59)));
+        assert!(!watched.allows(Seen::Hidden, || true, at + Duration::from_secs(62)));
+    }
+
+    #[test]
+    fn a_window_that_goes_away_closes_the_door_at_once() {
+        let at = Instant::now();
+        let mut watched = Watched::default();
+        assert!(watched.allows(Seen::Shown, || false, at));
+        assert!(!watched.allows(Seen::Hidden, || false, at + Duration::from_millis(500)));
+        // Nor once it was shown after a sign-in, the minute being for
+        // coming back and not for going away again.
+        let mut watched = Watched::default();
+        assert!(watched.allows(Seen::NobodySignedIn, || true, at));
+        assert!(watched.allows(Seen::Shown, || true, at + Duration::from_secs(5)));
+        assert!(!watched.allows(Seen::Hidden, || true, at + Duration::from_secs(10)));
     }
 
     #[test]

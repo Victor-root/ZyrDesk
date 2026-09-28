@@ -1012,6 +1012,9 @@ fn access_now(hosting: &Hosting, remembered: &Remembered) -> Access {
         None => Access::Ready,
         Some(Holdup::Starting) => Access::Starting,
         Some(Holdup::EngineMissing) => Access::EngineMissing,
+        // Nobody there would see a session, which is what switched off
+        // means to whoever looks from another computer.
+        Some(Holdup::Unseen) => Access::Off,
     }
 }
 
