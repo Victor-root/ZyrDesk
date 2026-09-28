@@ -1,25 +1,21 @@
 [package]
 name = "zyr-control"
-description = "Command channel of the ZyrDesk service, and the engines' local link"
+description = "Command channel of the ZyrDesk service"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-bytes = "1.12.1"
-tokio = { version = "1.53.1", features = ["net", "io-util", "rt", "time"] }
+tokio = { version = "1.53.1", features = ["net", "io-util", "rt"] }
 zyr-proto.workspace = true
 zyr-transport.workspace = true
 zyr-broker.workspace = true
 
+# The command channel is a named pipe on Windows, made the way every pipe
+# of the product is made.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = [
-    "Win32_Foundation",
-    "Win32_Security",
-    "Win32_Security_Authorization",
-    "Win32_System_Pipes",
-] }
+zyr-link.workspace = true
 
 [dev-dependencies]
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }

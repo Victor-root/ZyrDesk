@@ -28,13 +28,13 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use zyr_codec::{Ffmpeg, Frame, GpuVendor, Input, VideoEncoder};
-use zyr_control::link::{Access, LinkListener};
 use zyr_host::fake::{Recorded, RecordingInjector, SilentSound, SyntheticScreen, ToneSound};
 use zyr_host::picture::{Mapping, Rect, Size, picture_size, placement};
 use zyr_host::{
     Aimed, Captured, Drawing, Ending as EngineEnding, Feed, Injected, MakeScreen, Parts, Screen,
     ScreenError, Sound,
 };
+use zyr_link::{Access, LinkListener};
 use zyr_media::service::{Display, ToEngine, ToPlayer, ToService};
 use zyr_player::{
     Button, CodecChoice, Ending, Event, InputEvent, Measures, Player, Surface, Tallies, VideoCodec,

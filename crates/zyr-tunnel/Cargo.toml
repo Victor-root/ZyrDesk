@@ -12,6 +12,6 @@ repository.workspace = true
 # repository's lock file.
 base64 = "0.23.1"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "io-util", "time", "sync"] }
-zyr-control.workspace = true
+zyr-link.workspace = true
 zyr-proto.workspace = true
 zyr-transport.workspace = true

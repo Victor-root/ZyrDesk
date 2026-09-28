@@ -15,6 +15,15 @@
 //! name nobody can guess and nobody can hold before it: only the first
 //! instance of a name may claim it. Elsewhere it is a socket file in a
 //! directory of its own, which is what the tests run on.
+//!
+//! A brick of its own, under the engines and apart from the service's
+//! command channel: an engine needs this link and nothing of what the
+//! window and the service say to each other, so changing that
+//! conversation never reaches an engine. The command channel is a named
+//! pipe too, and takes from here what every pipe of the product shares.
+
+#[cfg(windows)]
+pub mod windows_pipe;
 
 use std::io;
 

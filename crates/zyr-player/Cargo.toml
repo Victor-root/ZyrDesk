@@ -13,7 +13,7 @@ bytes = "1.12.1"
 # The link runs on a small runtime of its own, one thread.
 tokio = { version = "1.53.1", features = ["rt", "sync", "time", "macros"] }
 zyr-codec.workspace = true
-zyr-control.workspace = true
+zyr-link.workspace = true
 zyr-media.workspace = true
 zyr-proto.workspace = true
 

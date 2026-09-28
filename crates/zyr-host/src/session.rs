@@ -22,7 +22,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use tokio::runtime::Runtime;
-use zyr_control::link::Link;
+use zyr_link::Link;
 use zyr_media::codec::CodecSet;
 use zyr_media::control::{ByeReason, NoticeKind, ToPlayer, Wanted};
 use zyr_media::service::{Display, ToEngine as FromService, ToService};

@@ -7,7 +7,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
-use zyr_control::link::{Access, Channel, LinkListener};
+use zyr_link::{Access, Channel, LinkListener};
 use zyr_media::MEDIA_VERSION;
 use zyr_media::codec::CodecSet;
 use zyr_media::control::{ByeReason, ControlReader, NoticeKind, ToEngine, ToPlayer};

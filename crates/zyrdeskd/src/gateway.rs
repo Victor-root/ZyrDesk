@@ -38,7 +38,7 @@ use std::time::Duration;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinHandle, JoinSet};
-use zyr_control::link::{Access, Link, LinkListener};
+use zyr_link::{Access, Link, LinkListener};
 use zyr_media::service::{ToEngine, ToService};
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
@@ -1780,7 +1780,7 @@ mod tests {
 
     impl Launcher for StandIn {
         fn launch(&self, link: &str) -> io::Result<Box<dyn Launched>> {
-            use zyr_control::link::Channel;
+            use zyr_link::Channel;
 
             let link = link.to_string();
             let told = self.told.clone();
@@ -1790,7 +1790,7 @@ mod tests {
                     .build()
                     .unwrap();
                 runtime.block_on(async {
-                    let link = zyr_control::link::connect(&link).await.unwrap();
+                    let link = zyr_link::connect(&link).await.unwrap();
                     let (mut reads, mut writes) = link.split();
                     let ready = ToService::Ready {
                         encodable: zyr_media::codec::CodecSet::empty()
@@ -1951,7 +1951,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn a_session_brings_its_engine_up_and_lets_it_go_at_its_end() {
-        use zyr_control::link::{Channel, connect};
+        use zyr_link::{Channel, connect};
         use zyr_transport::MediaProfile;
 
         let stand_in = Arc::new(StandIn::default());

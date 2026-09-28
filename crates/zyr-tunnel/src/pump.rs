@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc;
-use zyr_control::link::{Channel, LinkReader, LinkWriter};
+use zyr_link::{Channel, LinkReader, LinkWriter};
 use zyr_transport::{Bytes, Connection, DatagramError, RecvStream, SendStream};
 
 use crate::channel::{DatagramChannel, StreamChannel};
@@ -159,7 +159,7 @@ pub fn nudge(connection: &Connection) -> io::Result<()> {
 /// halves run in one task, so that once the session is over, the link
 /// is let go of with them.
 pub(crate) async fn between(
-    link: zyr_control::link::Link,
+    link: zyr_link::Link,
     engine_stream: impl Future<Output = io::Result<(SendStream, RecvStream)>>,
     connection: &Connection,
     datagrams: &DatagramQueue,

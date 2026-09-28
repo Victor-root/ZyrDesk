@@ -96,9 +96,9 @@ mod mechanism {
     use std::io;
 
     use tokio::net::windows::named_pipe::{NamedPipeClient, NamedPipeServer, ServerOptions};
+    use zyr_link::windows_pipe;
 
     use super::Conversation;
-    use crate::windows_pipe;
 
     pub type Heard = Conversation<NamedPipeServer>;
     pub type Spoken = Conversation<NamedPipeClient>;

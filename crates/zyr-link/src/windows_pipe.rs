@@ -55,11 +55,7 @@ impl Drop for AccessList {
 
 /// Creates one instance of a pipe that only the accounts named in
 /// `access`, an access list in its text form, may open.
-pub(crate) fn create(
-    options: &ServerOptions,
-    address: &str,
-    access: &str,
-) -> io::Result<NamedPipeServer> {
+pub fn create(options: &ServerOptions, address: &str, access: &str) -> io::Result<NamedPipeServer> {
     let list = AccessList::from_text(access)?;
     let mut attributes = SECURITY_ATTRIBUTES {
         nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
@@ -87,7 +83,7 @@ const ATTEMPTS: u32 = 50;
 const BETWEEN_TRIES: Duration = Duration::from_millis(20);
 
 /// Opens a pipe, trying again for a moment while it is busy.
-pub(crate) async fn open(address: &str) -> io::Result<NamedPipeClient> {
+pub async fn open(address: &str) -> io::Result<NamedPipeClient> {
     let mut attempt = 1;
     loop {
         match ClientOptions::new().open(address) {

@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
-use zyr_control::link::{Channel, Link, LinkWriter};
+use zyr_link::{Channel, Link, LinkWriter};
 use zyr_media::MEDIA_VERSION;
 use zyr_media::WireError;
 use zyr_media::codec::CodecSet;
@@ -118,7 +118,7 @@ pub fn run(parts: Parts, connected: SyncSender<io::Result<()>>) {
         }
     };
     runtime.block_on(async move {
-        let reached = tokio::time::timeout(CONNECT_WITHIN, zyr_control::link::connect(&parts.name))
+        let reached = tokio::time::timeout(CONNECT_WITHIN, zyr_link::connect(&parts.name))
             .await
             .unwrap_or_else(|_| {
                 Err(io::Error::new(

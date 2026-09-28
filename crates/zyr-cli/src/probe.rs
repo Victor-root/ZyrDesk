@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::UdpSocket;
-use zyr_control::link::{Channel, Link, LinkReader, LinkWriter};
+use zyr_link::{Channel, Link, LinkReader, LinkWriter};
 
 use crate::measurement::{Outcome, RoundTrip};
 
@@ -280,7 +280,7 @@ fn time_it(packet: &[u8], start: Instant) -> Option<RoundTrip> {
 
 #[cfg(test)]
 mod tests {
-    use zyr_control::link::{self, Access, LinkListener};
+    use zyr_link::{Access, LinkListener};
 
     use super::*;
 
@@ -358,7 +358,7 @@ mod tests {
     async fn the_stand_in_engine_sends_back_the_pictures_and_nothing_else() {
         let listener = LinkListener::create(Access::SystemOnly).unwrap();
         let name = listener.name().to_string();
-        let (player, engine) = tokio::join!(link::connect(&name), listener.accept());
+        let (player, engine) = tokio::join!(zyr_link::connect(&name), listener.accept());
         tokio::spawn(echo_pictures(engine.unwrap()));
 
         let (mut reader, mut writer) = player.unwrap().split();
@@ -372,7 +372,7 @@ mod tests {
     async fn a_probe_through_a_link_measures_what_the_engine_sends_back() {
         let listener = LinkListener::create(Access::SystemOnly).unwrap();
         let name = listener.name().to_string();
-        let (player, engine) = tokio::join!(link::connect(&name), listener.accept());
+        let (player, engine) = tokio::join!(zyr_link::connect(&name), listener.accept());
         tokio::spawn(echo_pictures(engine.unwrap()));
 
         let mut cadence = cadence(1160, 10, 60);

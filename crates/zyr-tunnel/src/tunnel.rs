@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
-use zyr_control::link::{Link, LinkListener};
+use zyr_link::{Link, LinkListener};
 use zyr_proto::log::Log;
 use zyr_transport::{Connection, RecvStream, SendStream};
 

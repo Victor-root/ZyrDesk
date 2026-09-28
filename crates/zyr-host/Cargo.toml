@@ -15,7 +15,7 @@ fake = []
 [dependencies]
 tokio = { version = "1.53.1", features = ["macros", "rt", "sync"] }
 zyr-codec.workspace = true
-zyr-control.workspace = true
+zyr-link.workspace = true
 zyr-media.workspace = true
 zyr-proto.workspace = true
 

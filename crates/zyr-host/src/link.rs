@@ -22,7 +22,7 @@ use std::time::Instant;
 
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc as queue;
-use zyr_control::link::{Channel, Link, LinkReader, LinkWriter};
+use zyr_link::{Channel, Link, LinkReader, LinkWriter};
 use zyr_media::WireError;
 use zyr_media::control::{ControlReader, ToEngine as FromPlayer, ToPlayer};
 use zyr_media::service::{ToEngine as FromService, ToService};

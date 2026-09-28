@@ -17,7 +17,7 @@ use zyr_codec::{
     DecodeOutput, DecodedFrame, Ffmpeg, Frame, GpuVendor, Input, OpusDecoder, VideoDecoder,
     VideoEncoder,
 };
-use zyr_control::link::{Access, Channel, LinkListener, LinkReader, LinkWriter};
+use zyr_link::{Access, Channel, LinkListener, LinkReader, LinkWriter};
 use zyr_media::MEDIA_VERSION;
 use zyr_media::audio::read_audio;
 use zyr_media::codec::{CodecChoice, CodecSet, VideoCodec};

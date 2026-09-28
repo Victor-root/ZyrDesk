@@ -9,14 +9,13 @@
 //! lets the interface find the session again when it comes back.
 //!
 //! The engines talk to the service over a channel of their own, the
-//! local link, made for one session and closed with it.
+//! local link, made for one session and closed with it. It lives in
+//! `zyr-link`, apart from this conversation, so that nothing said here
+//! ever reaches an engine.
 
 pub mod client;
-pub mod link;
 pub mod message;
 pub mod pipe;
-#[cfg(windows)]
-mod windows_pipe;
 
 pub use client::{ControlError, Service};
 pub use message::{

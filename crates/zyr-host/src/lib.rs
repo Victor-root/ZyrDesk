@@ -172,7 +172,7 @@ pub fn run(link_name: &str, parts: Parts, log: Log) -> Ending {
         .enable_all()
         .build()
         .and_then(|runtime| {
-            let link = runtime.block_on(zyr_control::link::connect(link_name))?;
+            let link = runtime.block_on(zyr_link::connect(link_name))?;
             Ok((runtime, link))
         });
     match connected {

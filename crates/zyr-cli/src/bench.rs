@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::{Args, Subcommand};
-use zyr_control::link::{self, Access, Link, LinkListener};
+use zyr_link::{Access, Link, LinkListener};
 use zyr_proto::paths;
 use zyr_transport::{
     Connection, Fingerprint, Identity, Media, MediaProfile, Path, TunnelEndpoint, datagram_budget,
@@ -256,7 +256,7 @@ async fn serve(
     media.serving(opening.serving());
     let listener = LinkListener::create(Access::SystemAndInteractive)?;
     let name = listener.name().to_string();
-    let (engine, accepted) = tokio::join!(link::connect(&name), listener.accept());
+    let (engine, accepted) = tokio::join!(zyr_link::connect(&name), listener.accept());
     tokio::spawn(probe::echo_pictures(engine?));
     // Nothing is said to the stand-in, and what it says is heard by
     // nobody: the service's half goes at once, which the tunnel takes as
@@ -364,7 +364,7 @@ async fn open_the_session(
     let name = listener.name().to_string();
     let (side, _) = service_channel();
     let tunnel = Tunnel::client(connection.clone(), listener, side, None);
-    let player = link::connect(&name).await?;
+    let player = zyr_link::connect(&name).await?;
     Ok((tunnel, player))
 }
 

@@ -18,6 +18,7 @@ zyr-clipboard.workspace = true
 zyr-transport.workspace = true
 zyr-tunnel.workspace = true
 zyr-control.workspace = true
+zyr-link.workspace = true
 zyr-lan.workspace = true
 zyr-screen.workspace = true
 zyr-sound.workspace = true

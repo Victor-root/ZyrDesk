@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use zyr_control::link::{self, Access, Channel, Link, LinkListener, LinkReader, LinkWriter};
+use zyr_link::{Access, Channel, Link, LinkListener, LinkReader, LinkWriter};
 use zyr_proto::clipboard::{Clip, Stamp};
 use zyr_proto::session::{Pointer, WantedScreen};
 use zyr_transport::{Bytes, Connection, Identity, MediaProfile, TunnelEndpoint};
@@ -342,7 +342,7 @@ impl Waiting {
                 .unwrap();
             let listener = LinkListener::create(Access::SystemOnly).unwrap();
             let name = listener.name().to_string();
-            let (engine, accepted) = tokio::join!(link::connect(&name), listener.accept());
+            let (engine, accepted) = tokio::join!(zyr_link::connect(&name), listener.accept());
             let (side, service) = service_channel();
             service.to_link.send(SETUP.to_vec()).await.unwrap();
             let served = opening.serving();
@@ -383,7 +383,7 @@ impl Waiting {
 
     async fn the_player_comes(self) -> Bench {
         let player = End::of(
-            before_the_end(link::connect(&self.player_link))
+            before_the_end(zyr_link::connect(&self.player_link))
                 .await
                 .unwrap(),
         );
@@ -641,7 +641,7 @@ async fn what_the_engine_said_before_leaving_waits_for_the_player_to_come() {
     waiting.engine.say(Channel::Control, b"goodbye").await;
     drop(waiting.engine);
     let mut player = End::of(
-        before_the_end(link::connect(&waiting.player_link))
+        before_the_end(zyr_link::connect(&waiting.player_link))
             .await
             .unwrap(),
     );

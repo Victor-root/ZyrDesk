@@ -9,7 +9,7 @@
 //! ZyrDesk's own questions take a reliable stream each, beside the
 //! engine's.
 
-use zyr_control::link::Channel;
+use zyr_link::Channel;
 
 /// Real-time streams, carried as unreliable datagrams.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -26,8 +26,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tokio::task::JoinHandle;
-use zyr_control::link::{Access, LinkListener};
 use zyr_control::{Reached, Session, WayId};
+use zyr_link::{Access, LinkListener};
 use zyr_media::service::ToPlayer;
 use zyr_proto::clipboard::Clip;
 use zyr_proto::log::Log;
