@@ -76,7 +76,7 @@ impl Open {
             }
         }
         Err(Trouble::of(format!(
-            "le presse-papiers est resté pris par un autre programme : {}",
+            "the clipboard stayed held by another program: {}",
             refused.map(|e| e.to_string()).unwrap_or_default()
         )))
     }
@@ -237,7 +237,7 @@ pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {
         Kind::Text => {
             let said = clip
                 .said()
-                .ok_or_else(|| Trouble::of("ce texte n'en est pas un"))?;
+                .ok_or_else(|| Trouble::of("this text is not text"))?;
             vec![(u32::from(CF_UNICODETEXT.0), the_way_windows_spells(said))]
         }
         // Twice over: as the PNG it came as, for the programs that ask
@@ -256,8 +256,8 @@ pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {
             match picture::a_bitmap_of(clip.bytes()) {
                 Ok(bitmap) => both.push((u32::from(CF_DIBV5.0), bitmap)),
                 Err(e) => refused.push(format!(
-                    "l'image n'est posée qu'en PNG, le bitmap que lisent les autres programmes \
-                     n'a pas pu être fait : {e}"
+                    "the picture is put there only as a PNG, the bitmap other programs read \
+                     could not be made: {e}"
                 )),
             }
             both
@@ -269,7 +269,7 @@ pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {
         // lives next door.
         Kind::Files => {
             return Err(Trouble::of(
-                "des fichiers ne se posent pas ainsi : ils se tiennent",
+                "files are not put there this way: they are stood in for",
             ));
         }
     };
@@ -277,7 +277,7 @@ pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {
     let _open = Open::now()?;
     // SAFETY: the clipboard is ours for as long as the guard above lives.
     unsafe { EmptyClipboard() }
-        .map_err(|e| Trouble::of(format!("le presse-papiers n'a pas pu être vidé : {e}")))?;
+        .map_err(|e| Trouble::of(format!("the clipboard could not be emptied: {e}")))?;
     let mut put = 0;
     for (format, bytes) in ready {
         match Block::holding(&bytes).and_then(|block| block.given_to(format)) {
@@ -287,8 +287,8 @@ pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {
     }
     if put == 0 {
         return Err(Trouble::of(format!(
-            "rien n'a pu être posé au presse-papiers : {}",
-            refused.join(" ; ")
+            "nothing could be put on the clipboard: {}",
+            refused.join("; ")
         )));
     }
     Ok(refused)
@@ -334,14 +334,14 @@ pub fn what_is_offered() -> String {
     // marker and nothing else, so said on its own it reads as an empty
     // clipboard where the shapes were all there behind the object. The
     // one line that says why something never crossed has to name both.
-    format!("{plainly} ; derrière l'objet OLE : {}", what_ole_offers())
+    format!("{plainly}; behind the OLE object: {}", what_ole_offers())
 }
 
 /// The names on the clipboard itself, which is what a program reading it
 /// the plain way sees.
 fn the_plain_names() -> String {
     let Ok(_open) = Open::now() else {
-        return "le presse-papiers n'a pas pu être ouvert".to_string();
+        return "the clipboard could not be opened".to_string();
     };
     let mut named = Vec::new();
     let mut format = 0;
@@ -355,7 +355,7 @@ fn the_plain_names() -> String {
         named.push(the_name_of(format));
     }
     if named.is_empty() {
-        return "rien".to_string();
+        return "nothing".to_string();
     }
     named.join(", ")
 }
@@ -371,12 +371,12 @@ fn what_ole_offers() -> String {
     // this. It opens the clipboard itself, so nothing here may hold it.
     let object = match unsafe { OleGetClipboard() } {
         Ok(object) => object,
-        Err(e) => return format!("l'OLE n'a rendu aucun objet : {e}"),
+        Err(e) => return format!("OLE returned no object: {e}"),
     };
     // SAFETY: an object OLE just handed over, asked what it can give.
     let walk = match unsafe { object.EnumFormatEtc(DATADIR_GET.0 as u32) } {
         Ok(walk) => walk,
-        Err(e) => return format!("l'objet ne dit pas ce qu'il offre : {e}"),
+        Err(e) => return format!("the object does not say what it offers: {e}"),
     };
     let mut named = Vec::new();
     // A ceiling, because this is a journal line and not an inventory: a
@@ -397,7 +397,7 @@ fn what_ole_offers() -> String {
         }
     }
     if named.is_empty() {
-        return "il n'offre rien".to_string();
+        return "it offers nothing".to_string();
     }
     named.join(", ")
 }
@@ -414,12 +414,12 @@ fn the_name_of(format: u32) -> String {
     // The ones Windows has always had are numbered and not named, and
     // their numbers say nothing to whoever reads a journal.
     match format {
-        known if known == u32::from(CF_UNICODETEXT.0) => "texte".to_string(),
-        known if known == u32::from(CF_TEXT.0) => "texte ancien".to_string(),
+        known if known == u32::from(CF_UNICODETEXT.0) => "text".to_string(),
+        known if known == u32::from(CF_TEXT.0) => "old text".to_string(),
         known if known == u32::from(CF_DIB.0) => "bitmap".to_string(),
-        known if known == u32::from(CF_DIBV5.0) => "bitmap récent".to_string(),
-        known if known == u32::from(CF_BITMAP.0) => "image".to_string(),
-        known if known == u32::from(CF_HDROP.0) => "fichiers".to_string(),
+        known if known == u32::from(CF_DIBV5.0) => "newer bitmap".to_string(),
+        known if known == u32::from(CF_BITMAP.0) => "picture".to_string(),
+        known if known == u32::from(CF_HDROP.0) => "files".to_string(),
         other => format!("format {other}"),
     }
 }
@@ -519,12 +519,12 @@ impl Block {
     fn holding(bytes: &[u8]) -> Result<Self, Trouble> {
         // SAFETY: moveable is what the clipboard takes, and nothing else.
         let block = unsafe { GlobalAlloc(GMEM_MOVEABLE, bytes.len()) }
-            .map_err(|e| Trouble::of(format!("la mémoire a manqué : {e}")))?;
+            .map_err(|e| Trouble::of(format!("memory ran out: {e}")))?;
         let block = Self(block);
         // SAFETY: our own block, unlocked before this function ends.
         let at = unsafe { GlobalLock(block.0) };
         if at.is_null() {
-            return Err(Trouble::of("la mémoire à copier n'a pas pu être tenue"));
+            return Err(Trouble::of("the memory to copy into could not be held"));
         }
         // SAFETY: the block was asked for at exactly that size.
         unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), at.cast::<u8>(), bytes.len()) };
@@ -546,7 +546,7 @@ impl Block {
                 Ok(())
             }
             Err(e) => Err(Trouble::of(format!(
-                "le presse-papiers a refusé ce qu'on lui donnait : {e}"
+                "the clipboard refused what it was given: {e}"
             ))),
         }
     }

@@ -13,7 +13,7 @@ use crate::{Found, Trouble};
 
 fn nowhere<T>() -> Result<T, Trouble> {
     Err(Trouble::of(
-        "le presse-papiers ne se lit ainsi que sous Windows",
+        "the clipboard is only read this way on Windows",
     ))
 }
 
@@ -56,7 +56,7 @@ pub fn let_go() {}
 /// Said in the same words as the refusals above, since it is the same
 /// answer: there is no clipboard here to look at.
 pub fn what_is_offered() -> String {
-    "le presse-papiers ne se lit ainsi que sous Windows".to_string()
+    "the clipboard is only read this way on Windows".to_string()
 }
 
 /// Nought, which is the answer this crate documents as « the system

@@ -47,7 +47,7 @@ const MOST_PIXELS: usize = 64_000_000;
 /// A PNG made of the packed bitmap a clipboard handed over.
 pub fn a_png_of(dib: &[u8]) -> Result<Vec<u8>, Trouble> {
     let start = packed::where_the_pixels_start(dib)
-        .ok_or_else(|| Trouble::of("ce que le presse-papiers porte ne décrit pas une image"))?;
+        .ok_or_else(|| Trouble::of("what the clipboard carries does not describe a picture"))?;
     let _com = Com::up();
     let factory = imaging()?;
     let bitmap = Bitmap::of(dib, start)?;
@@ -57,11 +57,11 @@ pub fn a_png_of(dib: &[u8]) -> Result<Vec<u8>, Trouble> {
     let picture = unsafe {
         factory.CreateBitmapFromHBITMAP(bitmap.0, Default::default(), WICBitmapIgnoreAlpha)
     }
-    .map_err(|e| Trouble::of(format!("l'image du presse-papiers n'a pas été lue : {e}")))?;
+    .map_err(|e| Trouble::of(format!("the clipboard's picture was not read: {e}")))?;
 
     let stream = a_stream()?;
     written_as_a_png(&factory, &picture, &stream)
-        .map_err(|e| Trouble::of(format!("l'image n'a pas pu être encodée : {e}")))?;
+        .map_err(|e| Trouble::of(format!("the picture could not be encoded: {e}")))?;
     whole_of(&stream)
 }
 
@@ -105,13 +105,13 @@ pub fn a_bitmap_of(png: &[u8]) -> Result<Vec<u8>, Trouble> {
     let (wide, high, converter) = unsafe {
         let decoder = factory
             .CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand)
-            .map_err(|e| Trouble::of(format!("cette image ne se lit pas : {e}")))?;
+            .map_err(|e| Trouble::of(format!("this picture cannot be read: {e}")))?;
         let frame = decoder
             .GetFrame(0)
-            .map_err(|e| Trouble::of(format!("cette image n'a pas de première page : {e}")))?;
+            .map_err(|e| Trouble::of(format!("this picture has no first page: {e}")))?;
         let converter = factory
             .CreateFormatConverter()
-            .map_err(|e| Trouble::of(format!("l'imagerie de Windows n'a pas répondu : {e}")))?;
+            .map_err(|e| Trouble::of(format!("Windows' imaging did not answer: {e}")))?;
         converter
             .Initialize(
                 &frame,
@@ -121,27 +121,27 @@ pub fn a_bitmap_of(png: &[u8]) -> Result<Vec<u8>, Trouble> {
                 0.0,
                 WICBitmapPaletteTypeCustom,
             )
-            .map_err(|e| Trouble::of(format!("cette image n'a pas pu être convertie : {e}")))?;
+            .map_err(|e| Trouble::of(format!("this picture could not be converted: {e}")))?;
         let (mut wide, mut high) = (0u32, 0u32);
         converter
             .GetSize(&mut wide, &mut high)
-            .map_err(|e| Trouble::of(format!("cette image ne dit pas sa taille : {e}")))?;
+            .map_err(|e| Trouble::of(format!("this picture does not say its size: {e}")))?;
         (wide, high, converter)
     };
 
     let stride = (wide as usize)
         .checked_mul(4)
-        .ok_or_else(|| Trouble::of("cette image est plus large que tout"))?;
+        .ok_or_else(|| Trouble::of("this picture is wider than anything"))?;
     let room = stride
         .checked_mul(high as usize)
         .filter(|_| wide > 0 && high > 0 && (wide as usize) * (high as usize) <= MOST_PIXELS)
-        .ok_or_else(|| Trouble::of(format!("une image de {wide} sur {high} ne se colle pas")))?;
+        .ok_or_else(|| Trouble::of(format!("a picture of {wide} by {high} cannot be pasted")))?;
 
     let mut pixels = vec![0u8; room];
     // SAFETY: no part asked for means the whole of it, and the slice was
     // made to the size the two numbers above give.
     unsafe { converter.CopyPixels(std::ptr::null(), stride as u32, &mut pixels) }
-        .map_err(|e| Trouble::of(format!("les pixels de cette image sont illisibles : {e}")))?;
+        .map_err(|e| Trouble::of(format!("the pixels of this picture are unreadable: {e}")))?;
     Ok(packed::a_packed_bitmap(wide, high, &pixels))
 }
 
@@ -149,7 +149,7 @@ pub fn a_bitmap_of(png: &[u8]) -> Result<Vec<u8>, Trouble> {
 fn imaging() -> Result<IWICImagingFactory, Trouble> {
     // SAFETY: a standard class asked of COM, with no aggregation.
     unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER) }
-        .map_err(|e| Trouble::of(format!("l'imagerie de Windows ne s'ouvre pas : {e}")))
+        .map_err(|e| Trouble::of(format!("Windows' imaging does not open: {e}")))
 }
 
 /// A stream in memory, growing as it is written to.
@@ -157,7 +157,7 @@ fn a_stream() -> Result<IStream, Trouble> {
     // SAFETY: naming no memory has it allocate its own, and freeing it
     // with the stream is what the second argument asks for.
     unsafe { CreateStreamOnHGlobal(HGLOBAL(std::ptr::null_mut()), true) }
-        .map_err(|e| Trouble::of(format!("la mémoire a manqué : {e}")))
+        .map_err(|e| Trouble::of(format!("memory ran out: {e}")))
 }
 
 /// Puts those bytes in a stream and rewinds it.
@@ -167,10 +167,10 @@ fn filled_with(stream: &IStream, bytes: &[u8]) -> Result<(), Trouble> {
         stream
             .Write(bytes.as_ptr().cast::<c_void>(), bytes.len() as u32, None)
             .ok()
-            .map_err(|e| Trouble::of(format!("l'image n'a pas pu être posée : {e}")))?;
+            .map_err(|e| Trouble::of(format!("the picture could not be put in: {e}")))?;
         stream
             .Seek(0, STREAM_SEEK_SET, None)
-            .map_err(|e| Trouble::of(format!("l'image n'a pas pu être rembobinée : {e}")))
+            .map_err(|e| Trouble::of(format!("the picture could not be rewound: {e}")))
     }
 }
 
@@ -184,18 +184,18 @@ fn whole_of(stream: &IStream) -> Result<Vec<u8>, Trouble> {
     // SAFETY: a stream this thread made. Asking for no name is what keeps
     // the answer free of anything to give back.
     unsafe { stream.Stat(&mut about, STATFLAG_NONAME) }
-        .map_err(|e| Trouble::of(format!("l'image encodée ne dit pas sa taille : {e}")))?;
+        .map_err(|e| Trouble::of(format!("the encoded picture does not say its size: {e}")))?;
     let size = about.cbSize as usize;
     if size == 0 {
-        return Err(Trouble::of("l'image encodée est vide"));
+        return Err(Trouble::of("the encoded picture is empty"));
     }
     // SAFETY: the memory behind a stream this thread made, unlocked below.
     let block = unsafe { GetHGlobalFromStream(stream) }
-        .map_err(|e| Trouble::of(format!("l'image encodée est hors d'atteinte : {e}")))?;
+        .map_err(|e| Trouble::of(format!("the encoded picture is out of reach: {e}")))?;
     // SAFETY: the same block.
     let at = unsafe { GlobalLock(block) };
     if at.is_null() {
-        return Err(Trouble::of("l'image encodée n'a pas pu être tenue"));
+        return Err(Trouble::of("the encoded picture could not be held"));
     }
     let mut out = vec![0u8; size];
     // SAFETY: the stream said it holds that many bytes, and the slice was
@@ -234,7 +234,7 @@ impl Bitmap {
         };
         if bitmap.is_invalid() {
             return Err(Trouble::of(
-                "Windows n'a pas su faire une image de ce que portait le presse-papiers",
+                "Windows could not make a picture of what the clipboard carried",
             ));
         }
         Ok(Self(bitmap))
@@ -271,7 +271,7 @@ impl Screen {
         // SAFETY: naming no window means the whole of the screen.
         let dc = unsafe { GetDC(None) };
         if dc.is_invalid() {
-            return Err(Trouble::of("cet écran n'a pas de surface à dessiner"));
+            return Err(Trouble::of("this screen has no surface to draw on"));
         }
         Ok(Self(dc))
     }

@@ -101,7 +101,7 @@ impl Attending {
             // not work is putting something on the clipboard from it, and
             // that is what the refusal says.
             Err(e) => Err(Trouble::of(format!(
-                "ce programme n'a pas sa place auprès du presse-papiers : {e}"
+                "this program has no place beside the clipboard: {e}"
             ))),
         }
     }
@@ -169,7 +169,7 @@ pub fn stand_in_for(listed: &Listing, folder: &Path) -> Result<(), Trouble> {
     // SAFETY: an object this thread made, handed to OLE, which holds it
     // for as long as the clipboard does.
     unsafe { OleSetClipboard(&object) }
-        .map_err(|e| Trouble::of(format!("les fichiers n'ont pas pu être posés : {e}")))?;
+        .map_err(|e| Trouble::of(format!("the files could not be put on the clipboard: {e}")))?;
     let since = super::times_it_changed();
     STANDING.with(|held| *held.borrow_mut() = Some((object, since)));
     Ok(())
@@ -524,7 +524,7 @@ struct TheseFormats {
 
 impl IEnumFORMATETC_Impl for TheseFormats_Impl {
     fn Next(&self, how_many: u32, into: *mut FORMATETC, taken: *mut u32) -> windows::core::HRESULT {
-        let mut at = self.at.lock().expect("format offert");
+        let mut at = self.at.lock().expect("offered format");
         let mut given = 0;
         while given < how_many as usize && *at < self.offered.len() {
             // SAFETY: a run of blocks the caller owns, as many as it
@@ -545,7 +545,7 @@ impl IEnumFORMATETC_Impl for TheseFormats_Impl {
     }
 
     fn Skip(&self, how_many: u32) -> windows::core::Result<()> {
-        let mut at = self.at.lock().expect("format offert");
+        let mut at = self.at.lock().expect("offered format");
         *at = at.saturating_add(how_many as usize);
         if *at > self.offered.len() {
             *at = self.offered.len();
@@ -555,14 +555,14 @@ impl IEnumFORMATETC_Impl for TheseFormats_Impl {
     }
 
     fn Reset(&self) -> windows::core::Result<()> {
-        *self.at.lock().expect("format offert") = 0;
+        *self.at.lock().expect("offered format") = 0;
         Ok(())
     }
 
     fn Clone(&self) -> windows::core::Result<IEnumFORMATETC> {
         Ok(TheseFormats {
             offered: self.offered.clone(),
-            at: Mutex::new(*self.at.lock().expect("format offert")),
+            at: Mutex::new(*self.at.lock().expect("offered format")),
         }
         .into())
     }
@@ -596,7 +596,7 @@ impl Arriving_Impl {
     fn read_what_has_come(&self, into: &mut [u8]) -> std::io::Result<usize> {
         use std::io::{Read, Seek, SeekFrom};
 
-        let mut at = self.at.lock().expect("où en est la lecture");
+        let mut at = self.at.lock().expect("reading's place");
         let room = into.len().min(self.size.saturating_sub(*at) as usize);
         if room == 0 {
             return Ok(0);
@@ -621,7 +621,7 @@ impl Arriving_Impl {
             if Instant::now() > waited_until {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
-                    "les octets ne sont jamais arrivés",
+                    "the bytes never arrived",
                 ));
             }
             std::thread::sleep(LOOK_AGAIN);
@@ -670,7 +670,7 @@ impl ISequentialStream_Impl for Arriving_Impl {
 
 impl IStream_Impl for Arriving_Impl {
     fn Seek(&self, by: i64, from: STREAM_SEEK, landed: *mut u64) -> windows::core::Result<()> {
-        let mut at = self.at.lock().expect("où en est la lecture");
+        let mut at = self.at.lock().expect("reading's place");
         let base = match from {
             STREAM_SEEK_SET => 0,
             STREAM_SEEK_CUR => *at as i64,
@@ -709,7 +709,7 @@ impl IStream_Impl for Arriving_Impl {
         Ok(Arriving {
             path: self.path.clone(),
             size: self.size,
-            at: Mutex::new(*self.at.lock().expect("où en est la lecture")),
+            at: Mutex::new(*self.at.lock().expect("reading's place")),
         }
         .into())
     }

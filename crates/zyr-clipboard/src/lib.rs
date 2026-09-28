@@ -254,8 +254,8 @@ mod tests {
     fn a_refusal_reads_in_plain_words() {
         // This text ends up in the journal: it has to be read, not
         // decoded.
-        let trouble = Trouble::of("le presse-papiers était pris");
-        assert_eq!(trouble.to_string(), "le presse-papiers était pris");
+        let trouble = Trouble::of("the clipboard was taken");
+        assert_eq!(trouble.to_string(), "the clipboard was taken");
     }
 
     #[cfg(not(windows))]
@@ -265,8 +265,8 @@ mod tests {
         // would lie to whoever decides to send something based on the
         // answer.
         assert!(what_it_holds().is_err());
-        assert!(Found::of(Clip::text("bonjour")).really.is_empty());
-        assert!(hold_this(&Clip::text("bonjour")).is_err());
+        assert!(Found::of(Clip::text("hello")).really.is_empty());
+        assert!(hold_this(&Clip::text("hello")).is_err());
         assert_eq!(times_it_changed(), 0);
         assert!(what_is_offered().contains("Windows"));
     }

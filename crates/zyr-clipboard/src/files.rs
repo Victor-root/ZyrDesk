@@ -128,21 +128,21 @@ mod tests {
             zyr_proto::random::alphanumeric_string(8)
         ));
         std::fs::create_dir_all(root.join("photos").join("2026")).unwrap();
-        std::fs::write(root.join("seul.txt"), b"trois").unwrap();
-        std::fs::write(root.join("photos").join("lac.jpg"), b"12345678").unwrap();
-        std::fs::write(root.join("photos").join("2026").join("mer.jpg"), b"12").unwrap();
+        std::fs::write(root.join("alone.txt"), b"three").unwrap();
+        std::fs::write(root.join("photos").join("lake.jpg"), b"12345678").unwrap();
+        std::fs::write(root.join("photos").join("2026").join("sea.jpg"), b"12").unwrap();
         root
     }
 
     #[test]
     fn a_single_file_crosses_under_its_own_name() {
-        let root = a_tree("un-fichier");
-        let walk = walked(&[root.join("seul.txt")]);
+        let root = a_tree("one-file");
+        let walk = walked(&[root.join("alone.txt")]);
 
         assert_eq!(walk.listed.files().len(), 1);
-        assert_eq!(walk.listed.files()[0].path(), "seul.txt");
+        assert_eq!(walk.listed.files()[0].path(), "alone.txt");
         assert_eq!(walk.listed.whole(), 5);
-        assert_eq!(walk.really, vec![root.join("seul.txt")]);
+        assert_eq!(walk.really, vec![root.join("alone.txt")]);
         std::fs::remove_dir_all(&root).ok();
     }
 
@@ -150,12 +150,12 @@ mod tests {
     fn a_folder_crosses_whole_and_under_its_own_name() {
         // This is what Explorer does when it pastes a folder: the
         // folder appears again, with what is inside it.
-        let root = a_tree("un-dossier");
+        let root = a_tree("one-folder");
         let walk = walked(&[root.join("photos")]);
 
         let mut paths: Vec<&str> = walk.listed.files().iter().map(|f| f.path()).collect();
         paths.sort_unstable();
-        assert_eq!(paths, vec!["photos/2026/mer.jpg", "photos/lac.jpg"]);
+        assert_eq!(paths, vec!["photos/2026/sea.jpg", "photos/lake.jpg"]);
         assert_eq!(walk.listed.whole(), 10);
         std::fs::remove_dir_all(&root).ok();
     }
@@ -165,13 +165,13 @@ mod tests {
         // This is how the file to open is known when the other computer
         // asks for the third one on the list. Two lists that slip out of
         // step would send the wrong file under the right name.
-        let root = a_tree("en-face");
-        let walk = walked(&[root.join("photos"), root.join("seul.txt")]);
+        let root = a_tree("facing");
+        let walk = walked(&[root.join("photos"), root.join("alone.txt")]);
 
         assert_eq!(walk.listed.files().len(), walk.really.len());
         for (rank, file) in walk.listed.files().iter().enumerate() {
             let real = &walk.really[rank];
-            assert!(real.ends_with(file.name()), "{real:?} pour {file:?}");
+            assert!(real.ends_with(file.name()), "{real:?} for {file:?}");
             assert_eq!(std::fs::metadata(real).unwrap().len(), file.bytes());
         }
         std::fs::remove_dir_all(&root).ok();
@@ -181,11 +181,11 @@ mod tests {
     fn what_does_not_exist_is_left_out_without_bringing_down_the_rest() {
         // A file deleted between the copy and the reading is a matter
         // of half a second, and it must not cost the others.
-        let root = a_tree("manquant");
-        let walk = walked(&[root.join("nulle-part.txt"), root.join("seul.txt")]);
+        let root = a_tree("missing");
+        let walk = walked(&[root.join("nowhere.txt"), root.join("alone.txt")]);
 
         assert_eq!(walk.listed.files().len(), 1);
-        assert_eq!(walk.listed.files()[0].path(), "seul.txt");
+        assert_eq!(walk.listed.files()[0].path(), "alone.txt");
         std::fs::remove_dir_all(&root).ok();
     }
 
@@ -194,7 +194,7 @@ mod tests {
         // Without this, a folder arrives looking whole without being
         // so, and what is missing from a copy of ten thousand files is
         // not something anyone spots by looking.
-        let root = a_tree("plafond");
+        let root = a_tree("ceiling");
         assert!(!walked(&[root.join("photos")]).cut_short);
         std::fs::remove_dir_all(&root).ok();
     }
