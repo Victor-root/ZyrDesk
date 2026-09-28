@@ -3731,6 +3731,36 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Laissé aux étapes suivantes, parce que ce n'est plus du ménage.** Les deux gardiens d'assistants du service (pointeur et presse-papiers) et la course « le premier qui répond », écrite deux fois dans le service : une mécanique commune à l'étape 4. Les petits outils Windows que plusieurs briques refont (mettre un texte dans la forme que Windows lit, lire le programme d'un processus, écrire un code d'erreur) : une brique Windows commune à l'étape 4. « Vu il y a » dans l'accueil et la ligne de commande : l'étape 3, avec les textes. Les listes du menu rangées dans la base (tailles, codecs offerts) : l'étape 5.
 
+## D236. Des faits plutôt que des phrases, et les journaux en anglais (2026-09-28, pendant MZ)
+
+> Étape 3 de [D233](#d233-les-briques-en-couches-et-les-moteurs-à-part-2026-09-28-pendant-mz), qui réalise [D234](#d234-les-journaux-passent-en-anglais-et-ce-que-la-personne-lit-passe-par-une-traduction-2026-09-28-pendant-mz).
+
+**Le fait.** `zyr_proto::fact::Fact` : un code, des mots anglais en minuscules reliés par des points (`reach.silent`), et des valeurs nommées (`host`, `waited`). Il voyage sur une ligne, `code nom=valeur`, comme tout ce que le produit se dit à lui-même, et s'écrit tel quel au journal, où il se lit quelle que soit la langue de la fenêtre. Un fait peut porter celui qui l'a causé, sous la valeur `because`, et ses mots disent alors ceux de sa cause à leur place : « le serveur a refusé la session vers PC-17 : aucun droit sur cet ordinateur ».
+
+**La brique des mots.** `zyr-i18n` tient les textes, un fichier par langue dans `words/` : `en.txt`, la base, qui dit tout, et `fr.txt`, greffé dessus. Une ligne par texte, `clé = texte`, les valeurs entre accolades ; le code d'un fait est la clé de ses mots. Ajouter une langue, c'est ajouter un fichier, que la compilation trouve seule. Un texte qu'une langue n'a pas se dit en anglais, et un fait qu'aucun texte ne dit (une moitié du produit plus récente que l'autre) se montre tel qu'il a voyagé plutôt que pas du tout. Ses essais refusent une langue qui ne dit pas tout ce que dit l'anglais ou qui ne demande pas les mêmes valeurs, un code ou une clé que le code demande sans texte anglais, et un texte anglais que rien ne demande.
+
+**Qui dit quoi.** Les moteurs, le service, le compte et le serveur disent des faits : les refus du service, les ennuis du moteur hôte et du lecteur, ce que le serveur refuse, l'état de l'accès distant d'un appareil du compte, un serveur que personne ne garantit. Seules la fenêtre et la ligne de commande choisissent des mots, et la carte des briques refuse que quoi que ce soit d'autre utilise `zyr-i18n`. La fenêtre parle la première langue d'affichage de Windows que le produit connaît, dans l'ordre de préférence de la personne, et l'anglais sinon. La ligne de commande parle anglais. Le serveur garde une phrase anglaise de courtoisie à côté de chaque code, pour qui lit sa réponse à la main.
+
+**Ce que la fenêtre dit.** Tout ce qu'elle montre quand quelque chose échoue (mise en service, démarrage avec Windows, journal, dossiers, raccourcis clavier, ouverture et reprise d'une session, bouton flottant et son menu) est un fait, mis en mots au moment de l'affichage. Les libellés du menu du bouton flottant, du bandeau des statistiques, des deux voyants et de l'icône près de l'horloge sont des clés, dites au dessin ; les raisons d'un voyant allumé sont des faits. L'accueil, qui sera refait de zéro, garde ses textes français, mais il montre les faits par la brique.
+
+**Les journaux et les messages techniques.** En anglais partout : fenêtre, service, moteurs, réseau, serveur et ligne de commande, comme les erreurs techniques, les commentaires en tête des fichiers que le produit écrit et les messages des essais. Les mots que ces fichiers contiennent gardent leur nom exact, même français, selon la règle de [D220](#d220-le-code-sécrit-en-anglais-ce-que-la-personne-lit-reste-en-français-2026-09-24-pendant-m6) : un thème, une préférence ou un raccourci déjà choisis se relisent tels quels.
+
+**Ce qui se voit.**
+
+- Sur un Windows en français, les textes restent ceux d'avant ; sur un Windows dans une autre langue, la fenêtre parle anglais.
+- Les deux moitiés du produit changent de dialecte ensemble (canal de commande en version 33, moteur en version 2) : les deux PC se mettent à jour ensemble.
+- La ligne de commande, les commandes du service et celles du serveur parlent anglais.
+- Les noms que le Gestionnaire des tâches montre pour la fenêtre, le service et l'outil en ligne de commande sont en anglais.
+- Dans la boîte de tri du journal, les voyants s'appellent `badges`.
+- Un choix de session que le service refuse se dit en une seule phrase, qu'il soit illisible ou simplement pas proposé.
+
+**Corrigé en chemin.**
+
+- Une session relayée affiche enfin sa route sur l'accueil : l'adresse du relais voyageait avec des espaces et arrivait coupée.
+- L'explication « cet ordinateur s'annonce pourtant sur ce réseau » n'accompagne plus que le port resté muet, et non plus un ordinateur qui justement ne s'annonce pas.
+- Changer la taille en cours de session continue à la taille devinée quand l'ordinateur distant ne prépare pas son écran, au lieu d'abandonner le changement.
+- Partis parce que plus rien ne les atteignait : la description française des actions du bouton flottant, que seul un essai lisait, et une seconde vérification de la fenêtre avant le plein écran.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

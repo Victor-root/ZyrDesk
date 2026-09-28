@@ -109,7 +109,7 @@ Premier lancement : trois choix clairs : créer un compte, se connecter, « util
 
 ## 4. Ton et langage
 
-Français naturel, humain, sans jargon dans le parcours principal (« Prêt à être contrôlé », pas « Service actif : streaming host initialisé »). Les termes techniques n'apparaissent que dans Avancé et Diagnostic. Jamais de fenêtre modale bloquante pour une information non critique : les événements passent par des toasts discrets.
+Une langue naturelle, humaine, sans jargon dans le parcours principal (« Prêt à être contrôlé », pas « Service actif : streaming host initialisé »), dans chacune des langues du produit : l'anglais d'abord, le français ensuite, la fenêtre parlant la langue d'affichage de Windows ([D236](DECISIONS.md)). Les termes techniques n'apparaissent que dans Avancé et Diagnostic. Jamais de fenêtre modale bloquante pour une information non critique : les événements passent par des toasts discrets.
 
 ## 5. Ce que l'utilisateur ne verra jamais
 
