@@ -66,7 +66,7 @@ pub struct Args {
 pub fn run(args: Args) -> ExitCode {
     let settings = match build_settings(&args) {
         Ok(settings) => settings,
-        Err(message) => return failure("réglages de session invalides", message),
+        Err(message) => return failure("invalid session settings", message),
     };
     let journal = crate::journal();
     let log = match Log::open(&journal) {
@@ -78,7 +78,7 @@ pub fn run(args: Args) -> ExitCode {
     // once it plays.
     let interrupted = Arc::new(AtomicBool::new(false));
     if let Err(e) = on_ctrl_c(Arc::clone(&interrupted)) {
-        return failure("écoute de Ctrl+C", e);
+        return failure("listening for Ctrl+C", e);
     }
 
     let wanted = Wanted {
@@ -111,13 +111,13 @@ pub fn run(args: Args) -> ExitCode {
     {
         Ok(opened) => opened,
         Err(zyr_session::Error::Abandoned) => {
-            println!("Ouverture abandonnée.");
+            println!("Opening abandoned.");
             return ExitCode::SUCCESS;
         }
         Err(e) => return reported(e),
     };
 
-    println!("Connexion à {}...", args.host);
+    println!("Connecting to {}...", args.host);
     let (said, heard) = mpsc::channel();
     let player = match Player::start(
         &opened.link,
@@ -131,7 +131,7 @@ pub fn run(args: Args) -> ExitCode {
         }),
     ) {
         Ok(player) => player,
-        Err(e) => return failure("démarrage du lecteur", zyr_i18n::fact(&e.fact())),
+        Err(e) => return failure("starting the player", zyr_i18n::fact(&e.fact())),
     };
     // The way is not tied to this program: a session played here has no
     // picture anybody else could show, so it is kept out of the sessions
@@ -178,9 +178,9 @@ fn watch(
                 codec,
                 width,
                 height,
-            }) => println!("Image : {} en {width}x{height}.", codec.name()),
+            }) => println!("Picture: {} at {width}x{height}.", codec.name()),
             Ok(Event::FirstPicture) => println!(
-                "Première image décodée, {} ms après la demande.",
+                "First picture decoded, {} ms after the request.",
                 asked_at.elapsed().as_millis()
             ),
             Ok(Event::Notice(fact)) => println!("  {}", zyr_i18n::fact(&fact)),
@@ -196,30 +196,30 @@ fn watch(
 /// Says how the session ended, and hands back the exit code that goes
 /// with it.
 fn ended(ending: Option<Ending>, journal: &std::path::Path) -> ExitCode {
-    let journal = format!("Journal : {}", journal.display());
+    let journal = format!("Journal: {}", journal.display());
     match ending {
         Some(Ending::Asked) => {
-            println!("Session terminée.");
+            println!("Session ended.");
             println!("  {journal}");
             ExitCode::SUCCESS
         }
         Some(Ending::HostLeft) => {
-            println!("L'ordinateur distant a mis fin à la session.");
+            println!("The remote computer ended the session.");
             println!("  {journal}");
             ExitCode::SUCCESS
         }
         Some(Ending::LinkLost) => failure(
-            "la session s'est interrompue sans un mot de l'ordinateur distant",
+            "the session broke off without a word from the remote computer",
             journal,
         ),
         Some(Ending::EngineFailed(why)) => failure(
-            "la session s'est arrêtée sur une erreur",
+            "the session stopped on an error",
             format!("{}\n  {journal}", zyr_i18n::fact(&why)),
         ),
         None => failure(
-            "le lecteur ne s'est pas arrêté à temps",
+            "the player did not stop in time",
             format!(
-                "{} s après la demande\n  {journal}",
+                "{} s after the request\n  {journal}",
                 STOPPING_TAKES.as_secs()
             ),
         ),
@@ -248,10 +248,10 @@ fn on_ctrl_c(interrupted: Arc<AtomicBool>) -> std::io::Result<()> {
             runtime.block_on(async {
                 while tokio::signal::ctrl_c().await.is_ok() {
                     if interrupted.swap(true, Ordering::Relaxed) {
-                        eprintln!("Arrêt immédiat.");
+                        eprintln!("Stopping at once.");
                         std::process::exit(STOPPED_AT_ONCE);
                     }
-                    println!("Arrêt demandé. Ctrl+C à nouveau pour quitter sans attendre.");
+                    println!("Stop requested. Ctrl+C again to quit without waiting.");
                 }
             });
         })?;
@@ -266,11 +266,11 @@ fn measured(measures: &Measures) -> String {
     let ms = |value: Option<f64>| value.map_or("-".to_string(), |ms| format!("{ms:.1} ms"));
     let picture = match (&measures.codec, measures.width, measures.height) {
         (Some(codec), Some(width), Some(height)) => format!("{codec} {width}x{height}"),
-        _ => "image -".to_string(),
+        _ => "picture -".to_string(),
     };
     format!(
-        "{picture}, {} im/s | décodage {} | affichage {} | hôte {} | réseau {} | débit {} | \
-         pertes {} | latence {}",
+        "{picture}, {} fps | decoding {} | display {} | host {} | network {} | bitrate {} | \
+         loss {} | latency {}",
         measures
             .fps
             .map_or("-".to_string(), |fps| format!("{fps:.1}")),
@@ -291,30 +291,30 @@ fn measured(measures: &Measures) -> String {
 /// Says what is happening, in the order it happens.
 fn tell(step: Step, host: &str) {
     match step {
-        Step::Reached => println!("Tunnel établi avec {host}."),
+        Step::Reached => println!("Tunnel established with {host}."),
         Step::FarScreenLeftAlone { refused } => {
             println!(
-                "  {host} garde l'écran qu'il filme : {}",
+                "  {host} keeps the screen it films: {}",
                 zyr_i18n::fact(&refused)
             );
         }
         Step::SpeakersLeftAlone { refused } => {
             println!(
-                "  Les enceintes de {host} restent allumées : {}",
+                "  The speakers of {host} stay on: {}",
                 zyr_i18n::fact(&refused)
             );
         }
         Step::ScreenLeftAlone { refused } => {
             println!(
-                "  {host} n'a pas réveillé son écran virtuel : {}",
+                "  {host} did not wake its virtual screen: {}",
                 zyr_i18n::fact(&refused)
             );
         }
         Step::ScreenOverThere { wide, high } => {
-            println!("  {host} affiche {wide}x{high}, c'est ce qui est demandé au lecteur");
+            println!("  {host} shows {wide}x{high}, which is what the player is asked for");
         }
         Step::NoSoundCardHere => {
-            println!("  Cet ordinateur n'a pas de sortie audio : la session sera muette.");
+            println!("  This computer has no audio output: the session will be silent.");
         }
     }
 }
@@ -325,11 +325,11 @@ fn reported(e: zyr_session::Error) -> ExitCode {
     let said = zyr_i18n::fact(&e.fact());
     match e {
         Error::EngineMissing(_) => failure(
-            "FFmpeg manque",
-            format!("{said}\n  Lancez « zyr-cli doctor » pour vérifier cet ordinateur."),
+            "FFmpeg is missing",
+            format!("{said}\n  Run « zyr-cli doctor » to check this computer."),
         ),
-        Error::Service(_) => failure("ouverture du tunnel", said),
-        Error::Abandoned => failure("ouverture de la session", said),
+        Error::Service(_) => failure("opening the tunnel", said),
+        Error::Abandoned => failure("opening the session", said),
     }
 }
 
@@ -337,10 +337,10 @@ fn build_settings(args: &Args) -> Result<SessionSettings, String> {
     let (width, height) = parse_resolution(&args.resolution).map_err(|e| e.to_string())?;
     let codec: Codec = args.codec.parse()?;
     if args.fps == 0 {
-        return Err("le nombre d'images par seconde doit être supérieur à zéro".to_string());
+        return Err("the number of frames per second must be greater than zero".to_string());
     }
     if args.bitrate == 0 {
-        return Err("le débit vidéo doit être supérieur à zéro".to_string());
+        return Err("the video bitrate must be greater than zero".to_string());
     }
     Ok(SessionSettings {
         width,
@@ -362,8 +362,8 @@ mod tests {
     #[test]
     fn a_reading_not_taken_yet_is_a_dash_and_never_a_nought() {
         let line = measured(&Measures::default());
-        assert!(line.starts_with("image -, - im/s"), "{line}");
-        assert!(line.contains("décodage - |"), "{line}");
+        assert!(line.starts_with("picture -, - fps"), "{line}");
+        assert!(line.contains("decoding - |"), "{line}");
         assert!(!line.contains('0'), "{line}");
     }
 
@@ -385,8 +385,8 @@ mod tests {
         });
         assert_eq!(
             line,
-            "HEVC 1920x1080, 60.0 im/s | décodage 1.2 ms | affichage 0.3 ms | hôte 4.6 ms | \
-             réseau 1.0 ms | débit 18.4 Mb/s | pertes 0.0 % | latence 12.3 ms"
+            "HEVC 1920x1080, 60.0 fps | decoding 1.2 ms | display 0.3 ms | host 4.6 ms | \
+             network 1.0 ms | bitrate 18.4 Mb/s | loss 0.0 % | latency 12.3 ms"
         );
         assert_eq!(line.lines().count(), 1);
     }

@@ -168,7 +168,7 @@ pub fn run(action: Action) -> ExitCode {
 
     match outcome {
         Ok(()) => ExitCode::SUCCESS,
-        Err(e) => failure("the bench could not see it through", e),
+        Err(e) => failure("the bench could not finish", e),
     }
 }
 

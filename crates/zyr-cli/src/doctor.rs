@@ -18,7 +18,7 @@ impl fmt::Display for Status {
         let symbol = match self {
             Status::Ok => "[ OK ]",
             Status::Warning => "[ !  ]",
-            Status::Failure => "[ÉCHEC]",
+            Status::Failure => "[FAIL]",
         };
         write!(f, "{symbol}")
     }
@@ -41,7 +41,7 @@ pub fn run() -> ExitCode {
         service(),
     ];
 
-    println!("Diagnostic ZyrDesk v{}\n", zyr_proto::PRODUCT_VERSION);
+    println!("ZyrDesk diagnosis v{}\n", zyr_proto::PRODUCT_VERSION);
     let mut failed = false;
     for v in &verifications {
         println!("{} {:24} {}", v.status, v.name, v.detail);
@@ -51,10 +51,10 @@ pub fn run() -> ExitCode {
     }
     println!();
     if failed {
-        println!("Au moins une vérification a échoué.");
+        println!("At least one check failed.");
         ExitCode::FAILURE
     } else {
-        println!("Machine prête pour ZyrDesk.");
+        println!("Machine ready for ZyrDesk.");
         ExitCode::SUCCESS
     }
 }
@@ -63,17 +63,15 @@ fn platform() -> Verification {
     let detail = format!("{} ({})", std::env::consts::OS, std::env::consts::ARCH);
     if cfg!(windows) {
         Verification {
-            name: "Plateforme",
+            name: "Platform",
             status: Status::Ok,
             detail,
         }
     } else {
         Verification {
-            name: "Plateforme",
+            name: "Platform",
             status: Status::Warning,
-            detail: format!(
-                "{detail} : environnement de développement, non supporté en production"
-            ),
+            detail: format!("{detail}: development environment, not supported in production"),
         }
     }
 }
@@ -99,22 +97,22 @@ fn gpu() -> Verification {
                 // Every real Windows machine shows an adapter: an empty list
                 // means a query that got no answer, not a missing GPU.
                 Verification {
-                    name: "Processeur graphique",
+                    name: "Graphics processor",
                     status: Status::Warning,
-                    detail: "aucun adaptateur listé".to_string(),
+                    detail: "no adapter listed".to_string(),
                 }
             } else {
                 Verification {
-                    name: "Processeur graphique",
+                    name: "Graphics processor",
                     status: Status::Ok,
-                    detail: names.join(" ; "),
+                    detail: names.join("; "),
                 }
             }
         }
         _ => Verification {
-            name: "Processeur graphique",
+            name: "Graphics processor",
             status: Status::Warning,
-            detail: "détection impossible (PowerShell indisponible ?)".to_string(),
+            detail: "could not detect (PowerShell unavailable?)".to_string(),
         },
     }
 }
@@ -122,9 +120,9 @@ fn gpu() -> Verification {
 #[cfg(not(windows))]
 fn gpu() -> Verification {
     Verification {
-        name: "Processeur graphique",
+        name: "Graphics processor",
         status: Status::Warning,
-        detail: "détection non disponible hors Windows".to_string(),
+        detail: "detection not available outside Windows".to_string(),
     }
 }
 
@@ -139,14 +137,14 @@ fn data_folder() -> Verification {
     };
     match attempt() {
         Ok(()) => Verification {
-            name: "Dossier de données",
+            name: "Data folder",
             status: Status::Ok,
-            detail: format!("{} accessible en écriture", folder.display()),
+            detail: format!("{} writable", folder.display()),
         },
         Err(e) => Verification {
-            name: "Dossier de données",
+            name: "Data folder",
             status: Status::Failure,
-            detail: format!("{} : {e}", folder.display()),
+            detail: format!("{}: {e}", folder.display()),
         },
     }
 }
@@ -168,7 +166,7 @@ fn ffmpeg() -> (Verification, Option<Arc<Ffmpeg>>) {
                 name: "FFmpeg",
                 status: Status::Ok,
                 detail: format!(
-                    "présent et chargeable, version {} ({})",
+                    "present and loadable, version {} ({})",
                     ffmpeg.version(),
                     folder.display()
                 ),
@@ -197,12 +195,12 @@ fn ffmpeg() -> (Verification, Option<Arc<Ffmpeg>>) {
 /// reach others, it simply cannot be reached for a picture.
 #[cfg(windows)]
 fn encoders(ffmpeg: Option<&Arc<Ffmpeg>>) -> Verification {
-    const NAME: &str = "Encodeurs vidéo";
+    const NAME: &str = "Video encoders";
     let Some(ffmpeg) = ffmpeg else {
         return Verification {
             name: NAME,
             status: Status::Failure,
-            detail: "impossibles à essayer sans FFmpeg".to_string(),
+            detail: "cannot be tried without FFmpeg".to_string(),
         };
     };
     let journal = crate::journal();
@@ -212,7 +210,7 @@ fn encoders(ffmpeg: Option<&Arc<Ffmpeg>>) -> Verification {
             return Verification {
                 name: NAME,
                 status: Status::Warning,
-                detail: format!("essai impossible sans journal {} : {e}", journal.display()),
+                detail: format!("cannot be tried without journal {}: {e}", journal.display()),
             };
         }
     };
@@ -224,7 +222,7 @@ fn encoders(ffmpeg: Option<&Arc<Ffmpeg>>) -> Verification {
             name: NAME,
             status: Status::Warning,
             detail: format!(
-                "aucun ne s'ouvre : cet ordinateur ne pourra pas être contrôlé (voir {})",
+                "none opens: this computer cannot be controlled (see {})",
                 journal.display()
             ),
         },
@@ -240,7 +238,7 @@ fn encoders(ffmpeg: Option<&Arc<Ffmpeg>>) -> Verification {
         Err(e) => Verification {
             name: NAME,
             status: Status::Warning,
-            detail: format!("essai impossible : {}", zyr_i18n::fact(&e)),
+            detail: format!("could not be tried: {}", zyr_i18n::fact(&e)),
         },
     }
 }
@@ -248,10 +246,9 @@ fn encoders(ffmpeg: Option<&Arc<Ffmpeg>>) -> Verification {
 #[cfg(not(windows))]
 fn encoders(_ffmpeg: Option<&Arc<Ffmpeg>>) -> Verification {
     Verification {
-        name: "Encodeurs vidéo",
+        name: "Video encoders",
         status: Status::Warning,
-        detail: "essayés sur la carte graphique de l'écran principal, sous Windows seulement"
-            .to_string(),
+        detail: "tried on the main screen's graphics card, on Windows only".to_string(),
     }
 }
 
@@ -262,21 +259,19 @@ fn service() -> Verification {
         .output();
     match output {
         Ok(s) if s.status.success() => Verification {
-            name: "Service ZyrDesk",
+            name: "ZyrDesk service",
             status: Status::Ok,
-            detail: "installé".to_string(),
+            detail: "installed".to_string(),
         },
         Ok(_) => Verification {
-            name: "Service ZyrDesk",
+            name: "ZyrDesk service",
             status: Status::Warning,
-            detail:
-                "non installé : sans lui, aucune session ne s'ouvre dans un sens ni dans l'autre"
-                    .to_string(),
+            detail: "not installed: without it, no session opens in either direction".to_string(),
         },
         Err(e) => Verification {
-            name: "Service ZyrDesk",
+            name: "ZyrDesk service",
             status: Status::Warning,
-            detail: format!("état indéterminé : {e}"),
+            detail: format!("state unknown: {e}"),
         },
     }
 }
@@ -284,8 +279,8 @@ fn service() -> Verification {
 #[cfg(not(windows))]
 fn service() -> Verification {
     Verification {
-        name: "Service ZyrDesk",
+        name: "ZyrDesk service",
         status: Status::Warning,
-        detail: "sans objet hors Windows".to_string(),
+        detail: "not applicable outside Windows".to_string(),
     }
 }

@@ -216,11 +216,7 @@ fn devices() -> ExitCode {
             device.id,
             device.name,
             presence(device.online, device.access, device.last_seen),
-            if device.this {
-                "  (this computer)"
-            } else {
-                ""
-            },
+            if device.this { "  (this computer)" } else { "" },
             width = widest
         );
     }
