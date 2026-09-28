@@ -798,7 +798,7 @@ mod tests {
         let refused = Branch::open(&forged, &stranger, Sending::Pictures, profile, Marking::Ecn)
             .await
             .unwrap_err();
-        assert!(refused.to_string().contains("contrefait"), "{refused}");
+        assert!(refused.to_string().contains("forged"), "{refused}");
     }
 
     #[tokio::test(flavor = "multi_thread")]

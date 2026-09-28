@@ -167,7 +167,7 @@ mod tests {
     fn every_message_reads_back_as_itself() {
         let key = ServerKey::generate();
         let fingerprint = Fingerprint::of(b"d1");
-        let signed = key.seal(&"quelque chose").unwrap();
+        let signed = key.seal(&"something").unwrap();
         let from_device = [
             FromDevice::Hello {
                 protocol: crate::PROTOCOL,
@@ -199,7 +199,7 @@ mod tests {
             FromServer::Challenge { nonce: "n".into() },
             FromServer::Welcome {
                 server: ServerInfo {
-                    name: "Maison".into(),
+                    name: "Home".into(),
                     version: "0.1.0".into(),
                     build: "abc1234 2026-01-01".into(),
                     protocol: crate::PROTOCOL,
@@ -212,7 +212,7 @@ mod tests {
                 devices: vec![device("d1"), device("d2")],
                 contacts: vec![ContactInfo {
                     id: "c1".into(),
-                    username: "ami".into(),
+                    username: "friend".into(),
                     status: ContactStatus::Pending,
                     asked_by_me: true,
                     online: false,
@@ -220,13 +220,13 @@ mod tests {
                 shares: vec![ShareInfo {
                     id: "p1".into(),
                     device: device("d9"),
-                    owner: "ami".into(),
+                    owner: "friend".into(),
                     with: "victor".into(),
                     permissions: crate::rest::Permission::ALL.to_vec(),
                     expires: None,
                     created: 1,
                 }],
-                token: Some("jeton".into()),
+                token: Some("token".into()),
             },
             FromServer::Presence {
                 device: "d2".into(),
@@ -245,7 +245,7 @@ mod tests {
             FromServer::ContactRequested {
                 contact: ContactInfo {
                     id: "c2".into(),
-                    username: "autre".into(),
+                    username: "other".into(),
                     status: ContactStatus::Pending,
                     asked_by_me: false,
                     online: true,
@@ -254,7 +254,7 @@ mod tests {
             FromServer::ContactAnswered {
                 contact: ContactInfo {
                     id: "c2".into(),
-                    username: "autre".into(),
+                    username: "other".into(),
                     status: ContactStatus::Accepted,
                     asked_by_me: false,
                     online: true,
@@ -268,7 +268,7 @@ mod tests {
                     id: "p2".into(),
                     device: device("d1"),
                     owner: "victor".into(),
-                    with: "autre".into(),
+                    with: "other".into(),
                     permissions: vec![crate::rest::Permission::Connect],
                     expires: Some(9_000),
                     created: 2,

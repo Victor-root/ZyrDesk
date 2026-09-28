@@ -276,11 +276,12 @@ mod tests {
         // A server that mentions neither e-mail nor invitation, nor
         // expiry: the request reads all the same.
         let register: Register =
-            serde_json::from_str(r#"{"username":"victor","password":"douze caractères"}"#).unwrap();
+            serde_json::from_str(r#"{"username":"victor","password":"twelve characters"}"#)
+                .unwrap();
         assert_eq!(register.email, None);
         assert_eq!(register.invitation, None);
         let share: ShareRequest = serde_json::from_str(
-            r#"{"device":"d1","with":"ami","permissions":["connect","keyboard"]}"#,
+            r#"{"device":"d1","with":"friend","permissions":["connect","keyboard"]}"#,
         )
         .unwrap();
         assert_eq!(

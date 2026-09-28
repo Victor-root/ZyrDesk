@@ -172,17 +172,17 @@ pub enum Refusal {
 impl fmt::Display for Refusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Refusal::Forged(e) => write!(f, "ticket contrefait : {e}"),
-            Refusal::Version(v) => write!(f, "ticket d'une version inconnue ({v})"),
-            Refusal::WrongKind => f.write_str("ce n'est pas un ticket de ce genre"),
+            Refusal::Forged(e) => write!(f, "forged ticket: {e}"),
+            Refusal::Version(v) => write!(f, "ticket of an unknown version ({v})"),
+            Refusal::WrongKind => f.write_str("this is not a ticket of this kind"),
             Refusal::NotYet => f.write_str(
-                "ticket daté du futur : les horloges de cet ordinateur et du serveur divergent de \
-                 plus de cinq minutes",
+                "ticket dated in the future: the clocks of this computer and of the server differ \
+                 by more than five minutes",
             ),
-            Refusal::Expired => f.write_str("ticket expiré"),
-            Refusal::Replayed => f.write_str("ticket déjà employé"),
+            Refusal::Expired => f.write_str("expired ticket"),
+            Refusal::Replayed => f.write_str("ticket already used"),
             Refusal::NotForMe { named } => {
-                write!(f, "ticket adressé à un autre appareil ({named})")
+                write!(f, "ticket addressed to another device ({named})")
             }
         }
     }
@@ -286,7 +286,7 @@ impl Verifier {
 
     /// Honours that nonce once.
     fn first_time(&self, nonce: &str, expires: u64, now: u64) -> Result<(), Refusal> {
-        let mut seen = self.seen.lock().expect("nonces vus");
+        let mut seen = self.seen.lock().expect("seen nonces");
         let skew = CLOCK_SKEW.as_secs();
         seen.retain(|_, until| *until + skew >= now);
         if seen.contains_key(nonce) {
@@ -298,7 +298,7 @@ impl Verifier {
 
     /// How many nonces are still remembered.
     pub fn remembered(&self) -> usize {
-        self.seen.lock().expect("nonces vus").len()
+        self.seen.lock().expect("seen nonces").len()
     }
 }
 

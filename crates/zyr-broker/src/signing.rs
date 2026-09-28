@@ -90,7 +90,7 @@ pub struct NotAKey;
 
 impl fmt::Display for NotAKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("une clé de serveur s'écrit en 44 caractères de base64")
+        f.write_str("a server key is written as 44 characters of base64")
     }
 }
 
@@ -187,11 +187,11 @@ pub enum Forged {
 impl fmt::Display for Forged {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Forged::Unreadable => f.write_str("illisible"),
-            Forged::Signature => f.write_str("la signature n'est pas celle du serveur"),
+            Forged::Unreadable => f.write_str("unreadable"),
+            Forged::Signature => f.write_str("the signature is not the server's"),
             Forged::Body(e) => write!(
                 f,
-                "signé par le serveur, mais pas de la forme attendue : {e}"
+                "signed by the server, but not of the expected shape: {e}"
             ),
         }
     }
@@ -213,11 +213,11 @@ mod tests {
         let key = ServerKey::generate();
         let sealed = key
             .seal(&Word {
-                said: "bonjour".into(),
+                said: "hello".into(),
             })
             .unwrap();
         let back: Word = sealed.open(&key.public()).unwrap();
-        assert_eq!(back.said, "bonjour");
+        assert_eq!(back.said, "hello");
     }
 
     #[test]
@@ -226,7 +226,7 @@ mod tests {
         let other = ServerKey::generate();
         let sealed = key
             .seal(&Word {
-                said: "bonjour".into(),
+                said: "hello".into(),
             })
             .unwrap();
         assert_eq!(
@@ -242,11 +242,11 @@ mod tests {
         let key = ServerKey::generate();
         let sealed = key
             .seal(&Word {
-                said: "bonjour".into(),
+                said: "hello".into(),
             })
             .unwrap();
         let touched = Signed {
-            body: BASE64.encode(br#"{"said":"bonsoir"}"#),
+            body: BASE64.encode(br#"{"said":"hullo"}"#),
             signature: sealed.signature.clone(),
         };
         assert_eq!(
@@ -254,7 +254,7 @@ mod tests {
             Forged::Signature
         );
         let garbage = Signed {
-            body: "pas du base64 !".into(),
+            body: "not base64!".into(),
             signature: sealed.signature,
         };
         assert_eq!(
@@ -303,7 +303,7 @@ mod tests {
         assert_eq!(again.public(), key.public());
         let sealed = key
             .seal(&Word {
-                said: "encore".into(),
+                said: "again".into(),
             })
             .unwrap();
         assert!(sealed.open::<Word>(&again.public()).is_ok());
