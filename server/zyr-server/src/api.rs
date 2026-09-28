@@ -392,7 +392,7 @@ async fn link_device(
         return Err(Refusal(Code::ProofInvalid));
     }
     let name = match link.name.trim() {
-        "" => "Appareil".to_string(),
+        "" => "Device".to_string(),
         named => named.to_string(),
     };
     let at = now();

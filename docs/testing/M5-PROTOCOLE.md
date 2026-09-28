@@ -90,7 +90,7 @@ zyrdesk-server check
 
 Le serveur se joint lui-même comme un appareil le ferait, avec la même vérification du certificat.
 
-**Attendu :** « Le serveur répond sur … , en TLS. », son nom, sa version et son dialecte, les inscriptions, l'**empreinte du serveur**, identique à celle du panneau vert et à celle de `zyrdesk-server fingerprint`, et « Miroir : répond sur UDP 443, cette question venait de 127.0.0.1:… ». Un miroir absent est dit tel quel, avec le journal à lire : c'est un port UDP déjà pris par un autre programme.
+**Attendu :** « The server answers on …, over TLS. », son nom, sa version et son dialecte, les inscriptions, l'**empreinte du serveur**, identique à celle du panneau vert et à celle de `zyrdesk-server fingerprint`, et « Mirror: answers on UDP 443, this question came from 127.0.0.1:… ». Un miroir absent est dit tel quel, avec le journal à lire : c'est un port UDP déjà pris par un autre programme.
 
 ### V4. Le clair est refusé
 
@@ -343,7 +343,7 @@ runuser -u zyrdesk -- zyrdesk-server backup /var/lib/zyrdesk-server/sauvegarde
 ls -l /var/lib/zyrdesk-server/sauvegarde /var/lib/zyrdesk-server/sauvegarde/keys
 ```
 
-**Attendu :** « Sauvegarde écrite dans … », avec `zyrdesk.db`, `server.toml` et le dossier `keys` contenant `signing.key`. Le serveur n'a pas cessé de répondre pendant ce temps.
+**Attendu :** « Backup written to … », avec `zyrdesk.db`, `server.toml` et le dossier `keys` contenant `signing.key`. Le serveur n'a pas cessé de répondre pendant ce temps.
 
 ### V9. Désinstaller, en deux paliers
 

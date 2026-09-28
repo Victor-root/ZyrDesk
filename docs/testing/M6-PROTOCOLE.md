@@ -96,7 +96,7 @@ zyrdesk-server check
 **Attendu.** Les lignes du jalon M5, plus celle-ci :
 
 ```
-  Relais : les appareils y sont envoyés sur zyrdesk.vroot.fr:8443
+  Relay: the devices are sent to it at zyrdesk.vroot.fr:8443
 ```
 
 L'adresse est celle de `api.public_url` avec le port UDP du relais. **Si le nom ne mène nulle part depuis le conteneur**, la commande le dit en toutes lettres et donne le réglage à corriger : c'est la seule faute de configuration qui rendrait le relais inutilisable sans que rien d'autre ne le montre.
@@ -107,7 +107,7 @@ Puis :
 zyrdesk-server status
 ```
 
-**Attendu.** Une ligne `Relais : UDP 0.0.0.0:8443, 0 session relayée et 0 Mo portés en 30 jours`. Ce compteur est celui de R7.
+**Attendu.** Une ligne `Relay          : UDP 0.0.0.0:8443, 0 sessions relayed and 0 MB carried in 30 days`. Ce compteur est celui de R7.
 
 ## R3. Le client en 4G ou en 5G, l'hôte à la maison
 
@@ -206,7 +206,7 @@ Après une session **en direct** (R5 après la bascule, ou une session sur le r�
 zyrdesk-server status
 ```
 
-**Attendu.** La ligne `Relais` compte **0 session relayée** si aucune session n'est jamais passée par le relais. C'est le critère du jalon M5 qui tient toujours : en direct, le serveur ne porte rien.
+**Attendu.** La ligne `Relay` compte **0 sessions relayed** si aucune session n'est jamais passée par le relais. C'est le critère du jalon M5 qui tient toujours : en direct, le serveur ne porte rien.
 
 Une précision qui compte pour lire ce chiffre : les deux ordinateurs ouvrent leur branche de relais **à chaque session**, direct compris, et le journal du serveur écrit donc `relay: … is in for session …` même quand la session finit en direct. Ce que le relais porte alors, ce sont les sondes qui mesurent le chemin relayé, et elles ne comptent pas comme du trafic. La ligne de fin le dit en toutes lettres : `the relay held a road and carried nothing`.
 
@@ -216,7 +216,7 @@ Après une session **relayée** (R4), la même commande compte une session de pl
 
 Sur le conteneur, mettre `enabled = false` dans la section `[relay]` de `/etc/zyrdesk-server/server.toml`, puis `systemctl restart zyrdesk-server`.
 
-**Attendu.** Le journal du serveur dit `mirror on UDP …` sans le mot `relay`. `zyrdesk-server check` dit `Relais : aucun, les sessions sans chemin direct n'aboutiront pas`. Une session sur le réseau local marche toujours, et le miroir répond toujours : c'est lui qui rend le direct possible, et il ne se débraye pas.
+**Attendu.** Le journal du serveur dit `mirror on UDP …` sans le mot `relay`. `zyrdesk-server check` dit `Relay: none, sessions without a direct path will not get through`. Une session sur le réseau local marche toujours, et le miroir répond toujours : c'est lui qui rend le direct possible, et il ne se débraye pas.
 
 Remettre la règle de pare-feu de R4 et essayer d'ouvrir une session : le refus doit dire, en toutes lettres, qu'aucun chemin direct n'a été trouvé **et que ce serveur n'a pas de relais**. C'est la phrase qui distingue un réseau difficile d'un serveur mal réglé.
 
