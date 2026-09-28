@@ -7,6 +7,8 @@
 
 use std::fmt;
 
+use zyr_proto::fact::Fact;
+
 /// The port a server answers on unless another is written.
 const DEFAULT_PORT: u16 = 443;
 
@@ -19,14 +21,25 @@ pub enum BadAddress {
     Malformed(String),
 }
 
+impl BadAddress {
+    /// What is wrong with it, for the person to read in their language.
+    pub fn fact(&self) -> Fact {
+        match self {
+            BadAddress::Empty => Fact::new("account.address_empty"),
+            BadAddress::NotHttps => Fact::new("account.address_not_https"),
+            BadAddress::Malformed(text) => {
+                Fact::new("account.address_unreadable").with("address", text)
+            }
+        }
+    }
+}
+
 impl fmt::Display for BadAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BadAddress::Empty => f.write_str("aucune adresse de serveur"),
-            BadAddress::NotHttps => f.write_str(
-                "un serveur ZyrDesk ne se joint qu'en https:// : l'adresse en http:// est refusée",
-            ),
-            BadAddress::Malformed(text) => write!(f, "adresse de serveur illisible : {text}"),
+            BadAddress::Empty => f.write_str("no server address"),
+            BadAddress::NotHttps => f.write_str("a server is only reached over https://"),
+            BadAddress::Malformed(text) => write!(f, "unreadable server address: {text}"),
         }
     }
 }

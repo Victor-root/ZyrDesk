@@ -6,6 +6,7 @@
 //! server chose.
 
 use serde::{Deserialize, Serialize};
+use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 
 use crate::code::Code;
@@ -138,16 +139,15 @@ pub enum Access {
 }
 
 impl Access {
-    /// What it means, for the person, in the words the home screen uses
-    /// of this computer's own remote access.
-    pub fn explanation(self) -> &'static str {
-        match self {
-            Access::Off => "accès distant désactivé",
-            Access::Ready => "prêt à être contrôlé",
-            Access::Starting => "démarrage en cours",
-            Access::EngineMissing => "FFmpeg absent",
-            Access::EngineWontStand => "le moteur hôte ne tient pas",
-        }
+    /// What it means, for the person to read in their language.
+    pub fn fact(self) -> Fact {
+        Fact::new(match self {
+            Access::Off => "access.off",
+            Access::Ready => "access.ready",
+            Access::Starting => "access.starting",
+            Access::EngineMissing => "access.engine_missing",
+            Access::EngineWontStand => "access.engine_wont_stand",
+        })
     }
 }
 

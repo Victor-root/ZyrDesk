@@ -15,6 +15,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use zyr_broker::rest::Access;
+use zyr_proto::fact::Fact;
 use zyr_proto::fields::{packed, unpacked};
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::session::{Preferred, WantedScreen};
@@ -26,7 +27,7 @@ use zyr_proto::session::{Preferred, WantedScreen};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 32;
+pub const PROTOCOL: u32 = 33;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -432,7 +433,7 @@ impl Request {
             "revoke-device" => Ok(Request::RevokeDevice {
                 device: fields.text("device")?.to_string(),
             }),
-            other => Err(Malformed(format!("verbe inconnu « {other} »"))),
+            other => Err(Malformed(format!("unknown verb {other:?}"))),
         }
     }
 }
@@ -700,7 +701,7 @@ pub struct Account {
     /// Whether the live channel to the server is open right now.
     pub connected: bool,
     /// Why it is not, while it is not.
-    pub trouble: Option<String>,
+    pub trouble: Option<Fact>,
 }
 
 /// Creating the account on the way, rather than entering one.
@@ -765,8 +766,11 @@ pub struct Session {
     /// How long the picture has been up.
     pub since: Duration,
     /// The real address the packets go to right now: the road the
-    /// session takes, as its menu says it.
+    /// session takes.
     pub via: String,
+    /// Whether that address is the server's relay, which carries the
+    /// session while no direct road does.
+    pub relayed: bool,
     /// How long that road takes to come back, in milliseconds.
     pub round_trip_ms: u64,
 }
@@ -822,14 +826,14 @@ pub enum Answer {
     /// One computer's journal, whole.
     ///
     /// The only answer that carries a page rather than a handful of
-    /// fields, and it travels folded onto one line like a refusal does:
-    /// a newline would be read as the start of another message.
+    /// fields, and it travels folded onto one line: a newline would be
+    /// read as the start of another message.
     Journal(String),
     /// Done, with nothing to report.
     Done,
-    /// Not done, and why. The text is meant for the person, not the
-    /// program: it is shown as it is.
-    Refused(String),
+    /// Not done, and why: a fact, which the program showing it puts
+    /// into words.
+    Refused(Fact),
     /// The link of this computer to an account, or none.
     Account(Option<Account>),
     /// The server presented a key nobody vouches for, and nothing was
@@ -845,6 +849,12 @@ pub enum Answer {
 }
 
 impl Answer {
+    /// The service answering something else entirely: the two halves of
+    /// the product were not installed at the same time.
+    pub fn unexpected(&self) -> Fact {
+        Fact::new("service.unexpected_answer").with("answer", self)
+    }
+
     pub fn parse(line: &str) -> Result<Self, Malformed> {
         let (verb, rest) = split_verb(line);
         let fields = Fields(rest);
@@ -887,7 +897,8 @@ impl Answer {
                 process: fields.parsed("process")?,
                 at: unpacked(fields.text("at")?),
                 since: Duration::from_secs(fields.parsed("since")?),
-                via: fields.text("via").unwrap_or_default().to_string(),
+                via: unpacked(fields.text("via").unwrap_or_default()),
+                relayed: fields.flag("relayed", false),
                 round_trip_ms: fields.parsed("rtt").unwrap_or(0),
             })),
             "watching" => Ok(Answer::Watching(Watching {
@@ -911,7 +922,11 @@ impl Answer {
             "screens" => Ok(Answer::Screens(unfolded(rest.trim()))),
             "journal" => Ok(Answer::Journal(unfolded(rest.trim()))),
             "done" => Ok(Answer::Done),
-            "no" => Ok(Answer::Refused(unfolded(rest.trim()))),
+            "no" => rest
+                .trim()
+                .parse()
+                .map(Answer::Refused)
+                .map_err(|e| Malformed(e.to_string())),
             "account" => Ok(Answer::Account(
                 fields
                     .flag("linked", false)
@@ -922,7 +937,10 @@ impl Answer {
                             username: unpacked(fields.text("username")?),
                             device: fields.text("device")?.to_string(),
                             connected: fields.flag("connected", false),
-                            trouble: fields.text("trouble").ok().map(unpacked),
+                            trouble: fields
+                                .text("trouble")
+                                .ok()
+                                .and_then(|trouble| unpacked(trouble).parse().ok()),
                         })
                     })
                     .transpose()?,
@@ -939,7 +957,7 @@ impl Answer {
                 this: fields.flag("this", false),
                 last_seen: fields.parsed("last-seen").ok(),
             })),
-            other => Err(Malformed(format!("réponse inconnue « {other} »"))),
+            other => Err(Malformed(format!("unknown answer {other:?}"))),
         }
     }
 }
@@ -995,14 +1013,15 @@ impl fmt::Display for Answer {
             }
             Answer::Session(session) => write!(
                 f,
-                "session way={} towards={} peer={} process={} at={} since={} via={} rtt={}",
+                "session way={} towards={} peer={} process={} at={} since={} via={} relayed={} rtt={}",
                 session.way,
                 packed(&session.towards),
                 session.peer,
                 session.process,
                 packed(&session.at),
                 session.since.as_secs(),
-                session.via,
+                packed(&session.via),
+                said(session.relayed),
                 session.round_trip_ms
             ),
             Answer::Watching(watching) => write!(
@@ -1021,9 +1040,8 @@ impl fmt::Display for Answer {
             Answer::Screens(listed) => write!(f, "screens {}", folded(listed)),
             Answer::Journal(text) => write!(f, "journal {}", folded(text)),
             Answer::Done => f.write_str("done"),
-            // The reason travels on one line: a newline would be read as
-            // the start of another message.
-            Answer::Refused(reason) => write!(f, "no {}", folded(reason)),
+            // A fact travels on one line of its own.
+            Answer::Refused(fact) => write!(f, "no {fact}"),
             Answer::Account(None) => f.write_str("account linked=no"),
             Answer::Account(Some(account)) => {
                 write!(
@@ -1036,7 +1054,7 @@ impl fmt::Display for Answer {
                     said(account.connected)
                 )?;
                 if let Some(trouble) = &account.trouble {
-                    write!(f, " trouble={}", packed(trouble))?;
+                    write!(f, " trouble={}", packed(&trouble.to_string()))?;
                 }
                 Ok(())
             }
@@ -1070,16 +1088,16 @@ fn split_verb(line: &str) -> (&str, &str) {
     }
 }
 
-/// Folds a reason onto a single line.
+/// Folds a page onto a single line.
 ///
-/// Refusals are written for the person reading them, over several lines
-/// where that helps. They still have to travel as one message, and come
-/// out with their shape intact.
+/// A journal and a list of screens are written over several lines. They
+/// still have to travel as one message, and come out with their shape
+/// intact.
 fn folded(text: &str) -> String {
     text.replace('\\', r"\\").replace('\n', r"\n")
 }
 
-/// Gives a folded reason its shape back.
+/// Gives a folded page its shape back.
 fn unfolded(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut pieces = text.chars();
@@ -1092,7 +1110,7 @@ fn unfolded(text: &str) -> String {
             Some('n') => out.push('\n'),
             Some('\\') => out.push('\\'),
             // Anything else was never folded by us: kept as it came,
-            // since a reason is worth more slightly wrong than lost.
+            // since a page is worth more slightly wrong than lost.
             Some(other) => {
                 out.push('\\');
                 out.push(other);
@@ -1113,13 +1131,13 @@ impl<'a> Fields<'a> {
             .filter_map(|piece| piece.split_once('='))
             .find(|(name, _)| *name == key)
             .map(|(_, value)| value)
-            .ok_or_else(|| Malformed(format!("champ « {key} » absent")))
+            .ok_or_else(|| Malformed(format!("field {key:?} missing")))
     }
 
     fn parsed<T: FromStr>(&self, key: &str) -> Result<T, Malformed> {
         self.text(key)?
             .parse()
-            .map_err(|_| Malformed(format!("champ « {key} » illisible")))
+            .map_err(|_| Malformed(format!("field {key:?} unreadable")))
     }
 
     /// Reads a yes-or-no, falling back when it is absent.
@@ -1486,7 +1504,19 @@ mod tests {
                 at: r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1".to_string(),
                 since: Duration::from_secs(742),
                 via: "192.168.1.20:47000".to_string(),
+                relayed: false,
                 round_trip_ms: 12,
+            }),
+            Answer::Session(Session {
+                way: WayId(4),
+                towards: "Portable".to_string(),
+                peer: fingerprint(),
+                process: 11249,
+                at: r"\\.\pipe\ZyrDesk-link-Qe0Lm4Tz9wX2c7Vb".to_string(),
+                since: Duration::from_secs(12),
+                via: "82.64.12.7:443".to_string(),
+                relayed: true,
+                round_trip_ms: 38,
             }),
             Answer::Watching(Watching {
                 peer: fingerprint(),
@@ -1512,7 +1542,11 @@ mod tests {
             ),
             Answer::Screens(String::new()),
             Answer::Done,
-            Answer::Refused("cet ordinateur a refusé l'accès".to_string()),
+            Answer::Refused(
+                Fact::new("reach.not_opened")
+                    .with("host", "192.168.1.20")
+                    .with("detail", "the far computer refused this one"),
+            ),
             Answer::Account(None),
             Answer::Account(Some(Account {
                 server: "https://zyr.exemple.fr:443".to_string(),
@@ -1522,15 +1556,16 @@ mod tests {
                 connected: true,
                 trouble: None,
             })),
-            // A trouble is written to be read, over several lines if
-            // need be: it travels folded like a refusal.
+            // A trouble is a fact, and it travels inside a field.
             Answer::Account(Some(Account {
                 server: "https://192.168.1.40:8443".to_string(),
                 name: String::new(),
                 username: "victor".to_string(),
                 device: "d1".to_string(),
                 connected: false,
-                trouble: Some("192.168.1.40:8443 ne répond pas.\nRéessai dans 40 s".to_string()),
+                trouble: Some(
+                    Fact::new("account.server_silent").with("address", "192.168.1.40:8443"),
+                ),
             })),
             Answer::Unpinned {
                 presented: fingerprint(),
@@ -1583,28 +1618,39 @@ mod tests {
         {
             assert!(!line.contains('\n'), "« {line} »");
         }
-        let onto_one_line = Answer::Refused("deux\nlignes".to_string()).to_string();
-        assert_eq!(onto_one_line, r"no deux\nlignes");
+        let onto_one_line = Answer::Refused(
+            Fact::new("reach.silent")
+                .with("host", "PC")
+                .with("detail", "two\nlines"),
+        )
+        .to_string();
+        assert_eq!(onto_one_line, r"no reach.silent host=PC detail=two\nlines");
     }
 
     #[test]
-    fn a_refusal_keeps_its_shape_across_the_channel() {
-        // Refusals are written to be read: the hint on the second line
-        // is what tells the person what to do about it.
-        for reason in [
-            "192.168.1.20 a refusé cet ordinateur.\n  Sur 192.168.1.20 : zyr-cli host authorize 0829cc",
-            r"un chemin C:\ZyrDesk\data introuvable",
-            "une barre à la fin \\",
+    fn a_refusal_keeps_its_values_across_the_channel() {
+        // What a refusal carries is shown to the person: a detail over
+        // two lines, a Windows path, a backslash at the very end.
+        for detail in [
+            "refused.\n  On 192.168.1.20: zyr-cli host authorize 0829cc",
+            r"no path C:\ZyrDesk\data",
+            "a backslash at the end \\",
             "",
         ] {
-            let sent = Answer::Refused(reason.to_string()).to_string();
+            let refused = Fact::new("reach.silent")
+                .with("host", "PC de Victor")
+                .with("detail", detail);
+            let sent = Answer::Refused(refused.clone()).to_string();
             assert!(!sent.contains('\n'), "« {sent} »");
             assert_eq!(
                 Answer::parse(&sent),
-                Ok(Answer::Refused(reason.to_string())),
-                "sur « {sent} »"
+                Ok(Answer::Refused(refused)),
+                "« {sent} »"
             );
         }
+        // A service from before, which wrote its refusals out in French,
+        // is read as one that answers something else entirely.
+        assert!(Answer::parse("no cet ordinateur a refusé l'accès").is_err());
     }
 
     #[test]
@@ -1741,6 +1787,7 @@ mod tests {
                 at: r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1".to_string(),
                 since: Duration::from_secs(0),
                 via: String::new(),
+                relayed: false,
                 round_trip_ms: 0,
             })
             .to_string();

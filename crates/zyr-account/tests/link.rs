@@ -209,7 +209,7 @@ async fn a_self_signed_server_is_refused_until_its_key_is_pinned() {
             ..
         }
     ));
-    assert_eq!(refused.to_string(), Code::InvalidCredentials.explanation());
+    assert_eq!(refused.fact(), Code::InvalidCredentials.fact());
 
     server.stop().await;
 }

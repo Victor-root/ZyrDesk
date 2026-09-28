@@ -20,6 +20,9 @@ use std::str::FromStr;
 
 use crate::fields::{packed, unpacked};
 
+/// The value a fact keeps the fact that caused it under.
+pub const BECAUSE: &str = "because";
+
 /// Something that happened, and what the telling of it needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fact {
@@ -46,6 +49,21 @@ impl Fact {
         debug_assert!(is_name(name), "« {name} » is not a value's name");
         self.values.push((name.to_string(), value.to_string()));
         self
+    }
+
+    /// The same fact, told with the one that caused it.
+    ///
+    /// Kept under the value [`BECAUSE`] as that fact's own line, so that
+    /// the words of this one can say the words of its cause, in whatever
+    /// language they are read: « the server refused the session: this
+    /// computer is not connected to it ».
+    pub fn because(self, cause: &Fact) -> Self {
+        self.with(BECAUSE, cause)
+    }
+
+    /// The fact this one was told with, when there is one.
+    pub fn cause(&self) -> Option<Fact> {
+        self.value(BECAUSE)?.parse().ok()
     }
 
     /// What happened.
@@ -150,6 +168,17 @@ mod tests {
         assert_eq!(fact.value("host"), Some("PC-17"));
         assert_eq!(fact.value("waited"), None);
         assert_eq!(Fact::new("example.done").to_string(), "example.done");
+    }
+
+    #[test]
+    fn a_fact_carries_the_one_that_caused_it() {
+        let cause = Fact::new("example.refused").with("code", "no right");
+        let fact = Fact::new("example.meeting")
+            .with("host", "PC-17")
+            .because(&cause);
+        let travelled: Fact = fact.to_string().parse().unwrap();
+        assert_eq!(travelled.cause(), Some(cause));
+        assert_eq!(Fact::new("example.meeting").cause(), None);
     }
 
     #[test]

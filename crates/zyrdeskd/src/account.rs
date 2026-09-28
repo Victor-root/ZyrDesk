@@ -41,8 +41,9 @@ use zyr_account::{
 use zyr_broker::live::{FromDevice, Relay};
 use zyr_broker::rest::Access;
 use zyr_broker::ticket::CLOCK_SKEW;
-use zyr_broker::{Refusal, Verifier, now};
+use zyr_broker::{Code, Refusal, Verifier, now};
 use zyr_control::{Holdup, WayId};
+use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
@@ -102,7 +103,7 @@ pub enum Attaching {
     /// The server presented a key nobody vouches for, and nothing was
     /// pinned: here it is, for the person to compare and confirm.
     Unpinned(Fingerprint),
-    Refused(String),
+    Refused(Fact),
 }
 
 /// Two computers presented to each other by the server: what the one
@@ -150,6 +151,11 @@ impl std::fmt::Debug for Rendezvous {
 /// addresses it will name.
 type Matched = (Start, mpsc::UnboundedReceiver<Vec<SocketAddr>>);
 
+/// This computer holds no link to an account.
+fn not_attached() -> Fact {
+    Fact::new("account.not_attached")
+}
+
 /// The link, as the service holds it.
 #[derive(Clone)]
 pub struct Account(Arc<Inner>);
@@ -169,7 +175,7 @@ struct Inner {
     changed: Notify,
     /// Sessions asked of the server and not yet matched, by the device
     /// gone towards.
-    asked: Mutex<HashMap<String, oneshot::Sender<Result<Matched, String>>>>,
+    asked: Mutex<HashMap<String, oneshot::Sender<Result<Matched, Code>>>>,
     /// Sessions matched, waiting for where the far computer may be
     /// reached.
     expecting: Mutex<HashMap<String, mpsc::UnboundedSender<Vec<SocketAddr>>>>,
@@ -378,20 +384,14 @@ impl Account {
     pub async fn attach(&self, asked: zyr_control::Attach) -> Result<(), Attaching> {
         let inner = &self.0;
         if inner.held.lock().expect("lien de compte").is_some() {
-            return Err(Attaching::Refused(
-                "cet ordinateur est déjà rattaché à un compte.\n  \
-                 Détachez-le d'abord pour en changer."
-                    .to_string(),
-            ));
+            return Err(Attaching::Refused(Fact::new("account.already_attached")));
         }
         let identity = {
             let started = inner.started.lock().expect("compte");
             started.as_ref().map(|started| started.identity.clone())
         };
         let Some(identity) = identity else {
-            return Err(Attaching::Refused(
-                "le service n'est pas prêt à tenir un lien de compte".to_string(),
-            ));
+            return Err(Attaching::Refused(Fact::new("account.not_ready")));
         };
         let trust = match asked.pin {
             Some(pin) => Trust::Pinned(pin),
@@ -424,11 +424,11 @@ impl Account {
                     inner
                         .log
                         .write(&format!("attaching to {} refused: {e}", asked.server));
-                    return Err(Attaching::Refused(e.to_string()));
+                    return Err(Attaching::Refused(e.fact()));
                 }
             };
         link.write(&inner.path).map_err(|e| {
-            Attaching::Refused(format!("le lien de compte n'a pas pu être écrit : {e}"))
+            Attaching::Refused(Fact::new("account.link_not_written").with("detail", e))
         })?;
         inner.log.write(&format!(
             "this computer is attached to {} as {} under the name « {name} »",
@@ -443,13 +443,11 @@ impl Account {
     /// The link goes first, here, and the server is told last and only
     /// tried: a server that cannot be reached is no reason to stay
     /// attached, and the token dies with the file whatever it says.
-    pub async fn detach(&self) -> Result<(), String> {
+    pub async fn detach(&self) -> Result<(), Fact> {
         let inner = &self.0;
         let (server, pin, token, device) = {
             let held = inner.held.lock().expect("lien de compte");
-            let held = held
-                .as_ref()
-                .ok_or("cet ordinateur n'est rattaché à aucun compte")?;
+            let held = held.as_ref().ok_or_else(not_attached)?;
             (
                 held.link.server.clone(),
                 held.link.pin,
@@ -458,7 +456,7 @@ impl Account {
             )
         };
         Link::remove(&inner.path)
-            .map_err(|e| format!("le lien de compte n'a pas pu être effacé : {e}"))?;
+            .map_err(|e| Fact::new("account.link_not_erased").with("detail", e))?;
         self.let_go();
         inner
             .log
@@ -479,11 +477,11 @@ impl Account {
     }
 
     /// Renames a device of the account, at the server.
-    pub async fn rename(&self, device: &str, name: &str) -> Result<(), String> {
+    pub async fn rename(&self, device: &str, name: &str) -> Result<(), Fact> {
         let (rest, token, _) = self.door()?;
         rest.rename_device(&token, device, name)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.fact())?;
         self.0.log.write(&format!(
             "device {device} of the account renamed « {name} »"
         ));
@@ -493,14 +491,14 @@ impl Account {
     /// Revokes a device of the account. This one is detached instead:
     /// the server would say so a moment later anyway, and the link is
     /// better gone at once.
-    pub async fn revoke(&self, device: &str) -> Result<(), String> {
+    pub async fn revoke(&self, device: &str) -> Result<(), Fact> {
         let (rest, token, me) = self.door()?;
         if device == me {
             return self.detach().await;
         }
         rest.revoke_device(&token, device)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.fact())?;
         self.0
             .log
             .write(&format!("device {device} revoked from the account"));
@@ -508,13 +506,11 @@ impl Account {
     }
 
     /// The server's door, with this device's token and identifier.
-    fn door(&self) -> Result<(Rest, String, String), String> {
+    fn door(&self) -> Result<(Rest, String, String), Fact> {
         let held = self.0.held.lock().expect("lien de compte");
-        let held = held
-            .as_ref()
-            .ok_or("cet ordinateur n'est rattaché à aucun compte")?;
+        let held = held.as_ref().ok_or_else(not_attached)?;
         let trust = held.link.pin.map_or(Trust::PublicOnly, Trust::Pinned);
-        let rest = Rest::new(&held.link.server, trust).map_err(|e| e.to_string())?;
+        let rest = Rest::new(&held.link.server, trust).map_err(|e| e.fact())?;
         Ok((rest, held.link.token.clone(), held.link.device.clone()))
     }
 
@@ -524,13 +520,11 @@ impl Account {
     /// What comes back is whom to expect and where to knock. The far
     /// computer has let this one in by then, on the strength of the same
     /// ticket.
-    pub async fn rendezvous(&self, device: &str) -> Result<Rendezvous, String> {
+    pub async fn rendezvous(&self, device: &str) -> Result<Rendezvous, Fact> {
         let inner = &self.0;
         let (snapshot, me, server) = {
             let held = inner.held.lock().expect("lien de compte");
-            let held = held
-                .as_ref()
-                .ok_or("cet ordinateur n'est rattaché à aucun compte")?;
+            let held = held.as_ref().ok_or_else(not_attached)?;
             (
                 held.live.snapshot(),
                 held.link.device.clone(),
@@ -538,34 +532,27 @@ impl Account {
             )
         };
         if !snapshot.connected {
-            return Err(format!(
-                "le serveur du compte n'est pas joint en ce moment{}",
-                snapshot
-                    .trouble
-                    .map_or_else(String::new, |why| format!(" : {why}"))
-            ));
+            return Err(match &snapshot.trouble {
+                Some(why) => Fact::new("account.server_away_because").because(why),
+                None => Fact::new("account.server_away"),
+            });
         }
         let target = snapshot
             .devices
             .iter()
             .chain(snapshot.shares.iter().map(|share| &share.device))
             .find(|known| known.id == device)
-            .ok_or_else(|| format!("l'appareil {device} n'est pas dans le compte"))?;
+            .ok_or_else(|| Fact::new("account.no_such_device").with("device", device))?;
         if target.id == me {
-            return Err("c'est cet ordinateur-ci".to_string());
+            return Err(Fact::new("account.this_computer"));
         }
         if !target.online {
-            return Err(format!(
-                "{} n'est pas connecté au serveur en ce moment",
-                target.name
-            ));
+            return Err(Fact::new("account.peer_offline").with("name", &target.name));
         }
         if target.access != Access::Ready {
-            return Err(format!(
-                "{} n'accepte pas l'accès distant en ce moment : {}",
-                target.name,
-                target.access.explanation()
-            ));
+            return Err(Fact::new("account.peer_not_ready")
+                .with("name", &target.name)
+                .because(&target.access.fact()));
         }
 
         let (matched, waiting) = oneshot::channel();
@@ -589,13 +576,12 @@ impl Account {
         let (start, candidates) = match tokio::time::timeout(RENDEZVOUS_PATIENCE, waiting).await {
             Ok(Ok(Ok(meeting))) => meeting,
             Ok(Ok(Err(refused))) => {
-                return Err(format!(
-                    "le serveur a refusé la session vers {} : {refused}",
-                    target.name
-                ));
+                return Err(Fact::new("account.meeting_refused")
+                    .with("name", &target.name)
+                    .because(&refused.fact()));
             }
             Ok(Err(_)) => {
-                return Err("le lien de compte s'est fermé pendant la demande".to_string());
+                return Err(Fact::new("account.link_closed"));
             }
             Err(_) => {
                 inner
@@ -603,10 +589,7 @@ impl Account {
                     .lock()
                     .expect("sessions demandées")
                     .remove(device);
-                return Err(format!(
-                    "le serveur n'a pas répondu à la demande de session vers {}",
-                    target.name
-                ));
+                return Err(Fact::new("account.meeting_silent").with("name", &target.name));
             }
         };
         let mirror = mirror_of(
@@ -735,7 +718,7 @@ impl Account {
             Event::SessionRefused { to, code } => {
                 if let Some(waiting) = inner.asked.lock().expect("sessions demandées").remove(&to)
                 {
-                    let _ = waiting.send(Err(code.explanation().to_string()));
+                    let _ = waiting.send(Err(code));
                 }
                 inner.log.write(&format!(
                     "the server refused a session towards {to}: {code}"
@@ -1645,7 +1628,8 @@ login_attempts_per_minute = 1000
             })
             .await;
         let refused = laptop.account.rendezvous(&pc_device).await.unwrap_err();
-        assert!(refused.contains("FFmpeg absent"), "{refused}");
+        assert_eq!(refused.code(), "account.peer_not_ready", "{refused}");
+        assert_eq!(refused.cause(), Some(Access::EngineMissing.fact()));
         // And there is no longer any point going through the server to
         // reach it: what is known of it otherwise is all that is left.
         assert_eq!(
@@ -1693,10 +1677,7 @@ login_attempts_per_minute = 1000
                 .unwrap()
                 .is_none()
         );
-        assert_eq!(
-            pc.account.detach().await.unwrap_err(),
-            "cet ordinateur n'est rattaché à aucun compte"
-        );
+        assert_eq!(pc.account.detach().await.unwrap_err(), not_attached());
 
         server.stop().await;
     }

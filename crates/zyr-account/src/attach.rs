@@ -13,6 +13,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use zyr_broker::proof::{Purpose, challenge_message};
 use zyr_broker::rest::{Login, Register};
 use zyr_broker::{Code, PROTOCOL};
+use zyr_proto::fact::Fact;
 use zyr_transport::Identity;
 use zyr_transport::trust::{Trust, Untrusted};
 
@@ -52,16 +53,32 @@ pub enum AttachError {
     Signing(String),
 }
 
+impl AttachError {
+    /// Why attaching did not happen, for the person to read in their
+    /// language.
+    pub fn fact(&self) -> Fact {
+        match self {
+            AttachError::Untrusted(e) => e.fact(),
+            AttachError::Version { server } => Fact::new("account.dialect_differs")
+                .with("server", server)
+                .with("here", PROTOCOL),
+            AttachError::Refused { code, .. } => code.fact(),
+            AttachError::Failed(e) => e.fact(),
+            AttachError::Signing(e) => Fact::new("account.signing_failed").with("detail", e),
+        }
+    }
+}
+
 impl fmt::Display for AttachError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AttachError::Untrusted(e) => write!(f, "{e}"),
             AttachError::Version { server } => write!(
                 f,
-                "ce serveur parle la version {server} du dialecte, cet appareil la version \
-                 {PROTOCOL} : l'un des deux est à mettre à jour"
+                "the server speaks version {server} of the dialect, this device version \
+                 {PROTOCOL}"
             ),
-            AttachError::Refused { code, .. } => write!(f, "{}", code.explanation()),
+            AttachError::Refused { code, .. } => write!(f, "{code}"),
             AttachError::Failed(e) => write!(f, "{e}"),
             AttachError::Signing(e) => write!(f, "{e}"),
         }

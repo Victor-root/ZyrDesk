@@ -21,7 +21,7 @@ use std::fmt;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use zyr_proto::fact::{Fact, is_name};
+use zyr_proto::fact::{BECAUSE, Fact, is_name};
 
 // Every language the product speaks, English first: its code, and the
 // file of its texts. Listed by the build from the files of `words/`.
@@ -73,7 +73,7 @@ fn chosen<S: AsRef<str>>(known: &[&str], preferred: &[S]) -> usize {
 
 /// The code of the language spoken.
 pub fn speaking() -> &'static str {
-    LANGUAGES[SPEAKING.load(Ordering::Relaxed)].0
+    LANGUAGES[spoken()].0
 }
 
 /// Every language the product speaks, English first.
@@ -88,7 +88,7 @@ pub fn text(key: &str) -> String {
 
 /// The text for a key, in the language spoken, filled with these values.
 pub fn text_with(key: &str, values: &[(&str, &dyn fmt::Display)]) -> String {
-    match found(key) {
+    match found(spoken(), key) {
         Some(text) => filled(text, |name| {
             values
                 .iter()
@@ -100,23 +100,36 @@ pub fn text_with(key: &str, values: &[(&str, &dyn fmt::Display)]) -> String {
 }
 
 /// The words for a fact: the text its code is the key of, filled with
-/// its values.
+/// its values, and with the words for the fact that caused it where the
+/// text says `{because}`.
 ///
 /// A fact no text is written for, one a newer half of the product tells,
 /// is shown the way it travelled rather than not at all: its code and its
 /// values still say what happened, if not in the person's words.
-pub fn fact(fact: &Fact) -> String {
-    match found(fact.code()) {
-        Some(text) => filled(text, |name| fact.value(name).map(str::to_string)),
-        None => fact.to_string(),
+pub fn fact(told: &Fact) -> String {
+    fact_in(spoken(), told)
+}
+
+/// The words for a fact in that language, by its place in the list.
+fn fact_in(language: usize, told: &Fact) -> String {
+    match found(language, told.code()) {
+        Some(text) => filled(text, |name| match told.cause() {
+            Some(cause) if name == BECAUSE => Some(fact_in(language, &cause)),
+            _ => told.value(name).map(str::to_string),
+        }),
+        None => told.to_string(),
     }
 }
 
-/// A key's text in the language spoken, or in English when that one
-/// lacks it.
-fn found(key: &str) -> Option<&'static str> {
+/// The language spoken, by its place in the list.
+fn spoken() -> usize {
+    SPEAKING.load(Ordering::Relaxed)
+}
+
+/// A key's text in that language, or in English when that one lacks it.
+fn found(language: usize, key: &str) -> Option<&'static str> {
     let texts = &*TEXTS;
-    texts[SPEAKING.load(Ordering::Relaxed)]
+    texts[language]
         .get(key)
         .or_else(|| texts[0].get(key))
         .map(String::as_str)
@@ -211,6 +224,28 @@ mod tests {
         assert_eq!(chosen(&known, &["en-GB", "fr-FR"]), 0);
         assert_eq!(chosen(&known, &["xx"]), 0);
         assert_eq!(chosen::<&str>(&known, &[]), 0);
+    }
+
+    #[test]
+    fn a_fact_is_said_with_the_words_of_its_cause() {
+        let refused = Fact::new("account.meeting_refused")
+            .with("name", "PC-17")
+            .because(&Fact::new("server.no_right"));
+        assert_eq!(
+            fact_in(0, &refused),
+            "the server refused the session towards PC-17: no right on this computer"
+        );
+        let french = languages().position(|code| code == "fr").unwrap();
+        assert_eq!(
+            fact_in(french, &refused),
+            "le serveur a refusé la session vers PC-17 : aucun droit sur cet ordinateur"
+        );
+    }
+
+    #[test]
+    fn a_fact_nobody_wrote_words_for_is_shown_as_it_travelled() {
+        let newer: Fact = "newer.fact host=PC-17".parse().unwrap();
+        assert_eq!(fact_in(0, &newer), "newer.fact host=PC-17");
     }
 
     #[test]

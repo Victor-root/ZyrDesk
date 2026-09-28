@@ -21,6 +21,7 @@ use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, RootCertStore, SignatureScheme};
+use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 
 use crate::identity::public_key_fingerprint;
@@ -51,21 +52,36 @@ pub enum Untrusted {
     Unreadable,
 }
 
+impl Untrusted {
+    /// Why the server was not believed, for the person to read in their
+    /// language.
+    pub fn fact(&self) -> Fact {
+        match self {
+            Untrusted::Unpinned { presented } => {
+                Fact::new("untrusted.unpinned").with("presented", presented)
+            }
+            Untrusted::Changed { pinned, presented } => Fact::new("untrusted.changed")
+                .with("pinned", pinned)
+                .with("presented", presented),
+            Untrusted::Unreadable => Fact::new("untrusted.unreadable"),
+        }
+    }
+}
+
 impl fmt::Display for Untrusted {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Untrusted::Unpinned { presented } => write!(
                 f,
-                "ce serveur présente un certificat que personne ne garantit ; son empreinte est \
-                 {presented}"
+                "the server presents a certificate nobody vouches for, of fingerprint {presented}"
             ),
             Untrusted::Changed { pinned, presented } => write!(
                 f,
-                "ce serveur ne présente plus la clé épinglée ({pinned}) mais une autre \
-                 ({presented}) : il a changé de clé, ou ce n'est pas lui"
+                "the server no longer presents the pinned key ({pinned}) but another \
+                 ({presented})"
             ),
             Untrusted::Unreadable => {
-                f.write_str("ce serveur présente un certificat dont la clé ne se lit pas")
+                f.write_str("the server presents a certificate whose key cannot be read")
             }
         }
     }

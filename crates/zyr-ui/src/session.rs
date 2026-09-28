@@ -54,9 +54,11 @@ pub struct Ongoing {
     pub process: u32,
     /// The link its player is connected to.
     pub at: String,
-    /// The real address the packets go to right now, and how long that
-    /// road takes to come back, in milliseconds.
+    /// The real address the packets go to right now, whether it is the
+    /// server's relay, and how long that road takes to come back, in
+    /// milliseconds.
     pub via: String,
+    pub relayed: bool,
     pub round_trip_ms: u64,
     /// The way the service holds towards that computer.
     ///
@@ -81,6 +83,7 @@ pub async fn sessions() -> Vec<Ongoing> {
             process: session.process,
             at: session.at,
             via: session.via,
+            relayed: session.relayed,
             round_trip_ms: session.round_trip_ms,
             way: session.way.0,
         }),
@@ -274,7 +277,6 @@ pub async fn watch_the_far_screen(id: Option<String>) -> Result<(), String> {
     .await?
     {
         Answer::Done => {}
-        Answer::Refused(reason) => return Err(reason),
         other => return Err(crate::service::unexpected(other)),
     }
     ask_for_the_far_screen(id);
@@ -408,18 +410,18 @@ async fn become_that_size(app: &App, preferred: Preferred) -> Result<(), String>
     // What that computer says it will be showing wins over what this end
     // guessed, exactly as at the opening. A refusal costs the sharpness of
     // the picture and nothing else, and the session goes on.
-    let (width, height) = match crate::service::ask(&Request::FarScreen { way, wanted }).await? {
-        Answer::Showing {
+    let (width, height) = match crate::service::ask(&Request::FarScreen { way, wanted }).await {
+        Ok(Answer::Showing {
             size: Some((wide, high)),
-        } => (wide, high),
-        Answer::Showing { size: None } => (guessed.width, guessed.height),
-        Answer::Refused(reason) => {
+        }) => (wide, high),
+        Ok(Answer::Showing { size: None }) => (guessed.width, guessed.height),
+        Ok(other) => return Err(crate::service::unexpected(other)),
+        Err(reason) => {
             note(&format!(
                 "l'ordinateur distant n'a pas préparé son écran : {reason}"
             ));
             (guessed.width, guessed.height)
         }
-        other => return Err(crate::service::unexpected(other)),
     };
     ask_the_player(|settings, _| {
         settings.width = width;
@@ -742,7 +744,7 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
                 note("ouverture abandonnée : la session a été fermée avant l'image");
                 return finish(app, true, String::new());
             }
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(zyr_i18n::fact(&e.fact())),
         };
         let showing = match started {
             Ok(showing) => showing,

@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::Duration;
 
 use zyr_control::{Answer, Request, Service, WayId};
+use zyr_proto::fact::Fact;
 use zyr_proto::session::Pointer;
 
 use crate::app::App;
@@ -97,7 +98,7 @@ pub fn follow(app: &App) {
         // The next session starts from the ordinary pointer, and not
         // from whatever this one was left pointing at.
         keep(Pointer::Arrow);
-        note(&format!("forme du curseur : {seen}"));
+        note(&format!("pointer shape: {seen}"));
         FOLLOWING.store(false, Ordering::SeqCst);
     });
 }
@@ -111,7 +112,7 @@ async fn keep_it_in_step(app: &App) -> Seen {
     loop {
         tokio::time::sleep(ASK_EVERY).await;
         if !crate::floating::a_session_is_up(app) {
-            seen.why = "la session est terminée";
+            seen.why = "the session is over";
             return seen;
         }
         // The way is looked for at every turn for as long as it is
@@ -151,7 +152,7 @@ async fn keep_it_in_step(app: &App) -> Seen {
                 refused += 1;
                 seen.first_refusal.get_or_insert(reason);
                 if refused >= REFUSALS_BEFORE_GIVING_UP {
-                    seen.why = "l'ordinateur distant ne répond pas sur la forme de son curseur";
+                    seen.why = "the far computer does not answer about its pointer";
                     return seen;
                 }
             }
@@ -161,19 +162,19 @@ async fn keep_it_in_step(app: &App) -> Seen {
 
 /// One question, on the connection being held, reopened when it has
 /// given way.
-async fn asked(talking: &mut Option<Service>, way: WayId) -> Result<Pointer, String> {
+async fn asked(talking: &mut Option<Service>, way: WayId) -> Result<Pointer, Fact> {
     if talking.is_none() {
-        *talking = Some(Service::join().await.map_err(|e| e.to_string())?);
+        *talking = Some(Service::join().await.map_err(|e| e.fact())?);
     }
-    let service = talking.as_mut().expect("une connexion au service");
+    let service = talking.as_mut().expect("a connection to the service");
     match service
         .ask(&Request::FarPointer { way })
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.fact())?
     {
         Answer::Pointer(shape) => Ok(shape),
         Answer::Refused(reason) => Err(reason),
-        other => Err(crate::service::unexpected(other)),
+        other => Err(other.unexpected()),
     }
 }
 
@@ -187,7 +188,7 @@ async fn asked(talking: &mut Option<Service>, way: WayId) -> Result<Pointer, Str
 struct Seen {
     answers: u64,
     shapes: Vec<Pointer>,
-    first_refusal: Option<String>,
+    first_refusal: Option<Fact>,
     why: &'static str,
 }
 
@@ -202,20 +203,20 @@ impl Seen {
 
 impl std::fmt::Display for Seen {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} reçues", self.answers)?;
+        write!(f, "{} received", self.answers)?;
         if self.shapes.is_empty() {
-            f.write_str(", aucune forme")?;
+            f.write_str(", no shape")?;
         } else {
-            f.write_str(", formes vues :")?;
+            f.write_str(", shapes seen:")?;
             for shape in &self.shapes {
                 write!(f, " {shape}")?;
             }
         }
         if let Some(refusal) = &self.first_refusal {
-            write!(f, " ; premier refus : {}", refusal.replace('\n', " "))?;
+            write!(f, "; first refusal: {refusal}")?;
         }
         if !self.why.is_empty() {
-            write!(f, " ; arrêt : {}", self.why)?;
+            write!(f, "; stopped: {}", self.why)?;
         }
         Ok(())
     }
@@ -231,32 +232,29 @@ mod tests {
         // tell "nothing arrived" apart from "everything arrived
         // and it was all arrows".
         let nothing = Seen {
-            why: "la session est terminée",
+            why: "the session is over",
             ..Default::default()
         };
         let said = nothing.to_string();
-        assert!(said.contains("0 reçues"), "{said}");
-        assert!(said.contains("aucune forme"), "{said}");
+        assert!(said.contains("0 received"), "{said}");
+        assert!(said.contains("no shape"), "{said}");
 
         let mut seen = Seen::default();
         seen.saw(Pointer::Arrow);
         seen.saw(Pointer::Text);
         seen.saw(Pointer::Arrow);
         let said = seen.to_string();
-        assert!(said.contains("3 reçues"), "{said}");
+        assert!(said.contains("3 received"), "{said}");
         assert!(said.contains("arrow text"), "{said}");
 
         // And a refusal is told on a single line: the journal lines up
         // its lines, and a reason that wraps would break the column.
         let refused = Seen {
-            first_refusal: Some("la voie 3\n  n'existe plus".to_string()),
+            first_refusal: Some(Fact::new("way.gone").with("way", 3)),
             ..Default::default()
         };
         let said = refused.to_string();
-        assert!(
-            said.contains("premier refus : la voie 3   n'existe plus"),
-            "{said}"
-        );
+        assert!(said.contains("first refusal: way.gone way=3"), "{said}");
         assert_eq!(said.lines().count(), 1, "{said}");
     }
 }

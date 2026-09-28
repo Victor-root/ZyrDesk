@@ -5,3 +5,115 @@
 # code. A text names the values it needs between braces, {host}, and \n
 # starts a new line. Every text here has its twin in the file of every
 # other language, asking for the same values.
+
+# The service, as the window and the command line reach it.
+service.not_running = the ZyrDesk service is not running.\n  Run “zyrdeskd status” to see how it stands.
+service.broken = the exchange with the service broke off: {detail}
+service.unreadable = unreadable answer from the service: {detail}\n  The service is probably older than this program.
+service.left_off = the service broke off the conversation
+service.unexpected_answer = unexpected answer from the service: {answer}
+service.misunderstood = the service did not understand the request: {detail}\n  It is probably older than this program.
+
+# Choices the service keeps.
+setting.not_saved = the choice could not be saved: {detail}\n  It would have been forgotten at the next start.
+setting.at_boot_not_saved = this setting could not be saved: {detail}
+
+# Reaching another computer.
+reach.not_on_this_network = this computer does not announce itself on this network.\n  A local session needs an address from here, and the account gives none.
+reach.fingerprint_changed = the fingerprint of {name} is no longer the one expected.\n  The server says {told}, this window expected {expected}.
+reach.nobody_answered = {host} answered neither directly nor through the relay in {waited} seconds.\n  See the journal: it says what each road gave.
+reach.no_direct_road = no direct road to {host} in {waited} seconds, and this server has no relay.\n  These two networks need one: turn it on at the server, or forward UDP port 47000\n  to one of the two computers on its router.
+reach.no_address = no address to reach {host} at
+reach.port_silent = {host} does not answer on port {port}: {detail}
+reach.port_silent_here = {host} does not answer on port {port}: {detail}\n  This computer does announce itself on this network though: what did not answer is the tunnel's port, not the machine.\n  On it, in order: is remote access on, is “Listen on port {port}” on, and does its journal say “Tunnel: port {port}”?
+reach.silent = {host} does not answer: {detail}
+reach.not_opened = {host} did not open the session: it refused this computer, its fingerprint changed, or its engine did not start.\n  On {host}, check that remote access is on and that\n  trust in the local network is on too.\n  Detail: {detail}
+reach.not_prepared = the connection could not be prepared: {detail}
+reach.unknown_address = address “{host}” not found: {detail}
+way.gone = way {way} no longer exists
+
+# Asking the far computer something during a session.
+far.sas_failed = the far computer did not press Ctrl+Alt+Del: {detail}
+far.hush_failed = the far computer's speakers did not change: {detail}
+far.screen_failed = the far computer did not prepare its screen: {detail}
+far.pointer_failed = the far computer did not say the shape of its pointer: {detail}
+far.screens_failed = the far computer did not say which screens it has: {detail}
+far.film_failed = the far computer did not change screens: {detail}
+far.lock_failed = the far computer did not lock itself: {detail}
+far.journal_refused = {host} did not hand over its journal: {detail}\n  Check that remote access is on there and that this computer is allowed in.
+far.journal_not_emptied = {host} did not empty its journal: {detail}\n  Check that remote access is on there and that this computer is allowed in.
+
+# Computers written down by hand, and those connected here.
+peer.own_fingerprint = this is this computer's own fingerprint.\n  The one to type is shown in the window of the other machine.
+peer.not_written = this computer could not be written into the list: {detail}
+peer.not_kept = this computer is allowed in, but could not be kept on screen: {detail}\n  It will have to be typed again at the next session.
+peer.not_forgotten = this computer could not be forgotten: {detail}
+peer.not_removed = this computer can no longer come in, but could not be taken off the screen: {detail}\n  Try “Forget” again.
+peer.not_connected = this computer is no longer connected.
+
+# The account, as this computer holds it.
+account.already_attached = this computer is already attached to an account.\n  Detach it first to change accounts.
+account.not_ready = the service is not ready to hold an account link
+account.not_attached = this computer is not attached to any account
+account.link_not_written = the account link could not be written: {detail}
+account.link_not_erased = the account link could not be erased: {detail}
+account.server_away = the account's server cannot be reached right now
+account.server_away_because = the account's server cannot be reached right now: {because}
+account.no_such_device = device {device} is not in the account
+account.this_computer = that is this very computer
+account.peer_offline = {name} is not connected to the server right now
+account.peer_not_ready = {name} does not accept remote access right now: {because}
+account.meeting_refused = the server refused the session towards {name}: {because}
+account.link_closed = the account link closed during the request
+account.meeting_silent = the server did not answer the request for a session towards {name}
+account.address_empty = no server address
+account.address_not_https = a ZyrDesk server is only reached over https://: an http:// address is refused
+account.address_unreadable = unreadable server address: {address}
+account.server_unreachable = the server could not be reached: {detail}
+account.server_unreadable = unreadable answer from the server: {detail}
+account.server_silent = {address} does not answer
+account.link_broken = the link to the server broke: {detail}
+account.dialect_differs = this server speaks version {server} of the dialect, this device version {here}: one of the two needs updating
+account.signing_failed = the device's key could not sign: {detail}
+
+# Whether a computer of the account accepts remote access.
+access.off = remote access off
+access.ready = ready to be controlled
+access.starting = starting
+access.engine_missing = FFmpeg missing
+access.engine_wont_stand = the host engine keeps falling over
+
+# A server nobody vouches for.
+untrusted.unpinned = this server presents a certificate nobody vouches for; its fingerprint is {presented}
+untrusted.changed = this server no longer presents the pinned key ({pinned}) but another ({presented}): it changed its key, or it is not the same server
+untrusted.unreadable = this server presents a certificate whose key cannot be read
+
+# Why the server said no.
+server.invalid_credentials = wrong username or password
+server.registration_closed = this server does not take new accounts
+server.invitation_invalid = this invitation code is not valid
+server.username_taken = this username is already taken
+server.weak_password = the password must be at least twelve characters long
+server.invalid_username = a username is 3 to 32 characters: letters, digits, dot, dash or underscore
+server.unauthorized = this server no longer knows this device: attach it again
+server.device_revoked = this device was revoked from the account
+server.device_unknown = this device does not belong to the account
+server.proof_invalid = the proof of this device's key was not accepted
+server.challenge_expired = the server's challenge expired, it has to be done again
+server.not_found = what the request names does not exist
+server.contact_exists = a request already stands between these two accounts
+server.not_a_contact = this account is not a contact
+server.contact_self = one cannot be one's own contact
+server.share_invalid = this share names a device or a contact that does not fit
+server.peer_offline = this computer is not connected to the server
+server.peer_not_hosting = this computer is online but does not accept remote access
+server.no_right = no right on this computer
+server.upgrade_needed = the server and this device do not speak the same version
+server.rate_limited = too many attempts, wait a little
+server.bad_request = the server did not understand the request
+server.internal = the server ran into an error, its journal says which
+
+# Opening a session.
+session.ffmpeg_missing = FFmpeg is missing, the picture cannot be decoded without it: missing {files}
+session.abandoned = opening abandoned before the picture
+session.not_prepared = the session could not be prepared: {detail}

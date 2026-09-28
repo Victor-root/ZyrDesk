@@ -2,3 +2,115 @@
 #
 # The same keys as English, asking for the same values between braces:
 # only the texts change.
+
+# The service, as the window and the command line reach it.
+service.not_running = le service ZyrDesk ne tourne pas.\n  Lancez « zyrdeskd status » pour voir son état.
+service.broken = échange interrompu : {detail}
+service.unreadable = réponse incompréhensible du service : {detail}\n  Le service est probablement plus ancien que ce programme.
+service.left_off = le service a coupé la conversation
+service.unexpected_answer = réponse inattendue du service : {answer}
+service.misunderstood = le service n'a pas compris la demande : {detail}\n  Il est probablement plus ancien que ce programme.
+
+# Choices the service keeps.
+setting.not_saved = le choix n'a pas pu être enregistré : {detail}\n  Il aurait été oublié au prochain démarrage.
+setting.at_boot_not_saved = ce réglage n'a pas pu être enregistré : {detail}
+
+# Reaching another computer.
+reach.not_on_this_network = cet ordinateur ne s'annonce pas sur ce réseau.\n  Une session en local demande une adresse d'ici, et le compte n'en donne pas.
+reach.fingerprint_changed = l'empreinte de {name} n'est plus celle attendue.\n  Le serveur dit {told}, cette fenêtre attendait {expected}.
+reach.nobody_answered = {host} n'a répondu ni en direct ni par le relais en {waited} secondes.\n  Voyez le journal : il dit ce que chaque chemin a donné.
+reach.no_direct_road = aucun chemin direct vers {host} en {waited} secondes, et ce serveur n'a pas de relais.\n  Il en faut un pour ces deux réseaux : activez-le sur le serveur, ou renvoyez le port UDP 47000\n  vers l'un des deux ordinateurs sur sa box.
+reach.no_address = aucune adresse où joindre {host}
+reach.port_silent = {host} ne répond pas sur le port {port} : {detail}
+reach.port_silent_here = {host} ne répond pas sur le port {port} : {detail}\n  Cet ordinateur s'annonce pourtant sur ce réseau : ce qui n'a pas répondu est le port du tunnel, pas la machine.\n  Sur elle, dans l'ordre : l'accès distant est-il activé, « Écouter sur le port {port} » est-il allumé, et son journal dit-il « Tunnel : port {port} » ?
+reach.silent = {host} ne répond pas : {detail}
+reach.not_opened = {host} n'a pas ouvert la session : il a refusé cet ordinateur, son empreinte a changé, ou son moteur n'a pas démarré.\n  Sur {host}, vérifiez que l'accès distant est actif et que\n  la confiance au réseau local l'est aussi.\n  Détail : {detail}
+reach.not_prepared = la connexion n'a pas pu être préparée : {detail}
+reach.unknown_address = adresse « {host} » introuvable : {detail}
+way.gone = la voie {way} n'existe plus
+
+# Asking the far computer something during a session.
+far.sas_failed = l'ordinateur distant n'a pas pressé Ctrl+Alt+Suppr : {detail}
+far.hush_failed = les enceintes de l'ordinateur distant n'ont pas bougé : {detail}
+far.screen_failed = l'ordinateur distant n'a pas préparé son écran : {detail}
+far.pointer_failed = l'ordinateur distant n'a pas dit la forme de son curseur : {detail}
+far.screens_failed = l'ordinateur distant n'a pas dit quels écrans il a : {detail}
+far.film_failed = l'ordinateur distant n'a pas changé d'écran : {detail}
+far.lock_failed = l'ordinateur distant ne s'est pas verrouillé : {detail}
+far.journal_refused = {host} n'a pas donné son journal : {detail}\n  Vérifiez que l'accès distant y est actif et que cet ordinateur y est autorisé.
+far.journal_not_emptied = {host} n'a pas vidé son journal : {detail}\n  Vérifiez que l'accès distant y est actif et que cet ordinateur y est autorisé.
+
+# Computers written down by hand, and those connected here.
+peer.own_fingerprint = c'est l'empreinte de cet ordinateur.\n  Celle à saisir se lit dans la fenêtre de l'autre machine.
+peer.not_written = cet ordinateur n'a pas pu être écrit dans la liste : {detail}
+peer.not_kept = cet ordinateur est autorisé, mais n'a pas pu être gardé à l'écran : {detail}\n  Il faudra le saisir à nouveau à la prochaine session.
+peer.not_forgotten = cet ordinateur n'a pas pu être oublié : {detail}
+peer.not_removed = cet ordinateur ne peut plus entrer, mais n'a pas pu être retiré de l'écran : {detail}\n  Réessayez « Oublier ».
+peer.not_connected = cet ordinateur n'est plus connecté.
+
+# The account, as this computer holds it.
+account.already_attached = cet ordinateur est déjà rattaché à un compte.\n  Détachez-le d'abord pour en changer.
+account.not_ready = le service n'est pas prêt à tenir un lien de compte
+account.not_attached = cet ordinateur n'est rattaché à aucun compte
+account.link_not_written = le lien de compte n'a pas pu être écrit : {detail}
+account.link_not_erased = le lien de compte n'a pas pu être effacé : {detail}
+account.server_away = le serveur du compte n'est pas joint en ce moment
+account.server_away_because = le serveur du compte n'est pas joint en ce moment : {because}
+account.no_such_device = l'appareil {device} n'est pas dans le compte
+account.this_computer = c'est cet ordinateur-ci
+account.peer_offline = {name} n'est pas connecté au serveur en ce moment
+account.peer_not_ready = {name} n'accepte pas l'accès distant en ce moment : {because}
+account.meeting_refused = le serveur a refusé la session vers {name} : {because}
+account.link_closed = le lien de compte s'est fermé pendant la demande
+account.meeting_silent = le serveur n'a pas répondu à la demande de session vers {name}
+account.address_empty = aucune adresse de serveur
+account.address_not_https = un serveur ZyrDesk ne se joint qu'en https:// : l'adresse en http:// est refusée
+account.address_unreadable = adresse de serveur illisible : {address}
+account.server_unreachable = le serveur n'a pas pu être joint : {detail}
+account.server_unreadable = réponse du serveur illisible : {detail}
+account.server_silent = {address} ne répond pas
+account.link_broken = le lien avec le serveur s'est rompu : {detail}
+account.dialect_differs = ce serveur parle la version {server} du dialecte, cet appareil la version {here} : l'un des deux est à mettre à jour
+account.signing_failed = la clé de cet appareil n'a pas pu signer : {detail}
+
+# Whether a computer of the account accepts remote access.
+access.off = accès distant désactivé
+access.ready = prêt à être contrôlé
+access.starting = démarrage en cours
+access.engine_missing = FFmpeg absent
+access.engine_wont_stand = le moteur hôte ne tient pas
+
+# A server nobody vouches for.
+untrusted.unpinned = ce serveur présente un certificat que personne ne garantit ; son empreinte est {presented}
+untrusted.changed = ce serveur ne présente plus la clé épinglée ({pinned}) mais une autre ({presented}) : il a changé de clé, ou ce n'est pas lui
+untrusted.unreadable = ce serveur présente un certificat dont la clé ne se lit pas
+
+# Why the server said no.
+server.invalid_credentials = nom d'utilisateur ou mot de passe incorrect
+server.registration_closed = ce serveur n'accepte pas de nouveau compte
+server.invitation_invalid = ce code d'invitation n'est pas valable
+server.username_taken = ce nom d'utilisateur est déjà pris
+server.weak_password = le mot de passe doit faire douze caractères au moins
+server.invalid_username = un nom d'utilisateur fait de 3 à 32 caractères : lettres, chiffres, point, tiret ou souligné
+server.unauthorized = ce serveur ne reconnaît plus cet appareil : à rattacher de nouveau
+server.device_revoked = cet appareil a été révoqué du compte
+server.device_unknown = cet appareil n'appartient pas au compte
+server.proof_invalid = la preuve de la clé de cet appareil n'a pas été acceptée
+server.challenge_expired = le défi du serveur a expiré, il faut recommencer
+server.not_found = ce que la demande nomme n'existe pas
+server.contact_exists = une demande existe déjà entre ces deux comptes
+server.not_a_contact = ce compte n'est pas un contact
+server.contact_self = on ne peut pas être son propre contact
+server.share_invalid = ce partage nomme un appareil ou un contact qui ne convient pas
+server.peer_offline = cet ordinateur n'est pas connecté au serveur
+server.peer_not_hosting = cet ordinateur est en ligne mais n'accepte pas l'accès distant
+server.no_right = aucun droit sur cet ordinateur
+server.upgrade_needed = le serveur et cet appareil ne parlent pas la même version
+server.rate_limited = trop de tentatives, attendre un peu
+server.bad_request = le serveur n'a pas compris la demande
+server.internal = le serveur a rencontré une erreur, son journal dit laquelle
+
+# Opening a session.
+session.ffmpeg_missing = FFmpeg introuvable, l'image ne peut pas être décodée sans lui : il manque {files}
+session.abandoned = ouverture abandonnée avant l'image
+session.not_prepared = la session n'a pas pu être préparée : {detail}

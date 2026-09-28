@@ -23,6 +23,7 @@ use std::time::Duration;
 
 use zyr_control::{Answer, CHANNEL, Request, Service, WayId};
 use zyr_player::{Ffmpeg, Wanted as PlayerWants};
+use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::paths;
 use zyr_proto::session::{SessionSettings, WantedScreen};
@@ -97,7 +98,7 @@ pub enum Step {
     ///
     /// What it costs is being served the screen it is already on, which
     /// is what every session got before this was offered.
-    FarScreenLeftAlone { refused: String },
+    FarScreenLeftAlone { refused: Fact },
     /// The far computer would not silence its own speakers, and the
     /// session goes on regardless.
     ///
@@ -105,7 +106,7 @@ pub enum Step {
     /// cannot go quiet, because nobody is signed in on it or because
     /// Windows would not have it, still has a perfectly good session to
     /// give.
-    SpeakersLeftAlone { refused: String },
+    SpeakersLeftAlone { refused: Fact },
     /// The far computer would not wake its virtual screen, and the
     /// session goes on regardless.
     ///
@@ -113,7 +114,7 @@ pub enum Step {
     /// computer's own screen: without the virtual screen it serves what
     /// its own screen can draw and this end stretches the rest, which is
     /// what every session did before that screen existed.
-    ScreenLeftAlone { refused: String },
+    ScreenLeftAlone { refused: Fact },
     /// The far computer said what it will be showing, and it is not what
     /// this end had asked for.
     ///
@@ -162,7 +163,7 @@ const WATCH_STEP: Duration = Duration::from_millis(100);
 /// picture nobody was waiting for any more.
 enum GaveUp {
     /// The service, or the far computer through it, said no.
-    Said(String),
+    Said(Fact),
     /// The person let go of the opening while this was waiting.
     Abandoned,
 }
@@ -173,7 +174,7 @@ impl GaveUp {
     /// For the asks a session survives. The refusal is theirs to write
     /// down; the `?` is what keeps the other one from being written down
     /// as though it were one.
-    fn refusal(self) -> Result<String, Error> {
+    fn refusal(self) -> Result<Fact, Error> {
         match self {
             GaveUp::Said(reason) => Ok(reason),
             GaveUp::Abandoned => Err(Error::Abandoned),
@@ -182,17 +183,12 @@ impl GaveUp {
 
     /// The same for the asks a session does not survive: the refusal
     /// under the name that says which ask it was.
-    fn or(self, said: impl FnOnce(String) -> Error) -> Error {
+    fn or(self, said: impl FnOnce(Fact) -> Error) -> Error {
         match self {
             GaveUp::Said(reason) => said(reason),
             GaveUp::Abandoned => Error::Abandoned,
         }
     }
-}
-
-/// The service answering something else entirely, said the one way.
-fn unexpected(answer: Answer) -> String {
-    format!("réponse inattendue du service : {answer}")
 }
 
 /// Waits for the service to answer, and lets go the moment the person
@@ -227,7 +223,7 @@ fn answered(
         // and says so by taking the whole program down with it.
         let spell = async { tokio::time::timeout(WATCH_STEP, asking.as_mut()).await };
         match runtime.block_on(spell) {
-            Ok(answered) => return answered.map_err(|e| GaveUp::Said(e.to_string())),
+            Ok(answered) => return answered.map_err(|e| GaveUp::Said(e.fact())),
             // Still coming. The one thing worth doing with the pause is
             // looking up.
             Err(_) => {
@@ -245,7 +241,7 @@ pub enum Error {
     /// `vendor/ffmpeg`, and the player decodes the picture with it.
     EngineMissing(Vec<PathBuf>),
     /// The service could not be asked, or refused.
-    Service(String),
+    Service(Fact),
     /// The person closed the window on the opening before there was a
     /// picture, so it was let go of.
     ///
@@ -255,20 +251,35 @@ pub enum Error {
     Abandoned,
 }
 
+impl Error {
+    /// What happened, for the person to read in their language.
+    pub fn fact(&self) -> Fact {
+        match self {
+            Error::EngineMissing(files) => {
+                Fact::new("session.ffmpeg_missing").with("files", listed(files))
+            }
+            Error::Service(fact) => fact.clone(),
+            Error::Abandoned => Fact::new("session.abandoned"),
+        }
+    }
+}
+
+/// Files named one after the other, the way a journal and a person read
+/// them.
+fn listed(files: &[PathBuf]) -> String {
+    files
+        .iter()
+        .map(|file| file.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::EngineMissing(files) => write!(
-                f,
-                "FFmpeg introuvable, l'image ne peut pas être décodée sans lui : il manque {}",
-                files
-                    .iter()
-                    .map(|file| file.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            Error::Service(reason) => f.write_str(reason),
-            Error::Abandoned => f.write_str("ouverture abandonnée avant l'image"),
+            Error::EngineMissing(files) => write!(f, "FFmpeg is missing: {}", listed(files)),
+            Error::Service(fact) => write!(f, "{fact}"),
+            Error::Abandoned => f.write_str("opening abandoned before the picture"),
         }
     }
 }
@@ -442,10 +453,10 @@ impl Driving {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|e| GaveUp::Said(e.to_string()))?;
+            .map_err(|e| GaveUp::Said(Fact::new("session.not_prepared").with("detail", e)))?;
         let mut service = runtime
             .block_on(Service::join_on(channel))
-            .map_err(|e| GaveUp::Said(e.to_string()))?;
+            .map_err(|e| GaveUp::Said(e.fact()))?;
         // The window the transport keeps open follows the session that
         // was actually asked for, not a nominal one.
         let request = Request::Reach {
@@ -458,7 +469,7 @@ impl Driving {
         let reached = match answered(&runtime, &mut service, &request, still_wanted)? {
             Answer::Reached(reached) => reached,
             Answer::Refused(reason) => return Err(GaveUp::Said(reason)),
-            other => return Err(GaveUp::Said(unexpected(other))),
+            other => return Err(GaveUp::Said(other.unexpected())),
         };
         Ok((
             Self {
@@ -477,11 +488,11 @@ impl Driving {
     /// named to whoever asks, and closed by the service should this
     /// process go without a word.
     ///
-    /// A refusal is answered in words to show, and is never fatal: the
+    /// A refusal is answered as a fact to show, and is never fatal: the
     /// way still closes with its player's link. What it costs is a
     /// session the service does not list, which a window opened
     /// afterwards cannot find.
-    pub fn hold(&mut self) -> Result<(), String> {
+    pub fn hold(&mut self) -> Result<(), Fact> {
         let request = Request::Hold {
             way: self.way,
             process: std::process::id(),
@@ -489,8 +500,8 @@ impl Driving {
         match self.runtime.block_on(self.service.ask(&request)) {
             Ok(Answer::Done) => Ok(()),
             Ok(Answer::Refused(reason)) => Err(reason),
-            Ok(other) => Err(unexpected(other)),
-            Err(e) => Err(e.to_string()),
+            Ok(other) => Err(other.unexpected()),
+            Err(e) => Err(e.fact()),
         }
     }
 
@@ -510,7 +521,7 @@ impl Driving {
         match self.ask(&Request::FarScreen { way, wanted }, still_wanted)? {
             Answer::Showing { size } => Ok(size),
             Answer::Refused(reason) => Err(GaveUp::Said(reason)),
-            other => Err(GaveUp::Said(unexpected(other))),
+            other => Err(GaveUp::Said(other.unexpected())),
         }
     }
 
@@ -541,7 +552,7 @@ impl Driving {
         match self.ask(request, still_wanted)? {
             Answer::Done => Ok(()),
             Answer::Refused(reason) => Err(GaveUp::Said(reason)),
-            other => Err(GaveUp::Said(unexpected(other))),
+            other => Err(GaveUp::Said(other.unexpected())),
         }
     }
 
@@ -651,14 +662,18 @@ mod tests {
                 way: WayId(7),
                 link: r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1".to_string(),
             }),
-            Request::Hush { .. } => {
-                Answer::Refused("personne n'est connecté sur cet ordinateur".to_string())
-            }
+            Request::Hush { .. } => Answer::Refused(nobody_signed_in()),
             Request::FarScreen { .. } => Answer::Showing {
                 size: Some((2560, 1440)),
             },
             _ => Answer::Done,
         })
+    }
+
+    /// What a far computer with nobody signed in answers when asked to
+    /// silence its speakers.
+    fn nobody_signed_in() -> Fact {
+        Fact::new("far.hush_failed").with("detail", "nobody is signed in on this computer")
     }
 
     /// Waits for the service to have been asked `count` things.
@@ -780,7 +795,7 @@ mod tests {
         assert_eq!(steps[0], Step::Reached);
         assert!(
             steps.contains(&Step::SpeakersLeftAlone {
-                refused: "personne n'est connecté sur cet ordinateur".to_string()
+                refused: nobody_signed_in()
             }),
             "{steps:?}"
         );
@@ -837,7 +852,9 @@ mod tests {
     fn a_refused_way_is_the_end_of_the_opening() {
         let (channel, _) = a_service("refus", |_| {
             Some(Answer::Refused(
-                "192.168.1.20 n'a pas répondu en 15 secondes".to_string(),
+                Fact::new("reach.nobody_answered")
+                    .with("host", "192.168.1.20")
+                    .with("waited", 15),
             ))
         });
         let ffmpeg = FfmpegHere::new("refus");
@@ -850,7 +867,7 @@ mod tests {
             &|| true,
         );
         assert!(
-            matches!(&outcome, Err(Error::Service(reason)) if reason.contains("n'a pas répondu")),
+            matches!(&outcome, Err(Error::Service(reason)) if reason.code() == "reach.nobody_answered"),
             "{:?}",
             outcome.err()
         );
@@ -940,15 +957,11 @@ mod tests {
 
         // A real refusal, for its part, goes through whole: it is what
         // gets written in the journal and on the opening screen.
-        assert_eq!(
-            GaveUp::Said("son écran ne se laisse pas filmer".to_string())
-                .refusal()
-                .unwrap(),
-            "son écran ne se laisse pas filmer"
-        );
+        let refused = Fact::new("far.film_failed").with("detail", "its screen will not be filmed");
+        assert_eq!(GaveUp::Said(refused.clone()).refusal().unwrap(), refused);
         assert!(matches!(
-            GaveUp::Said("refusé".to_string()).or(Error::Service),
-            Error::Service(reason) if reason == "refusé"
+            GaveUp::Said(refused.clone()).or(Error::Service),
+            Error::Service(reason) if reason == refused
         ));
     }
 
@@ -993,20 +1006,15 @@ mod tests {
     }
 
     #[test]
-    fn every_failure_says_something_a_person_can_act_on() {
-        let messages = [
-            Error::EngineMissing(vec![PathBuf::from("/nowhere/vendor/ffmpeg/avcodec-63.dll")])
-                .to_string(),
-            Error::Service("192.168.1.20 ne répond pas".to_string()).to_string(),
-        ];
-        for message in messages {
-            assert!(!message.is_empty());
-            assert!(!message.starts_with("Error"), "{message}");
-        }
-        assert!(
-            Error::EngineMissing(vec![PathBuf::from("avcodec-63.dll")])
-                .to_string()
-                .contains("avcodec-63.dll")
-        );
+    fn every_failure_tells_what_a_person_can_act_on() {
+        let refused = Fact::new("reach.silent")
+            .with("host", "192.168.1.20")
+            .with("detail", "timed out");
+        assert_eq!(Error::Service(refused.clone()).fact(), refused);
+        assert_eq!(Error::Abandoned.fact().code(), "session.abandoned");
+        // A missing FFmpeg names what is missing, where it was looked for.
+        let missing = Error::EngineMissing(vec![PathBuf::from("avcodec-63.dll")]).fact();
+        assert_eq!(missing.code(), "session.ffmpeg_missing");
+        assert_eq!(missing.value("files"), Some("avcodec-63.dll"));
     }
 }

@@ -30,6 +30,7 @@ use zyr_control::{Reached, Session, WayId};
 use zyr_link::{Access, LinkListener};
 use zyr_media::service::ToPlayer;
 use zyr_proto::clipboard::Clip;
+use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::log::Log;
 use zyr_proto::net::EVERY_INTERFACE;
@@ -37,7 +38,9 @@ use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
 use zyr_transport::junction::{Aloud, Say};
-use zyr_transport::{Connection, Identity, Junction, Media, MediaProfile, Sending, TunnelEndpoint};
+use zyr_transport::{
+    Connection, Identity, Junction, Media, MediaProfile, Road, Sending, TunnelEndpoint,
+};
 use zyr_tunnel::{Presence, ServiceEnd, Tunnel, aside, nudge, service_channel};
 
 use crate::account::{self, Rendezvous};
@@ -146,29 +149,18 @@ struct Open {
 }
 
 impl Open {
-    /// The road the way takes right now, and how long it is, as the
-    /// person reads them: « par le relais 82.64.12.7:443 en 38 ms ».
-    fn road(&self) -> (String, u64) {
+    /// The road the way takes right now: where its packets go, whether
+    /// that is the server's relay, and how long they take to come back.
+    fn road(&self) -> Option<Road> {
         match &self.crossing {
-            Some(crossing) => crossing
-                .junction
-                .road(crossing.card)
-                .map(|road| (named(&road), road.round_trip.as_millis() as u64))
-                .unwrap_or_default(),
-            None => (
-                self.connection.remote_address().to_string(),
-                self.connection.round_trip().as_millis() as u64,
-            ),
+            Some(crossing) => crossing.junction.road(crossing.card),
+            None => Some(Road {
+                through: self.connection.remote_address(),
+                relayed: false,
+                round_trip: self.connection.round_trip(),
+            }),
         }
     }
-}
-
-/// A road, in the words the interface shows.
-fn named(road: &zyr_transport::Road) -> String {
-    if road.relayed {
-        return format!("le relais {}", road.through);
-    }
-    road.through.to_string()
 }
 
 /// Nobody answered in time, said with what was even tried.
@@ -177,19 +169,20 @@ fn named(road: &zyr_transport::Road) -> String {
 /// with a relay that did not carry is a network problem worth looking
 /// at, and a server without one is a server that cannot serve this
 /// network at all.
-fn nobody_answered(host: &str, offered_a_relay: bool) -> String {
-    let waited = MEETING_PATIENCE.as_secs();
-    if offered_a_relay {
-        return format!(
-            "{host} n'a répondu ni en direct ni par le relais en {waited} secondes.\n  \
-             Voyez le journal : il dit ce que chaque chemin a donné."
-        );
-    }
-    format!(
-        "aucun chemin direct vers {host} en {waited} secondes, et ce serveur n'a pas de relais.\n  \
-         Il en faut un pour ces deux réseaux : activez-le sur le serveur, ou renvoyez le port \
-         UDP 47000\n  vers l'un des deux ordinateurs sur sa box."
-    )
+fn nobody_answered(host: &str, offered_a_relay: bool) -> Fact {
+    let fact = if offered_a_relay {
+        Fact::new("reach.nobody_answered")
+    } else {
+        Fact::new("reach.no_direct_road")
+    };
+    fact.with("host", host)
+        .with("waited", MEETING_PATIENCE.as_secs())
+}
+
+/// Reaching a computer went wrong on this side, before any road was
+/// tried: what did is in the journal's words.
+fn not_prepared(detail: impl fmt::Display) -> Fact {
+    Fact::new("reach.not_prepared").with("detail", detail)
 }
 
 /// The computer a way leads to.
@@ -310,13 +303,13 @@ impl<T> Register<T> {
     /// way, watched by whoever started it, and gone on its own if they
     /// never come back. Announcing it as a session would put a picture
     /// on screen where there is none.
-    fn held(&self, now: Instant, road: impl Fn(&T) -> (String, u64)) -> Vec<Session> {
+    fn held(&self, now: Instant, road: impl Fn(&T) -> Option<Road>) -> Vec<Session> {
         let mut sessions: Vec<Session> = self
             .kept
             .iter()
             .filter_map(|(way, kept)| {
                 let serving = kept.user.as_ref()?;
-                let (via, round_trip_ms) = road(&kept.thing);
+                let road = road(&kept.thing);
                 Some(Session {
                     way: *way,
                     towards: kept.towards.host.clone(),
@@ -324,8 +317,11 @@ impl<T> Register<T> {
                     process: serving.process,
                     at: kept.towards.at.clone(),
                     since: now.duration_since(serving.since),
-                    via,
-                    round_trip_ms,
+                    via: road
+                        .map(|road| road.through.to_string())
+                        .unwrap_or_default(),
+                    relayed: road.is_some_and(|road| road.relayed),
+                    round_trip_ms: road.map_or(0, |road| road.round_trip.as_millis() as u64),
                 })
             })
             .collect();
@@ -373,7 +369,7 @@ impl Ways {
         peer: Fingerprint,
         media: MediaProfile,
         knock: Knock,
-    ) -> Result<Reached, String> {
+    ) -> Result<Reached, Fact> {
         // Written down before anything is tried. What the person sees of
         // a failure is a sentence in a window they will have closed by
         // the time anyone looks; the trace is what remains, and it is
@@ -381,17 +377,11 @@ impl Ways {
         self.log.write(&self.opening(host, peer, &knock)?);
 
         let identity =
-            Arc::new(Identity::load_or_create(&paths::identity_dir()).map_err(|e| e.to_string())?);
+            Arc::new(Identity::load_or_create(&paths::identity_dir()).map_err(not_prepared)?);
 
         self.dig(knock, host, peer, media, identity)
             .await
-            .inspect_err(|e| {
-                // On one line: a refusal is written to be read on
-                // screen, over several lines, and the journal counts one
-                // line per event.
-                self.log
-                    .write(&format!("no way to {host}: {}", e.replace('\n', " ")));
-            })
+            .inspect_err(|e| self.log.write(&format!("no way to {host}: {e}")))
     }
 
     /// Opens a connection to a computer for one question, and no more.
@@ -405,15 +395,10 @@ impl Ways {
     /// The word comes back with what it stands on, because that has to
     /// outlive it: an endpoint dropped on its own takes the socket
     /// underneath, and a junction dropped takes its paths.
-    async fn a_word_with(
-        &self,
-        host: &str,
-        peer: Fingerprint,
-        knock: Knock,
-    ) -> Result<Word, String> {
+    async fn a_word_with(&self, host: &str, peer: Fingerprint, knock: Knock) -> Result<Word, Fact> {
         self.log.write(&self.opening(host, peer, &knock)?);
         let identity =
-            Arc::new(Identity::load_or_create(&paths::identity_dir()).map_err(|e| e.to_string())?);
+            Arc::new(Identity::load_or_create(&paths::identity_dir()).map_err(not_prepared)?);
         let word = self
             .reach(knock, host, peer, MediaProfile::default(), identity)
             .await?;
@@ -444,11 +429,15 @@ impl Ways {
         peer: Fingerprint,
         knock: Knock,
         sift: &str,
-    ) -> Result<(String, Option<String>), String> {
+    ) -> Result<(String, Option<String>), Fact> {
         let word = self.a_word_with(host, peer, knock).await?;
         let text = aside::ask_for_the_journal(&word.connection, sift)
             .await
-            .map_err(|e| refused_by(host, "n'a pas donné son journal", &e))?;
+            .map_err(|e| {
+                Fact::new("far.journal_refused")
+                    .with("host", host)
+                    .with("detail", e)
+            })?;
         self.log.write(&format!(
             "{host} handed its journal over, {} characters",
             text.len()
@@ -481,21 +470,25 @@ impl Ways {
         host: &str,
         peer: Fingerprint,
         knock: Knock,
-    ) -> Result<(), String> {
+    ) -> Result<(), Fact> {
         let word = self.a_word_with(host, peer, knock).await?;
         aside::ask_to_empty_the_journal(&word.connection)
             .await
-            .map_err(|e| refused_by(host, "n'a pas vidé son journal", &e))?;
+            .map_err(|e| {
+                Fact::new("far.journal_not_emptied")
+                    .with("host", host)
+                    .with("detail", e)
+            })?;
         self.log.write(&format!("{host} emptied its journal"));
         Ok(())
     }
 
     /// The line that opens an attempt in the journal, or the refusal
     /// when there is nowhere to knock.
-    fn opening(&self, host: &str, peer: Fingerprint, knock: &Knock) -> Result<String, String> {
+    fn opening(&self, host: &str, peer: Fingerprint, knock: &Knock) -> Result<String, Fact> {
         Ok(match knock {
             Knock::At(candidates) => match candidates[..] {
-                [] => return Err(format!("aucune adresse où joindre {host}")),
+                [] => return Err(Fact::new("reach.no_address").with("host", host)),
                 [only] => format!("opening a way to {host} at {only}, expecting {peer}"),
                 _ => format!(
                     "opening a way to {host} ({peer}), racing {} addresses: {}",
@@ -522,7 +515,7 @@ impl Ways {
         peer: Fingerprint,
         media: MediaProfile,
         identity: Arc<Identity>,
-    ) -> Result<Word, String> {
+    ) -> Result<Word, Fact> {
         let meeting = match knock {
             Knock::Through(meeting) => *meeting,
             Knock::At(candidates) => {
@@ -532,10 +525,14 @@ impl Ways {
                     media,
                     SocketAddr::new(EVERY_INTERFACE, 0),
                 )
-                .map_err(|e| e.to_string())?;
-                let (connection, took, through) = race(&endpoint, &candidates)
-                    .await
-                    .map_err(|e| format!("{host} ne répond pas sur le port {TUNNEL_PORT} : {e}"))?;
+                .map_err(not_prepared)?;
+                let (connection, took, through) =
+                    race(&endpoint, &candidates).await.map_err(|e| {
+                        Fact::new("reach.port_silent")
+                            .with("host", host)
+                            .with("port", TUNNEL_PORT)
+                            .with("detail", e)
+                    })?;
                 if candidates.len() > 1 {
                     self.log
                         .write(&format!("{through} answered first, after {took} ms"));
@@ -565,10 +562,10 @@ impl Ways {
             say,
             marking,
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(not_prepared)?;
         let card = junction.expect(peer, &meeting.session);
         junction.add_candidates(card, meeting.known.iter().copied());
-        let port = junction.local_address().map_err(|e| e.to_string())?.port();
+        let port = junction.local_address().map_err(not_prepared)?.port();
         meeting.say_candidates(account::where_this_computer_answers(port));
         let Rendezvous {
             session,
@@ -624,13 +621,17 @@ impl Ways {
         });
 
         let offered_a_relay = relaying.is_some();
-        let endpoint = TunnelEndpoint::client_at(&identity, peer, carried, &junction)
-            .map_err(|e| e.to_string())?;
+        let endpoint =
+            TunnelEndpoint::client_at(&identity, peer, carried, &junction).map_err(not_prepared)?;
         let started = Instant::now();
         let connection = tokio::time::timeout(MEETING_PATIENCE, endpoint.connect(card))
             .await
             .map_err(|_| nobody_answered(host, offered_a_relay))?
-            .map_err(|e| format!("{host} ne répond pas : {e}"))?;
+            .map_err(|e| {
+                Fact::new("reach.silent")
+                    .with("host", host)
+                    .with("detail", e)
+            })?;
         self.log.write(&match junction.road(card) {
             Some(road) => format!(
                 "{host} answered through {}{} after {} ms, round trip {} ms",
@@ -663,7 +664,7 @@ impl Ways {
         peer: Fingerprint,
         media: MediaProfile,
         identity: Arc<Identity>,
-    ) -> Result<Reached, String> {
+    ) -> Result<Reached, Fact> {
         let Word {
             endpoint,
             connection,
@@ -676,19 +677,16 @@ impl Ways {
         // established until this answers. It is answered once the far
         // engine is up.
         aside::ask_to_open(&connection, media).await.map_err(|e| {
-            format!(
-                "{host} n'a pas ouvert la session : il a refusé cet ordinateur, son empreinte a \
-                 changé, ou son moteur n'a pas démarré.\n  \
-                 Sur {host}, vérifiez que l'accès distant est actif et que\n  \
-                 la confiance au réseau local l'est aussi.\n  Détail : {e}"
-            )
+            Fact::new("reach.not_opened")
+                .with("host", host)
+                .with("detail", e)
         })?;
 
         // Who may connect: the system, and whoever is signed in at this
         // computer, exactly who may already drive sessions through the
         // service's own channel.
         let player = LinkListener::create(Access::SystemAndInteractive)
-            .map_err(|e| format!("la liaison du lecteur n'a pas pu être créée : {e}"))?;
+            .map_err(|e| not_prepared(format!("the player's link could not be made: {e}")))?;
         let link = player.name().to_string();
         let (side, service) = service_channel();
         let tunnel = Tunnel::client(connection.clone(), player, side, Some(self.log.clone()));
@@ -734,22 +732,25 @@ impl Ways {
         Ok(Reached { way, link })
     }
 
-    /// Asks the far computer to press Ctrl+Alt+Suppr on itself.
+    /// The connection a way stands on.
     ///
-    /// The connection comes out from under the lock before anything waits
-    /// on the network, because every other way is queueing behind it.
-    pub async fn ask_for_the_secure_attention(&self, way: WayId) -> Result<(), String> {
-        let connection = {
-            let register = self.register.lock().expect("registre des voies");
-            register.thing(way).map(|open| open.connection.clone())
-        };
-        let Some(connection) = connection else {
-            return Err(format!("la voie {way} n'existe plus"));
-        };
+    /// Taken out from under the lock before anything waits on the
+    /// network, because every other way is queueing behind it.
+    fn connection_of(&self, way: WayId) -> Result<Connection, Fact> {
+        self.register
+            .lock()
+            .expect("registre des voies")
+            .thing(way)
+            .map(|open| open.connection.clone())
+            .ok_or_else(|| Fact::new("way.gone").with("way", way))
+    }
 
+    /// Asks the far computer to press Ctrl+Alt+Suppr on itself.
+    pub async fn ask_for_the_secure_attention(&self, way: WayId) -> Result<(), Fact> {
+        let connection = self.connection_of(way)?;
         aside::ask_for_the_secure_attention(&connection)
             .await
-            .map_err(|e| format!("l'ordinateur distant n'a pas pressé Ctrl+Alt+Suppr : {e}"))?;
+            .map_err(|e| Fact::new("far.sas_failed").with("detail", e))?;
         self.log
             .write(&format!("way {way} asked for Ctrl+Alt+Suppr"));
         Ok(())
@@ -757,22 +758,11 @@ impl Ways {
 
     /// Asks the far computer to silence its own speakers for the length
     /// of the session, or to let them play again.
-    ///
-    /// The same shape as the one above, and for the same reason: the
-    /// connection comes out from under the lock before anything waits on
-    /// the network.
-    pub async fn ask_to_hush(&self, way: WayId, quiet: bool) -> Result<(), String> {
-        let connection = {
-            let register = self.register.lock().expect("registre des voies");
-            register.thing(way).map(|open| open.connection.clone())
-        };
-        let Some(connection) = connection else {
-            return Err(format!("la voie {way} n'existe plus"));
-        };
-
+    pub async fn ask_to_hush(&self, way: WayId, quiet: bool) -> Result<(), Fact> {
+        let connection = self.connection_of(way)?;
         aside::ask_to_hush(&connection, quiet)
             .await
-            .map_err(|e| format!("les enceintes de l'ordinateur distant n'ont pas bougé : {e}"))?;
+            .map_err(|e| Fact::new("far.hush_failed").with("detail", e))?;
         self.log.write(&format!(
             "way {way} asked the far computer's speakers to {}",
             if quiet { "be silent" } else { "play again" }
@@ -791,18 +781,11 @@ impl Ways {
         &self,
         way: WayId,
         wanted: Option<WantedScreen>,
-    ) -> Result<Option<(u32, u32)>, String> {
-        let connection = {
-            let register = self.register.lock().expect("registre des voies");
-            register.thing(way).map(|open| open.connection.clone())
-        };
-        let Some(connection) = connection else {
-            return Err(format!("la voie {way} n'existe plus"));
-        };
-
+    ) -> Result<Option<(u32, u32)>, Fact> {
+        let connection = self.connection_of(way)?;
         let showing = aside::ask_for_a_screen(&connection, wanted)
             .await
-            .map_err(|e| format!("l'ordinateur distant n'a pas préparé son écran : {e}"))?;
+            .map_err(|e| Fact::new("far.screen_failed").with("detail", e))?;
         self.log.write(&match wanted {
             Some(screen) => {
                 format!("way {way} asked the far computer to wake its virtual screen for {screen}")
@@ -828,36 +811,23 @@ impl Ways {
     pub async fn ask_what_shape_its_pointer_has(
         &self,
         way: WayId,
-    ) -> Result<zyr_proto::session::Pointer, String> {
-        let connection = {
-            let register = self.register.lock().expect("registre des voies");
-            register.thing(way).map(|open| open.connection.clone())
-        };
-        let Some(connection) = connection else {
-            return Err(format!("la voie {way} n'existe plus"));
-        };
+    ) -> Result<zyr_proto::session::Pointer, Fact> {
+        let connection = self.connection_of(way)?;
         aside::ask_for_the_pointer(&connection)
             .await
-            .map_err(|e| format!("l'ordinateur distant n'a pas dit la forme de son curseur : {e}"))
+            .map_err(|e| Fact::new("far.pointer_failed").with("detail", e))
     }
 
     /// Asks the far computer which screens it is showing on.
     ///
-    /// The same shape again. A machine with two screens plugged in serves
-    /// one of them, and the list is what the session's menu offers to
-    /// choose from. Nothing said back is « it has not said ».
-    pub async fn ask_what_screens_it_has(&self, way: WayId) -> Result<String, String> {
-        let connection = {
-            let register = self.register.lock().expect("registre des voies");
-            register.thing(way).map(|open| open.connection.clone())
-        };
-        let Some(connection) = connection else {
-            return Err(format!("la voie {way} n'existe plus"));
-        };
-
+    /// A machine with two screens plugged in serves one of them, and the
+    /// list is what the session's menu offers to choose from. Nothing
+    /// said back is « it has not said ».
+    pub async fn ask_what_screens_it_has(&self, way: WayId) -> Result<String, Fact> {
+        let connection = self.connection_of(way)?;
         let listed = aside::ask_what_screens_it_has(&connection)
             .await
-            .map_err(|e| format!("l'ordinateur distant n'a pas dit quels écrans il a : {e}"))?;
+            .map_err(|e| Fact::new("far.screens_failed").with("detail", e))?;
         self.log.write(&format!(
             "way {way}: the far computer is showing on {}",
             if listed.is_empty() {
@@ -871,25 +841,18 @@ impl Ways {
 
     /// Asks the far computer to serve its picture from that screen.
     ///
-    /// The same shape again. Its engine changes screen where it stands,
-    /// so this may be asked at any moment of a session.
+    /// Its engine changes screen where it stands, so this may be asked
+    /// at any moment of a session.
     pub async fn ask_to_film_this_screen(
         &self,
         way: WayId,
         id: Option<String>,
-    ) -> Result<(), String> {
-        let connection = {
-            let register = self.register.lock().expect("registre des voies");
-            register.thing(way).map(|open| open.connection.clone())
-        };
-        let Some(connection) = connection else {
-            return Err(format!("la voie {way} n'existe plus"));
-        };
-
+    ) -> Result<(), Fact> {
+        let connection = self.connection_of(way)?;
         let named = id.clone();
         aside::ask_to_film_this_screen(&connection, id)
             .await
-            .map_err(|e| format!("l'ordinateur distant n'a pas changé d'écran : {e}"))?;
+            .map_err(|e| Fact::new("far.film_failed").with("detail", e))?;
         self.log.write(&format!(
             "way {way}: the far computer serves from {}",
             named.as_deref().unwrap_or("its main screen")
@@ -899,21 +862,14 @@ impl Ways {
 
     /// Asks the far computer to put its lock screen up.
     ///
-    /// The same shape again. This is what stands in for Windows+L, which
-    /// cannot travel: Windows keeps that one where no program can reach
-    /// it, at both ends of a session.
-    pub async fn ask_to_lock(&self, way: WayId) -> Result<(), String> {
-        let connection = {
-            let register = self.register.lock().expect("registre des voies");
-            register.thing(way).map(|open| open.connection.clone())
-        };
-        let Some(connection) = connection else {
-            return Err(format!("la voie {way} n'existe plus"));
-        };
-
+    /// This is what stands in for Windows+L, which cannot travel: Windows
+    /// keeps that one where no program can reach it, at both ends of a
+    /// session.
+    pub async fn ask_to_lock(&self, way: WayId) -> Result<(), Fact> {
+        let connection = self.connection_of(way)?;
         aside::ask_to_lock(&connection)
             .await
-            .map_err(|e| format!("l'ordinateur distant ne s'est pas verrouillé : {e}"))?;
+            .map_err(|e| Fact::new("far.lock_failed").with("detail", e))?;
         self.log
             .write(&format!("way {way} asked the far computer to lock itself"));
         Ok(())
@@ -1315,18 +1271,6 @@ async fn tell_the_player(
     }
 }
 
-/// A refusal from a computer that answered, written to be read.
-///
-/// The hint matters more than the reason on this one: a computer that
-/// answers the door and then says no is almost always one that has not
-/// been told to let this machine in.
-fn refused_by(host: &str, what: &str, reason: &impl fmt::Display) -> String {
-    format!(
-        "{host} {what} : {reason}\n  \
-         Vérifiez que l'accès distant y est actif et que cet ordinateur y est autorisé."
-    )
-}
-
 /// Opens towards every address at once and keeps whichever answers
 /// first, dropping the rest.
 ///
@@ -1378,7 +1322,7 @@ async fn race(
 /// expected one. The others come from what that computer answered on: a
 /// machine with two cards answers on both, and only trying tells which
 /// one is the cable and which is a detour. Only the port is ours to add.
-pub fn where_to_knock(host: &str, also: &[IpAddr]) -> Result<Vec<SocketAddr>, String> {
+pub fn where_to_knock(host: &str, also: &[IpAddr]) -> Result<Vec<SocketAddr>, Fact> {
     let mut ways = vec![resolve(host)?];
     for address in also {
         let candidate = SocketAddr::new(*address, TUNNEL_PORT);
@@ -1389,13 +1333,18 @@ pub fn where_to_knock(host: &str, also: &[IpAddr]) -> Result<Vec<SocketAddr>, St
     Ok(ways)
 }
 
-fn resolve(host: &str) -> Result<SocketAddr, String> {
+fn resolve(host: &str) -> Result<SocketAddr, Fact> {
     use std::net::ToSocketAddrs;
+    let unknown = |detail: &dyn fmt::Display| {
+        Fact::new("reach.unknown_address")
+            .with("host", host)
+            .with("detail", detail)
+    };
     format!("{host}:{TUNNEL_PORT}")
         .to_socket_addrs()
-        .map_err(|e| format!("adresse « {host} » introuvable : {e}"))?
+        .map_err(|e| unknown(&e))?
         .next()
-        .ok_or_else(|| format!("adresse « {host} » introuvable"))
+        .ok_or_else(|| unknown(&"the name leads to no address"))
 }
 
 /// Whether that process is still running.
@@ -1439,8 +1388,8 @@ mod tests {
 
     /// The register knows nothing of roads: what stands on a way is a
     /// word here.
-    fn no_road(_: &&'static str) -> (String, u64) {
-        (String::new(), 0)
+    fn no_road(_: &&'static str) -> Option<Road> {
+        None
     }
 
     fn peer() -> Fingerprint {

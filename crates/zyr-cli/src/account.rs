@@ -123,7 +123,7 @@ fn status() -> ExitCode {
             "  Canal vivant : injoignable{}",
             account.trouble.map_or_else(String::new, |why| format!(
                 "\n    {}",
-                why.replace('\n', "\n    ")
+                zyr_i18n::fact(&why).replace('\n', "\n    ")
             ))
         );
     }
@@ -163,7 +163,7 @@ fn attach(args: AttachArgs) -> ExitCode {
             println!("    --trust {presented}");
             ExitCode::FAILURE
         }
-        Ok(Answer::Refused(reason)) => failure("rattachement au compte", reason),
+        Ok(Answer::Refused(reason)) => failure("rattachement au compte", zyr_i18n::fact(&reason)),
         Ok(other) => failure("rattachement au compte", unexpected(other)),
         Err(e) => failure("rattachement au compte", e),
     }
@@ -232,7 +232,7 @@ fn devices() -> ExitCode {
 /// Where a device stands, in one phrase.
 fn presence(online: bool, access: zyr_broker::rest::Access, last_seen: Option<u64>) -> String {
     if online {
-        return format!("en ligne, {}", access.explanation());
+        return format!("en ligne, {}", zyr_i18n::fact(&access.fact()));
     }
     match last_seen {
         Some(seen) => format!(
@@ -260,7 +260,7 @@ fn done_or_not(context: &str, request: &Request, said: &str) -> ExitCode {
             println!("{said}");
             ExitCode::SUCCESS
         }
-        Ok(Answer::Refused(reason)) => failure(context, reason),
+        Ok(Answer::Refused(reason)) => failure(context, zyr_i18n::fact(&reason)),
         Ok(other) => failure(context, unexpected(other)),
         Err(e) => failure(context, e),
     }
@@ -269,19 +269,26 @@ fn done_or_not(context: &str, request: &Request, said: &str) -> ExitCode {
 /// Asks the service one thing.
 fn ask(request: &Request) -> Result<Answer, String> {
     runtime()?.block_on(async {
-        let mut service = Service::join().await.map_err(|e| e.to_string())?;
-        service.ask(request).await.map_err(|e| e.to_string())
+        let mut service = Service::join()
+            .await
+            .map_err(|e| zyr_i18n::fact(&e.fact()))?;
+        service
+            .ask(request)
+            .await
+            .map_err(|e| zyr_i18n::fact(&e.fact()))
     })
 }
 
 /// Asks the service for a list.
 fn list(request: &Request) -> Result<Vec<Answer>, String> {
     runtime()?.block_on(async {
-        let mut service = Service::join().await.map_err(|e| e.to_string())?;
+        let mut service = Service::join()
+            .await
+            .map_err(|e| zyr_i18n::fact(&e.fact()))?;
         service
             .ask_for_a_list(request)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| zyr_i18n::fact(&e.fact()))
     })
 }
 
@@ -293,7 +300,7 @@ fn runtime() -> Result<tokio::runtime::Runtime, String> {
 }
 
 fn unexpected(answer: Answer) -> String {
-    format!("réponse inattendue du service : {answer}")
+    zyr_i18n::fact(&answer.unexpected())
 }
 
 #[cfg(test)]

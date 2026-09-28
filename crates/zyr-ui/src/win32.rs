@@ -18,6 +18,48 @@ pub fn pointer_in(with: LPARAM) -> (i32, i32) {
     )
 }
 
+/// The languages the person reads Windows in, in their order of
+/// preference, the way Windows names them: `fr-FR`, then `en-US`.
+///
+/// Nothing when Windows will not say, which leaves the words in English.
+pub fn preferred_languages() -> Vec<String> {
+    use windows_sys::Win32::Globalization::{GetUserPreferredUILanguages, MUI_LANGUAGE_NAME};
+
+    let mut count = 0u32;
+    let mut length = 0u32;
+    // SAFETY: asked first for the length alone, with no buffer to fill.
+    let sized = unsafe {
+        GetUserPreferredUILanguages(
+            MUI_LANGUAGE_NAME,
+            &mut count,
+            std::ptr::null_mut(),
+            &mut length,
+        )
+    };
+    if sized == 0 {
+        return Vec::new();
+    }
+    let mut names = vec![0u16; length as usize];
+    // SAFETY: the buffer holds exactly the length Windows just gave.
+    let read = unsafe {
+        GetUserPreferredUILanguages(
+            MUI_LANGUAGE_NAME,
+            &mut count,
+            names.as_mut_ptr(),
+            &mut length,
+        )
+    };
+    if read == 0 {
+        return Vec::new();
+    }
+    // One name after the other, each ended by a zero, the list by two.
+    names
+        .split(|letter| *letter == 0)
+        .filter(|name| !name.is_empty())
+        .map(String::from_utf16_lossy)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -17,6 +17,7 @@ use tokio::runtime::Handle;
 use tokio::task::{JoinHandle, JoinSet};
 use zyr_control::pipe::Heard;
 use zyr_control::{Answer, Door, PROTOCOL, Reached, Request, Standing};
+use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
@@ -93,7 +94,7 @@ fn set_at_boot(on: bool) -> Result<(), String> {
 
 #[cfg(not(windows))]
 fn set_at_boot(_on: bool) -> Result<(), String> {
-    Err("le service ZyrDesk n'existe que sous Windows".to_string())
+    Err("the ZyrDesk service only exists on Windows".to_string())
 }
 
 async fn serve(mut door: Door, answering: Answering) {
@@ -132,7 +133,9 @@ async fn converse(mut talking: Heard, answering: Answering) {
 
         let answers = match Request::parse(&heard) {
             Ok(request) => answer(request, &answering).await,
-            Err(e) => vec![Answer::Refused(e.to_string())],
+            Err(e) => vec![Answer::Refused(
+                Fact::new("service.misunderstood").with("detail", e),
+            )],
         };
 
         for answer in answers {
@@ -200,13 +203,8 @@ fn ended(mut said: Vec<Answer>) -> Vec<Answer> {
 /// A choice honoured but not kept would come back to haunt whoever made
 /// it at the next restart, so it is answered as a failure and not as a
 /// success with a footnote.
-fn kept(written: std::io::Result<()>) -> Result<(), String> {
-    written.map_err(|e| {
-        format!(
-            "le choix n'a pas pu être enregistré : {e}\n  \
-             Il aurait été oublié au prochain démarrage."
-        )
-    })
+fn kept(written: std::io::Result<()>) -> Result<(), Fact> {
+    written.map_err(|e| Fact::new("setting.not_saved").with("detail", e))
 }
 
 /// Every address that computer has answered on.
@@ -244,19 +242,14 @@ fn every_address_of(peer: Fingerprint, answering: &Answering) -> Vec<std::net::I
 /// named by its road at the server rather than by an address, and there
 /// is nothing here to reach it at: saying so plainly is worth more than
 /// letting that road fail to resolve.
-fn only_on_this_network(
-    host: &str,
-    also: Vec<std::net::IpAddr>,
-) -> Result<Vec<SocketAddr>, String> {
+fn only_on_this_network(host: &str, also: Vec<std::net::IpAddr>) -> Result<Vec<SocketAddr>, Fact> {
     if account::device_of_road(host).is_some() {
-        return Err("cet ordinateur ne s'annonce pas sur ce réseau.\n  \
-                    Une session en local demande une adresse d'ici, et le compte n'en donne pas."
-            .to_string());
+        return Err(Fact::new("reach.not_on_this_network"));
     }
     crate::ways::where_to_knock(host, &also)
 }
 
-/// A local attempt that came back with nothing, said in full.
+/// A local attempt whose port stayed silent, said in full.
 ///
 /// The addresses tried were the ones this network announced a moment
 /// ago, so the far computer is there and answering; a timeout on every
@@ -264,15 +257,16 @@ fn only_on_this_network(
 /// costs an evening. What did not answer is the tunnel's port, and from
 /// this end the three things that do that cannot be told apart. So all
 /// three are named, and the far machine's own journal settles it on its
-/// « Tunnel » line, which is one click away on this very card.
-fn nothing_answered_here(reason: &str) -> String {
-    format!(
-        "{reason}\n  \
-         Cet ordinateur s'annonce pourtant sur ce réseau : ce qui n'a pas répondu est le port \
-         du tunnel, pas la machine.\n  \
-         Sur elle, dans l'ordre : l'accès distant est-il activé, « Écouter sur le port \
-         {TUNNEL_PORT} » est-il allumé, et son journal dit-il « Tunnel : port {TUNNEL_PORT} » ?"
-    )
+/// « Tunnel » line, which is one click away on this very card. Any other
+/// refusal is told as it is.
+fn silent_here(refused: Fact) -> Fact {
+    if refused.code() != "reach.port_silent" {
+        return refused;
+    }
+    Fact::new("reach.port_silent_here")
+        .with("host", refused.value("host").unwrap_or_default())
+        .with("port", TUNNEL_PORT)
+        .with("detail", refused.value("detail").unwrap_or_default())
 }
 
 /// Where to knock to reach that computer, what to call it on the way,
@@ -297,7 +291,7 @@ async fn where_to_knock(
     peer: Fingerprint,
     only_here: bool,
     answering: &Answering,
-) -> Result<(String, Knock), String> {
+) -> Result<(String, Knock), Fact> {
     let also = every_address_of(peer, answering);
     if only_here {
         // Written before the line that says where to knock, and only
@@ -325,11 +319,10 @@ async fn where_to_knock(
     // that changed key, or a server that lies, and neither is knocked on.
     if met.peer != peer {
         answering.machine.account.ended(&met.session);
-        return Err(format!(
-            "l'empreinte de {} n'est plus celle attendue.\n  \
-             Le serveur dit {}, cette fenêtre attendait {peer}.",
-            met.name, met.peer
-        ));
+        return Err(Fact::new("reach.fingerprint_changed")
+            .with("name", &met.name)
+            .with("told", met.peer)
+            .with("expected", peer));
     }
     // What the local network saw of it is worth probing before anything
     // the server passes on.
@@ -347,8 +340,8 @@ async fn one_question<T>(
     host: &str,
     peer: Fingerprint,
     answering: &Answering,
-    ask: impl AsyncFnOnce(&str, Knock) -> Result<T, String>,
-) -> Result<T, String> {
+    ask: impl AsyncFnOnce(&str, Knock) -> Result<T, Fact>,
+) -> Result<T, Fact> {
     // A question is asked through the best way available: what is
     // chosen to be held on this network is a session, never a round
     // trip of two words.
@@ -372,7 +365,7 @@ async fn one_reach(
     media: zyr_transport::MediaProfile,
     only_here: bool,
     answering: &Answering,
-) -> Result<Reached, String> {
+) -> Result<Reached, Fact> {
     let (label, knock) = where_to_knock(host, peer, only_here, answering).await?;
     let meeting = knock.session();
     match answering
@@ -456,10 +449,10 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             ));
             match one_reach(&host, peer, media, only_here, answering).await {
                 Ok(reached) => Answer::Reached(reached),
-                Err(reason) => Answer::Refused(if only_here {
-                    nothing_answered_here(&reason)
+                Err(refused) => Answer::Refused(if only_here {
+                    silent_here(refused)
                 } else {
-                    reason
+                    refused
                 }),
             }
         }
@@ -522,7 +515,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             if answering.machine.ways.hold(way, process) {
                 Answer::Done
             } else {
-                Answer::Refused(format!("la voie {way} n'existe plus"))
+                Answer::Refused(Fact::new("way.gone").with("way", way))
             }
         }
         Request::Release { way } => {
@@ -586,16 +579,10 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             // down would open nothing and would suggest a pairing had
             // been made.
             if peer == answering.fingerprint {
-                return Answer::Refused(
-                    "c'est l'empreinte de cet ordinateur.\n  \
-                     Celle à saisir se lit dans la fenêtre de l'autre machine."
-                        .to_string(),
-                );
+                return Answer::Refused(Fact::new("peer.own_fingerprint"));
             }
             if let Err(e) = authorized::add(&paths::authorized_devices(), peer) {
-                return Answer::Refused(format!(
-                    "cet ordinateur n'a pas pu être écrit dans la liste : {e}"
-                ));
+                return Answer::Refused(Fact::new("peer.not_written").with("detail", e));
             }
             answering
                 .log
@@ -618,10 +605,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                     answering.log.write(&format!("{peer} kept on the screen"));
                     Answer::Done
                 }
-                Err(e) => Answer::Refused(format!(
-                    "cet ordinateur est autorisé, mais n'a pas pu être gardé à l'écran : {e}\n  \
-                     Il faudra le saisir à nouveau à la prochaine session."
-                )),
+                Err(e) => Answer::Refused(Fact::new("peer.not_kept").with("detail", e)),
             }
         }
         Request::Forget { peer } => {
@@ -635,17 +619,14 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             // keeping the right to get in, invisible and impossible to
             // guess.
             if let Err(e) = authorized::remove(&paths::authorized_devices(), peer) {
-                return Answer::Refused(format!("cet ordinateur n'a pas pu être oublié : {e}"));
+                return Answer::Refused(Fact::new("peer.not_forgotten").with("detail", e));
             }
             match known::remove(&paths::known_computers(), peer) {
                 Ok(_) => {
                     answering.log.write(&format!("{peer} forgotten"));
                     Answer::Done
                 }
-                Err(e) => Answer::Refused(format!(
-                    "cet ordinateur ne peut plus entrer, mais n'a pas pu être retiré \
-                     de l'écran : {e}\n  Réessayez « Oublier »."
-                )),
+                Err(e) => Answer::Refused(Fact::new("peer.not_removed").with("detail", e)),
             }
         }
         Request::Kick { peer } => {
@@ -653,7 +634,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 answering.log.write(&format!("{peer} disconnected"));
                 Answer::Done
             } else {
-                Answer::Refused("cet ordinateur n'est plus connecté.".to_string())
+                Answer::Refused(Fact::new("peer.not_connected"))
             }
         }
         Request::SetAtBoot { on } => match set_at_boot(on) {
@@ -666,7 +647,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 Answer::Done
             }
             Err(reason) => {
-                Answer::Refused(format!("ce réglage n'a pas pu être enregistré : {reason}"))
+                Answer::Refused(Fact::new("setting.at_boot_not_saved").with("detail", reason))
             }
         },
         Request::Stop => {
@@ -976,7 +957,7 @@ mod tests {
             let Answer::Refused(reason) = answer else {
                 panic!("attendu un refus, reçu {answer}");
             };
-            assert!(reason.contains("aucun compte"), "{reason}");
+            assert_eq!(reason.code(), "account.not_attached", "{reason}");
 
             // And the same road asked for locally is refused for what
             // it is: a road at the server is not an address from here,
@@ -995,26 +976,26 @@ mod tests {
             let Answer::Refused(reason) = answer else {
                 panic!("attendu un refus, reçu {answer}");
             };
-            assert!(
-                reason.contains("ne s'annonce pas sur ce réseau"),
-                "{reason}"
-            );
+            assert_eq!(reason.code(), "reach.not_on_this_network", "{reason}");
         });
     }
 
     #[test]
     fn a_silence_on_this_network_names_what_makes_it_rather_than_the_network() {
-        let said = nothing_answered_here("192.168.1.20 ne répond pas : timed out");
+        let silent = Fact::new("reach.port_silent")
+            .with("host", "192.168.1.20")
+            .with("port", TUNNEL_PORT)
+            .with("detail", "timed out");
+        let said = silent_here(silent);
+        assert_eq!(said.code(), "reach.port_silent_here");
         // The original reason stays whole: it is what says which
         // addresses were tried.
-        assert!(said.contains("timed out"), "{said}");
-        // And what follows it points to the only machine that knows, at
-        // the only line that answers.
-        assert!(
-            said.contains(&format!("Écouter sur le port {TUNNEL_PORT}")),
-            "{said}"
-        );
-        assert!(said.contains("Tunnel : port"), "{said}");
+        assert_eq!(said.value("host"), Some("192.168.1.20"));
+        assert_eq!(said.value("detail"), Some("timed out"));
+        // Anything else is told as it is: a computer this network does
+        // not announce is not one whose port stayed silent.
+        let elsewhere = Fact::new("reach.not_on_this_network");
+        assert_eq!(silent_here(elsewhere.clone()), elsewhere);
     }
 
     #[test]

@@ -123,6 +123,13 @@ fn main() {
     // would itself enlarge what is already at the right size.
     app::count_in_real_pixels();
     journal::opened();
+    // The words, in the language the person reads Windows in, chosen
+    // before a single one is shown.
+    #[cfg(windows)]
+    journal::note(&format!(
+        "words in {}",
+        zyr_i18n::speak(&win32::preferred_languages())
+    ));
 
     let app = app::App::new();
     if let Err(e) = app::open_the_mailbox() {

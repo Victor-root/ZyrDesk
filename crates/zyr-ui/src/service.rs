@@ -5,8 +5,8 @@
 //! reconnect, for a channel that answers in less time than a frame.
 //!
 //! Nothing here interprets an answer: what comes back is handed to
-//! whoever asked, refusals included, since those are written for the
-//! person and shown as they are.
+//! whoever asked. A refusal comes back as a fact, and is handed on in the
+//! words of the person's language.
 
 use zyr_control::{Answer, Request, Service};
 
@@ -20,9 +20,9 @@ fn note(what: &str) {
 
 /// Asks one thing, and waits for the one answer.
 pub async fn ask(request: &Request) -> Result<Answer, String> {
-    let mut service = Service::join().await.map_err(|e| e.to_string())?;
-    match service.ask(request).await.map_err(|e| e.to_string())? {
-        Answer::Refused(reason) => Err(reason),
+    let mut service = Service::join().await.map_err(|e| said(&e))?;
+    match service.ask(request).await.map_err(|e| said(&e))? {
+        Answer::Refused(fact) => Err(zyr_i18n::fact(&fact)),
         answer => Ok(answer),
     }
 }
@@ -32,18 +32,23 @@ pub async fn list<T>(
     request: &Request,
     read: impl Fn(Answer) -> Option<T>,
 ) -> Result<Vec<T>, String> {
-    let mut service = Service::join().await.map_err(|e| e.to_string())?;
+    let mut service = Service::join().await.map_err(|e| said(&e))?;
     let found = service
         .ask_for_a_list(request)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| said(&e))?;
     Ok(found.into_iter().filter_map(read).collect())
+}
+
+/// Why the service could not be asked, in words.
+fn said(failed: &zyr_control::ControlError) -> String {
+    zyr_i18n::fact(&failed.fact())
 }
 
 /// What to say when the service answers something else entirely: the two
 /// halves of the product were not installed at the same time.
 pub fn unexpected(answer: Answer) -> String {
-    format!("réponse inattendue du service : {answer}")
+    zyr_i18n::fact(&answer.unexpected())
 }
 
 /// Puts the service back on its feet, if it is not already standing.

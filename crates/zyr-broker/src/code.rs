@@ -1,12 +1,14 @@
 //! Why the server said no, in a word that does not change.
 //!
 //! The server answers a code and an English sentence; the code is the
-//! contract, and it is the window that turns it into French for the
-//! person. A new reason is a new code, never a reworded sentence.
+//! contract, and the sentence is for journals. What the person reads is
+//! the fact the code stands for, which the window puts into their
+//! language. A new reason is a new code, never a reworded sentence.
 
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use zyr_proto::fact::Fact;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -62,46 +64,68 @@ pub enum Code {
 }
 
 impl Code {
-    /// What the window says to the person for this code.
-    pub fn explanation(self) -> &'static str {
-        match self {
-            Code::InvalidCredentials => "nom d'utilisateur ou mot de passe incorrect",
-            Code::RegistrationClosed => "ce serveur n'accepte pas de nouveau compte",
-            Code::InvitationInvalid => "ce code d'invitation n'est pas valable",
-            Code::UsernameTaken => "ce nom d'utilisateur est déjà pris",
-            Code::WeakPassword => "le mot de passe doit faire douze caractères au moins",
-            Code::InvalidUsername => {
-                "un nom d'utilisateur fait de 3 à 32 caractères : lettres, chiffres, point, tiret \
-                 ou souligné"
-            }
-            Code::Unauthorized => {
-                "ce serveur ne reconnaît plus cet appareil : à rattacher de nouveau"
-            }
-            Code::DeviceRevoked => "cet appareil a été révoqué du compte",
-            Code::DeviceUnknown => "cet appareil n'appartient pas au compte",
-            Code::ProofInvalid => "la preuve de la clé de cet appareil n'a pas été acceptée",
-            Code::ChallengeExpired => "le défi du serveur a expiré, il faut recommencer",
-            Code::NotFound => "ce que la demande nomme n'existe pas",
-            Code::ContactExists => "une demande existe déjà entre ces deux comptes",
-            Code::NotAContact => "ce compte n'est pas un contact",
-            Code::ContactSelf => "on ne peut pas être son propre contact",
-            Code::ShareInvalid => "ce partage nomme un appareil ou un contact qui ne convient pas",
-            Code::PeerOffline => "cet ordinateur n'est pas connecté au serveur",
-            Code::PeerNotHosting => {
-                "cet ordinateur est en ligne mais n'accepte pas l'accès distant"
-            }
-            Code::NoRight => "aucun droit sur cet ordinateur",
-            Code::UpgradeNeeded => "le serveur et cet appareil ne parlent pas la même version",
-            Code::RateLimited => "trop de tentatives, attendre un peu",
-            Code::BadRequest => "le serveur n'a pas compris la demande",
-            Code::Internal => "le serveur a rencontré une erreur, son journal dit laquelle",
-        }
+    /// What the code stands for, for the person to read in their
+    /// language.
+    pub fn fact(self) -> Fact {
+        Fact::new(match self {
+            Code::InvalidCredentials => "server.invalid_credentials",
+            Code::RegistrationClosed => "server.registration_closed",
+            Code::InvitationInvalid => "server.invitation_invalid",
+            Code::UsernameTaken => "server.username_taken",
+            Code::WeakPassword => "server.weak_password",
+            Code::InvalidUsername => "server.invalid_username",
+            Code::Unauthorized => "server.unauthorized",
+            Code::DeviceRevoked => "server.device_revoked",
+            Code::DeviceUnknown => "server.device_unknown",
+            Code::ProofInvalid => "server.proof_invalid",
+            Code::ChallengeExpired => "server.challenge_expired",
+            Code::NotFound => "server.not_found",
+            Code::ContactExists => "server.contact_exists",
+            Code::NotAContact => "server.not_a_contact",
+            Code::ContactSelf => "server.contact_self",
+            Code::ShareInvalid => "server.share_invalid",
+            Code::PeerOffline => "server.peer_offline",
+            Code::PeerNotHosting => "server.peer_not_hosting",
+            Code::NoRight => "server.no_right",
+            Code::UpgradeNeeded => "server.upgrade_needed",
+            Code::RateLimited => "server.rate_limited",
+            Code::BadRequest => "server.bad_request",
+            Code::Internal => "server.internal",
+        })
     }
 }
 
+/// The courtesy sentence the server sends beside a code, and what a
+/// journal writes of it.
 impl fmt::Display for Code {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.explanation())
+        f.write_str(match self {
+            Code::InvalidCredentials => "wrong username or password",
+            Code::RegistrationClosed => "this server does not take new accounts",
+            Code::InvitationInvalid => "an invitation code is required, and this one is not valid",
+            Code::UsernameTaken => "this username is taken",
+            Code::WeakPassword => "the password must be at least twelve characters",
+            Code::InvalidUsername => {
+                "a username is 3 to 32 letters, digits, dots, dashes or underscores"
+            }
+            Code::Unauthorized => "no valid token",
+            Code::DeviceRevoked => "this device was revoked",
+            Code::DeviceUnknown => "no such device on this account",
+            Code::ProofInvalid => "the signature does not match the certificate",
+            Code::ChallengeExpired => "unknown or expired challenge",
+            Code::NotFound => "not found",
+            Code::ContactExists => "a request already stands between these accounts",
+            Code::NotAContact => "not a contact",
+            Code::ContactSelf => "one cannot be one's own contact",
+            Code::ShareInvalid => "the share names a device or a contact that does not fit",
+            Code::PeerOffline => "that device is not connected",
+            Code::PeerNotHosting => "that device does not accept remote access right now",
+            Code::NoRight => "no right on that device",
+            Code::UpgradeNeeded => "the server and the device speak different versions",
+            Code::RateLimited => "too many attempts, wait",
+            Code::BadRequest => "the request could not be read",
+            Code::Internal => "the server failed, its journal says why",
+        })
     }
 }
 
@@ -111,8 +135,8 @@ mod tests {
 
     #[test]
     fn a_code_travels_as_a_stable_word() {
-        // The word is the contract: the window reads it to speak French,
-        // and a newer server must not reword it.
+        // The word is the contract: the window reads it to tell the
+        // person what happened, and a newer server must not reword it.
         assert_eq!(
             serde_json::to_string(&Code::InvalidCredentials).unwrap(),
             "\"invalid_credentials\""

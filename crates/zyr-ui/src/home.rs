@@ -2444,7 +2444,7 @@ fn below_the_name_of(peer: &Peer) -> String {
     let state = match &peer.account {
         Some(account) if !peer.seen => {
             if account.online {
-                format!("en ligne · {}", account.access.explanation())
+                format!("en ligne · {}", zyr_i18n::fact(&account.access.fact()))
             } else {
                 "hors ligne".to_string()
             }
@@ -2461,7 +2461,7 @@ fn below_the_name_of(peer: &Peer) -> String {
 /// Where a device of the account stands, in words.
 fn words_of_the_presence(device: &Device) -> String {
     if device.online {
-        return format!("En ligne · {}", device.access.explanation());
+        return format!("En ligne · {}", zyr_i18n::fact(&device.access.fact()));
     }
     match device.last_seen {
         Some(seen) => format!(
@@ -2478,7 +2478,12 @@ fn path_of(session: &Ongoing) -> String {
     if session.via.is_empty() {
         return String::new();
     }
-    format!(", par {} en {} ms", session.via, session.round_trip_ms)
+    let through = if session.relayed {
+        format!("le relais {}", session.via)
+    } else {
+        session.via.clone()
+    };
+    format!(", par {through} en {} ms", session.round_trip_ms)
 }
 
 /// How long a session has been open, in words.
@@ -3136,9 +3141,9 @@ impl Painter<'_> {
             (
                 format!(
                     "injoignable{}",
-                    link.trouble
-                        .as_ref()
-                        .map_or_else(String::new, |why| format!(" : {}", why.replace('\n', " ")))
+                    link.trouble.as_ref().map_or_else(String::new, |why| {
+                        format!(" : {}", zyr_i18n::fact(why).replace('\n', " "))
+                    })
                 ),
                 self.colours.warning,
             )

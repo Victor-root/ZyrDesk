@@ -21,6 +21,7 @@ use zyr_broker::live::{FromDevice, FromServer, Peer, Relay};
 use zyr_broker::proof::{Purpose, challenge_message};
 use zyr_broker::rest::{Access, ContactInfo, DeviceInfo, ServerInfo, ShareInfo, paths};
 use zyr_broker::{Code, PROTOCOL, Signed};
+use zyr_proto::fact::Fact;
 use zyr_transport::Identity;
 use zyr_transport::trust::{Trust, Untrusted, client_config};
 
@@ -52,7 +53,7 @@ pub struct Snapshot {
     pub contacts: Vec<ContactInfo>,
     pub shares: Vec<ShareInfo>,
     /// Why the last attempt failed, while it stays disconnected.
-    pub trouble: Option<String>,
+    pub trouble: Option<Fact>,
 }
 
 impl Snapshot {
@@ -138,7 +139,7 @@ impl Snapshot {
     }
 
     /// What the channel leaves behind as it breaks.
-    fn disconnected(&mut self, why: String) {
+    fn disconnected(&mut self, why: Fact) {
         self.connected = false;
         self.trouble = Some(why);
     }
@@ -246,7 +247,12 @@ enum Ended {
     /// Told to stop, or revoked: no coming back.
     ForGood,
     /// Broken, or refused for now: come back later.
-    ForNow(String),
+    ForNow(Fact),
+}
+
+/// A channel that broke, and what broke it, in a journal's words.
+fn broken(detail: impl std::fmt::Display) -> Fact {
+    Fact::new("account.link_broken").with("detail", detail)
 }
 
 async fn keep_open(
@@ -311,20 +317,22 @@ async fn serve_once(
         Ok(channel) => channel,
         Err(Failure::Untrusted(why)) => {
             let _ = events.send(Event::Untrusted(why.clone()));
-            return Ended::ForNow(why.to_string());
+            return Ended::ForNow(why.fact());
         }
         Err(Failure::Broken(why)) => return Ended::ForNow(why),
     };
     let nonce = match next(&mut channel, PATIENCE).await {
         Ok(Some(FromServer::Challenge { nonce })) => nonce,
-        Ok(Some(other)) => return Ended::ForNow(format!("le serveur a ouvert par {other:?}")),
-        Ok(None) => return Ended::ForNow("le serveur a fermé sans un mot".to_string()),
-        Err(why) => return Ended::ForNow(why),
+        Ok(Some(other)) => {
+            return Ended::ForNow(broken(format!("the server opened with {other:?}")));
+        }
+        Ok(None) => return Ended::ForNow(broken("the server closed without a word")),
+        Err(why) => return Ended::ForNow(broken(why)),
     };
     let signature =
         match identity.sign(&challenge_message(&link.signing_key, &nonce, Purpose::Live)) {
             Ok(signature) => signature,
-            Err(e) => return Ended::ForNow(e.to_string()),
+            Err(e) => return Ended::ForNow(broken(e)),
         };
     if let Err(why) = say(
         &mut channel,
@@ -336,7 +344,7 @@ async fn serve_once(
     )
     .await
     {
-        return Ended::ForNow(why);
+        return Ended::ForNow(broken(why));
     }
     match next(&mut channel, PATIENCE).await {
         Ok(Some(welcome @ FromServer::Welcome { .. })) => {
@@ -354,19 +362,21 @@ async fn serve_once(
                     let _ = events.send(Event::Revoked);
                     Ended::ForGood
                 }
-                other => Ended::ForNow(other.explanation().to_string()),
+                other => Ended::ForNow(other.fact()),
             };
         }
-        Ok(Some(other)) => return Ended::ForNow(format!("attendu un accueil, reçu {other:?}")),
-        Ok(None) => return Ended::ForNow("le serveur a fermé avant l'accueil".to_string()),
-        Err(why) => return Ended::ForNow(why),
+        Ok(Some(other)) => {
+            return Ended::ForNow(broken(format!("expected a welcome, got {other:?}")));
+        }
+        Ok(None) => return Ended::ForNow(broken("the server closed before its welcome")),
+        Err(why) => return Ended::ForNow(broken(why)),
     }
     log(&format!("account channel open with {}", link.server));
     *wait = RETRY_FIRST;
     if *access != Access::Off
         && let Err(why) = say(&mut channel, &FromDevice::State { access: *access }).await
     {
-        return Ended::ForNow(why);
+        return Ended::ForNow(broken(why));
     }
 
     let mut heartbeat = tokio::time::interval(HEARTBEAT);
@@ -386,12 +396,12 @@ async fn serve_once(
                     }
                 };
                 if let Err(why) = say(&mut channel, &said).await {
-                    return Ended::ForNow(why);
+                    return Ended::ForNow(broken(why));
                 }
             }
             _ = heartbeat.tick() => {
                 if channel.send(Message::Ping(Vec::new().into())).await.is_err() {
-                    return Ended::ForNow("le battement n'est pas parti".to_string());
+                    return Ended::ForNow(broken("the heartbeat did not leave"));
                 }
             }
             heard = next(&mut channel, SILENCE) => match heard {
@@ -420,13 +430,13 @@ async fn serve_once(
                             return Ended::ForGood;
                         }
                         FromServer::Bye { code } => {
-                            return Ended::ForNow(code.explanation().to_string());
+                            return Ended::ForNow(code.fact());
                         }
                         _ => {}
                     }
                 }
-                Ok(None) => return Ended::ForNow("le serveur a fermé le canal".to_string()),
-                Err(why) => return Ended::ForNow(why),
+                Ok(None) => return Ended::ForNow(broken("the server closed the channel")),
+                Err(why) => return Ended::ForNow(broken(why)),
             },
         }
     }
@@ -435,18 +445,22 @@ async fn serve_once(
 /// Why the channel could not be opened.
 enum Failure {
     Untrusted(Untrusted),
-    Broken(String),
+    Broken(Fact),
 }
 
 async fn connect(link: &Link) -> Result<Channel, Failure> {
-    let (host, port) = host_and_port(&link.server).map_err(|e| Failure::Broken(e.to_string()))?;
+    let (host, port) = host_and_port(&link.server).map_err(|e| Failure::Broken(e.fact()))?;
     let stream = tokio::time::timeout(
         PATIENCE,
         TcpStream::connect((host.trim_matches(['[', ']']), port)),
     )
     .await
-    .map_err(|_| Failure::Broken(format!("{host}:{port} ne répond pas")))?
-    .map_err(|e| Failure::Broken(format!("{host}:{port} : {e}")))?;
+    .map_err(|_| {
+        Failure::Broken(
+            Fact::new("account.server_silent").with("address", format!("{host}:{port}")),
+        )
+    })?
+    .map_err(|e| Failure::Broken(broken(format!("{host}:{port}: {e}"))))?;
     let trust = match link.pin {
         Some(pin) => Trust::Pinned(pin),
         None => Trust::PublicOnly,
@@ -464,7 +478,7 @@ async fn connect(link: &Link) -> Result<Channel, Failure> {
             tokio_tungstenite::tungstenite::handshake::client::generate_key(),
         )
         .body(())
-        .map_err(|e| Failure::Broken(e.to_string()))?;
+        .map_err(|e| Failure::Broken(broken(e)))?;
     match tokio_tungstenite::client_async_tls_with_config(
         request,
         stream,
@@ -476,7 +490,7 @@ async fn connect(link: &Link) -> Result<Channel, Failure> {
         Ok((channel, _)) => Ok(channel),
         Err(e) => Err(match verifier.why_refused() {
             Some(why) => Failure::Untrusted(why),
-            None => Failure::Broken(e.to_string()),
+            None => Failure::Broken(broken(e)),
         }),
     }
 }
@@ -487,14 +501,14 @@ async fn next(channel: &mut Channel, within: Duration) -> Result<Option<FromServ
     loop {
         let frame = tokio::time::timeout(within, channel.next())
             .await
-            .map_err(|_| "le serveur ne dit plus rien".to_string())?;
+            .map_err(|_| "the server has gone silent".to_string())?;
         match frame {
             None | Some(Ok(Message::Close(_))) => return Ok(None),
             Some(Err(e)) => return Err(e.to_string()),
             Some(Ok(Message::Text(text))) => {
                 return serde_json::from_str(text.as_str())
                     .map(Some)
-                    .map_err(|e| format!("le serveur a dit quelque chose d'illisible : {e}"));
+                    .map_err(|e| format!("the server said something unreadable: {e}"));
             }
             Some(Ok(_)) => {}
         }
@@ -623,9 +637,9 @@ mod tests {
         });
         assert_eq!(snapshot.shares.len(), 1);
 
-        snapshot.disconnected("coupé".into());
+        snapshot.disconnected(broken("cut"));
         assert!(!snapshot.connected);
-        assert_eq!(snapshot.trouble.as_deref(), Some("coupé"));
+        assert_eq!(snapshot.trouble, Some(broken("cut")));
         // The lists stay: that is what the home screen shows in grey.
         assert_eq!(snapshot.devices.len(), 2);
     }

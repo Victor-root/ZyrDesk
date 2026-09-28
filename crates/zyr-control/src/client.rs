@@ -7,6 +7,8 @@
 use std::fmt;
 use std::io;
 
+use zyr_proto::fact::Fact;
+
 use crate::message::{Answer, Malformed, Request};
 use crate::pipe::{self, CHANNEL, Spoken};
 
@@ -21,25 +23,31 @@ pub enum ControlError {
     Unreadable(Malformed),
     /// It stopped talking mid-exchange.
     LeftOff,
-    /// It understood, and said no. The text is meant to be shown.
-    Refused(String),
+    /// It understood, and said no.
+    Refused(Fact),
+}
+
+impl ControlError {
+    /// What happened, for the person to read in their language.
+    pub fn fact(&self) -> Fact {
+        match self {
+            ControlError::NotRunning => Fact::new("service.not_running"),
+            ControlError::Broken(e) => Fact::new("service.broken").with("detail", e),
+            ControlError::Unreadable(e) => Fact::new("service.unreadable").with("detail", e),
+            ControlError::LeftOff => Fact::new("service.left_off"),
+            ControlError::Refused(fact) => fact.clone(),
+        }
+    }
 }
 
 impl fmt::Display for ControlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ControlError::NotRunning => f.write_str(
-                "le service ZyrDesk ne tourne pas.\n  \
-                 Lancez « zyrdeskd status » pour voir son état.",
-            ),
-            ControlError::Broken(e) => write!(f, "échange interrompu : {e}"),
-            ControlError::Unreadable(e) => write!(
-                f,
-                "réponse incompréhensible du service : {e}\n  \
-                 Le service est probablement plus ancien que ce programme."
-            ),
-            ControlError::LeftOff => f.write_str("le service a coupé la conversation"),
-            ControlError::Refused(reason) => f.write_str(reason),
+            ControlError::NotRunning => f.write_str("the ZyrDesk service is not running"),
+            ControlError::Broken(e) => write!(f, "exchange with the service broken: {e}"),
+            ControlError::Unreadable(e) => write!(f, "unreadable answer from the service: {e}"),
+            ControlError::LeftOff => f.write_str("the service stopped talking"),
+            ControlError::Refused(fact) => write!(f, "refused: {fact}"),
         }
     }
 }

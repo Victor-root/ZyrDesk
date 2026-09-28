@@ -293,13 +293,22 @@ fn tell(step: Step, host: &str) {
     match step {
         Step::Reached => println!("Tunnel établi avec {host}."),
         Step::FarScreenLeftAlone { refused } => {
-            println!("  {host} garde l'écran qu'il filme : {refused}");
+            println!(
+                "  {host} garde l'écran qu'il filme : {}",
+                zyr_i18n::fact(&refused)
+            );
         }
         Step::SpeakersLeftAlone { refused } => {
-            println!("  Les enceintes de {host} restent allumées : {refused}");
+            println!(
+                "  Les enceintes de {host} restent allumées : {}",
+                zyr_i18n::fact(&refused)
+            );
         }
         Step::ScreenLeftAlone { refused } => {
-            println!("  {host} n'a pas réveillé son écran virtuel : {refused}");
+            println!(
+                "  {host} n'a pas réveillé son écran virtuel : {}",
+                zyr_i18n::fact(&refused)
+            );
         }
         Step::ScreenOverThere { wide, high } => {
             println!("  {host} affiche {wide}x{high}, c'est ce qui est demandé au lecteur");
@@ -313,13 +322,14 @@ fn tell(step: Step, host: &str) {
 /// Turns a failure into the message and the exit code that go with it.
 fn reported(e: zyr_session::Error) -> ExitCode {
     use zyr_session::Error;
+    let said = zyr_i18n::fact(&e.fact());
     match e {
         Error::EngineMissing(_) => failure(
             "FFmpeg manque",
-            format!("{e}\n  Lancez « zyr-cli doctor » pour vérifier cet ordinateur."),
+            format!("{said}\n  Lancez « zyr-cli doctor » pour vérifier cet ordinateur."),
         ),
-        Error::Service(reason) => failure("ouverture du tunnel", reason),
-        other => failure("ouverture de la session", other),
+        Error::Service(_) => failure("ouverture du tunnel", said),
+        Error::Abandoned => failure("ouverture de la session", said),
     }
 }
 

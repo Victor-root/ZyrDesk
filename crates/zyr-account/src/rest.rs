@@ -22,7 +22,7 @@ use zyr_broker::rest::{
     Challenge, ContactInfo, ContactRequest, DeviceInfo, Link, LinkAnswer, Login, LoginAnswer,
     Register, Rename, ServerInfo, ShareInfo, ShareRequest, paths,
 };
-
+use zyr_proto::fact::Fact;
 use zyr_transport::trust::{Trust, Untrusted, Verifier, client_config};
 
 use crate::address::{BadAddress, normalized};
@@ -44,14 +44,27 @@ pub enum Failure {
     Unreadable(String),
 }
 
+impl Failure {
+    /// What went wrong, for the person to read in their language.
+    pub fn fact(&self) -> Fact {
+        match self {
+            Failure::Address(e) => e.fact(),
+            Failure::Untrusted(e) => e.fact(),
+            Failure::Refused { code, .. } => code.fact(),
+            Failure::Transport(e) => Fact::new("account.server_unreachable").with("detail", e),
+            Failure::Unreadable(e) => Fact::new("account.server_unreadable").with("detail", e),
+        }
+    }
+}
+
 impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Failure::Address(e) => write!(f, "{e}"),
             Failure::Untrusted(e) => write!(f, "{e}"),
-            Failure::Refused { code, .. } => write!(f, "{}", code.explanation()),
-            Failure::Transport(e) => write!(f, "le serveur n'a pas pu être joint : {e}"),
-            Failure::Unreadable(e) => write!(f, "réponse du serveur illisible : {e}"),
+            Failure::Refused { code, .. } => write!(f, "{code}"),
+            Failure::Transport(e) => write!(f, "the server could not be reached: {e}"),
+            Failure::Unreadable(e) => write!(f, "unreadable answer from the server: {e}"),
         }
     }
 }

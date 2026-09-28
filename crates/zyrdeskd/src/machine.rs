@@ -199,19 +199,14 @@ impl Machine {
     /// whose whole explanation is on this line, on one of the two.
     fn account_line(&self) -> String {
         let Some(account) = self.account.standing() else {
-            return "aucun".to_string();
+            return "none".to_string();
         };
-        let state = if account.connected {
-            "relié".to_string()
-        } else {
-            format!(
-                "injoignable{}",
-                account
-                    .trouble
-                    .map_or_else(String::new, |why| format!(" : {}", why.replace('\n', " ")))
-            )
+        let state = match account.trouble {
+            _ if account.connected => "linked".to_string(),
+            Some(why) => format!("unreachable: {why}"),
+            None => "unreachable".to_string(),
         };
-        format!("{} sur {}, {state}", account.username, account.server)
+        format!("{} on {}, {state}", account.username, account.server)
     }
 
     /// What remote access amounts to right now, in the same words the
@@ -503,7 +498,7 @@ mod tests {
         // same. The account likewise.
         assert!(text.contains("Ordinateurs vus  : aucun"), "{text}");
         assert!(text.contains("Compte"), "{text}");
-        assert_eq!(machine.account_line(), "aucun");
+        assert_eq!(machine.account_line(), "none");
 
         std::fs::remove_dir_all(&folder).unwrap();
     }

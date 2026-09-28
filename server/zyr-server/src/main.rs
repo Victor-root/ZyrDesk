@@ -306,7 +306,7 @@ fn invite(path: &Path, action: InviteAction) -> Result<(), String> {
 
 fn refused(fault: zyr_server::store::Fault) -> String {
     match fault {
-        zyr_server::store::Fault::Refused(code) => code.explanation().to_string(),
+        zyr_server::store::Fault::Refused(code) => code.to_string(),
         other => other.to_string(),
     }
 }

@@ -23,6 +23,8 @@ embed-resource = "3.0.11"
 
 [dependencies]
 zyr-proto.workspace = true
+# What the person reads, in their language.
+zyr-i18n.workspace = true
 zyr-clipboard.workspace = true
 zyr-control.workspace = true
 # The player of a session, which draws its picture into a window of
@@ -59,6 +61,8 @@ windows = { version = "0.62.2", features = [
 windows-numerics = "0.3.1"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
+    # The languages the person reads Windows in, which choose the words.
+    "Win32_Globalization",
     # Rounded window corners belong to the compositor, and it is the one
     # asked not to round them for the length of a session.
     "Win32_Graphics_Dwm",

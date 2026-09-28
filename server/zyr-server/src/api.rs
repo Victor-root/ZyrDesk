@@ -102,44 +102,13 @@ fn status_of(code: Code) -> StatusCode {
     }
 }
 
-/// The courtesy sentence beside a code.
-fn message(code: Code) -> &'static str {
-    match code {
-        Code::InvalidCredentials => "wrong username or password",
-        Code::RegistrationClosed => "this server does not take new accounts",
-        Code::InvitationInvalid => "an invitation code is required, and this one is not valid",
-        Code::UsernameTaken => "this username is taken",
-        Code::WeakPassword => "the password must be at least twelve characters",
-        Code::InvalidUsername => {
-            "a username is 3 to 32 letters, digits, dots, dashes or underscores"
-        }
-        Code::Unauthorized => "no valid token",
-        Code::DeviceRevoked => "this device was revoked",
-        Code::DeviceUnknown => "no such device on this account",
-        Code::ProofInvalid => "the signature does not match the certificate",
-        Code::ChallengeExpired => "unknown or expired challenge",
-        Code::NotFound => "not found",
-        Code::ContactExists => "a request already stands between these accounts",
-        Code::NotAContact => "not a contact",
-        Code::ContactSelf => "one cannot be one's own contact",
-        Code::ShareInvalid => "the share names a device or a contact that does not fit",
-        Code::PeerOffline => "that device is not connected",
-        Code::PeerNotHosting => "that device does not accept remote access right now",
-        Code::NoRight => "no right on that device",
-        Code::UpgradeNeeded => "the server and the device speak different versions",
-        Code::RateLimited => "too many attempts, wait",
-        Code::BadRequest => "the request could not be read",
-        Code::Internal => "the server failed, its journal says why",
-    }
-}
-
 impl IntoResponse for Refusal {
     fn into_response(self) -> Response {
         (
             status_of(self.0),
             Json(zyr_broker::rest::Error {
                 error: self.0,
-                message: message(self.0).to_string(),
+                message: self.0.to_string(),
             }),
         )
             .into_response()
