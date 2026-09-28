@@ -95,7 +95,7 @@ impl Access {
             }
             Access::SystemAnd { user_sid } => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("identifiant de compte invalide : « {user_sid} »"),
+                format!("invalid account identifier: « {user_sid} »"),
             )),
             Access::SystemAndInteractive => Ok(format!("{SYSTEM_ALONE}(A;;GRGW;;;IU)")),
         }
@@ -251,7 +251,7 @@ impl LinkReader {
                 }
                 return Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
-                    "le lien s'est fermé au milieu d'une trame",
+                    "the link closed in the middle of a frame",
                 ));
             }
         }
@@ -273,11 +273,11 @@ fn next_frame(received: &mut BytesMut) -> io::Result<Option<(Channel, Bytes)>> {
     let length = u32::from_le_bytes([a, b, c, d]) as usize;
     if length == 0 || length > LONGEST_FRAME {
         return Err(unreadable(format!(
-            "trame de {length} octets annoncée sur le lien"
+            "frame of {length} bytes announced on the link"
         )));
     }
     let channel = Channel::from_byte(byte)
-        .ok_or_else(|| unreadable(format!("canal inconnu sur le lien : {byte}")))?;
+        .ok_or_else(|| unreadable(format!("unknown channel on the link: {byte}")))?;
     let whole = LENGTH + length;
     if received.len() < whole {
         received.reserve((whole - received.len()).max(READ_AHEAD));
@@ -313,10 +313,7 @@ impl LinkWriter {
         if payload.len() > LONGEST_PAYLOAD {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!(
-                    "trame de {} octets, trop longue pour le lien",
-                    payload.len()
-                ),
+                format!("frame of {} bytes, too long for the link", payload.len()),
             ));
         }
         let length = (1 + payload.len()) as u32;
@@ -423,7 +420,7 @@ mod mechanism {
         let name = socket.into_os_string().into_string().map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                "dossier temporaire au nom illisible",
+                "temporary folder with an unreadable name",
             )
         })?;
         Ok((
@@ -502,7 +499,7 @@ mod tests {
     }
 
     fn kind_of(error: io::Result<Option<(Channel, Bytes)>>) -> io::ErrorKind {
-        error.expect_err("une erreur était attendue").kind()
+        error.expect_err("an error").kind()
     }
 
     /// A payload that tells where it came from, so a frame delivered
@@ -565,7 +562,7 @@ mod tests {
             for turn in 0..FRAMES {
                 let (channel, arrived) = reads.next().await.unwrap().unwrap();
                 assert_eq!(channel, EVERY_CHANNEL[turn % EVERY_CHANNEL.len()]);
-                assert_eq!(arrived, payload(turn, turn % 2_000), "trame {turn}");
+                assert_eq!(arrived, payload(turn, turn % 2_000), "frame {turn}");
             }
             sending.await.unwrap();
         }
@@ -599,7 +596,7 @@ mod tests {
         let refused = writes
             .send(Channel::Video, &vec![0; LONGEST_PAYLOAD + 1])
             .await
-            .expect_err("une trame trop longue doit être refusée");
+            .expect_err("an overlong frame is refused");
         assert_eq!(refused.kind(), io::ErrorKind::InvalidInput);
 
         // Nothing of it reached the link: the next frame is the first
@@ -656,7 +653,7 @@ mod tests {
             assert_eq!(
                 kind_of(reads.next().await),
                 io::ErrorKind::UnexpectedEof,
-                "coupure après {cut} octets"
+                "cut after {cut} bytes"
             );
         }
     }
@@ -733,7 +730,7 @@ mod tests {
 
         feeding.write_all(first).await.unwrap();
         let waited = tokio::time::timeout(std::time::Duration::from_millis(20), reads.next()).await;
-        assert!(waited.is_err(), "la trame n'était pas encore complète");
+        assert!(waited.is_err(), "the frame was not complete yet");
 
         feeding.write_all(rest).await.unwrap();
         let (channel, arrived) = reads.next().await.unwrap().unwrap();
@@ -776,7 +773,7 @@ mod tests {
         // On Windows this is where the system reads each access list.
         for access in [Access::SystemOnly, in_tests(), Access::SystemAndInteractive] {
             if let Err(e) = LinkListener::create(access.clone()) {
-                panic!("{access:?} : {e}");
+                panic!("{access:?}: {e}");
             }
         }
     }
@@ -835,7 +832,7 @@ mod tests {
             user_sid: "S-1-5-18)(A;;GA;;;WD".to_string(),
         })
         .err()
-        .expect("un identifiant forgé doit être refusé");
+        .expect("a forged identifier is refused");
         assert_eq!(refused.kind(), io::ErrorKind::InvalidInput);
     }
 
