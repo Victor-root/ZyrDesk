@@ -1,0 +1,8 @@
+[package]
+name = "zyr-layers"
+description = "Which brick of ZyrDesk may use which, checked against every manifest of the workspace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false

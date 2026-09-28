@@ -86,7 +86,7 @@ Pourquoi le moteur hôte est un processus à part, lancé pour chaque session :
 
 Le moteur a deux moitiés qui ne se voient jamais directement. Le moteur hôte (`zyr-host`) est lancé par le service pour chaque session entrante. Le lecteur (`zyr-player`) est une bibliothèque que la fenêtre fait tourner dans son propre processus ; la ligne de commande la fait tourner aussi, sans fenêtre, pour le diagnostic.
 
-Chaque moitié parle au service de sa machine par un tube nommé, la liaison locale, qui porte quatre canaux : le flux de contrôle (touches, souris, réglages, demandes d'image clé), l'image, le son, et les mots du service. Le tunnel porte cette liaison d'une machine à l'autre. FFmpeg est chargé au démarrage de chaque moitié, depuis `vendor/ffmpeg`, et jamais lié à la compilation.
+Chaque moitié parle au service de sa machine par un tube nommé, la liaison locale (`zyr-link`), qui porte quatre canaux : le flux de contrôle (touches, souris, réglages, demandes d'image clé), l'image, le son, et les mots du service. Le tunnel porte cette liaison d'une machine à l'autre. FFmpeg est chargé au démarrage de chaque moitié, depuis `vendor/ffmpeg`, et jamais lié à la compilation.
 
 Le lecteur dessine l'image en Direct3D 11, depuis son propre fil, dans une fenêtre enfant de la fenêtre principale : l'interface n'est jamais sur le chemin de l'image. Le détail, les choix et leurs raisons : [MOTEUR.md](MOTEUR.md).
 
@@ -149,15 +149,16 @@ Règle : jamais un écran noir sans explication. Le service et le moteur détect
 ZyrDesk/
 ├─ Cargo.toml                  # workspace Rust
 ├─ crates/
-│  ├─ zyr-proto/               # types partagés : chemins, journal horodaté, empreinte de compilation, réglages de session, patience d'une session
+│  ├─ zyr-proto/               # la base, partagée par tous : chemins, journal horodaté, empreinte de compilation, empreinte d'un ordinateur, réglages de session, patience d'une session
 │  ├─ zyr-media/               # les formats du moteur, sans rien de Windows : paquets d'image et de son, correction d'erreurs, touches et souris, messages, cadence, mesures
 │  ├─ zyr-codec/               # FFmpeg chargé au démarrage : encodeurs, décodeurs, Opus, conversion du son
+│  ├─ zyr-link/                # le tube entre chaque moitié du moteur et le service de sa machine, et ce que tous les tubes du produit partagent sous Windows
 │  ├─ zyr-host/                # le moteur hôte : capture, conversion, encodage, son, clavier et souris injectés
 │  ├─ zyr-player/              # le lecteur : réassemblage, décodage, affichage, son
-│  ├─ zyr-transport/           # la connexion QUIC (quinn n'est nommé que dans ce crate), identité et empreintes, confiance TLS et épinglage, l'aiguilleur et ses sondes signées, la branche de relais et la porte sur laquelle un serveur pose le sien, contrôleur média, budget des datagrammes
+│  ├─ zyr-transport/           # la connexion QUIC (quinn n'est nommé que dans ce crate), identité de l'appareil, confiance TLS et épinglage, l'aiguilleur et ses sondes signées, la branche de relais et la porte sur laquelle un serveur pose le sien, contrôleur média, budget des datagrammes
 │  ├─ zyr-tunnel/              # le passage entre le tube du moteur et la connexion : flux du moteur, datagrammes d'image et de son, canal ZyrDesk
 │  ├─ zyr-clipboard/           # le presse-papiers de l'ordinateur : ce qu'il porte, ce qu'on lui donne, les images en PNG, et la place tenue aux fichiers d'en face
-│  ├─ zyr-control/             # le dialecte entre la fenêtre et le service, sur le tube de commande, et les tubes du moteur
+│  ├─ zyr-control/             # le dialecte entre la fenêtre et le service, sur le tube de commande
 │  ├─ zyr-session/             # ouverture d'une session de bout en bout, partagée par l'interface et la ligne de commande
 │  ├─ zyr-lan/                 # annonce mDNS de cet ordinateur, appel direct, découverte des autres
 │  ├─ zyr-broker/              # ce que le service et le serveur se disent : messages, tickets et laissez-passer signés
@@ -166,7 +167,8 @@ ZyrDesk/
 │  ├─ zyr-sound/               # le son de la session, dans le mélangeur de Windows
 │  ├─ zyr-cli/                 # doctor, session sans fenêtre, banc de mesure, identité, compte
 │  ├─ zyr-ui/                  # l'application : cœur Rust, écrans dessinés par le produit, image de la session, journal, bouton flottant
-│  └─ zyrdeskd/                # binaire service Windows : registre des voies, serveur du tube, tous les tunnels, superviseur ; relancé, c'est aussi le moteur hôte
+│  ├─ zyrdeskd/                # binaire service Windows : registre des voies, serveur du tube, tous les tunnels, superviseur ; relancé, c'est aussi le moteur hôte
+│  └─ zyr-layers/              # la carte des briques : qui peut utiliser qui, vérifiée par les essais
 ├─ server/                     # zyr-server, le serveur facultatif (comptes, mise en relation et relais ; un binaire, AGPLv3), install.sh, README
 ├─ vendor/
 │  ├─ ecran-virtuel/           # pilote de l'écran virtuel, signé par son auteur
@@ -179,6 +181,23 @@ ZyrDesk/
 ├─ docs/                       # ce dossier
 └─ .github/workflows/          # ci (format, analyse statique, tests Windows et Linux, installateur), serveur (un binaire statique x86_64)
 ```
+
+### Qui peut utiliser qui
+
+Les briques sont rangées en couches, et chacune n'utilise que des briques de sa couche ou des couches du dessous ([D233](DECISIONS.md)) :
+
+| Couche | Briques | Rôle |
+|---|---|---|
+| Programmes | `zyr-ui`, `zyrdeskd`, `zyr-cli`, `zyr-server` | Assemblent le reste ; rien ne les utilise |
+| Produit | `zyr-control`, `zyr-session`, `zyr-clipboard` | Le produit qui se parle à lui-même : la fenêtre et le service, l'ouverture d'une session, le presse-papiers |
+| Réseau et comptes | `zyr-transport`, `zyr-tunnel`, `zyr-lan`, `zyr-broker`, `zyr-account` | La connexion entre deux ordinateurs, le réseau local, le serveur |
+| Moteur | `zyr-media`, `zyr-codec`, `zyr-link`, `zyr-host`, `zyr-player` | L'image, le son et les entrées, de l'écran filmé à l'image affichée, et le tube de chaque moitié vers son service |
+| Plateforme | `zyr-screen`, `zyr-sound` | Ce que Windows fait pour le produit |
+| Base | `zyr-proto` | Ce que toutes les briques partagent |
+
+Le moteur est tenu à part : il n'utilise que le moteur, la base et la plateforme. Rien de ce qu'on fait à la fenêtre, au service ou au réseau n'atteint une ligne du moteur, et FFmpeg n'est connu que de ses deux moitiés : le service le demande au moteur hôte, la fenêtre, l'ouverture de session et la ligne de commande au lecteur.
+
+La carte complète, brique par brique, vit dans `crates/zyr-layers`. Ses essais lisent les manifestes de tout le dépôt et échouent dès qu'une brique en utilise une que la carte ne lui donne pas, qu'une couche s'appuie sur une plus haute, que le moteur sort du moteur, qu'une autre brique que ses deux moitiés touche FFmpeg, ou que quelque chose s'appuie sur un programme. Une nouvelle dépendance se décide en modifiant la carte, jamais en passant inaperçue. Ce qu'une brique n'utilise que pour ses essais n'y figure pas : un essai de bout en bout assemble ce qu'il vérifie.
 
 ## 11. Interfaces entre composants (résumé)
 

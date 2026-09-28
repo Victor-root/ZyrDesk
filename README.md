@@ -95,10 +95,11 @@ Construction de l'installateur Windows : voir [packaging/windows/README.md](pack
 Ceci s'adresse autant à une IA qu'à une personne qui reprend le dépôt.
 
 - **Le code s'écrit en anglais** : noms de fichiers et de modules, types, fonctions, variables, constantes, noms des tests, commentaires et documentation du code, dans le Rust comme dans les scripts, la CI et la feuille de style.
-- **Ce que la personne lit reste en français** : textes de l'interface, messages affichés, et tout ce que le programme écrit pour être lu.
+- **Ce que la personne lit passe par une traduction, l'anglais d'abord**, le français s'y greffant, et **les journaux s'écrivent en anglais** ([D234](docs/DECISIONS.md#d234-les-journaux-passent-en-anglais-et-ce-que-la-personne-lit-passe-par-une-traduction-2026-09-28-pendant-mz)). La traduction arrive avec l'étape 3 de [D233](docs/DECISIONS.md#d233-les-briques-en-couches-et-les-moteurs-à-part-2026-09-28-pendant-mz) ; d'ici là, les textes et les journaux existants restent tels qu'ils sont.
 - **L'aide des outils en ligne de commande** (`--help`) naît des commentaires du code : elle est en anglais, comme leurs options.
 - **Ce qui est écrit sur le disque ou passe sur le réseau garde son nom exact**, même français (valeurs de préférences, clés de `install.env`, champs échangés avec le serveur, règle de pare-feu, dossier `vendor/ecran-virtuel`) : le renommer casserait une installation existante ou le dialogue entre deux versions.
 - **La documentation de `docs/` reste en français**, et l'historique de [docs/DECISIONS.md](docs/DECISIONS.md) ne se réécrit pas.
+- **Chaque brique n'utilise que celles de sa couche ou des couches du dessous, et le moteur reste à part** : il n'utilise que le moteur, la base et la plateforme, et FFmpeg n'est connu que de ses deux moitiés. La carte de `crates/zyr-layers` le vérifie à chaque essai ; une nouvelle dépendance s'y écrit, à découvert ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §10, [D233](docs/DECISIONS.md#d233-les-briques-en-couches-et-les-moteurs-à-part-2026-09-28-pendant-mz)).
 - **Les outils et les dépendances suivent leur dernière version stable** : Rust, chaque bibliothèque du dépôt et FFmpeg. Un retard se justifie par écrit, dans le manifeste et dans [docs/DECISIONS.md](docs/DECISIONS.md), jamais par commodité.
 
 Le détail et ses raisons : [D220](docs/DECISIONS.md#d220-le-code-sécrit-en-anglais-ce-que-la-personne-lit-reste-en-français-2026-09-24-pendant-m6).

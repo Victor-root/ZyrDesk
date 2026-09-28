@@ -3678,6 +3678,43 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Des chiffres qui ne dansent pas.** Chaque chiffre garde la place du plus large qu'il prend dans une session qui marche : moins de cent millisecondes pour ceux lus au centième, moins de mille pour ceux lus en entier, moins de mille mégabits par seconde, moins de cent pour cent. Il s'aligne à droite de cette place. Ainsi rien ne se décale quand un chiffre change, et le bandeau s'ouvre directement à la hauteur qu'il gardera. Un chiffre qui dépasse ces bornes agrandit sa place une fois pour toutes, au lieu de faire sauter les suivants d'une ligne à l'autre à chaque changement.
 
+## D233. Les briques en couches, et les moteurs à part (2026-09-28, pendant MZ)
+
+**La demande.** Victor veut une architecture de professionnel, comme celle de Melyxar : des composants séparés au maximum et simplement reliés entre eux, et surtout des moteurs isolés, pour que casser l'interface ne touche pas une ligne des moteurs, et l'inverse.
+
+**Le constat.** Le dépôt était déjà découpé en briques, et l'interface ne commandait le lecteur que par une poignée d'appels. Mais les deux moitiés du moteur dépendaient de `zyr-control`, le dialogue entre la fenêtre et le service, pour le seul tube qui les relie au service : changer ce dialogue recompilait les moteurs, et le moteur hôte embarquait par ricochet les comptes et QUIC. L'empreinte d'un ordinateur vivait dans la brique de la connexion chiffrée, si bien que tout ce qui nommait un ordinateur tirait QUIC avec lui. Et le service, la fenêtre et l'ouverture de session allaient chercher FFmpeg directement dans la brique des codecs.
+
+**Ce qui est fait.**
+
+- Le tube entre chaque moitié du moteur et le service devient sa propre brique, `zyr-link`, avec ce que tous les tubes du produit partagent sous Windows. Le moteur hôte, le lecteur et le tunnel ne dépendent plus de `zyr-control`.
+- L'empreinte descend dans la brique de base, `zyr-proto`. Le canal de commande porte le débit et la cadence tels qu'ils voyagent déjà sur le tube, et le service en fait lui-même le profil de son tunnel. Les comptes, le réseau local, le canal de commande, l'ouverture de session et la fenêtre ne dépendent plus de la brique de la connexion.
+- FFmpeg n'est connu que des deux moitiés du moteur : le service passe par le moteur hôte, et la fenêtre, l'ouverture de session et la ligne de commande passent par le lecteur.
+
+**Les couches.** Chaque brique n'utilise que des briques de sa couche ou des couches du dessous : la base (`zyr-proto`), la plateforme (`zyr-screen`, `zyr-sound`), le moteur (`zyr-media`, `zyr-codec`, `zyr-link`, `zyr-host`, `zyr-player`), le réseau et les comptes (`zyr-transport`, `zyr-tunnel`, `zyr-lan`, `zyr-broker`, `zyr-account`), le produit qui se parle à lui-même (`zyr-control`, `zyr-session`, `zyr-clipboard`), puis les programmes, que rien n'utilise : la fenêtre, le service, la ligne de commande et le serveur. Le moteur n'utilise que le moteur, la base et la plateforme.
+
+**Vérifié à chaque essai.** La carte complète, brique par brique, vit dans `crates/zyr-layers`. Ses essais lisent tous les manifestes du dépôt et échouent si une brique en utilise une que la carte ne lui donne pas, si la carte en donne une qui ne sert plus, si une brique y manque, si une brique utilise une couche au-dessus de la sienne, si le moteur sort du moteur, si une autre brique que les deux moitiés du moteur touche FFmpeg, ou si quelque chose s'appuie sur un programme. Une nouvelle dépendance se décide donc en modifiant la carte, à découvert. Ce qu'une brique n'utilise que pour ses essais n'en fait pas partie : un essai de bout en bout assemble ce qu'il vérifie.
+
+**La suite du chantier.** Cinq étapes, chacune livrée seule et essayée par Victor avant la suivante :
+
+1. Isoler les moteurs : celle-ci.
+2. Le grand ménage : code mort, dépendances inutiles, commentaires périmés, un seul exemplaire de chaque petit outil recopié.
+3. Des faits plutôt que des phrases : les moteurs, le service et le serveur disent des codes, l'interface choisit les mots, avec la traduction de [D234](#d234-les-journaux-passent-en-anglais-et-ce-que-la-personne-lit-passe-par-une-traduction-2026-09-28-pendant-mz).
+4. Alléger le service : sa logique part dans des briques qu'on peut essayer seules, et il ne fait plus que les assembler.
+5. Sortir de l'interface ce qui n'est pas de l'interface (la reprise d'une session coupée, le diagnostic des voyants, le démarrage du service, le suivi des fichiers collés), séparer la boîte à outils de dessin, l'interface de session et l'accueil, et ranger l'interface de session. L'accueil, qui sera refait de zéro, est seulement déplacé. L'interface de session est définitive, à une chose près : la couleur d'accentuation, aujourd'hui le doré écrit en dur, deviendra un choix de la personne, que toute l'interface suivra aussitôt.
+
+## D234. Les journaux passent en anglais, et ce que la personne lit passe par une traduction (2026-09-28, pendant MZ)
+
+> Révise « La règle » de [D220](#d220-le-code-sécrit-en-anglais-ce-que-la-personne-lit-reste-en-français-2026-09-24-pendant-m6) pour ce que la personne lit.
+
+**Le constat.** Le code est bien en anglais depuis D220, mais aucune traduction n'existe : près de mille phrases françaises sont écrites en dur dans dix-sept briques, dont une trentaine dans les moteurs. D220 disait même que ce que la personne lit reste en français, à l'inverse de la règle de Victor : l'anglais d'abord, les autres langues ensuite.
+
+**Décision de Victor.**
+
+- Les journaux s'écrivent en anglais, comme dans Melyxar : ce sont des messages techniques, lus pour chercher une panne.
+- Tout ce que la personne lit passe par une traduction. L'anglais est la langue de base, le français s'y greffe, et ajouter une langue veut dire ajouter un fichier, sans toucher au code.
+
+**Comment, à l'étape 3 de [D233](#d233-les-briques-en-couches-et-les-moteurs-à-part-2026-09-28-pendant-mz).** Les moteurs, le service et le serveur ne composent plus de phrases pour la personne : ils disent des faits, par des codes, et c'est l'interface qui choisit les mots, dans la langue de la personne. Une petite brique tient les textes. L'interface de session y passe ; l'accueil, qui sera refait de zéro, n'est pas traduit maintenant et naîtra directement branché sur elle. D'ici là, les textes et les journaux restent tels qu'ils sont.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

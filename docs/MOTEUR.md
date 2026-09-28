@@ -98,7 +98,7 @@ Sunshine, Moonlight, leurs vingt-quatre patchs, leurs sous-modules, leurs compil
 |---|---|
 | `zyr-media` | Les formats du moteur, sans rien de Windows : paquets, correction d'erreurs, touches et souris, messages, cadence, mesures |
 | `zyr-codec` | FFmpeg chargé au démarrage : encodeurs, décodeurs, Opus |
-| `zyr-control` | Le tube de la fenêtre au service, et désormais les tubes du moteur |
+| `zyr-link` | Le tube entre chaque moitié du moteur et le service de sa machine, à part du dialogue entre la fenêtre et le service ([D233](DECISIONS.md)) |
 | `zyr-tunnel` | Le passage entre les tubes du moteur et le tunnel |
 | `zyr-host` | Le moteur hôte : capture, conversion, encodage, son, clavier et souris injectés |
 | `zyr-player` | Le lecteur : réassemblage, décodage, affichage, son |

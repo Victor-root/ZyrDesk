@@ -20,6 +20,7 @@ members = [
     "crates/zyr-cli",
     "crates/zyr-ui",
     "crates/zyrdeskd",
+    "crates/zyr-layers",
     "server/zyr-server",
 ]
 
