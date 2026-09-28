@@ -72,7 +72,7 @@ impl Com {
         let joined = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
         if joined.is_err() {
             return Err(SoundError::Failed(format!(
-                "COM refuse ce fil (0x{:08X})",
+                "COM refuses this thread (0x{:08X})",
                 joined.0 as u32
             )));
         }
@@ -116,7 +116,10 @@ impl Listening {
         let com = Com::join()?;
         let task = ThreadTask::join(w!("Pro Audio"), log);
         let refused = |what: &str, e: windows::core::Error| {
-            SoundError::Failed(format!("la carte son ne répond pas ({})", failed(what, &e)))
+            SoundError::Failed(format!(
+                "the sound card does not answer ({})",
+                failed(what, &e)
+            ))
         };
         // SAFETY: a plain constructor on this COM thread.
         let enumerator: IMMDeviceEnumerator =
@@ -126,7 +129,7 @@ impl Listening {
         let device =
             unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eConsole) }.map_err(|e| {
                 SoundError::Failed(format!(
-                    "aucune carte son n'est active sur l'ordinateur d'en face ({})",
+                    "no sound card is active on the far computer ({})",
                     failed("finding the default sound card", &e)
                 ))
             })?;
@@ -168,7 +171,7 @@ impl Listening {
         } else {
             let resampler = Resampler::new(ffmpeg, heard, AudioFormat::OPUS).map_err(|e| {
                 SoundError::Failed(format!(
-                    "le son ne peut pas être ramené à 48 kHz stéréo ({e})"
+                    "the sound cannot be brought to 48 kHz stereo ({e})"
                 ))
             })?;
             Some(resampler)
@@ -274,7 +277,7 @@ impl Listening {
             return SoundError::Changed;
         }
         SoundError::Failed(format!(
-            "la carte son ne répond plus ({})",
+            "the sound card no longer answers ({})",
             failed("reading what the sound card plays", &e)
         ))
     }
@@ -349,8 +352,8 @@ fn read_format(format: *const WAVEFORMATEX) -> Result<(u32, u16), String> {
     let (rate, channels, bits) = (base.nSamplesPerSec, base.nChannels, base.wBitsPerSample);
     if !float || bits != 32 || channels == 0 || rate == 0 {
         return Err(format!(
-            "le mélangeur de sons a un format inattendu : type {tag}, {bits} bits, {channels} \
-             canaux, {rate} Hz"
+            "the sound mixer has an unexpected format: type {tag}, {bits} bits, {channels} \
+             channels, {rate} Hz"
         ));
     }
     Ok((rate, channels))

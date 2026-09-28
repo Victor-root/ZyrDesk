@@ -920,9 +920,7 @@ struct NoSoundCard;
 
 impl Sound for NoSoundCard {
     fn open(&mut self) -> Result<Box<dyn SoundCapture>, SoundError> {
-        Err(SoundError::Failed(
-            "aucune carte son n'est active".to_string(),
-        ))
+        Err(SoundError::Failed("no sound card is active".to_string()))
     }
 }
 

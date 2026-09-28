@@ -190,7 +190,7 @@ pub enum SoundError {
 impl fmt::Display for SoundError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SoundError::Changed => f.write_str("la carte son a changé"),
+            SoundError::Changed => f.write_str("the sound card changed"),
             SoundError::Failed(why) => f.write_str(why),
         }
     }
