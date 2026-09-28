@@ -123,12 +123,12 @@ impl FromStr for Seat {
         let mut scale = 0;
         for field in line.split_whitespace() {
             let Some((key, value)) = field.split_once('=') else {
-                return Err(format!("« {field} » n'est pas clé=valeur"));
+                return Err(format!("« {field} » is not key=value"));
             };
             let number = |what: &str| {
                 value
                     .parse::<u32>()
-                    .map_err(|_| format!("{what} attendu en nombre : {value}"))
+                    .map_err(|_| format!("{what} expected as a number: {value}"))
             };
             match key {
                 "adapter" => adapter = Some(value.to_string()),
@@ -143,29 +143,29 @@ impl FromStr for Seat {
                 "size" => {
                     let (wide, high) = value
                         .split_once('x')
-                        .ok_or_else(|| format!("taille attendue LARGEURxHAUTEUR : {value}"))?;
+                        .ok_or_else(|| format!("size expected as WIDTHxHEIGHT: {value}"))?;
                     size = Some((
-                        wide.parse::<u32>().map_err(|_| "largeur".to_string())?,
-                        high.parse::<u32>().map_err(|_| "hauteur".to_string())?,
+                        wide.parse::<u32>().map_err(|_| "width".to_string())?,
+                        high.parse::<u32>().map_err(|_| "height".to_string())?,
                     ));
                 }
-                "rate" => refresh = number("cadence")?,
+                "rate" => refresh = number("rate")?,
                 "at" => {
                     let (x, y) = value
                         .split_once(',')
-                        .ok_or_else(|| format!("place attendue X,Y : {value}"))?;
+                        .ok_or_else(|| format!("place expected as X,Y: {value}"))?;
                     at = (
-                        x.parse::<i32>().map_err(|_| "abscisse".to_string())?,
-                        y.parse::<i32>().map_err(|_| "ordonnée".to_string())?,
+                        x.parse::<i32>().map_err(|_| "x coordinate".to_string())?,
+                        y.parse::<i32>().map_err(|_| "y coordinate".to_string())?,
                     );
                 }
-                "turned" => turned = number("quarts de tour")?,
+                "turned" => turned = number("quarter turns")?,
                 "main" => main = value == "yes",
-                "scale" => scale = number("agrandissement")?,
-                other => return Err(format!("« {other} » n'est pas un champ d'écran")),
+                "scale" => scale = number("magnification")?,
+                other => return Err(format!("« {other} » is not a screen field")),
             }
         }
-        let adapter = adapter.ok_or_else(|| "aucun écran nommé sur la ligne".to_string())?;
+        let adapter = adapter.ok_or_else(|| "no screen named on the line".to_string())?;
         let (wide, high) = size.unwrap_or((0, 0));
         Ok(Seat {
             adapter,
@@ -920,7 +920,7 @@ mod tests {
         // Three screens put back out of four are better than none, and
         // a file half written by a machine that switched off is
         // exactly what has to be survived.
-        let text = format!("{}\n\nn'importe quoi\n", seat());
+        let text = format!("{}\n\nnonsense\n", seat());
         assert_eq!(read(&text), vec![seat()]);
     }
 }

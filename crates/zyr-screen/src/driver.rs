@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn a_package_short_of_a_file_is_refused_by_name() {
-        let nowhere = Path::new("/pas/de/dossier/ici");
+        let nowhere = Path::new("/no/folder/here");
         let refusal = crate::mtt::MTT.check_package(nowhere).unwrap_err();
         let said = refusal.to_string();
         assert!(said.contains(crate::mtt::MTT.inf_file()), "{said}");

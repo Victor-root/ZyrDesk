@@ -98,14 +98,14 @@ pub enum Trouble {
 impl fmt::Display for Trouble {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Trouble::NotHere => f.write_str("l'écran virtuel n'existe que sous Windows"),
+            Trouble::NotHere => f.write_str("the virtual screen only exists on Windows"),
             Trouble::PackageIncomplete { missing } => {
-                write!(f, "fichier manquant dans le pilote fourni : {missing}")
+                write!(f, "file missing from the driver supplied: {missing}")
             }
             Trouble::System { doing, code } => {
-                write!(f, "Windows a refusé ({doing}), code {code}")
+                write!(f, "Windows refused ({doing}), code {code}")
             }
-            Trouble::File { path, reason } => write!(f, "{path} : {reason}"),
+            Trouble::File { path, reason } => write!(f, "{path}: {reason}"),
         }
     }
 }

@@ -153,7 +153,7 @@ impl Driver for Mtt {
             reason: e.to_string(),
         })?;
         done.step(format!(
-            "virtual screen sizes written to {} : {}",
+            "virtual screen sizes written to {}: {}",
             settings.display(),
             modes
                 .iter()
