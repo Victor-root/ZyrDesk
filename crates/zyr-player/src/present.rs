@@ -196,7 +196,7 @@ impl Presenter for Headless {
             #[cfg(windows)]
             DecodedFrame::D3d11(_) => {
                 return Err(Fault::Failed(
-                    "une image décodée par la carte graphique ne se montre pas sans fenêtre"
+                    "a picture decoded by the graphics card cannot be shown without a window"
                         .to_string(),
                 ));
             }

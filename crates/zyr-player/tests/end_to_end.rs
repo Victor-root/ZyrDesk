@@ -186,7 +186,7 @@ impl Drop for Journal {
 struct NothingAsked;
 
 fn not_asked_here<T>() -> Result<T, String> {
-    Err("rien de tel n'est demandé dans cet essai".to_string())
+    Err("nothing of the kind is asked in this test".to_string())
 }
 
 impl Answers for NothingAsked {
@@ -913,7 +913,7 @@ impl PlayingScreen {
                 main: true,
                 width: BENCH_WIDTH,
                 height: BENCH_HEIGHT,
-                name: "Écran de mesure".to_string(),
+                name: "Measuring screen".to_string(),
             },
             next_image: Instant::now(),
             latest: None,

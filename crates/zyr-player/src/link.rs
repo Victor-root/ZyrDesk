@@ -124,7 +124,7 @@ pub fn run(parts: Parts, connected: SyncSender<io::Result<()>>) {
             .unwrap_or_else(|_| {
                 Err(io::Error::new(
                     io::ErrorKind::TimedOut,
-                    "le lien local ne répond pas",
+                    "the local link does not answer",
                 ))
             });
         match reached {
