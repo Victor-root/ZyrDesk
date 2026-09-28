@@ -1505,7 +1505,8 @@ impl Inner {
         }
         *said = true;
         Some(format!(
-            "not one packet has been given to the socket for {} ms, though a session is open:              {arrived} arrived before that, {} of them ours",
+            "not one packet has been given to the socket for {} ms, though a session is open: \
+             {arrived} arrived before that, {} of them ours",
             quiet.as_millis(),
             self.ours.load(Ordering::Relaxed)
         ))

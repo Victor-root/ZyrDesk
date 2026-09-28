@@ -146,7 +146,7 @@ fn raw_name() -> Option<String> {
 fn readable(found: Option<String>) -> String {
     let cleaned = found.unwrap_or_default().trim().to_string();
     if cleaned.is_empty() {
-        "Cet ordinateur".to_string()
+        "This computer".to_string()
     } else {
         cleaned
     }
@@ -228,8 +228,8 @@ mod tests {
 
     #[test]
     fn nothing_readable_still_gives_something_to_display() {
-        assert_eq!(readable(None), "Cet ordinateur");
-        assert_eq!(readable(Some("   ".to_string())), "Cet ordinateur");
+        assert_eq!(readable(None), "This computer");
+        assert_eq!(readable(Some("   ".to_string())), "This computer");
         assert_eq!(readable(Some("  PC-BUREAU\n".to_string())), "PC-BUREAU");
     }
 }

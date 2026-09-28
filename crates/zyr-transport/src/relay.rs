@@ -248,7 +248,8 @@ impl Branch {
         let path = self.inner.connection.carrying();
         let carried = self.carried();
         format!(
-            "{} ms to the relay, {} bytes may be out unanswered at once, {} bytes of room left in              its queue, {} packets handed over, {} with no room for them, {} lost on the way",
+            "{} ms to the relay, {} bytes may be out unanswered at once, {} bytes of room left in \
+             its queue, {} packets handed over, {} with no room for them, {} lost on the way",
             path.round_trip.as_millis(),
             path.window,
             self.inner.connection.send_queue_room(),

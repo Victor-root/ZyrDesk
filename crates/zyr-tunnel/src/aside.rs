@@ -865,7 +865,7 @@ fn unreadable(reason: impl fmt::Display) -> io::Error {
 /// A reason longer than the channel takes would not arrive at all, and
 /// the other computer would show a transport fault where it should have
 /// shown the reason. Better shortened than lost. Cut on a character and
-/// never inside one: these reasons are written in French.
+/// never inside one: a reason can carry letters of any language.
 fn shortened(reason: &str) -> String {
     let flat = reason.replace('\n', " ");
     if flat.len() <= ROOM {

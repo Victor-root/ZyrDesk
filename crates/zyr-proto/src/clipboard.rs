@@ -429,15 +429,6 @@ impl HowFar {
         let files = next()?.parse().map_err(|_| Unreadable)?;
         Ok(Self { done, whole, files })
     }
-
-    /// What it says to somebody watching, in the words of the interface.
-    ///
-    /// The weight and not the count of files, because the weight is what
-    /// the waiting is made of: a thousand small files go by in the time
-    /// one large one takes.
-    pub fn in_words(&self) -> String {
-        format!("{} / {}", weighed(self.done), weighed(self.whole))
-    }
 }
 
 /// A weight in the largest unit that leaves it above one, which is how a
