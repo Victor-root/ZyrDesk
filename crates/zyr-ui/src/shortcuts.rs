@@ -273,9 +273,6 @@ fn read_lines(contents: &str) -> Bound {
 }
 
 pub fn write(path: &Path, bound: &Bound) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
     let mut text = String::from(
         "# Raccourcis clavier de ZyrDesk, un par ligne.\n\
          # Une ligne absente veut dire qu'aucune touche n'est attribuée.\n",
@@ -283,7 +280,7 @@ pub fn write(path: &Path, bound: &Bound) -> io::Result<()> {
     for (doing, combination) in bound.in_force() {
         text.push_str(&format!("{} {combination}\n", doing.name()));
     }
-    fs::write(path, text)
+    zyr_proto::files::replace(path, &text)
 }
 
 /// Where a key sits on the keyboard, as the keyboard reports it.

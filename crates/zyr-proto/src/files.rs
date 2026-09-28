@@ -1,4 +1,5 @@
-//! Replacing a file whole, without a moment where it is neither.
+//! Replacing a file whole, without a moment where it is neither, and
+//! reading back the settings such a file holds.
 //!
 //! A file rewritten in place is empty for the time of the write: a
 //! service killed in that instant, or a machine losing power, leaves a
@@ -47,9 +48,29 @@ pub fn replace_bytes(path: &Path, contents: &[u8]) -> io::Result<()> {
     fs::rename(&making, path)
 }
 
+/// The settings a text holds, written one to a line as `key = value`:
+/// blank lines and lines starting with `#` say nothing, and a line
+/// without `=` is passed over.
+pub fn settings(text: &str) -> impl Iterator<Item = (&str, &str)> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .filter_map(|line| line.split_once('='))
+        .map(|(key, value)| (key.trim(), value.trim()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_are_read_one_to_a_line() {
+        let text = "# a comment\n\n  theme = sombre \nx=12\nnot a setting\ny = \n";
+        assert_eq!(
+            settings(text).collect::<Vec<_>>(),
+            [("theme", "sombre"), ("x", "12"), ("y", "")]
+        );
+    }
 
     fn fresh_folder(name: &str) -> std::path::PathBuf {
         let folder = std::env::temp_dir().join(format!(

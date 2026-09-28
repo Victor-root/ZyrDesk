@@ -1,6 +1,7 @@
-//! The port a computer is reached on, and how long it may stay silent
-//! before a session is given up.
+//! The port a computer is reached on, where it listens, and how long it
+//! may stay silent before a session is given up.
 
+use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
 
 /// The one port a computer opens to be reachable.
@@ -10,6 +11,11 @@ use std::time::Duration;
 /// multiplexed inside a single encrypted connection. That is what makes
 /// one firewall rule enough.
 pub const TUNNEL_PORT: u16 = 47000;
+
+/// Every network interface of this computer: where it listens, so that it
+/// is reachable from wherever the other one is, and where a tunnel leaves
+/// from.
+pub const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
 /// How long a computer may go completely unheard before the session it
 /// carries is given up.

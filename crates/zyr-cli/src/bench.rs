@@ -12,7 +12,7 @@
 //! created.
 
 use std::error::Error;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,6 +20,7 @@ use std::time::Duration;
 use clap::{Args, Subcommand};
 use zyr_link::{Access, Link, LinkListener};
 use zyr_proto::fingerprint::Fingerprint;
+use zyr_proto::net::EVERY_INTERFACE;
 use zyr_proto::paths;
 use zyr_transport::{
     Connection, Identity, Media, MediaProfile, Path, TunnelEndpoint, datagram_budget,
@@ -102,8 +103,6 @@ impl Answers for Bench {
         Err("le banc de mesure ne copie aucun fichier".to_string())
     }
 }
-/// The bench takes connections from any interface.
-const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 /// Rhythm at which the host bench watches for the traffic to start.
 const WATCH_STEP: Duration = Duration::from_millis(200);
 
@@ -552,6 +551,8 @@ fn detail(outcome: &Outcome) {
 
 #[cfg(test)]
 mod tests {
+    use std::net::Ipv4Addr;
+
     use super::*;
 
     #[tokio::test]

@@ -479,13 +479,11 @@ fn fill_in_what_cannot(desk: &mut [zyr_screen::arrangement::Seat]) -> Vec<String
     said
 }
 
-/// Writes one of this folder's notes, making the folder if it is not
-/// there yet.
+/// Writes one of this folder's notes whole, making the folder if it is
+/// not there yet: a note caught half written would be read as another.
 #[cfg(windows)]
 fn write_beside(name: &str, text: &str) -> std::io::Result<()> {
-    let home = paths::virtual_screen_dir();
-    std::fs::create_dir_all(&home)?;
-    std::fs::write(home.join(name), text)
+    zyr_proto::files::replace(&paths::virtual_screen_dir().join(name), text)
 }
 
 /// Wakes the virtual screen for a session that wants a picture that size.

@@ -29,7 +29,7 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::io;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -42,7 +42,7 @@ use zyr_link::{Access, Link, LinkListener};
 use zyr_media::service::{ToEngine, ToService};
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::log::Log;
-use zyr_proto::net::TUNNEL_PORT;
+use zyr_proto::net::{EVERY_INTERFACE, TUNNEL_PORT};
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
 use zyr_proto::sifting::Sifting;
@@ -62,10 +62,6 @@ const TAG: &str = "gateway";
 
 /// How often a session in progress is looked over.
 const SESSION_WATCH: Duration = Duration::from_secs(2);
-
-/// Every network interface: the computer is reachable from wherever the
-/// other one is.
-const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
 /// How often the list of authorised devices is worked out again.
 const AUTHORIZED_REFRESH: Duration = Duration::from_secs(5);

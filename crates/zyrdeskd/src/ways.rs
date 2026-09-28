@@ -21,7 +21,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -32,6 +32,7 @@ use zyr_media::service::ToPlayer;
 use zyr_proto::clipboard::Clip;
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::log::Log;
+use zyr_proto::net::EVERY_INTERFACE;
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
@@ -45,9 +46,6 @@ use crate::said::{self, Said};
 
 /// What this module's lines are filed under.
 const TAG: &str = "way";
-
-/// Where the tunnel leaves from: any interface, any port.
-const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
 /// How long a computer presented by the server gets to answer through
 /// one of the addresses named, both sides probing all the while.

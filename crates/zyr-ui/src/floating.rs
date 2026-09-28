@@ -379,11 +379,9 @@ pub fn where_it_was_left() {
         return;
     };
     let read = |name: &str| {
-        written
-            .lines()
-            .map(str::trim)
-            .find_map(|line| line.strip_prefix(name)?.trim().strip_prefix('='))
-            .and_then(|value| value.trim().parse::<i32>().ok())
+        zyr_proto::files::settings(&written)
+            .find(|(key, _)| *key == name)
+            .and_then(|(_, value)| value.parse::<i32>().ok())
     };
     if let (Some(dx), Some(dy)) = (read("x"), read("y")) {
         nudged_to(dx, dy);

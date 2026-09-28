@@ -113,11 +113,10 @@ pub fn what_was_chosen() {
     let Ok(written) = std::fs::read_to_string(&path) else {
         return;
     };
-    let said = written
-        .lines()
-        .map(str::trim)
-        .find_map(|line| line.strip_prefix("theme")?.trim().strip_prefix('='));
-    if let Some(choice) = said.and_then(|said| Choice::read(said.trim())) {
+    let said = zyr_proto::files::settings(&written)
+        .find(|(key, _)| *key == "theme")
+        .map(|(_, value)| value);
+    if let Some(choice) = said.and_then(Choice::read) {
         CHOSEN.store(choice.rank(), Ordering::Relaxed);
     }
 }

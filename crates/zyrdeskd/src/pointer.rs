@@ -180,10 +180,7 @@ pub fn follow_the_pointer_here() {
             // reads between two writes, and a word caught half written
             // would be a shape nobody named.
             let path = zyr_proto::paths::pointer_here();
-            let beside = path.with_extension("new");
-            if std::fs::write(&beside, format!("{shape}\n")).is_ok()
-                && std::fs::rename(&beside, &path).is_ok()
-            {
+            if zyr_proto::files::replace(&path, &format!("{shape}\n")).is_ok() {
                 written = Some(shape);
             }
         }

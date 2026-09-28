@@ -291,15 +291,7 @@ fn told(value: &str, so_far: bool) -> bool {
 
 fn parsed(text: &str) -> Preferences {
     let mut preferences = Preferences::default();
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        let (key, value) = (key.trim(), value.trim());
+    for (key, value) in zyr_proto::files::settings(text) {
         let preferred = &mut preferences.preferred;
         match key {
             // Anything other than a plain no is read as yes: a line

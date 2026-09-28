@@ -60,16 +60,8 @@ impl Link {
         let mut token = None;
         let mut pin = None;
         let mut signing_key = None;
-        for line in text.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let Some((key, value)) = line.split_once('=') else {
-                continue;
-            };
-            let value = value.trim();
-            match key.trim() {
+        for (key, value) in zyr_proto::files::settings(text) {
+            match key {
                 "server" => server = Some(value.to_string()),
                 "name" => name = Some(value.to_string()),
                 "username" => username = Some(value.to_string()),
