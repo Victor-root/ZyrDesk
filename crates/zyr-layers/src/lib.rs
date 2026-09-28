@@ -118,7 +118,6 @@ mod tests {
                 "zyr-player",
                 "zyr-proto",
                 "zyr-session",
-                "zyr-sound",
             ],
         ),
         (

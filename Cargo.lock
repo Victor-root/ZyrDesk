@@ -3055,7 +3055,6 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "rcgen",
- "rustls",
  "serde",
  "serde_json",
  "tokio",
@@ -3291,7 +3290,6 @@ dependencies = [
  "zyr-player",
  "zyr-proto",
  "zyr-session",
- "zyr-sound",
 ]
 
 [[package]]
