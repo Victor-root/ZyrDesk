@@ -191,3 +191,70 @@ key.ctrl = Ctrl
 key.alt = Alt
 key.shift = Maj
 key.win = Win
+
+# The floating button's menu, during a session.
+menu.fullscreen = Fenêtré ou plein écran
+menu.figures = Statistiques
+menu.badges = Voyants
+menu.badges_when_needed = Au besoin
+menu.badges_held = Tenus
+menu.mouse = Souris
+menu.mouse_desktop = Bureau
+menu.mouse_game = Jeu
+menu.sound = Son
+menu.sound_on = Actif
+menu.sound_muted = Coupé
+menu.keyboard = Clavier
+menu.keyboard_shared = Partagé
+menu.keyboard_immersive = Immersif
+menu.clipboard = Presse-papiers
+menu.clipboard_each_its_own = Chacun le sien
+menu.clipboard_shared = Partagé
+menu.ctrl_alt_del = Ctrl+Alt+Suppr
+menu.on_the_far_computer = sur l'ordinateur distant
+menu.lock = Verrouiller
+menu.the_far_computer = l'ordinateur distant
+menu.resolution = Résolution
+menu.host_screen = Écran de l'hôte
+menu.bitrate = Débit
+menu.codec = Codec
+menu.far_screen = Écran d'en face
+menu.hide_the_button = Masquer ce bouton
+menu.until_the_end = jusqu'à la fin
+menu.end_the_session = Terminer la session
+menu.hands_the_desktop_back = rend le bureau distant
+menu.client_resolution = Résolution du client
+menu.host_resolution = Résolution de l'hôte
+menu.client_resolution_short = client, {pixels}
+menu.host_resolution_short = hôte
+menu.main_screen = {name} (principal)
+menu.codec_auto = Automatique
+menu.far_screen_smooth = Fluide
+menu.far_screen_thrifty = Économe
+
+# The figures of a session, in its banner and in the menu.
+figures.host = Hôte
+figures.network = Réseau
+figures.decode = Décodage
+figures.display = Affichage
+figures.bitrate = Débit
+figures.losses = Pertes
+figures.latency = Latence de bout en bout
+figures.frames_per_second = {frames} images/s
+figures.losses_on_the_way = {lost} en route, {late} trop tard
+
+# The two badges in the corner of the picture.
+badge.frozen = l'image est figée depuis {ms} ms
+badge.lost = {pct} % des images se perdent en route
+badge.late = {pct} % des images arrivent trop tard
+badge.far_too_slow = l'ordinateur d'en face met {each} ms par image, pour {budget} ms disponibles
+badge.here_too_slow = cet ordinateur met {each} ms à décoder une image, pour {budget} ms disponibles
+badge.link_is_fine = le lien va bien : rien ne se perd et l'image suit
+badge.both_keep_up = les deux ordinateurs suivent : l'image est encodée et décodée à temps
+
+# The icon beside the clock.
+tray.session_under_way = ZyrDesk : une session est en cours, cliquez pour revenir à la fenêtre
+tray.reachable = ZyrDesk : cet ordinateur peut être contrôlé
+tray.not_reachable = ZyrDesk : cet ordinateur n'est pas joignable
+tray.open = Ouvrir ZyrDesk
+tray.quit = Quitter

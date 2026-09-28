@@ -194,3 +194,70 @@ key.ctrl = Ctrl
 key.alt = Alt
 key.shift = Shift
 key.win = Win
+
+# The floating button's menu, during a session.
+menu.fullscreen = Windowed or full screen
+menu.figures = Statistics
+menu.badges = Badges
+menu.badges_when_needed = When needed
+menu.badges_held = Held
+menu.mouse = Mouse
+menu.mouse_desktop = Desktop
+menu.mouse_game = Game
+menu.sound = Sound
+menu.sound_on = On
+menu.sound_muted = Muted
+menu.keyboard = Keyboard
+menu.keyboard_shared = Shared
+menu.keyboard_immersive = Immersive
+menu.clipboard = Clipboard
+menu.clipboard_each_its_own = Each its own
+menu.clipboard_shared = Shared
+menu.ctrl_alt_del = Ctrl+Alt+Del
+menu.on_the_far_computer = on the far computer
+menu.lock = Lock
+menu.the_far_computer = the far computer
+menu.resolution = Resolution
+menu.host_screen = Host's screen
+menu.bitrate = Bitrate
+menu.codec = Codec
+menu.far_screen = Far screen
+menu.hide_the_button = Hide this button
+menu.until_the_end = until the end
+menu.end_the_session = End the session
+menu.hands_the_desktop_back = hands the far desktop back
+menu.client_resolution = Client's resolution
+menu.host_resolution = Host's resolution
+menu.client_resolution_short = client, {pixels}
+menu.host_resolution_short = host
+menu.main_screen = {name} (main)
+menu.codec_auto = Automatic
+menu.far_screen_smooth = Smooth
+menu.far_screen_thrifty = Thrifty
+
+# The figures of a session, in its banner and in the menu.
+figures.host = Host
+figures.network = Network
+figures.decode = Decoding
+figures.display = Display
+figures.bitrate = Bitrate
+figures.losses = Losses
+figures.latency = End-to-end latency
+figures.frames_per_second = {frames} fps
+figures.losses_on_the_way = {lost} on the way, {late} too late
+
+# The two badges in the corner of the picture.
+badge.frozen = the picture has been frozen for {ms} ms
+badge.lost = {pct} % of the frames are lost on the way
+badge.late = {pct} % of the frames arrive too late
+badge.far_too_slow = the far computer takes {each} ms per frame, for {budget} ms available
+badge.here_too_slow = this computer takes {each} ms to decode a frame, for {budget} ms available
+badge.link_is_fine = the link is fine: nothing gets lost and the picture keeps up
+badge.both_keep_up = both computers keep up: the picture is encoded and decoded in time
+
+# The icon beside the clock.
+tray.session_under_way = ZyrDesk: a session is under way, click to go back to the window
+tray.reachable = ZyrDesk: this computer can be controlled
+tray.not_reachable = ZyrDesk: this computer cannot be reached
+tray.open = Open ZyrDesk
+tray.quit = Quit

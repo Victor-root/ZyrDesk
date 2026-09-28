@@ -34,6 +34,7 @@ use crate::paint::{Align, Canvas, Icon, Pen, Rect};
 use crate::settings::{Offered, SessionMenu};
 use crate::shortcuts::Doing;
 use crate::win32::pointer_in;
+use zyr_i18n::key;
 use zyr_player::Measures;
 use zyr_proto::fact::Fact;
 
@@ -50,6 +51,10 @@ fn note(what: &str) {
 /// The card is described first and drawn afterwards: measuring its width
 /// needs all of its lines known before a single one is laid down, and the
 /// card is as wide as its longest line.
+///
+/// Every word a line carries is the key of its text: the card is fixed
+/// when the program is built, and the words are said where it is drawn,
+/// in the person's language.
 enum Line {
     /// What the session costs: four numbers and a sentence.
     Measures,
@@ -72,7 +77,7 @@ enum Line {
 /// A line that carries a few values with no order between them.
 ///
 /// Buttons and not a bar: the codec is not a scale, it is a few names,
-/// one of them an "Automatique" that is not a value but a renunciation,
+/// one of them an "Automatic" that is not a value but a renunciation,
 /// and pushing a slider would promise a more and a less that do not
 /// exist.
 struct Choice {
@@ -139,13 +144,14 @@ struct Entry {
     destructive: bool,
 }
 
-/// What is written to the right of a line.
+/// What is written to the right of a line, by the key of its words when
+/// there are any.
 enum Trailing {
-    /// What the line does, spelled out.
-    Text(&'static str),
-    /// The combination in place for it, or this word here as long as
+    /// What the line does, spelled out, or nothing.
+    Text(Option<&'static str>),
+    /// The combination in place for it, or these words here as long as
     /// nobody has given it one.
-    Key(Doing, &'static str),
+    Key(Doing, Option<&'static str>),
 }
 
 /// What a line asks for when it is clicked.
@@ -181,105 +187,111 @@ const LINES: [Line; 21] = [
     Line::Separator,
     Line::Entry(Entry {
         icon: &icons::FULL_SCREEN,
-        label: "Fenêtré ou plein écran",
-        trailing: Trailing::Key(Doing::Fullscreen, ""),
+        label: key!("menu.fullscreen"),
+        trailing: Trailing::Key(Doing::Fullscreen, None),
         does: Does::Session(Act::Fullscreen),
         destructive: false,
     }),
     Line::Entry(Entry {
         icon: &icons::STATISTICS,
-        label: "Statistiques",
-        trailing: Trailing::Text(""),
+        label: key!("menu.figures"),
+        trailing: Trailing::Text(None),
         does: Does::Session(Act::Stats),
         destructive: false,
     }),
     Line::Toggle(Toggle {
         icon: &icons::LINK,
-        label: "Voyants",
-        sides: ["Au besoin", "Tenus"],
+        label: key!("menu.badges"),
+        sides: [key!("menu.badges_when_needed"), key!("menu.badges_held")],
         act: Act::Badges,
         state: &HELD,
     }),
     Line::Toggle(Toggle {
         icon: &icons::MOUSE,
-        label: "Souris",
-        sides: ["Bureau", "Jeu"],
+        label: key!("menu.mouse"),
+        sides: [key!("menu.mouse_desktop"), key!("menu.mouse_game")],
         act: Act::MouseMode,
         state: &IN_GAME,
     }),
     Line::Toggle(Toggle {
         icon: &icons::SOUND,
-        label: "Son",
-        sides: ["Actif", "Coupé"],
+        label: key!("menu.sound"),
+        sides: [key!("menu.sound_on"), key!("menu.sound_muted")],
         act: Act::Sound,
         state: &MUTED,
     }),
     Line::Toggle(Toggle {
         icon: &icons::KEYBOARD,
-        label: "Clavier",
-        sides: ["Partagé", "Immersif"],
+        label: key!("menu.keyboard"),
+        sides: [
+            key!("menu.keyboard_shared"),
+            key!("menu.keyboard_immersive"),
+        ],
         act: Act::SystemKeys,
         state: &IMMERSIVE,
     }),
     Line::Toggle(Toggle {
         icon: &icons::CLIPBOARD,
-        label: "Presse-papiers",
-        sides: ["Chacun le sien", "Partagé"],
+        label: key!("menu.clipboard"),
+        sides: [
+            key!("menu.clipboard_each_its_own"),
+            key!("menu.clipboard_shared"),
+        ],
         act: Act::Clipboard,
         state: &SHARED,
     }),
     Line::Entry(Entry {
         icon: &icons::CAD,
-        label: "Ctrl+Alt+Suppr",
-        trailing: Trailing::Text("sur l'ordinateur distant"),
+        label: key!("menu.ctrl_alt_del"),
+        trailing: Trailing::Text(Some(key!("menu.on_the_far_computer"))),
         does: Does::Session(Act::SecureAttention),
         destructive: false,
     }),
     Line::Entry(Entry {
         icon: &icons::LOCK,
-        label: "Verrouiller",
-        trailing: Trailing::Text("l'ordinateur distant"),
+        label: key!("menu.lock"),
+        trailing: Trailing::Text(Some(key!("menu.the_far_computer"))),
         does: Does::Session(Act::LockScreen),
         destructive: false,
     }),
     Line::Separator,
     Line::List(List {
         icon: &icons::RESOLUTION,
-        label: "Résolution",
+        label: key!("menu.resolution"),
         setting: Setting::Size,
     }),
     Line::List(List {
         icon: &icons::HOST_SCREEN,
-        label: "Écran de l'hôte",
+        label: key!("menu.host_screen"),
         setting: Setting::Screen,
     }),
     Line::Slider(Slider {
         icon: &icons::BITRATE,
-        label: "Débit",
+        label: key!("menu.bitrate"),
         setting: Setting::Bitrate,
     }),
     Line::Choice(Choice {
         icon: &icons::CODEC,
-        label: "Codec",
+        label: key!("menu.codec"),
         setting: Setting::Codec,
     }),
     Line::Choice(Choice {
         icon: &icons::FAR_SCREEN,
-        label: "Écran d'en face",
+        label: key!("menu.far_screen"),
         setting: Setting::Steady,
     }),
     Line::Separator,
     Line::Entry(Entry {
         icon: &icons::HIDE,
-        label: "Masquer ce bouton",
-        trailing: Trailing::Key(Doing::Menu, "jusqu'à la fin"),
+        label: key!("menu.hide_the_button"),
+        trailing: Trailing::Key(Doing::Menu, Some(key!("menu.until_the_end"))),
         does: Does::PutAway,
         destructive: false,
     }),
     Line::Entry(Entry {
         icon: &icons::QUIT,
-        label: "Terminer la session",
-        trailing: Trailing::Key(Doing::End, "rend le bureau distant"),
+        label: key!("menu.end_the_session"),
+        trailing: Trailing::Key(Doing::End, Some(key!("menu.hands_the_desktop_back"))),
         does: Does::Session(Act::End),
         destructive: true,
     }),
@@ -320,6 +332,7 @@ mod layout {
 /// One of the bar's four figures: what it costs, how it reads, and
 /// where it is taken from in what the player measures.
 struct Reading {
+    /// The key of its word.
     label: &'static str,
     unit: &'static str,
     /// How many decimals: the network reads in whole milliseconds, the
@@ -337,25 +350,25 @@ struct Reading {
 /// about the same engine would be two engines.
 const READINGS: [Reading; 4] = [
     Reading {
-        label: "Décodage",
+        label: key!("figures.decode"),
         unit: "ms",
         decimals: 2,
         read: |said| said.decode_ms,
     },
     Reading {
-        label: "Hôte",
+        label: key!("figures.host"),
         unit: "ms",
         decimals: 2,
         read: |said| said.host_ms,
     },
     Reading {
-        label: "Réseau",
+        label: key!("figures.network"),
         unit: "ms",
         decimals: 0,
         read: |said| said.network_ms,
     },
     Reading {
-        label: "Débit",
+        label: key!("figures.bitrate"),
         unit: "Mb/s",
         decimals: 2,
         read: |said| said.bitrate_mbps,
@@ -660,8 +673,8 @@ impl Setting {
     fn label(self, menu: &SessionMenu, value: &str) -> String {
         match self {
             Setting::Size => match value {
-                "client" => "Résolution du client".to_string(),
-                "host" => "Résolution de l'hôte".to_string(),
+                "client" => zyr_i18n::say!("menu.client_resolution"),
+                "host" => zyr_i18n::say!("menu.host_resolution"),
                 _ => menu
                     .sizes
                     .iter()
@@ -676,7 +689,7 @@ impl Setting {
                     || value.to_string(),
                     |screen| {
                         if screen.main {
-                            format!("{} (principal)", screen.name)
+                            zyr_i18n::say!("menu.main_screen", name = screen.name)
                         } else {
                             screen.name.clone()
                         }
@@ -688,12 +701,18 @@ impl Setting {
             ),
             Setting::Codec => {
                 if value == "auto" {
-                    "Automatique".to_string()
+                    zyr_i18n::say!("menu.codec_auto")
                 } else {
                     value.to_string()
                 }
             }
-            Setting::Steady => if value == "on" { "Fluide" } else { "Économe" }.to_string(),
+            Setting::Steady => {
+                if value == "on" {
+                    zyr_i18n::say!("menu.far_screen_smooth")
+                } else {
+                    zyr_i18n::say!("menu.far_screen_thrifty")
+                }
+            }
         }
     }
 
@@ -707,7 +726,7 @@ impl Setting {
             // what one wants to know before opening the session.
             Setting::Size => {
                 if current == "host" {
-                    return "hôte".to_string();
+                    return zyr_i18n::say!("menu.host_resolution_short");
                 }
                 let pixels = menu
                     .sizes
@@ -715,14 +734,13 @@ impl Setting {
                     .find(|size| size.value == current)
                     .map_or_else(|| current.clone(), in_pixels);
                 if current == "client" {
-                    format!("client, {pixels}")
+                    zyr_i18n::say!("menu.client_resolution_short", pixels = pixels)
                 } else {
                     pixels
                 }
             }
-            // The name alone: "(principal)" would take the name's room
-            // there without teaching anything, since the list already
-            // says it.
+            // The name alone: "(main)" would take the name's room there
+            // without teaching anything, since the list already says it.
             Setting::Screen => menu
                 .screens
                 .iter()
@@ -808,15 +826,16 @@ fn ratio(width: u32, top: u32) -> String {
 impl Trailing {
     /// What is written, once the shortcuts are known.
     fn text(&self) -> String {
+        let words = |label: &Option<&str>| label.map(zyr_i18n::text).unwrap_or_default();
         match self {
-            Trailing::Text(label) => (*label).to_string(),
+            Trailing::Text(label) => words(label),
             Trailing::Key(doing, otherwise) => KEYS
                 .lock()
-                .expect("raccourcis du menu")
+                .expect("menu's shortcuts")
                 .iter()
                 .find(|(other, _)| other == doing)
                 .and_then(|(_, said)| said.clone())
-                .unwrap_or_else(|| (*otherwise).to_string()),
+                .unwrap_or_else(|| words(otherwise)),
         }
     }
 }
@@ -866,7 +885,7 @@ impl Toggle {
     fn words(&self) -> Vec<String> {
         self.sides
             .iter()
-            .map(|label| (*label).to_string())
+            .map(|label| zyr_i18n::text(label))
             .collect()
     }
 
@@ -892,13 +911,13 @@ fn words_of(menu: &SessionMenu, setting: Setting) -> Vec<String> {
 impl Choice {
     /// What is written on its sides, as the session offers them.
     fn words(&self) -> Option<Vec<String>> {
-        let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+        let session_menu = SESSION_MENU.lock().expect("menu's settings");
         Some(words_of(session_menu.as_ref()?, self.setting))
     }
 
     /// Which one is in place, and the ones the far machine cannot do.
     fn current(&self) -> Option<(usize, Vec<bool>)> {
-        let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+        let session_menu = SESSION_MENU.lock().expect("menu's settings");
         let menu = session_menu.as_ref()?;
         let values = self.setting.values(menu);
         let current = self.setting.current(menu);
@@ -916,7 +935,7 @@ impl Slider {
     /// The notch it is at: the one a hand is holding, otherwise the one
     /// that is written.
     fn notch(&self) -> Option<(usize, usize)> {
-        let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+        let session_menu = SESSION_MENU.lock().expect("menu's settings");
         let menu = session_menu.as_ref()?;
         let values = self.setting.values(menu);
         if values.is_empty() {
@@ -927,7 +946,7 @@ impl Slider {
             .iter()
             .position(|value| *value == current)
             .unwrap_or(0);
-        let pushed = *PUSHED.lock().expect("curseur du menu");
+        let pushed = *PUSHED.lock().expect("menu's slider");
         Some((
             pushed.unwrap_or(written).min(values.len() - 1),
             values.len(),
@@ -937,12 +956,12 @@ impl Slider {
     /// What is written to the right of its word: what it is worth at
     /// the notch it is at, including while a hand is pushing it.
     fn value(&self) -> String {
-        let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+        let session_menu = SESSION_MENU.lock().expect("menu's settings");
         let Some(menu) = session_menu.as_ref() else {
             return String::new();
         };
         let values = self.setting.values(menu);
-        match *PUSHED.lock().expect("curseur du menu") {
+        match *PUSHED.lock().expect("menu's slider") {
             Some(notch) if notch < values.len() => self.setting.label(menu, &values[notch]),
             _ => self.setting.summary(menu),
         }
@@ -959,17 +978,17 @@ pub fn raise(app: &App, scale: f32, light: bool) {
         return;
     }
     let owner = crate::main_window::handle();
-    *PROGRAM.lock().expect("programme du menu") = Some(app.clone());
-    *KEYS.lock().expect("raccourcis du menu") = crate::shortcuts::engraved();
+    *PROGRAM.lock().expect("menu's program") = Some(app.clone());
+    *KEYS.lock().expect("menu's shortcuts") = crate::shortcuts::engraved();
     // Four dashes before the first read, and not four blanks: the bar is
     // there from the first opening, and what it shows then is what the
     // product shows for a missing reading.
-    *READINGS_BAR.lock().expect("mesures du menu") =
+    *READINGS_BAR.lock().expect("menu's readings") =
         ReadingsBar::of(&Measures::default(), &ReadingsBar::empty(), Instant::now());
     store(&SCALE, scale);
     LIGHT.store(light, Ordering::Relaxed);
     OPEN.store(false, Ordering::Relaxed);
-    *PANEL.lock().expect("panneau du menu") = None;
+    *PANEL.lock().expect("menu's panel") = None;
     let _ = app.run_on_main_thread(move || build(owner));
     // What the session offers, asked for once: the notches do not change
     // from one click to the next. The window is built without waiting,
@@ -1000,7 +1019,7 @@ fn reread_the_session_menu(app: &App) {
             // costs a question to the far computer about its screens.
             let answered = read.beyond_it.is_some();
             let change = {
-                let mut session_menu = SESSION_MENU.lock().expect("réglages du menu");
+                let mut session_menu = SESSION_MENU.lock().expect("menu's settings");
                 let change = session_menu.as_ref() != Some(&read);
                 *session_menu = Some(read);
                 change
@@ -1027,7 +1046,7 @@ pub fn lower(app: &App) {
     // card, and a card open at the end of a session does not close, it
     // disappears.
     follow_the_readings(app, false);
-    *PROGRAM.lock().expect("programme du menu") = None;
+    *PROGRAM.lock().expect("menu's program") = None;
     let _ = app.run_on_main_thread(move || {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow;
@@ -1047,16 +1066,16 @@ pub fn show(is_open: bool) {
     // A card put away keeps nothing of the hand that was reading it:
     // opened again, it would show a line lit under a mouse resting
     // elsewhere.
-    *HOVER.lock().expect("survol du menu") = None;
-    *PRESSED.lock().expect("appui du menu") = None;
+    *HOVER.lock().expect("menu's hover") = None;
+    *PRESSED.lock().expect("menu's press") = None;
     HAND_INSIDE.store(false, Ordering::Relaxed);
-    let Some(app) = PROGRAM.lock().expect("programme du menu").clone() else {
+    let Some(app) = PROGRAM.lock().expect("menu's program").clone() else {
         return;
     };
     // A menu opened again opens on itself: staying in a list chosen two
     // sessions ago would be a menu that looks like another one.
-    *PANEL.lock().expect("panneau du menu") = None;
-    *PUSHED.lock().expect("curseur du menu") = None;
+    *PANEL.lock().expect("menu's panel") = None;
+    *PUSHED.lock().expect("menu's slider") = None;
     // What lives in the card only lives while it is being looked at. The
     // switches and the settings are read again at every opening because
     // they may have moved without it.
@@ -1152,7 +1171,7 @@ pub fn lay(
         UPWARD.swap(opens == Opens::Up, Ordering::Relaxed) != (opens == Opens::Up);
     let horizontal_change = RIGHTWARD.swap(on_the_right, Ordering::Relaxed) != on_the_right;
     if (vertical_change || horizontal_change)
-        && let Some(app) = PROGRAM.lock().expect("programme du menu").clone()
+        && let Some(app) = PROGRAM.lock().expect("menu's program").clone()
     {
         // Asked again of the thread that owns the window: it is the one
         // holding the canvas, and this runs on the one that follows the
@@ -1247,7 +1266,7 @@ fn build(owner: isize) {
     // The size is measured before the window exists: it depends on the
     // text, and measuring text takes something to draw it with.
     let Some(measure) = Canvas::new(1, 1) else {
-        note("bouton flottant : le menu n'a pas pu être mesuré");
+        note("floating button: the menu could not be measured");
         return;
     };
     let scale = scale();
@@ -1302,13 +1321,13 @@ fn build(owner: isize) {
         )
     };
     if window.is_null() {
-        note("bouton flottant : la fenêtre du menu n'a pas pu s'ouvrir");
+        note("floating button: the menu's window could not open");
         return;
     }
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);
     note(&format!(
-        "bouton flottant : menu dessiné par ZyrDesk, {width}x{height} px au \
-         départ ; la fenêtre suit ensuite ce que la carte demande"
+        "floating button: menu drawn by ZyrDesk, {width}x{height} px to begin \
+         with; the window then follows what the card asks for"
     ));
 }
 
@@ -1347,7 +1366,7 @@ fn card_width(scale: f32) -> f32 {
 /// The same, measured. Stored afterwards, because the layout asks
 /// for it again at every frame and measuring text costs.
 fn measure_the_card(canvas: &Canvas, scale: f32) {
-    let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+    let session_menu = SESSION_MENU.lock().expect("menu's settings");
     let mut width: f32 = 0.0;
     for line in &LINES {
         width = width.max(match line {
@@ -1362,11 +1381,11 @@ fn measure_the_card(canvas: &Canvas, scale: f32) {
             Line::Entry(entry) => {
                 let right =
                     canvas.width_of(&entry.trailing.text(), Pen::of(design::CAPTION * scale));
-                around(canvas, entry.label, right, scale)
+                around(canvas, &zyr_i18n::text(entry.label), right, scale)
             }
             Line::Toggle(toggle) => around(
                 canvas,
-                toggle.label,
+                &zyr_i18n::text(toggle.label),
                 sides_width(canvas, &toggle.words(), scale),
                 scale,
             ),
@@ -1376,7 +1395,7 @@ fn measure_the_card(canvas: &Canvas, scale: f32) {
             Line::Choice(choice) => match session_menu.as_ref() {
                 Some(menu) => around(
                     canvas,
-                    choice.label,
+                    &zyr_i18n::text(choice.label),
                     sides_width(canvas, &words_of(menu, choice.setting), scale),
                     scale,
                 ),
@@ -1389,7 +1408,7 @@ fn measure_the_card(canvas: &Canvas, scale: f32) {
                     .as_ref()
                     .map_or_else(String::new, |menu| slider.setting.summary(menu));
                 let right = canvas.width_of(&value, Pen::of(design::BODY * scale));
-                around(canvas, slider.label, right, scale)
+                around(canvas, &zyr_i18n::text(slider.label), right, scale)
             }
             Line::List(list) => {
                 let value = session_menu
@@ -1397,7 +1416,7 @@ fn measure_the_card(canvas: &Canvas, scale: f32) {
                     .map_or_else(String::new, |menu| list.setting.summary(menu));
                 let right = canvas.width_of(&value, Pen::of(design::CAPTION * scale))
                     + (design::SPACE_2 + layout::BRAND) * scale;
-                around(canvas, list.label, right, scale)
+                around(canvas, &zyr_i18n::text(list.label), right, scale)
             }
         });
     }
@@ -1486,7 +1505,7 @@ fn with_a_panel() -> impl Iterator<Item = Setting> {
 /// width at the moment a list is opened without the drawing it carries
 /// moving at the same instant.
 fn panels_width(canvas: &Canvas, scale: f32) -> f32 {
-    let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+    let session_menu = SESSION_MENU.lock().expect("menu's settings");
     let Some(menu) = session_menu.as_ref() else {
         return 0.0;
     };
@@ -1512,7 +1531,7 @@ fn panel_width(canvas: &Canvas, menu: &SessionMenu, setting: Setting, scale: f32
 
 /// The height of the tallest panel, for the same reason.
 fn panels_height(scale: f32) -> f32 {
-    let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+    let session_menu = SESSION_MENU.lock().expect("menu's settings");
     let Some(menu) = session_menu.as_ref() else {
         return 0.0;
     };
@@ -1543,7 +1562,7 @@ fn panel(canvas: &Canvas, setting: Setting, scale: f32) -> Option<Rect> {
     // it is held stops the drawing thread for good.
     let card = card(scale);
     let line = panel_line(setting, scale)?;
-    let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+    let session_menu = SESSION_MENU.lock().expect("menu's settings");
     let menu = session_menu.as_ref()?;
     let height = panel_height(menu, setting, scale);
     if height <= 0.0 {
@@ -1587,7 +1606,7 @@ fn panel_walk(canvas: &Canvas, setting: Setting, scale: f32) -> Vec<Rect> {
     let edge = design::SPACE_2 * scale;
     let how_many = SESSION_MENU
         .lock()
-        .expect("réglages du menu")
+        .expect("menu's settings")
         .as_ref()
         .map_or(0, |menu| setting.values(menu).len());
     let mut top = panel.top + edge;
@@ -1657,7 +1676,7 @@ fn card(scale: f32) -> Rect {
 
 /// The height of what the card is showing right now.
 fn content(scale: f32) -> f32 {
-    let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+    let session_menu = SESSION_MENU.lock().expect("menu's settings");
     design::SPACE_2 * scale * 2.0
         + LINES
             .iter()
@@ -1675,7 +1694,7 @@ fn content(scale: f32) -> f32 {
 fn walk(scale: f32) -> Vec<(usize, &'static Line, Rect)> {
     let card = card(scale);
     let edge = design::SPACE_2 * scale;
-    let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+    let session_menu = SESSION_MENU.lock().expect("menu's settings");
     let mut top = card.top + edge;
     let mut placed = Vec::with_capacity(LINES.len());
     for (rank, line) in LINES.iter().enumerate() {
@@ -1711,7 +1730,7 @@ fn under(point: (i32, i32)) -> Option<Target> {
     let inside =
         |place: &Rect| x >= place.left && x < place.right && y >= place.top && y < place.bottom;
 
-    if let Some(setting) = *PANEL.lock().expect("panneau du menu") {
+    if let Some(setting) = *PANEL.lock().expect("menu's panel") {
         let in_the_panel = CANVAS.with_borrow(|canvas| {
             panel_walk(canvas.as_ref()?, setting, scale)
                 .iter()
@@ -1767,8 +1786,8 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     let scale = scale();
     let colours = palette();
     let radius = design::RADIUS * scale;
-    let hover = *HOVER.lock().expect("survol du menu");
-    let is_open = *PANEL.lock().expect("panneau du menu");
+    let hover = *HOVER.lock().expect("menu's hover");
+    let is_open = *PANEL.lock().expect("menu's panel");
 
     CANVAS.with_borrow_mut(|canvas| {
         // The room needed, measured on the canvas that is there: measuring
@@ -1917,7 +1936,8 @@ struct Sides<'a> {
 
 impl Painter<'_> {
     /// The start of a line, which is the same for all of them: its icon
-    /// in its place, and its word after it.
+    /// in its place, and its word after it, said from the key of its
+    /// label.
     fn head(&self, at: Rect, icon: &Icon, label: &str, ink: Colour) {
         let (canvas, scale) = (self.canvas, self.scale);
         let side = layout::ICON * scale;
@@ -1932,7 +1952,7 @@ impl Painter<'_> {
             ink,
         );
         canvas.draw_text(
-            label,
+            &zyr_i18n::text(label),
             Pen::of(design::BODY * scale),
             ink,
             Rect {
@@ -2007,7 +2027,7 @@ impl Painter<'_> {
 
         let brand = layout::BRAND * scale;
         let edge = design::SPACE_2 * scale;
-        let open = *PANEL.lock().expect("panneau du menu") == Some(list.setting);
+        let open = *PANEL.lock().expect("menu's panel") == Some(list.setting);
         canvas.icon(
             // The chevron says which way the list opens, so it turns
             // round when the list is open: the list appears on the left
@@ -2030,7 +2050,7 @@ impl Painter<'_> {
         );
         let value = SESSION_MENU
             .lock()
-            .expect("réglages du menu")
+            .expect("menu's settings")
             .as_ref()
             .map_or_else(String::new, |menu| list.setting.summary(menu));
         self.on_the_right(
@@ -2206,13 +2226,13 @@ impl Painter<'_> {
         let (canvas, scale, colours) = (self.canvas, self.scale, self.colours);
         let edge = design::SPACE_2 * scale;
         let top = at.top + edge;
-        let bar = READINGS_BAR.lock().expect("mesures du menu");
+        let bar = READINGS_BAR.lock().expect("menu's readings");
         for (rank, reading) in READINGS.iter().enumerate() {
             let left =
                 at.left + edge + rank as f32 * (layout::READING + layout::BETWEEN_READINGS) * scale;
             let column = layout::READING * scale;
             canvas.draw_text(
-                reading.label,
+                &zyr_i18n::text(reading.label),
                 Pen::of(design::CAPTION * scale),
                 colours.text_faint,
                 Rect::at(left, top, column, load(&CAPTION_HEIGHT)),
@@ -2271,7 +2291,7 @@ impl Painter<'_> {
 
         let values = panel_walk(canvas, setting, scale);
         let side = layout::BRAND * scale;
-        let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+        let session_menu = SESSION_MENU.lock().expect("menu's settings");
         let Some(menu) = session_menu.as_ref() else {
             return;
         };
@@ -2379,7 +2399,7 @@ unsafe extern "system" fn answer(
         }
         WM_LBUTTONDOWN => {
             let target = under(pointer_in(with));
-            *PRESSED.lock().expect("appui du menu") = target;
+            *PRESSED.lock().expect("menu's press") = target;
             // A slider is taken and pushed: the gesture starts here and
             // only ends on release, where only the notch it arrives at is
             // written.
@@ -2392,7 +2412,7 @@ unsafe extern "system" fn answer(
         // means, and it is what lets one slip away from a button one
         // should not have aimed at.
         WM_LBUTTONUP => {
-            let pressed = PRESSED.lock().expect("appui du menu").take();
+            let pressed = PRESSED.lock().expect("menu's press").take();
             if let Some(Target::Bar(rank)) = pressed {
                 released(window, rank);
                 return 0;
@@ -2427,7 +2447,7 @@ fn under_the_mouse(window: windows_sys::Win32::Foundation::HWND) -> Option<Targe
 /// Lights up what is under the mouse, and redraws when it is no longer
 /// the same thing.
 fn hovers(window: windows_sys::Win32::Foundation::HWND, target: Option<Target>) {
-    let mut hover = HOVER.lock().expect("survol du menu");
+    let mut hover = HOVER.lock().expect("menu's hover");
     if *hover == target {
         return;
     }
@@ -2443,7 +2463,7 @@ fn hovers(window: windows_sys::Win32::Foundation::HWND, target: Option<Target>) 
 /// that seems to do nothing cannot be told apart from a click that never
 /// arrived, and the two are fixed in different places.
 fn acts(target: Target) {
-    let Some(app) = PROGRAM.lock().expect("programme du menu").clone() else {
+    let Some(app) = PROGRAM.lock().expect("menu's program").clone() else {
         return;
     };
     match (target, target.line().and_then(|rank| LINES.get(rank))) {
@@ -2465,7 +2485,7 @@ fn acts(target: Target) {
         (Target::Line(_), Some(Line::List(list))) => {
             // The same line opens and closes: a list opened beside the
             // menu closes where it was opened, and not only by its title.
-            let mut panel = PANEL.lock().expect("panneau du menu");
+            let mut panel = PANEL.lock().expect("menu's panel");
             *panel = (*panel != Some(list.setting)).then_some(list.setting);
             drop(panel);
             redraw(&app);
@@ -2477,7 +2497,7 @@ fn acts(target: Target) {
                 return;
             }
             note(&format!(
-                "menu du bouton flottant : « {} » mis sur « {} »",
+                "floating button's menu: {} set to {}",
                 toggle.label, toggle.sides[side]
             ));
             // The card stays open: one looks at the picture after
@@ -2502,7 +2522,7 @@ fn acts(target: Target) {
             // say the opposite.
             let refuse = SESSION_MENU
                 .lock()
-                .expect("réglages du menu")
+                .expect("menu's settings")
                 .as_ref()
                 .is_some_and(|menu| choice.setting.out_of_reach(menu, &value));
             if refuse {
@@ -2511,7 +2531,7 @@ fn acts(target: Target) {
             choose(&app, choice.setting, value);
         }
         (Target::Value(rank), _) => {
-            let Some(setting) = *PANEL.lock().expect("panneau du menu") else {
+            let Some(setting) = *PANEL.lock().expect("menu's panel") else {
                 return;
             };
             let Some(value) = value_of(setting, rank) else {
@@ -2519,7 +2539,7 @@ fn acts(target: Target) {
             };
             // The list closes on the choice: staying in it after choosing
             // would suggest there is something left to do there.
-            *PANEL.lock().expect("panneau du menu") = None;
+            *PANEL.lock().expect("menu's panel") = None;
             // And the card with it: what is chosen in a list shows at
             // once, what one wants to look at then is the picture, and a
             // card left on top would be a tablecloth laid over it.
@@ -2534,7 +2554,7 @@ fn acts(target: Target) {
 fn value_of(setting: Setting, rank: usize) -> Option<String> {
     SESSION_MENU
         .lock()
-        .expect("réglages du menu")
+        .expect("menu's settings")
         .as_ref()
         .and_then(|menu| setting.values(menu).get(rank).cloned())
 }
@@ -2546,7 +2566,7 @@ fn value_of(setting: Setting, rank: usize) -> Option<String> {
 /// worth, and it is the answer that carries it.
 fn choose(app: &App, setting: Setting, value: String) {
     note(&format!(
-        "menu du bouton flottant : {} mis sur « {value} »",
+        "floating button's menu: {} set to « {value} »",
         setting.name()
     ));
     let app = app.clone();
@@ -2554,7 +2574,7 @@ fn choose(app: &App, setting: Setting, value: String) {
         match crate::settings::choose_session(app.clone(), setting.name().to_string(), value).await
         {
             Ok(choice) => {
-                if let Some(menu) = SESSION_MENU.lock().expect("réglages du menu").as_mut() {
+                if let Some(menu) = SESSION_MENU.lock().expect("menu's settings").as_mut() {
                     menu.now = choice;
                 }
                 redraw(&app);
@@ -2564,14 +2584,15 @@ fn choose(app: &App, setting: Setting, value: String) {
     });
 }
 
-/// Says that a line was clicked.
+/// Says that a line was clicked, by the key of its label: the journal is
+/// read in one language whatever the window speaks.
 ///
 /// Said before it goes off, and not only when it refuses. This menu is
 /// behind the picture and its lines are few: without this line, an entry
 /// that seems to do nothing cannot be told apart from a click that never
 /// arrived, and the two are fixed in different places.
 fn say_the_click(label: &str) {
-    note(&format!("menu du bouton flottant : « {label} » cliqué"));
+    note(&format!("floating button's menu: {label} clicked"));
 }
 
 /// And says a refusal, if there is one.
@@ -2585,7 +2606,7 @@ fn say_the_refusal(refusal: Result<(), Fact>) {
     };
     note(&format!("floating button's menu: {refusal}"));
     *REFUSAL.lock().expect("menu's refusal") = Some((refusal, Instant::now()));
-    if let Some(app) = PROGRAM.lock().expect("programme du menu").clone() {
+    if let Some(app) = PROGRAM.lock().expect("menu's program").clone() {
         redraw(&app);
     }
 }
@@ -2597,7 +2618,7 @@ fn say_the_refusal(refusal: Result<(), Fact>) {
 /// the other crosses all its notches, and each would be a round trip to
 /// the service for a bitrate nobody wanted.
 fn pushes(window: windows_sys::Win32::Foundation::HWND, at: (i32, i32)) -> bool {
-    let Some(Target::Bar(rank)) = *PRESSED.lock().expect("appui du menu") else {
+    let Some(Target::Bar(rank)) = *PRESSED.lock().expect("menu's press") else {
         return false;
     };
     let Some(Line::Slider(slider)) = LINES.get(rank) else {
@@ -2618,7 +2639,7 @@ fn pushes(window: windows_sys::Win32::Foundation::HWND, at: (i32, i32)) -> bool 
     let travel = (bar.right - bar.left - thumb).max(1.0);
     let part = ((at.0 as f32 - bar.left - thumb / 2.0) / travel).clamp(0.0, 1.0);
     let notch = (part * (how_many.max(1) - 1) as f32).round() as usize;
-    let mut pushed = PUSHED.lock().expect("curseur du menu");
+    let mut pushed = PUSHED.lock().expect("menu's slider");
     if *pushed != Some(notch) {
         *pushed = Some(notch);
         drop(pushed);
@@ -2629,7 +2650,7 @@ fn pushes(window: windows_sys::Win32::Foundation::HWND, at: (i32, i32)) -> bool 
 
 /// Lets the slider go, and writes the notch it was left at.
 fn released(window: windows_sys::Win32::Foundation::HWND, rank: usize) {
-    let Some(notch) = PUSHED.lock().expect("curseur du menu").take() else {
+    let Some(notch) = PUSHED.lock().expect("menu's slider").take() else {
         return;
     };
     repaint(window);
@@ -2641,13 +2662,13 @@ fn released(window: windows_sys::Win32::Foundation::HWND, rank: usize) {
     };
     let already = SESSION_MENU
         .lock()
-        .expect("réglages du menu")
+        .expect("menu's settings")
         .as_ref()
         .is_some_and(|menu| slider.setting.current(menu) == value);
     if already {
         return;
     }
-    let Some(app) = PROGRAM.lock().expect("programme du menu").clone() else {
+    let Some(app) = PROGRAM.lock().expect("menu's program").clone() else {
         return;
     };
     choose(&app, slider.setting, value);
@@ -2699,7 +2720,7 @@ fn follow_the_readings(app: &App, is_open: bool) {
             // the read and not after, because the read starts from the
             // previous one for the missing readings.
             let change = {
-                let mut bar = READINGS_BAR.lock().expect("mesures du menu");
+                let mut bar = READINGS_BAR.lock().expect("menu's readings");
                 let load = ReadingsBar::of(&said, &bar, now);
                 let change = bar.reads_differently(&load);
                 *bar = load;

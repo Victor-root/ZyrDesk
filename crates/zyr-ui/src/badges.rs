@@ -33,11 +33,12 @@
 use std::time::{Duration, Instant};
 
 use zyr_player::Measures;
+use zyr_proto::fact::Fact;
 
 /* ---- What a reading says --------------------------------------------- */
 
 /// What this module files its journal lines under.
-const TAG: &str = "voyants";
+const TAG: &str = "badges";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
@@ -93,23 +94,23 @@ pub enum Which {
 impl std::fmt::Display for Which {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Which::Link => "lien",
-            Which::Far => "image là-bas",
-            Which::Here => "image ici",
+            Which::Link => "link",
+            Which::Far => "far picture",
+            Which::Here => "picture here",
         })
     }
 }
 
 /// What a reading says about each one: nothing, or what is wrong.
 ///
-/// The words and not only the fact: a badge that lights up with
-/// nothing saying why is a badge people end up ignoring, and the
-/// journal is the only place where the reason fits.
+/// Why, and not only whether: a badge that lights up with nothing saying
+/// why is a badge people end up ignoring. Told as facts, put into words
+/// in the bubble under the hand and written as they are in the journal.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct Reads {
-    pub link: Option<String>,
-    pub far: Option<String>,
-    pub here: Option<String>,
+    pub link: Option<Fact>,
+    pub far: Option<Fact>,
+    pub here: Option<Fact>,
 }
 
 /// What a reading says, with no memory of any kind.
@@ -129,14 +130,14 @@ pub fn read(measures: &Measures) -> Reads {
     let mut reads = Reads::default();
 
     if let Some(frozen) = measures.since_frame_ms.filter(|held| *held >= FROZEN_MS) {
-        reads.link = Some(format!("l'image est figée depuis {frozen:.0} ms"));
+        reads.link = Some(Fact::new("badge.frozen").with("ms", format!("{frozen:.0}")));
     } else if let Some(lost) = measures.dropped_network_pct.filter(|pct| *pct >= LOST_PCT) {
-        reads.link = Some(format!("{lost:.1} % des images se perdent en route"));
+        reads.link = Some(Fact::new("badge.lost").with("pct", format!("{lost:.1}")));
     } else if let Some(late) = measures
         .dropped_jitter_pct
         .filter(|pct| *pct >= TOO_LATE_PCT)
     {
-        reads.link = Some(format!("{late:.1} % des images arrivent trop tard"));
+        reads.link = Some(Fact::new("badge.late").with("pct", format!("{late:.1}")));
     }
 
     // A missing frame rate leaves these two off: without it there is no
@@ -151,17 +152,15 @@ pub fn read(measures: &Measures) -> Reads {
         .filter(|rate| *rate > 0.0)
         .map(|rate| 1000.0 / rate)
     {
+        let per_frame = |late: Fact, each: f64| {
+            late.with("each", format!("{each:.0}"))
+                .with("budget", format!("{budget:.0}"))
+        };
         if let Some(host) = measures.host_ms.filter(|each| *each >= budget) {
-            reads.far = Some(format!(
-                "l'ordinateur d'en face met {host:.0} ms par image, \
-                 pour {budget:.0} ms disponibles"
-            ));
+            reads.far = Some(per_frame(Fact::new("badge.far_too_slow"), host));
         }
         if let Some(decode) = measures.decode_ms.filter(|each| *each >= budget) {
-            reads.here = Some(format!(
-                "cet ordinateur met {decode:.0} ms à décoder une image, \
-                 pour {budget:.0} ms disponibles"
-            ));
+            reads.here = Some(per_frame(Fact::new("badge.here_too_slow"), decode));
         }
     }
     reads
@@ -293,12 +292,12 @@ fn said(reads: &Reads, was: Shown, shown: Shown) {
             continue;
         }
         note(&match (after, why) {
-            (true, Some(why)) => format!("voyant {which} : {why}"),
+            (true, Some(why)) => format!("{which} badge: {why}"),
             // Lit with no reason in this reading: the cause came and
             // went between two readings and the badge is still
             // holding.
-            (true, None) => format!("voyant {which} allumé"),
-            (false, _) => format!("voyant {which} éteint"),
+            (true, None) => format!("{which} badge lit"),
+            (false, _) => format!("{which} badge out"),
         });
     }
 }
@@ -547,7 +546,7 @@ fn show(app: &crate::app::App, shown: Shown, reads: &Reads, held: bool) {
     if anything {
         lit |= the_hand_over_them(window);
     }
-    *WHY.lock().expect("raisons des voyants") = reads.clone();
+    *WHY.lock().expect("badges' reasons") = reads.clone();
     // Redrawn on every round while the hand is resting there, and
     // only on a change otherwise: what the bubble says carries
     // numbers that move, and a bubble that kept those of the first
@@ -626,15 +625,16 @@ fn what_it_says(rank: usize, why: &Reads) -> String {
     if rank == 0 {
         return why
             .link
-            .clone()
-            .unwrap_or_else(|| "le lien va bien : rien ne se perd et l'image suit".to_string());
+            .as_ref()
+            .map_or_else(|| zyr_i18n::say!("badge.link_is_fine"), zyr_i18n::fact);
     }
-    let both: Vec<&str> = [why.far.as_deref(), why.here.as_deref()]
+    let both: Vec<String> = [&why.far, &why.here]
         .into_iter()
         .flatten()
+        .map(zyr_i18n::fact)
         .collect();
     if both.is_empty() {
-        return "les deux ordinateurs suivent : l'image est encodée et décodée à temps".to_string();
+        return zyr_i18n::say!("badge.both_keep_up");
     }
     both.join("\n")
 }
@@ -655,7 +655,7 @@ fn build(owner: isize, anchor: (i32, i32)) {
     if !crate::floating::still_to_be_made(&ITS_WINDOW) {
         return;
     }
-    let name = crate::win32::wide("ZyrDeskVoyants");
+    let name = crate::win32::wide("ZyrDeskBadges");
     let (wide_px, high) = its_size();
     let (left, top) = window_corner(anchor);
     // SAFETY: a class registered once and a window built on it, on the
@@ -698,7 +698,7 @@ fn build(owner: isize, anchor: (i32, i32)) {
         )
     };
     if window.is_null() {
-        note("voyants : la fenêtre n'a pas pu s'ouvrir");
+        note("badges: the window could not open");
         return;
     }
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);
@@ -815,7 +815,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         // two ever touch.
         if lit & bit::OVER != 0 {
             let rank = usize::from(lit & bit::OVER_LINK == 0);
-            let text = what_it_says(rank, &WHY.lock().expect("raisons des voyants"));
+            let text = what_it_says(rank, &WHY.lock().expect("badges' reasons"));
             let pen = crate::paint::Pen::of(WORDS * scale);
             let inside = (BUBBLE - 2.0 * PADDING) * scale;
             let bubble = Rect::at(
@@ -872,7 +872,8 @@ mod tests {
             since_frame_ms: Some(FROZEN_MS),
             ..healthy()
         });
-        assert!(what_it_says(0, &reads).contains("figée"));
+        let said = what_it_says(0, &reads);
+        assert!(said.contains("350 ms"), "{said}");
     }
 
     #[test]
@@ -886,13 +887,14 @@ mod tests {
 
     #[test]
     fn the_picture_badge_says_both_computers_when_both_are_late() {
-        let reads = Reads {
-            link: None,
-            far: Some("là-bas".to_string()),
-            here: Some("ici".to_string()),
-        };
+        let reads = read(&Measures {
+            fps: Some(24.0),
+            host_ms: Some(45.0),
+            decode_ms: Some(50.0),
+            ..healthy()
+        });
         let said = what_it_says(1, &reads);
-        assert!(said.contains("là-bas") && said.contains("ici"));
+        assert!(said.contains("45 ms") && said.contains("50 ms"), "{said}");
     }
 
     #[test]
@@ -915,7 +917,7 @@ mod tests {
             ..healthy()
         };
         let reads = read(&frozen);
-        assert!(reads.link.is_some_and(|why| why.contains("figée")));
+        assert!(reads.link.is_some_and(|why| why.code() == "badge.frozen"));
         assert!(reads.far.is_none() && reads.here.is_none());
     }
 
@@ -925,7 +927,11 @@ mod tests {
             dropped_network_pct: Some(LOST_PCT),
             ..healthy()
         };
-        assert!(read(&lost).link.is_some_and(|why| why.contains("perdent")));
+        assert!(
+            read(&lost)
+                .link
+                .is_some_and(|why| why.code() == "badge.lost")
+        );
 
         let late = Measures {
             dropped_jitter_pct: Some(TOO_LATE_PCT),
@@ -934,7 +940,7 @@ mod tests {
         assert!(
             read(&late)
                 .link
-                .is_some_and(|why| why.contains("trop tard"))
+                .is_some_and(|why| why.code() == "badge.late")
         );
     }
 
@@ -948,7 +954,11 @@ mod tests {
             ..healthy()
         };
         let reads = read(&slow);
-        assert!(reads.far.is_some_and(|why| why.contains("d'en face")));
+        assert!(
+            reads
+                .far
+                .is_some_and(|why| why.code() == "badge.far_too_slow")
+        );
         // And this one has nothing to do with it: the badge must light
         // the right one of the two screens, not both.
         assert!(reads.here.is_none());
@@ -963,7 +973,11 @@ mod tests {
             ..healthy()
         };
         let reads = read(&slow);
-        assert!(reads.here.is_some_and(|why| why.contains("cet ordinateur")));
+        assert!(
+            reads
+                .here
+                .is_some_and(|why| why.code() == "badge.here_too_slow")
+        );
         assert!(reads.far.is_none());
     }
 

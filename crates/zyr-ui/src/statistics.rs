@@ -1,6 +1,6 @@
 //! The figures of a session, in a banner along the top of the picture.
 //!
-//! What « Statistiques » shows: a strip across the whole width of the
+//! What « Statistics » shows: a strip across the whole width of the
 //! picture, stuck to its top edge, drawn by this program with the same
 //! tools as the badges, that says what every frame costs on its way,
 //! from the far computer's screen to this one, five times a second. The
@@ -23,6 +23,7 @@
 // compiled and tested everywhere.
 #![cfg_attr(not(windows), allow(dead_code))]
 
+use zyr_i18n::key;
 use zyr_player::Measures;
 
 /// What this module files its journal lines under.
@@ -50,7 +51,10 @@ pub fn stream(said: &Measures) -> String {
         pieces.push(format!("{width}x{height}"));
     }
     if let Some(frames) = said.fps {
-        pieces.push(format!("{frames:.0} images/s"));
+        pieces.push(zyr_i18n::say!(
+            "figures.frames_per_second",
+            frames = format!("{frames:.0}")
+        ));
     }
     pieces.join(" · ")
 }
@@ -69,7 +73,7 @@ fn figure(value: Option<f64>, decimals: usize, unit: &str) -> String {
 }
 
 /// What the banner says: the stream's line, then each figure after its
-/// word.
+/// word, the word kept as the key of its text and said where it is drawn.
 #[derive(Clone, PartialEq, Debug)]
 struct Banner {
     stream: String,
@@ -102,22 +106,25 @@ impl Banner {
 fn banner(said: &Measures) -> Banner {
     let losses = match (said.dropped_network_pct, said.dropped_jitter_pct) {
         (None, None) => NOTHING.to_string(),
-        (lost, late) => format!(
-            "{} en route, {} trop tard",
-            figure(lost, 1, "%"),
-            figure(late, 1, "%")
+        (lost, late) => zyr_i18n::say!(
+            "figures.losses_on_the_way",
+            lost = figure(lost, 1, "%"),
+            late = figure(late, 1, "%")
         ),
     };
     Banner {
         stream: stream(said),
         rows: [
-            ("Hôte", figure(said.host_ms, 2, "ms")),
-            ("Réseau", figure(said.network_ms, 0, "ms")),
-            ("Décodage", figure(said.decode_ms, 2, "ms")),
-            ("Affichage", figure(said.render_ms, 2, "ms")),
-            ("Débit", figure(said.bitrate_mbps, 2, "Mb/s")),
-            ("Pertes", losses),
-            ("Latence de bout en bout", figure(said.latency_ms, 0, "ms")),
+            (key!("figures.host"), figure(said.host_ms, 2, "ms")),
+            (key!("figures.network"), figure(said.network_ms, 0, "ms")),
+            (key!("figures.decode"), figure(said.decode_ms, 2, "ms")),
+            (key!("figures.display"), figure(said.render_ms, 2, "ms")),
+            (
+                key!("figures.bitrate"),
+                figure(said.bitrate_mbps, 2, "Mb/s"),
+            ),
+            (key!("figures.losses"), losses),
+            (key!("figures.latency"), figure(said.latency_ms, 0, "ms")),
         ],
     }
 }
@@ -294,7 +301,7 @@ fn widths(canvas: &crate::paint::Canvas, banner: &Banner, pens: Pens, scale: f32
         .map(|(word, text)| match word {
             None => canvas.width_of(text, pens.stream),
             Some(word) => {
-                canvas.width_of(word, pens.word)
+                canvas.width_of(&zyr_i18n::text(word), pens.word)
                     + AFTER_THE_WORD * scale
                     + canvas.width_of(text, pens.figure)
             }
@@ -310,7 +317,7 @@ fn widths(canvas: &crate::paint::Canvas, banner: &Banner, pens: Pens, scale: f32
 #[cfg(windows)]
 fn measure(canvas: &crate::paint::Canvas, banner: &Banner, scale: f32) -> Measured {
     let pens = Pens::at(scale);
-    let mut kept = MEASURED.lock().expect("mesures des statistiques");
+    let mut kept = MEASURED.lock().expect("figures' measures");
     let had = kept
         .take()
         .filter(|had| had.scale == scale)
@@ -352,7 +359,7 @@ fn size_for(picture: (i32, i32, i32, i32)) -> Option<(i32, i32)> {
     let scale = crate::main_window::scale();
     MEASURED
         .lock()
-        .expect("mesures des statistiques")
+        .expect("figures' measures")
         .as_ref()
         .filter(|measured| measured.scale == scale)
         .map(|measured| size_of(picture, measured))
@@ -390,7 +397,7 @@ pub fn watch(app: &crate::app::App) {
         {
             let now = Some(banner(&crate::session::measures()));
             let changed = {
-                let mut kept = SAID.lock().expect("statistiques");
+                let mut kept = SAID.lock().expect("figures said");
                 let changed = *kept != now;
                 *kept = now;
                 changed
@@ -416,11 +423,11 @@ fn raise(app: &crate::app::App) {
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
     }
-    *SAID.lock().expect("statistiques") = None;
+    *SAID.lock().expect("figures said") = None;
     // What the figures of a session once took is no reason for the next
     // banner to keep room for it.
-    *MEASURED.lock().expect("mesures des statistiques") = None;
-    *PROGRAM.lock().expect("programme des statistiques") = Some(app.clone());
+    *MEASURED.lock().expect("figures' measures") = None;
+    *PROGRAM.lock().expect("figures' program") = Some(app.clone());
     let owner = crate::main_window::handle();
     let _ = app.run_on_main_thread(move || build(owner));
 }
@@ -434,7 +441,7 @@ fn lower(app: &crate::app::App) {
     if window == 0 {
         return;
     }
-    *PROGRAM.lock().expect("programme des statistiques") = None;
+    *PROGRAM.lock().expect("figures' program") = None;
     let _ = app.run_on_main_thread(move || {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow;
@@ -480,7 +487,7 @@ pub fn lay(picture: (i32, i32, i32, i32)) {
     let same_size = unsafe { GetWindowRect(window, &mut now) } != 0
         && size_for(picture) == Some((now.right - now.left, now.bottom - now.top));
     if !same_size {
-        if let Some(app) = PROGRAM.lock().expect("programme des statistiques").clone() {
+        if let Some(app) = PROGRAM.lock().expect("figures' program").clone() {
             let _ = app.run_on_main_thread(repaint);
         }
         return;
@@ -519,10 +526,7 @@ fn build(owner: isize) {
     if !WATCHING.load(Ordering::SeqCst) || !crate::floating::still_to_be_made(&ITS_WINDOW) {
         return;
     }
-    let name: Vec<u16> = "ZyrDeskStatistiques"
-        .encode_utf16()
-        .chain(Some(0))
-        .collect();
+    let name: Vec<u16> = "ZyrDeskFigures".encode_utf16().chain(Some(0)).collect();
     // SAFETY: a class registered once and a window built on it, on the
     // thread that will pump its messages. A class already registered is
     // refused and nothing more: a second session finds the first one's.
@@ -564,7 +568,7 @@ fn build(owner: isize) {
         // SAFETY: no argument; the error of the call just above.
         let code = unsafe { GetLastError() };
         note(&format!(
-            "statistiques : la fenêtre n'a pas pu s'ouvrir (CreateWindowExW, erreur {code})"
+            "figures: the window could not open (CreateWindowExW, error {code})"
         ));
         return;
     }
@@ -587,7 +591,7 @@ fn repaint() {
         return;
     }
     let (Some(banner), Some(picture)) = (
-        SAID.lock().expect("statistiques").clone(),
+        SAID.lock().expect("figures said").clone(),
         crate::video::where_it_is(),
     ) else {
         return;
@@ -682,7 +686,7 @@ fn draw(
         match word {
             None => canvas.draw_text(text, pens.stream, DARK.text, at),
             Some(word) => {
-                canvas.draw_text(word, pens.word, DARK.text_faint, at);
+                canvas.draw_text(&zyr_i18n::text(word), pens.word, DARK.text_faint, at);
                 // Against the right of the room the piece keeps: as a
                 // figure changes, only its own digits move.
                 canvas.draw_text(text, pens.figure.aligned(Align::Right), DARK.text, at);
@@ -723,7 +727,7 @@ mod tests {
     #[test]
     fn a_session_measured_says_every_figure_with_its_unit() {
         let banner = banner(&a_session());
-        assert_eq!(banner.stream, "HEVC · 2560x1440 · 60 images/s");
+        assert_eq!(banner.stream, "HEVC · 2560x1440 · 60 fps");
         let value = |label: &str| {
             banner
                 .rows
@@ -732,18 +736,18 @@ mod tests {
                 .map(|(_, value)| value.clone())
                 .unwrap()
         };
-        assert_eq!(value("Décodage"), "0.42 ms");
-        assert_eq!(value("Affichage"), "1.30 ms");
-        assert_eq!(value("Hôte"), "4.25 ms");
-        assert_eq!(value("Réseau"), "12 ms");
-        assert_eq!(value("Débit"), "18.40 Mb/s");
-        assert_eq!(value("Pertes"), "0.0 % en route, 0.1 % trop tard");
-        assert_eq!(value("Latence de bout en bout"), "38 ms");
+        assert_eq!(value("figures.decode"), "0.42 ms");
+        assert_eq!(value("figures.display"), "1.30 ms");
+        assert_eq!(value("figures.host"), "4.25 ms");
+        assert_eq!(value("figures.network"), "12 ms");
+        assert_eq!(value("figures.bitrate"), "18.40 Mb/s");
+        assert_eq!(value("figures.losses"), "0.0 % on the way, 0.1 % too late");
+        assert_eq!(value("figures.latency"), "38 ms");
         // Read in that order, the stream first.
         let pieces: Vec<_> = banner.pieces().collect();
         assert_eq!(pieces.len(), 8);
-        assert_eq!(pieces[0], (None, "HEVC · 2560x1440 · 60 images/s"));
-        assert_eq!(pieces[1], (Some("Hôte"), "4.25 ms"));
+        assert_eq!(pieces[0], (None, "HEVC · 2560x1440 · 60 fps"));
+        assert_eq!(pieces[1], (Some("figures.host"), "4.25 ms"));
     }
 
     #[test]
@@ -761,7 +765,7 @@ mod tests {
             dropped_jitter_pct: Some(2.0),
             ..Measures::default()
         };
-        assert_eq!(banner(&half).rows[5].1, "- en route, 2.0 % trop tard");
+        assert_eq!(banner(&half).rows[5].1, "- on the way, 2.0 % too late");
     }
 
     #[test]
@@ -784,7 +788,7 @@ mod tests {
         for ((word, figure), (_, room)) in heavy.rows.iter().zip(&widest.rows) {
             assert!(
                 figure.chars().count() <= room.chars().count(),
-                "{word} : « {figure} » ne tient pas dans « {room} »"
+                "{word}: « {figure} » does not fit in « {room} »"
             );
         }
     }

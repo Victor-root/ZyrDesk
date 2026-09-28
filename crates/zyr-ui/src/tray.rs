@@ -79,7 +79,7 @@ pub fn raise() -> Result<(), String> {
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return Ok(());
     }
-    let class_name = crate::win32::wide("ZyrDeskIcone");
+    let class_name = crate::win32::wide("ZyrDeskTrayIcon");
     // SAFETY: a class declared once and a window built on it, on the
     // thread that will pump its messages. It shows nothing: it is what
     // the system asks for to carry an icon.
@@ -114,7 +114,7 @@ pub fn raise() -> Result<(), String> {
         )
     };
     if hwnd.is_null() {
-        return Err("l'icône de la zone de notification n'a pas de fenêtre".to_string());
+        return Err("the notification area's icon has no window".to_string());
     }
     ITS_WINDOW.store(hwnd as isize, Ordering::Relaxed);
 
@@ -127,14 +127,14 @@ pub fn raise() -> Result<(), String> {
     // SAFETY: a block of ours, with its size written into it as the
     // call asks.
     if unsafe { Shell_NotifyIconW(NIM_ADD, &data) } == 0 {
-        return Err("Windows n'a pas pris l'icône de la zone de notification".to_string());
+        return Err("Windows did not take the notification area's icon".to_string());
     }
     Ok(())
 }
 
 #[cfg(not(windows))]
 pub fn raise() -> Result<(), String> {
-    Err("il n'y a pas de zone de notification hors de Windows".to_string())
+    Err("there is no notification area outside Windows".to_string())
 }
 
 /// The block the system expects, filled with what never changes.
@@ -194,7 +194,7 @@ fn says(app: &App, reachable: bool, playing: bool) {
     use windows_sys::Win32::UI::Shell::{NIF_ICON, NIF_TIP, NIM_MODIFY, Shell_NotifyIconW};
     use windows_sys::Win32::UI::WindowsAndMessaging::DestroyIcon;
 
-    let mut last = app.shown().0.lock().expect("état de l'icône");
+    let mut last = app.shown().0.lock().expect("icon's state");
     if *last == Some((reachable, playing)) {
         return;
     }
@@ -207,10 +207,10 @@ fn says(app: &App, reachable: bool, playing: bool) {
     data.hIcon = drawn(!reachable);
     copy_into(
         &mut data.szTip,
-        match (playing, reachable) {
-            (true, _) => "ZyrDesk : une session est en cours, cliquez pour revenir à la fenêtre",
-            (false, true) => "ZyrDesk : cet ordinateur peut être contrôlé",
-            (false, false) => "ZyrDesk : cet ordinateur n'est pas joignable",
+        &match (playing, reachable) {
+            (true, _) => zyr_i18n::say!("tray.session_under_way"),
+            (false, true) => zyr_i18n::say!("tray.reachable"),
+            (false, false) => zyr_i18n::say!("tray.not_reachable"),
         },
     );
     // SAFETY: a block of ours, and the old drawing given back once the
@@ -304,8 +304,8 @@ fn pop_up_the_menu(window: windows_sys::Win32::Foundation::HWND) {
         SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
     };
 
-    let open_label = crate::win32::wide("Ouvrir ZyrDesk");
-    let quit_label = crate::win32::wide("Quitter");
+    let open_label = crate::win32::wide(&zyr_i18n::say!("tray.open"));
+    let quit_label = crate::win32::wide(&zyr_i18n::say!("tray.quit"));
     let mut cursor = POINT { x: 0, y: 0 };
     // SAFETY: a menu made here and unmade here, and the position of the
     // pointer read into a block of ours. The foreground is given to this
@@ -352,11 +352,11 @@ fn open() {
 /// than stopped through Windows, which would want administrator rights
 /// every single time.
 fn quit() {
-    note("fermeture demandée depuis la zone de notification");
+    note("quitting asked for from the notification area");
     crate::app::spawn(async move {
         match crate::desk::stop_service().await {
-            Ok(()) => note("service arrêté, fermeture"),
-            Err(reason) => note(&format!("service non arrêté : {reason}")),
+            Ok(()) => note("service stopped, quitting"),
+            Err(reason) => note(&format!("service not stopped: {reason}")),
         }
         remove_the_icon();
         crate::app::quit();
