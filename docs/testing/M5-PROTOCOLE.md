@@ -318,7 +318,7 @@ Sur l'un des PC, dans une fenêtre de commandes ordinaire :
 .\target\release\zyr-cli account devices
 ```
 
-**Attendu :** « Compte : *utilisateur* sur *nom du serveur* (*adresse*) », l'identifiant de cet appareil, « Canal vivant : relié » ; puis la liste des appareils, identifiant, nom, présence, « (cet ordinateur) » sur le bon. Sans lien : « Aucun compte : cet ordinateur ne connaît aucun serveur. » Ce sont les mêmes réponses du service que celles que la fenêtre montre.
+**Attendu :** « Account: *utilisateur* on *nom du serveur* (*adresse*) », l'identifiant de cet appareil, « Live channel: connected » ; puis la liste des appareils, identifiant, nom, présence, « (this computer) » sur le bon. Sans lien : « No account: this computer knows no server. » La ligne de commande parle anglais ; ce sont les mêmes réponses du service que celles que la fenêtre montre.
 
 ---
 

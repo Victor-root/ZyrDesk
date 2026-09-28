@@ -581,7 +581,7 @@ impl Driving {
 /// out of a session, the opening given up half way included, has to give
 /// the way back, and a way nobody gives back is a way the service only
 /// closes once its patience for a player runs out, with the window
-/// showing « Sessions ouvertes: 1 » over no session at all until then.
+/// counting a session in progress over no session at all until then.
 ///
 /// Releasing a way twice is not an error, which is what makes this safe
 /// beside anything else that might already have said it.

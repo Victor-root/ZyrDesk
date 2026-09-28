@@ -189,7 +189,7 @@ async fn a_self_signed_server_is_refused_until_its_key_is_pinned() {
         AttachError::Failed(zyr_account::Failure::Address(_))
     ));
 
-    // A wrong password comes back as the server's code, in French.
+    // A wrong password comes back as the server's code, as a fact.
     let refused = zyr_account::attach(
         &server.address(),
         Trust::Pinned(server.fingerprint),

@@ -130,7 +130,7 @@ fn data_folder() -> Verification {
     let folder = paths::data_dir();
     let attempt = || -> std::io::Result<()> {
         std::fs::create_dir_all(&folder)?;
-        let marker = folder.join(".doctor-ecriture");
+        let marker = folder.join(".doctor-write");
         std::fs::write(&marker, b"ok")?;
         std::fs::remove_file(&marker)?;
         Ok(())
