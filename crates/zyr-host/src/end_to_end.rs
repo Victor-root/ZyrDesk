@@ -794,11 +794,11 @@ async fn a_player_of_another_version_is_told_and_let_go() {
     // The service journals why.
     let trouble = far
         .until(|said| match said {
-            Said::Service(ToService::Trouble { text }) => Some(text.clone()),
+            Said::Service(ToService::Trouble { fact }) => Some(fact.clone()),
             _ => None,
         })
         .await;
-    assert!(trouble.contains("version"), "{trouble}");
+    assert_eq!(trouble.code(), "engine.version_differs", "{trouble}");
     assert!(matches!(far.ended(), Ending::Failed(_)));
 }
 
@@ -887,13 +887,18 @@ async fn a_thread_that_stops_on_a_bug_ends_the_session_and_lets_go_of_what_is_he
         decodable: h264(),
     })
     .await;
-    let text = far
+    let fact = far
         .until(|said| match said {
-            Said::Player(ToPlayer::Notice { text, .. }) => Some(text.clone()),
+            Said::Player(ToPlayer::Notice { fact, .. }) => Some(fact.clone()),
             _ => None,
         })
         .await;
-    assert!(text.contains("a bug in the drawing"), "{text}");
+    assert_eq!(fact.code(), "engine.bug", "{fact}");
+    assert!(
+        fact.value("what")
+            .is_some_and(|what| what.contains("a bug in the drawing")),
+        "{fact}"
+    );
     let reason = far
         .until(|said| match said {
             Said::Player(ToPlayer::Bye { reason }) => Some(*reason),

@@ -12,6 +12,7 @@ use zyr_media::MEDIA_VERSION;
 use zyr_media::codec::CodecSet;
 use zyr_media::control::{ByeReason, ControlReader, NoticeKind, ToEngine, ToPlayer};
 use zyr_media::service;
+use zyr_proto::fact::Fact;
 
 use crate::testing::{self, HEIGHT, WIDTH};
 use crate::{
@@ -446,10 +447,10 @@ fn a_host_that_leaves_says_so_and_a_fatal_goodbye_gives_its_reason() {
     let (_player, events) = player(&engine);
     engine.open();
     assert!(matches!(next_event(&events), Event::Streaming { .. }));
-    let reason = "Aucun encodeur ne sait produire cette image.".to_string();
+    let reason = Fact::new("engine.no_encoder");
     engine.say(ToPlayer::Notice {
         kind: NoticeKind::NoEncoder,
-        text: reason.clone(),
+        fact: reason.clone(),
     });
     engine.say(ToPlayer::Bye {
         reason: ByeReason::Fatal,

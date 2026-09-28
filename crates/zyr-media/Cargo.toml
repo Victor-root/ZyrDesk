@@ -8,3 +8,5 @@ repository.workspace = true
 
 [dependencies]
 reed-solomon-simd = "3.1.0"
+# The facts an engine tells, which travel as their line.
+zyr-proto.workspace = true

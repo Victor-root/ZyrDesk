@@ -16,6 +16,7 @@ use zyr_codec::{Ffmpeg, OpusEncoder};
 use zyr_media::audio::write_audio;
 use zyr_media::clock::Clock;
 use zyr_media::control::{NoticeKind, ToPlayer};
+use zyr_proto::fact::Fact;
 use zyr_proto::log::{Log, Seldom};
 
 use crate::link::{Outbox, Sent};
@@ -243,7 +244,7 @@ impl Listener {
         if !self.told {
             self.shared.outbox.player(&ToPlayer::Notice {
                 kind: NoticeKind::AudioTrouble,
-                text: format!("Le son de l'ordinateur d'en face n'est pas transmis : {why}"),
+                fact: Fact::new("engine.sound_failed").with("detail", why),
             });
             self.told = true;
         }

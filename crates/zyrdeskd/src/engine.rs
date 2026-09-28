@@ -248,8 +248,8 @@ impl Heard {
                     serving: None,
                 }
             }
-            ToService::Trouble { text } => Said {
-                lines: vec![format!("the engine says: {text}")],
+            ToService::Trouble { fact } => Said {
+                lines: vec![format!("the engine says: {fact}")],
                 serving: None,
             },
             ToService::Serving { kbps, fps } => Said {
@@ -289,6 +289,8 @@ fn listed(displays: &[Display]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use zyr_proto::fact::Fact;
+
     use super::*;
     use zyr_media::codec::CodecSet;
 
@@ -439,9 +441,13 @@ mod tests {
         let (engine, _told) = connected();
         engine.film_now().unwrap();
         let said = engine.heard(ToService::Trouble {
-            text: "La capture de l'écran a échoué".to_string(),
+            fact: Fact::new("engine.capture_failed").with("detail", "the device was lost"),
         });
-        assert!(said.lines[0].contains("La capture"), "{:?}", said.lines);
+        assert!(
+            said.lines[0].contains("engine.capture_failed"),
+            "{:?}",
+            said.lines
+        );
         let said = engine.heard(ToService::Filming {
             display: String::new(),
             width: 2560,

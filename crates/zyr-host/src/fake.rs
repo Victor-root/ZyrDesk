@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use zyr_codec::{Frame, GpuVendor, Input, OPUS_FRAME, VideoEncoder};
 use zyr_media::service::Display;
+use zyr_proto::fact::Fact;
 
 use crate::color::{BLACK, bgra_to_nv12};
 use crate::parts::{
@@ -27,6 +28,11 @@ use crate::picture::{Rect, Size};
 pub const MARKER: u32 = 32;
 
 /// The brightness of the marker of image number `index`, as luma.
+/// A test screen that could not draw, as the engine tells it.
+fn capture_failed(detail: impl std::fmt::Display) -> ScreenError {
+    ScreenError(Fact::new("engine.capture_failed").with("detail", detail))
+}
+
 pub fn marker_luma(index: u64) -> u8 {
     // Grey levels far enough apart to survive encoding, in limited range.
     16 + ((index * 23) % 200) as u8
@@ -174,13 +180,9 @@ impl Screen for SyntheticScreen {
         drawing: &Drawing,
     ) -> Result<Frame, ScreenError> {
         if feed != Feed::Memory {
-            return Err(ScreenError(
-                "cet écran d'essai ne dessine qu'en mémoire".to_string(),
-            ));
+            return Err(capture_failed("this test screen only draws in memory"));
         }
-        let mut frame = encoder
-            .frame_for_cpu()
-            .map_err(|e| ScreenError(e.to_string()))?;
+        let mut frame = encoder.frame_for_cpu().map_err(capture_failed)?;
         let size = Size::new(frame.width(), frame.height());
         let mut planes = frame.planes();
         match self.latest {

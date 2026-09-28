@@ -131,7 +131,7 @@ pub fn run(args: Args) -> ExitCode {
         }),
     ) {
         Ok(player) => player,
-        Err(e) => return failure("démarrage du lecteur", e),
+        Err(e) => return failure("démarrage du lecteur", zyr_i18n::fact(&e.fact())),
     };
     // The way is not tied to this program: a session played here has no
     // picture anybody else could show, so it is kept out of the sessions
@@ -183,7 +183,7 @@ fn watch(
                 "Première image décodée, {} ms après la demande.",
                 asked_at.elapsed().as_millis()
             ),
-            Ok(Event::Notice(text)) => println!("  {text}"),
+            Ok(Event::Notice(fact)) => println!("  {}", zyr_i18n::fact(&fact)),
             Ok(Event::Ended(ending)) => return Some(ending),
             Err(RecvTimeoutError::Timeout) => {}
             // Nothing can be told any more: the player is gone with every
@@ -214,7 +214,7 @@ fn ended(ending: Option<Ending>, journal: &std::path::Path) -> ExitCode {
         ),
         Some(Ending::EngineFailed(why)) => failure(
             "la session s'est arrêtée sur une erreur",
-            format!("{why}\n  {journal}"),
+            format!("{}\n  {journal}", zyr_i18n::fact(&why)),
         ),
         None => failure(
             "le lecteur ne s'est pas arrêté à temps",

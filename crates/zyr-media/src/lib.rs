@@ -24,4 +24,4 @@ mod wire;
 pub use wire::WireError;
 
 /// Version of the engine's wire formats, checked at the first message.
-pub const MEDIA_VERSION: u16 = 1;
+pub const MEDIA_VERSION: u16 = 2;

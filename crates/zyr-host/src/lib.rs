@@ -144,13 +144,13 @@ fn served(link_name: &str, ffmpeg: Arc<Ffmpeg>, log: &Log) -> Ending {
 /// card of the main screen, fed the way the capture feeds them.
 ///
 /// What the diagnostic command lists. Only on Windows, the one system
-/// with a screen for the engine to film. The error is in French, for
-/// the person reading the diagnosis.
+/// with a screen for the engine to film. What goes wrong is a fact, for
+/// the diagnosis to put into words.
 #[cfg(windows)]
 pub fn encoders(
     ffmpeg: &Arc<Ffmpeg>,
     log: &Log,
-) -> Result<Vec<(zyr_media::codec::VideoCodec, zyr_codec::Backend)>, String> {
+) -> Result<Vec<(zyr_media::codec::VideoCodec, zyr_codec::Backend)>, zyr_proto::fact::Fact> {
     platform::encoders(ffmpeg, &log.about(TAG))
 }
 

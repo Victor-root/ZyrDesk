@@ -37,6 +37,7 @@ use zyr_media::control::{NoticeKind, ToPlayer, Wanted};
 use zyr_media::pace::{Cadence, Due, Now};
 use zyr_media::service::{Display, ToService};
 use zyr_media::video::{DEFAULT_FEC_PERCENT, OutgoingFrame, Packetizer};
+use zyr_proto::fact::Fact;
 use zyr_proto::log::{Log, Seldom};
 
 use crate::input;
@@ -89,7 +90,7 @@ pub(crate) enum Command {
 /// What the pipeline tells the engine.
 pub(crate) enum Report {
     /// The screen could not be had at all: nothing can be filmed.
-    NoScreen(String),
+    NoScreen(Fact),
     /// The screen filmed now.
     Aimed(Display),
     /// The encoders were tried.
@@ -99,7 +100,7 @@ pub(crate) enum Report {
         displays: Vec<Display>,
     },
     /// The session cannot go on: the viewer is to be told this.
-    Fatal { kind: NoticeKind, text: String },
+    Fatal { kind: NoticeKind, fact: Fact },
 }
 
 /// What the pipeline shares with the rest of the engine.
@@ -579,10 +580,7 @@ impl Pipeline {
         {
             self.shared.outbox.player(&ToPlayer::Notice {
                 kind: NoticeKind::DisplayChanged,
-                text: format!(
-                    "L'écran filmé n'est plus là : la session montre maintenant {}.",
-                    display.name
-                ),
+                fact: Fact::new("engine.display_changed").with("screen", &display.name),
             });
         }
         let displays = self.screen.displays();
@@ -675,11 +673,9 @@ impl Pipeline {
             streaming.told_codec = true;
             self.shared.outbox.player(&ToPlayer::Notice {
                 kind: NoticeKind::NoEncoder,
-                text: format!(
-                    "Le codec {} n'est pas possible pour cette session : l'image passe en {}.",
-                    asked.name(),
-                    chosen.name()
-                ),
+                fact: Fact::new("engine.codec_unavailable")
+                    .with("asked", asked.name())
+                    .with("chosen", chosen.name()),
             });
         }
         Some(chosen)
@@ -698,18 +694,13 @@ impl Pipeline {
         if self.aimed.is_none() {
             self.fatal(
                 NoticeKind::CaptureTrouble,
-                "L'écran de l'ordinateur d'en face ne peut pas être filmé.".to_string(),
+                Fact::new("engine.screen_not_filmable"),
             );
             return;
         }
         loop {
             let Some(codec) = self.codec() else {
-                self.fatal(
-                    NoticeKind::NoEncoder,
-                    "Aucun encodeur de l'ordinateur d'en face ne produit une image que cet \
-                     ordinateur sait décoder."
-                        .to_string(),
-                );
+                self.fatal(NoticeKind::NoEncoder, Fact::new("engine.no_encoder"));
                 return;
             };
             let Some(streaming) = &self.streaming else {
@@ -789,10 +780,9 @@ impl Pipeline {
         if let Some(next) = next {
             self.shared.outbox.player(&ToPlayer::Notice {
                 kind: NoticeKind::EncoderTrouble,
-                text: format!(
-                    "L'encodeur {} de l'ordinateur d'en face a échoué : l'image passe par {next}.",
-                    backend.name()
-                ),
+                fact: Fact::new("engine.encoder_failed")
+                    .with("encoder", backend.name())
+                    .with("next", next),
             });
         }
     }
@@ -842,10 +832,10 @@ impl Pipeline {
     }
 
     /// The session cannot go on.
-    fn fatal(&mut self, kind: NoticeKind, text: String) {
-        self.shared.log.write(&format!("pictures stop: {text}"));
+    fn fatal(&mut self, kind: NoticeKind, fact: Fact) {
+        self.shared.log.write(&format!("pictures stop: {fact}"));
         self.streaming = None;
-        self.report(Report::Fatal { kind, text });
+        self.report(Report::Fatal { kind, fact });
     }
 
     fn change(&mut self, wanted: Wanted) {
@@ -1208,7 +1198,7 @@ impl Pipeline {
             self.told_capture = true;
             self.shared.outbox.player(&ToPlayer::Notice {
                 kind: NoticeKind::CaptureTrouble,
-                text: e.0.clone(),
+                fact: e.0.clone(),
             });
         }
     }

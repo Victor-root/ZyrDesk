@@ -11,6 +11,7 @@ use std::time::Instant;
 use zyr_codec::{Frame, GpuVendor, Input, VideoEncoder};
 use zyr_media::input::Button;
 use zyr_media::service::Display;
+use zyr_proto::fact::Fact;
 
 use crate::picture::Rect;
 
@@ -94,13 +95,13 @@ pub struct Drawing {
     pub pointer: bool,
 }
 
-/// What went wrong with the screen, in a sentence for the viewer.
+/// What went wrong with the screen, as a fact the viewer is told.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScreenError(pub String);
+pub struct ScreenError(pub Fact);
 
 impl fmt::Display for ScreenError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        write!(f, "{}", self.0)
     }
 }
 

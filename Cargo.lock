@@ -3174,6 +3174,7 @@ name = "zyr-media"
 version = "0.1.0"
 dependencies = [
  "reed-solomon-simd",
+ "zyr-proto",
 ]
 
 [[package]]

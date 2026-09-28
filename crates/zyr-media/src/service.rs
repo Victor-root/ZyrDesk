@@ -23,7 +23,7 @@
 //! 1 Ready     encodable u8, encoders string, displays
 //! 2 Filming   display string, width u32, height u32
 //! 3 Displays  displays
-//! 4 Trouble   text string
+//! 4 Trouble   fact string (its line)
 //! 5 Serving   kbps u32, fps u16
 //! displays: count u16, then each: id string, main u8, width u32,
 //!           height u32, name string
@@ -34,6 +34,8 @@
 //! ```text
 //! 1 Tunnel  rtt_us u32, relayed u8
 //! ```
+
+use zyr_proto::fact::Fact;
 
 use crate::codec::CodecSet;
 use crate::wire::{Reader, WireError, put_text};
@@ -83,8 +85,8 @@ pub enum ToService {
     },
     /// Sent when the screens change.
     Displays(Vec<Display>),
-    /// A sentence in French, for the journal.
-    Trouble { text: String },
+    /// What went wrong, as a fact, for the journal.
+    Trouble { fact: Fact },
     /// What the encoder serves now, sent after each start or change, for
     /// the service to size the tunnel's media window.
     Serving { kbps: u32, fps: u16 },
@@ -168,9 +170,9 @@ impl ToService {
                 out.push(DISPLAYS);
                 put_displays(&mut out, displays);
             }
-            ToService::Trouble { text } => {
+            ToService::Trouble { fact } => {
                 out.push(TROUBLE);
-                put_text(&mut out, text);
+                put_text(&mut out, &fact.to_string());
             }
             ToService::Serving { kbps, fps } => {
                 out.push(SERVING);
@@ -196,7 +198,10 @@ impl ToService {
             },
             DISPLAYS => ToService::Displays(read_displays(&mut reader)?),
             TROUBLE => ToService::Trouble {
-                text: reader.text("text")?,
+                fact: reader
+                    .text("fact")?
+                    .parse()
+                    .map_err(|_| WireError::Invalid("fact"))?,
             },
             SERVING => ToService::Serving {
                 kbps: reader.u32()?,
@@ -329,7 +334,7 @@ mod tests {
             },
             ToService::Displays(displays()),
             ToService::Trouble {
-                text: "La capture de l'écran a échoué".to_owned(),
+                fact: Fact::new("engine.capture_failed").with("detail", "the device was lost"),
             },
             ToService::Serving {
                 kbps: 62_872,
@@ -404,7 +409,7 @@ mod tests {
         );
         assert_eq!(
             ToService::decode(&[TROUBLE, 2, 0, 0xff, 0xfe]),
-            Err(WireError::Invalid("text"))
+            Err(WireError::Invalid("fact"))
         );
         assert_eq!(
             ToService::decode(&[DISPLAYS, 0xff, 0xff]),

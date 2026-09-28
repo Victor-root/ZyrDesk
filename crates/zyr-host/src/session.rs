@@ -28,6 +28,7 @@ use zyr_media::codec::CodecSet;
 use zyr_media::control::{ByeReason, NoticeKind, ToPlayer, Wanted};
 use zyr_media::service::{Display, ToEngine as FromService, ToService};
 use zyr_media::{MEDIA_VERSION, WireError};
+use zyr_proto::fact::Fact;
 use zyr_proto::log::{Log, Seldom};
 use zyr_proto::net::UNHEARD_LIMIT;
 
@@ -187,7 +188,7 @@ struct Engine {
     /// What the encoders can do, once tried.
     encodable: Option<CodecSet>,
     /// Why nothing can be filmed, if nothing can.
-    no_screen: Option<String>,
+    no_screen: Option<Fact>,
     /// The screen filmed, whose size the welcome gives.
     display: Option<Display>,
     /// A hello waiting for the setup or the encoders.
@@ -315,20 +316,22 @@ impl Engine {
 
     fn unreadable(&mut self, e: WireError) -> Option<Ending> {
         match e {
-            WireError::Version(version) => {
-                let text = format!(
-                    "Cet ordinateur ne parle pas la même version du moteur que l'ordinateur d'en \
-                     face ({version} ici, {MEDIA_VERSION} en face) : mettez ZyrDesk à jour des \
-                     deux côtés."
-                );
-                Some(self.fail(NoticeKind::NoEncoder, text))
-            }
+            // Said as the viewer reads it: here is the player's version,
+            // there this engine's.
+            WireError::Version(version) => Some(
+                self.fail(
+                    NoticeKind::NoEncoder,
+                    Fact::new("engine.version_differs")
+                        .with("here", version)
+                        .with("there", MEDIA_VERSION),
+                ),
+            ),
             WireError::Framing => {
                 self.log
                     .write("the player's messages can no longer be told apart");
                 Some(self.fail(
                     NoticeKind::EncoderTrouble,
-                    "Les messages du lecteur sont devenus illisibles.".to_string(),
+                    Fact::new("engine.player_unreadable"),
                 ))
             }
             other => {
@@ -346,7 +349,7 @@ impl Engine {
         match report {
             Report::NoScreen(why) => {
                 self.outbox
-                    .service(&ToService::Trouble { text: why.clone() });
+                    .service(&ToService::Trouble { fact: why.clone() });
                 self.outbox.service(&ToService::Ready {
                     encodable: CodecSet::empty(),
                     encoders: String::new(),
@@ -372,7 +375,7 @@ impl Engine {
                 self.encodable = Some(encodable);
                 self.welcome()
             }
-            Report::Fatal { kind, text } => Some(self.fail(kind, text)),
+            Report::Fatal { kind, fact } => Some(self.fail(kind, fact)),
         }
     }
 
@@ -382,10 +385,7 @@ impl Engine {
             .write(&format!("a thread of the engine stopped on a bug: {what}"));
         self.fail(
             NoticeKind::EncoderTrouble,
-            format!(
-                "Le moteur de l'ordinateur d'en face s'est arrêté sur une erreur interne \
-                 ({what})."
-            ),
+            Fact::new("engine.bug").with("what", what),
         )
     }
 
@@ -434,17 +434,17 @@ impl Engine {
 
     /// Tells the player why the session cannot go on, and the service,
     /// for its journal.
-    fn fail(&mut self, kind: NoticeKind, text: String) -> Ending {
+    fn fail(&mut self, kind: NoticeKind, fact: Fact) -> Ending {
         self.outbox.player(&ToPlayer::Notice {
             kind,
-            text: text.clone(),
+            fact: fact.clone(),
         });
         self.outbox.player(&ToPlayer::Bye {
             reason: ByeReason::Fatal,
         });
-        self.outbox
-            .service(&ToService::Trouble { text: text.clone() });
-        Ending::Failed(text)
+        let why = fact.to_string();
+        self.outbox.service(&ToService::Trouble { fact });
+        Ending::Failed(why)
     }
 
     /// Stops every thread, letting go of what the viewer holds first.

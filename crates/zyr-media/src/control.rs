@@ -31,12 +31,14 @@
 //! 1  Welcome    version u16, encodable u8, display width u16, display height u16
 //! 2  Streaming  stream u16, codec u8, width u16, height u16, fps u16
 //! 3  Pong       sent_us u64 (echoed), host_us u64
-//! 4  Notice     kind u8, text (UTF-8, the rest of the body)
+//! 4  Notice     kind u8, fact (its line, UTF-8, the rest of the body)
 //! 5  Bye        reason u8
 //! 6  Still      stream u16, frame u32 (the last frame sent)
 //! ```
 
 use std::marker::PhantomData;
+
+use zyr_proto::fact::Fact;
 
 use crate::MEDIA_VERSION;
 use crate::codec::{CodecChoice, CodecSet, VideoCodec};
@@ -205,11 +207,12 @@ pub enum ToPlayer {
         sent_us: u64,
         host_us: u64,
     },
-    /// A sentence in French, for the person or the journal. One too long
+    /// What happened, as a fact: the player's window puts it into the
+    /// person's words, and the journal writes it as it is. One too long
     /// for a message is cut at a character.
     Notice {
         kind: NoticeKind,
-        text: String,
+        fact: Fact,
     },
     Bye {
         reason: ByeReason,
@@ -401,10 +404,11 @@ impl ToPlayer {
                 out.extend_from_slice(&sent_us.to_le_bytes());
                 out.extend_from_slice(&host_us.to_le_bytes());
             }),
-            ToPlayer::Notice { kind, text } => framed(out, NOTICE, |out| {
+            ToPlayer::Notice { kind, fact } => framed(out, NOTICE, |out| {
                 out.push(kind.wire());
                 // What the length leaves once kind and notice kind are in.
-                out.extend_from_slice(clipped(text, MAX_CONTROL_MESSAGE - 2).as_bytes());
+                let line = fact.to_string();
+                out.extend_from_slice(clipped(&line, MAX_CONTROL_MESSAGE - 2).as_bytes());
             }),
             ToPlayer::Bye { reason } => framed(out, PLAYER_BYE, |out| out.push(reason.wire())),
             ToPlayer::Still { stream, frame } => framed(out, STILL, |out| {
@@ -445,10 +449,11 @@ impl ControlMessage for ToPlayer {
             NOTICE => {
                 let kind =
                     NoticeKind::from_wire(reader.u8()?).ok_or(WireError::Invalid("notice"))?;
-                let text = std::str::from_utf8(reader.rest())
-                    .map_err(|_| WireError::Invalid("text"))?
-                    .to_owned();
-                return Ok(Some(ToPlayer::Notice { kind, text }));
+                let fact = std::str::from_utf8(reader.rest())
+                    .ok()
+                    .and_then(|line| line.parse().ok())
+                    .ok_or(WireError::Invalid("fact"))?;
+                return Ok(Some(ToPlayer::Notice { kind, fact }));
             }
             PLAYER_BYE => ToPlayer::Bye {
                 reason: ByeReason::from_wire(reader.u8()?).ok_or(WireError::Invalid("reason"))?,
@@ -648,11 +653,11 @@ mod tests {
             },
             ToPlayer::Notice {
                 kind: NoticeKind::DisplayChanged,
-                text: "L'écran a changé de définition".to_owned(),
+                fact: Fact::new("engine.display_changed").with("screen", "Écran 2"),
             },
             ToPlayer::Notice {
                 kind: NoticeKind::NoEncoder,
-                text: String::new(),
+                fact: Fact::new("engine.no_encoder"),
             },
             ToPlayer::Bye {
                 reason: ByeReason::Fatal,
@@ -786,12 +791,12 @@ mod tests {
     fn another_version_says_so() {
         let (mut hello, mut welcome) = (Vec::new(), Vec::new());
         framed(&mut hello, HELLO, |out| {
-            out.extend_from_slice(&[2, 0, 7, 7])
+            out.extend_from_slice(&[3, 0, 7, 7])
         });
         framed(&mut welcome, WELCOME, |out| out.extend_from_slice(&[9, 0]));
         let mut engine = ControlReader::<ToEngine>::new();
         engine.feed(&hello);
-        assert_eq!(engine.next(), Some(Err(WireError::Version(2))));
+        assert_eq!(engine.next(), Some(Err(WireError::Version(3))));
         let mut player = ControlReader::<ToPlayer>::new();
         player.feed(&welcome);
         assert_eq!(player.next(), Some(Err(WireError::Version(9))));
@@ -812,20 +817,23 @@ mod tests {
 
     #[test]
     fn a_notice_too_long_is_cut_to_fit() {
-        let text = "é".repeat(MAX_CONTROL_MESSAGE);
+        let detail = "é".repeat(MAX_CONTROL_MESSAGE);
         let mut bytes = Vec::new();
         ToPlayer::Notice {
             kind: NoticeKind::CaptureTrouble,
-            text: text.clone(),
+            fact: Fact::new("engine.capture_failed").with("detail", &detail),
         }
         .write(&mut bytes);
         assert!(bytes.len() <= MAX_CONTROL_MESSAGE + 2);
         let mut reader = ControlReader::<ToPlayer>::new();
         reader.feed(&bytes);
-        let Some(Ok(ToPlayer::Notice { text: read, .. })) = reader.next() else {
+        let Some(Ok(ToPlayer::Notice { fact, .. })) = reader.next() else {
             panic!("no notice");
         };
-        assert!(text.starts_with(&read) && read.len() >= MAX_CONTROL_MESSAGE - 3);
+        // The fact survives, its detail cut short.
+        assert_eq!(fact.code(), "engine.capture_failed");
+        let read = fact.value("detail").unwrap();
+        assert!(detail.starts_with(read) && read.len() >= MAX_CONTROL_MESSAGE - 50);
     }
 
     #[test]

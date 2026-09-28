@@ -42,6 +42,7 @@ use zyr_player::{
     Wanted,
 };
 use zyr_proto::clipboard::{Clip, Stamp};
+use zyr_proto::fact::Fact;
 use zyr_proto::log::Log;
 use zyr_proto::session::{Pointer, WantedScreen};
 use zyr_transport::{Bytes, Connection, Identity, MediaProfile, Path, TunnelEndpoint};
@@ -966,7 +967,7 @@ impl Screen for PlayingScreen {
     ) -> Result<Frame, ScreenError> {
         let mut frame = encoder
             .frame_for_cpu()
-            .map_err(|e| ScreenError(e.to_string()))?;
+            .map_err(|e| ScreenError(Fact::new("engine.capture_failed").with("detail", e)))?;
         let (width, height) = (frame.width() as usize, frame.height() as usize);
         let planes = frame.planes();
         let playing = height / 3..height / 3 + height / 4;

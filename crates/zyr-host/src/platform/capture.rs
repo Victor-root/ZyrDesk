@@ -42,6 +42,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{IUnknown, Interface, w};
 use zyr_codec::{Frame, GpuVendor, Input, VideoEncoder};
 use zyr_media::service::Display;
+use zyr_proto::fact::Fact;
 use zyr_proto::log::{Log, Seldom};
 
 use super::convert::{Converter, PointerImages, Scene};
@@ -206,7 +207,7 @@ impl DuplicatedScreen {
         if !unsafe { self.factory.IsCurrent() }.as_bool() {
             match new_factory() {
                 Ok(factory) => self.factory = factory,
-                Err(e) => self.log.write(&e.0),
+                Err(e) => self.log.write(&e.to_string()),
             }
         }
         filmable(&self.factory, &self.log)
@@ -662,16 +663,14 @@ impl Screen for DuplicatedScreen {
 
     fn aim(&mut self, display: &str) -> Result<Aimed, ScreenError> {
         let screens = self.screens();
-        let screen = chosen(screens, display).ok_or_else(|| {
-            ScreenError("Aucun écran n'est allumé sur l'ordinateur d'en face.".to_string())
-        })?;
+        let screen = chosen(screens, display)
+            .ok_or_else(|| ScreenError(Fact::new("engine.no_screen_on")))?;
         if let Some(why) = self.film(screen, QUICK_FOR)? {
             self.log
                 .write(&format!("{why}; trying again while the session goes on"));
         }
-        self.aimed().ok_or_else(|| {
-            ScreenError("L'écran de l'ordinateur d'en face ne peut pas être filmé.".to_string())
-        })
+        self.aimed()
+            .ok_or_else(|| ScreenError(Fact::new("engine.screen_not_filmable")))
     }
 
     fn encoder_input(&self) -> Input {
@@ -836,10 +835,10 @@ fn desktop() -> Rect {
 fn new_factory() -> Result<IDXGIFactory1, ScreenError> {
     // SAFETY: a plain constructor.
     unsafe { CreateDXGIFactory1() }.map_err(|e| {
-        ScreenError(format!(
-            "Les écrans de l'ordinateur d'en face ne peuvent pas être listés ({}).",
-            failed("creating a DXGI factory", &e)
-        ))
+        ScreenError(
+            Fact::new("engine.screens_not_listed")
+                .with("detail", failed("creating a DXGI factory", &e)),
+        )
     })
 }
 
@@ -900,11 +899,9 @@ fn latest(device: &Device, handed: &D3D11_TEXTURE2D_DESC) -> Result<Latest, Stri
     })
 }
 
-/// In a sentence for the viewer, with what Windows said. The engine
-/// writes it to the log at a measured pace: a failure that repeats at
-/// every picture is not said at every picture.
+/// A fact for the viewer, with what Windows said. The engine writes it
+/// to the log at a measured pace: a failure that repeats at every
+/// picture is not said at every picture.
 fn trouble(e: String) -> ScreenError {
-    ScreenError(format!(
-        "La capture de l'écran de l'ordinateur d'en face a échoué : {e}"
-    ))
+    ScreenError(Fact::new("engine.capture_failed").with("detail", e))
 }

@@ -27,6 +27,7 @@ use zyr_media::codec::CodecSet;
 use zyr_media::control::{ByeReason, ControlReader, ToEngine, ToPlayer, Wanted};
 use zyr_media::input::{InputEvent, Outgoing};
 use zyr_media::service;
+use zyr_proto::fact::Fact;
 use zyr_proto::log::{Log, Seldom};
 
 use crate::stats::Tally;
@@ -77,8 +78,8 @@ pub enum Inner {
     /// The decoder is ready: the codecs it decodes.
     Hello(CodecSet),
     Recover(Recover),
-    /// Nothing can be shown: the session ends, for this reason in French.
-    Failed(String),
+    /// Nothing can be shown: the session ends, for this reason.
+    Failed(Fact),
 }
 
 /// Everything the link thread works with.
@@ -152,7 +153,7 @@ struct Session {
     outgoing: Outgoing,
     control: ControlReader<ToPlayer>,
     /// The last notice from the engine, which a fatal goodbye explains.
-    last_notice: Option<String>,
+    last_notice: Option<Fact>,
     relayed: Option<bool>,
     counters: LinkTallies,
     out: UnboundedSender<Vec<u8>>,
@@ -353,11 +354,11 @@ impl Session {
             ToPlayer::Pong { sent_us, host_us } => {
                 lock(&self.tally).pong(Instant::now(), sent_us, host_us);
             }
-            ToPlayer::Notice { kind, text } => {
+            ToPlayer::Notice { kind, fact } => {
                 self.log
-                    .write(&format!("notice from the engine ({kind:?}): {text}"));
-                self.last_notice = Some(text.clone());
-                self.events.say(Event::Notice(text));
+                    .write(&format!("notice from the engine ({kind:?}): {fact}"));
+                self.last_notice = Some(fact.clone());
+                self.events.say(Event::Notice(fact));
             }
             ToPlayer::Still { stream, frame } => {
                 // Dropped with the thread behind: its picture is then
@@ -369,12 +370,11 @@ impl Session {
                     .write(&format!("the engine says goodbye: {reason:?}"));
                 return Some(match reason {
                     ByeReason::Asked | ByeReason::ServiceStop => Ending::HostLeft,
-                    ByeReason::Fatal => {
-                        Ending::EngineFailed(self.last_notice.take().unwrap_or_else(|| {
-                            "Le moteur de l'ordinateur distant s'est arrêté sur une erreur."
-                                .to_string()
-                        }))
-                    }
+                    ByeReason::Fatal => Ending::EngineFailed(
+                        self.last_notice
+                            .take()
+                            .unwrap_or_else(|| Fact::new("engine.stopped")),
+                    ),
                 });
             }
         }
@@ -391,18 +391,17 @@ impl Session {
             WireError::Framing => {
                 self.log
                     .write("the control stream from the engine lost its framing");
-                Some(Ending::EngineFailed(
-                    "Le moteur de l'ordinateur distant envoie des messages illisibles.".to_string(),
-                ))
+                Some(Ending::EngineFailed(Fact::new("engine.unreadable")))
             }
             WireError::Version(version) => {
                 self.log.write(&format!(
                     "the engine speaks version {version}, this player {MEDIA_VERSION}"
                 ));
-                Some(Ending::EngineFailed(format!(
-                    "L'ordinateur distant a une autre version de ZyrDesk (moteur {version}, \
-                     ici {MEDIA_VERSION}) : mettez les deux à jour."
-                )))
+                Some(Ending::EngineFailed(
+                    Fact::new("engine.version_differs")
+                        .with("here", MEDIA_VERSION)
+                        .with("there", version),
+                ))
             }
             other => {
                 let log = &self.log;

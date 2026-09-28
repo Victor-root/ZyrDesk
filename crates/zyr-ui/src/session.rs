@@ -817,7 +817,7 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
                 false,
                 "La connexion avec l'ordinateur distant a été perdue.".into(),
             ),
-            Ending::EngineFailed(reason) => finish(app, false, reason),
+            Ending::EngineFailed(reason) => finish(app, false, zyr_i18n::fact(&reason)),
         };
     }
 }
@@ -872,7 +872,7 @@ fn before_the_picture(ended: &Ending) -> Option<String> {
             "La connexion avec l'ordinateur distant a été perdue avant la première image."
                 .to_string(),
         ),
-        Ending::EngineFailed(reason) => Some(reason.clone()),
+        Ending::EngineFailed(reason) => Some(zyr_i18n::fact(reason)),
     }
 }
 
@@ -912,7 +912,7 @@ impl Showing {
             Ok(player) => player,
             Err(e) => {
                 crate::video::close(app);
-                return Err(e.to_string());
+                return Err(zyr_i18n::fact(&e.fact()));
             }
         };
         note(&format!("lecteur branché sur {link}"));
@@ -1008,12 +1008,12 @@ impl Showing {
                         ));
                     }
                 }
-                Event::Notice(text) => {
-                    note(&format!("le lecteur dit : {text}"));
+                Event::Notice(fact) => {
+                    note(&format!("le lecteur dit : {fact}"));
                     // Before the picture, the opening screen is what the
                     // person is reading.
                     if shown_at.is_none() {
-                        crate::home::step(app, &text);
+                        crate::home::step(app, &zyr_i18n::fact(&fact));
                     }
                 }
                 Event::Ended(ending) => break ending,
@@ -1218,6 +1218,8 @@ fn finish(app: &App, ok: bool, message: String) {
 
 #[cfg(test)]
 mod tests {
+    use zyr_proto::fact::Fact;
+
     use super::*;
 
     /// A session that fell over the instant it opened.
@@ -1268,7 +1270,9 @@ mod tests {
         // A player that could not go on, yes: from where the person
         // sits, it is the same thing as a session falling over.
         assert!(coming_back.after(
-            &Ending::EngineFailed("la carte graphique a disparu".to_string()),
+            &Ending::EngineFailed(
+                Fact::new("player.graphics_gone").with("detail", "the card went away")
+            ),
             Duration::from_secs(2)
         ));
     }
@@ -1301,14 +1305,15 @@ mod tests {
         for ended in [
             Ending::HostLeft,
             Ending::LinkLost,
-            Ending::EngineFailed("aucun encodeur ne sait faire cette image".to_string()),
+            Ending::EngineFailed(Fact::new("engine.no_encoder")),
         ] {
             let said = before_the_picture(&ended).unwrap();
             assert!(!said.is_empty(), "{ended:?}");
         }
+        let failed = Fact::new("player.graphics_gone").with("detail", "the card went away");
         assert_eq!(
-            before_the_picture(&Ending::EngineFailed("la carte a disparu".to_string())),
-            Some("la carte a disparu".to_string())
+            before_the_picture(&Ending::EngineFailed(failed.clone())),
+            Some(zyr_i18n::fact(&failed))
         );
     }
 

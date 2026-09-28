@@ -240,7 +240,7 @@ fn encoders(ffmpeg: Option<&Arc<Ffmpeg>>) -> Verification {
         Err(e) => Verification {
             name: NAME,
             status: Status::Warning,
-            detail: format!("essai impossible : {e}"),
+            detail: format!("essai impossible : {}", zyr_i18n::fact(&e)),
         },
     }
 }

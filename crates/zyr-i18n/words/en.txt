@@ -117,3 +117,33 @@ server.internal = the server ran into an error, its journal says which
 session.ffmpeg_missing = FFmpeg is missing, the picture cannot be decoded without it: missing {files}
 session.abandoned = opening abandoned before the picture
 session.not_prepared = the session could not be prepared: {detail}
+
+# What the engine of the far computer tells the viewer.
+engine.display_changed = The filmed screen is gone: the session now shows {screen}.
+engine.codec_unavailable = The {asked} codec is not possible for this session: the picture goes to {chosen}.
+engine.encoder_failed = The {encoder} encoder of the far computer failed: the picture goes through {next}.
+engine.screen_not_filmable = The screen of the far computer cannot be filmed.
+engine.no_encoder = No encoder of the far computer makes a picture this computer can decode.
+engine.no_screen_on = No screen is on at the far computer.
+engine.screens_not_listed = The screens of the far computer cannot be listed ({detail}).
+engine.capture_failed = Capturing the screen of the far computer failed: {detail}
+engine.sound_failed = The sound of the far computer is not coming through: {detail}
+engine.version_differs = This computer does not speak the same version of the engine as the far computer ({here} here, {there} over there): update ZyrDesk on both sides.
+engine.player_unreadable = The messages of the player became unreadable.
+engine.bug = The engine of the far computer stopped on an internal error ({what}).
+engine.stopped = The engine of the far computer stopped on an error.
+engine.unreadable = The engine of the far computer sends unreadable messages.
+engine.probe_failed = the encoder probe could not run: {detail}
+
+# What the player of this computer tells the viewer.
+player.bug = The player stopped on an internal error: {what}
+player.display_bug = The display stopped on an internal error: {what}
+player.sound_bug = The sound stopped on an internal error: {what}
+player.nothing_decodable = This computer cannot decode any of the engine's pictures.
+player.no_display = The picture cannot be shown on this computer: {detail}
+player.cannot_decode = This computer cannot decode the picture in {codec}: {detail}
+player.graphics_gone = The graphics card of this computer no longer answers: {detail}
+player.no_ffmpeg = the player finds no FFmpeg: {detail}
+player.no_link = the player does not reach the service: {detail}
+player.not_started = the player cannot start: {detail}
+player.windows_only = the player only draws into a window on Windows

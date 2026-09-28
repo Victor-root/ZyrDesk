@@ -22,6 +22,7 @@ use std::time::{Duration, Instant};
 use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 use zyr_codec::{Backend, Ffmpeg};
 use zyr_media::codec::VideoCodec;
+use zyr_proto::fact::Fact;
 use zyr_proto::log::Log;
 
 use crate::Parts;
@@ -52,9 +53,11 @@ pub fn parts(ffmpeg: Arc<Ffmpeg>, log: &Log) -> Parts {
 /// On a thread of its own, the way the engine makes its screen: the
 /// capture puts its thread on the input desktop and in the capture
 /// class, which is no business of the caller's thread.
-pub fn encoders(ffmpeg: &Arc<Ffmpeg>, log: &Log) -> Result<Vec<(VideoCodec, Backend)>, String> {
+pub fn encoders(ffmpeg: &Arc<Ffmpeg>, log: &Log) -> Result<Vec<(VideoCodec, Backend)>, Fact> {
     let ffmpeg = Arc::clone(ffmpeg);
     let log = log.clone();
+    let probe_failed =
+        |detail: &dyn std::fmt::Display| Fact::new("engine.probe_failed").with("detail", detail);
     std::thread::Builder::new()
         .name("zyr-host-encoders".to_string())
         .spawn(move || {
@@ -65,9 +68,9 @@ pub fn encoders(ffmpeg: &Arc<Ffmpeg>, log: &Log) -> Result<Vec<(VideoCodec, Back
                 screen.vendor(),
             ))
         })
-        .map_err(|e| format!("l'essai des encodeurs ne démarre pas : {e}"))?
+        .map_err(|e| probe_failed(&e))?
         .join()
-        .map_err(|_| "l'essai des encodeurs s'est arrêté sur une erreur interne".to_string())?
+        .map_err(|_| probe_failed(&"the probe stopped on an internal error"))?
 }
 
 /// A refusal of Windows, as the log says it: what was being done, the

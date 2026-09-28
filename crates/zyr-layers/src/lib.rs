@@ -71,7 +71,7 @@ mod tests {
         ("zyr-i18n", Base, &["zyr-proto"]),
         ("zyr-screen", Platform, &[]),
         ("zyr-sound", Platform, &[]),
-        ("zyr-media", Engine, &[]),
+        ("zyr-media", Engine, &["zyr-proto"]),
         ("zyr-codec", Engine, &["zyr-media", "zyr-proto"]),
         ("zyr-link", Engine, &["zyr-proto"]),
         (

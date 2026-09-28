@@ -29,6 +29,7 @@ use bytes::Bytes;
 use zyr_codec::{DecodedFrame, Ffmpeg, VideoDecoder};
 use zyr_media::codec::VideoCodec;
 use zyr_media::video::{Assembled, AssembledFrame, Assembler, AssemblyLimits};
+use zyr_proto::fact::Fact;
 use zyr_proto::log::{Log, Seldom};
 
 use crate::flow::Flow;
@@ -70,11 +71,11 @@ pub struct Recover {
 pub enum Said {
     Recover(Recover),
     FirstPicture,
-    /// A sentence in French, for the person.
-    Notice(String),
+    /// Something the person is told.
+    Notice(Fact),
     /// Nothing can be shown any more: the session has to end, for this
-    /// reason, in French.
-    Failed(String),
+    /// reason.
+    Failed(Fact),
 }
 
 /// Whether a whole frame can be decoded.
@@ -217,7 +218,7 @@ enum Decoded {
     Broken(String),
     /// No decoder for this stream: `Some` the first time, with what to
     /// tell the person.
-    Refused(Option<String>),
+    Refused(Option<Fact>),
 }
 
 impl Decoding {
@@ -257,10 +258,11 @@ impl Decoding {
                         frame.codec.name()
                     ));
                     self.refused = Some(frame.stream);
-                    return Decoded::Refused(Some(format!(
-                        "Cet ordinateur ne sait pas décoder l'image en {} : {e}",
-                        frame.codec.name()
-                    )));
+                    return Decoded::Refused(Some(
+                        Fact::new("player.cannot_decode")
+                            .with("codec", frame.codec.name())
+                            .with("detail", e),
+                    ));
                 }
             }
         }
@@ -568,10 +570,10 @@ impl<P: Presenter> Video<P> {
             Decoded::Refused(notice) => {
                 self.counters.skipped += 1;
                 self.flow.refused();
-                if let Some(text) = notice {
+                if let Some(fact) = notice {
                     match self.presenter.lost() {
                         Some(reason) => self.fault(Fault::Lost(reason), now),
-                        None => self.said.push(Said::Notice(text)),
+                        None => self.said.push(Said::Notice(fact)),
                     }
                 }
                 None
@@ -647,9 +649,9 @@ impl<P: Presenter> Video<P> {
                         self.log.write(&format!(
                             "the graphics card could not be made again: {reason}"
                         ));
-                        self.said.push(Said::Failed(format!(
-                            "La carte graphique de cet ordinateur ne répond plus : {reason}"
-                        )));
+                        self.said.push(Said::Failed(
+                            Fact::new("player.graphics_gone").with("detail", reason),
+                        ));
                     }
                 }
             }

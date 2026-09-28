@@ -43,6 +43,7 @@ use bytes::Bytes;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use zyr_codec::CodecError;
 use zyr_media::clock::Clock;
+use zyr_proto::fact::Fact;
 use zyr_proto::log::Log;
 use zyr_proto::session::Codec;
 
@@ -92,8 +93,9 @@ pub enum Event {
     },
     /// The first picture is on the surface: once per player.
     FirstPicture,
-    /// A sentence in French, for the person.
-    Notice(String),
+    /// Something the person is told, as a fact the window puts into
+    /// words.
+    Notice(Fact),
     /// The session is over, and nothing more will be told. The window
     /// is no longer drawn into by then, and may go.
     Ended(Ending),
@@ -108,8 +110,8 @@ pub enum Ending {
     HostLeft,
     /// The link to the service closed without a goodbye.
     LinkLost,
-    /// Something here or on the host could not go on, said in French.
-    EngineFailed(String),
+    /// Something here or on the host could not go on, and why.
+    EngineFailed(Fact),
 }
 
 /// Why a player could not start.
@@ -126,15 +128,26 @@ pub enum PlayerError {
     Surface,
 }
 
+impl PlayerError {
+    /// Why the player did not start, for the person to read in their
+    /// language.
+    pub fn fact(&self) -> Fact {
+        match self {
+            PlayerError::Ffmpeg(e) => Fact::new("player.no_ffmpeg").with("detail", e),
+            PlayerError::Link(e) => Fact::new("player.no_link").with("detail", e),
+            PlayerError::Thread(e) => Fact::new("player.not_started").with("detail", e),
+            PlayerError::Surface => Fact::new("player.windows_only"),
+        }
+    }
+}
+
 impl fmt::Display for PlayerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PlayerError::Ffmpeg(e) => write!(f, "le lecteur ne trouve pas FFmpeg : {e}"),
-            PlayerError::Link(e) => write!(f, "le lecteur ne joint pas le service : {e}"),
-            PlayerError::Thread(e) => write!(f, "le lecteur ne peut pas démarrer : {e}"),
-            PlayerError::Surface => {
-                f.write_str("le lecteur ne dessine dans une fenêtre que sous Windows")
-            }
+            PlayerError::Ffmpeg(e) => write!(f, "the player finds no FFmpeg: {e}"),
+            PlayerError::Link(e) => write!(f, "the player does not reach the service: {e}"),
+            PlayerError::Thread(e) => write!(f, "the player cannot start: {e}"),
+            PlayerError::Surface => f.write_str("the player only draws into a window on Windows"),
         }
     }
 }
@@ -243,7 +256,7 @@ impl Player {
             Ok(Err(e)) => return Err(PlayerError::Link(e)),
             Err(_) => {
                 return Err(PlayerError::Link(io::Error::other(
-                    "le lien local s'est arrêté avant de répondre",
+                    "the local link stopped before it answered",
                 )));
             }
         }
@@ -304,9 +317,9 @@ impl Player {
         let picture_log = log.about(video::TAG);
         let video_failed = inner.clone();
         let video_panic = move |what: String| {
-            let _ = video_failed.send(Inner::Failed(format!(
-                "L'affichage s'est arrêté sur une erreur interne : {what}"
-            )));
+            let _ = video_failed.send(Inner::Failed(
+                Fact::new("player.display_bug").with("what", what),
+            ));
         };
         let video_ff = Arc::clone(&ff);
         let video_tally = Arc::clone(&tally);
@@ -336,9 +349,9 @@ impl Player {
             let log = sound_log.clone();
             move |what: String| {
                 log.write(&format!("the sound thread stopped on a bug: {what}"));
-                sound_events.say(Event::Notice(format!(
-                    "Le son s'est arrêté sur une erreur interne : {what}"
-                )));
+                sound_events.say(Event::Notice(
+                    Fact::new("player.sound_bug").with("what", what),
+                ));
             }
         };
         let sound_ff = Arc::clone(&ff);
@@ -508,9 +521,9 @@ fn panic_ends(events: &Arc<Events>, log: &Log) -> impl FnOnce(String) + Send + '
     let log = log.clone();
     move |what: String| {
         log.write(&format!("the link thread stopped on a bug: {what}"));
-        events.end(Ending::EngineFailed(format!(
-            "Le lecteur s'est arrêté sur une erreur interne : {what}"
-        )));
+        events.end(Ending::EngineFailed(
+            Fact::new("player.bug").with("what", what),
+        ));
     }
 }
 
@@ -562,9 +575,7 @@ fn play<P: Presenter>(presenter: P, shared: VideoShared) {
     let decodable = presenter.decodable(&ff);
     if decodable.is_empty() {
         log.write("nothing to decode with: no codec of the engine is decodable here");
-        events.say(Event::Notice(
-            "Cet ordinateur ne sait décoder aucune des images du moteur.".to_string(),
-        ));
+        events.say(Event::Notice(Fact::new("player.nothing_decodable")));
     }
     if inner.send(Inner::Hello(decodable)).is_err() {
         return;
@@ -576,8 +587,8 @@ fn play<P: Presenter>(presenter: P, shared: VideoShared) {
             events.say(Event::FirstPicture);
             true
         }
-        Said::Notice(text) => {
-            events.say(Event::Notice(text));
+        Said::Notice(fact) => {
+            events.say(Event::Notice(fact));
             true
         }
         Said::Failed(reason) => {
@@ -625,9 +636,9 @@ fn on_window(hwnd: isize, shared: VideoShared) {
     match windows::Screen::open(hwnd, &shared.log) {
         Ok(screen) => play(screen, shared),
         Err(reason) => {
-            let _ = shared.inner.send(Inner::Failed(format!(
-                "L'image ne peut pas s'afficher sur cet ordinateur : {reason}"
-            )));
+            let _ = shared.inner.send(Inner::Failed(
+                Fact::new("player.no_display").with("detail", reason),
+            ));
         }
     }
 }
