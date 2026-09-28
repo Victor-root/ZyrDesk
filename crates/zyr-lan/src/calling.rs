@@ -565,7 +565,7 @@ mod tests {
     /// One computer, on a port the system hands out, so two of them can
     /// talk in one test without fighting over the real one.
     fn computer(name: &str, seed: u8, found: Found) -> Calls {
-        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("un port libre");
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("a free port");
         socket
             .set_read_timeout(Some(Duration::from_secs(2)))
             .unwrap();
@@ -724,7 +724,7 @@ mod tests {
         let door = listening.socket.local_addr().unwrap();
         let outside = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
 
-        for noise in [b"bonjour".as_slice(), b"zyrdesk 9 who", &[0xff, 0xfe, 0x00]] {
+        for noise in [b"hello".as_slice(), b"zyrdesk 9 who", &[0xff, 0xfe, 0x00]] {
             outside.send_to(noise, door).unwrap();
             listening.listen();
         }
@@ -764,8 +764,8 @@ mod tests {
             },
         ] {
             let line = said.spoken();
-            assert_eq!(Said::read(&line), Some(said), "sur « {line} »");
-            assert!(line.len() < LIMIT, "« {line} » est trop long");
+            assert_eq!(Said::read(&line), Some(said), "on « {line} »");
+            assert!(line.len() < LIMIT, "« {line} » is too long");
         }
     }
 
@@ -780,10 +780,10 @@ mod tests {
             addresses: (0..MOST_OWN)
                 .map(|step| Ipv4Addr::new(192, 168, step as u8, 200))
                 .collect(),
-            name: "UN-NOM-DORDINATEUR-WINDOWS-TRES-LONG".to_string(),
+            name: "A-VERY-LONG-WINDOWS-COMPUTER-NAME".to_string(),
         };
         let line = Said::Here(card.clone()).spoken();
-        assert!(line.len() < LIMIT, "« {line} » fait {} octets", line.len());
+        assert!(line.len() < LIMIT, "« {line} » is {} bytes", line.len());
         assert_eq!(Said::read(&line), Some(Said::Here(card)));
     }
 
@@ -792,7 +792,7 @@ mod tests {
         // Throwing the whole line away would lose the computer
         // entirely where only one of its doors is missing.
         assert_eq!(
-            read_addresses("192.168.1.20,pas-une-adresse,192.168.2.20"),
+            read_addresses("192.168.1.20,not-an-address,192.168.2.20"),
             [
                 Ipv4Addr::new(192, 168, 1, 20),
                 Ipv4Addr::new(192, 168, 2, 20)
@@ -845,11 +845,11 @@ mod tests {
         // this product must be read as a computer.
         for line in [
             "",
-            "bonjour",
+            "hello",
             "zyrdesk",
             "zyrdesk 2",
-            "zyrdesk 2 bonjour",
-            "autrechose 2 who",
+            "zyrdesk 2 hello",
+            "somethingelse 2 who",
             // A version we do not speak: we keep quiet rather than guess.
             // The one before read the list of addresses as a fingerprint,
             // which is exactly the mistake not to make in silence.
@@ -858,10 +858,14 @@ mod tests {
             "zyrdesk 2 here",
             "zyrdesk 2 here 47000",
             "zyrdesk 2 here 47000 192.168.1.20",
-            "zyrdesk 2 here 47000 192.168.1.20 pas-une-empreinte PC",
-            "zyrdesk 2 here pas-un-port 192.168.1.20 0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237 PC",
+            "zyrdesk 2 here 47000 192.168.1.20 not-a-fingerprint PC",
+            "zyrdesk 2 here not-a-port 192.168.1.20 0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237 PC",
         ] {
-            assert_eq!(Said::read(line), None, "« {line} » aurait dû être ignoré");
+            assert_eq!(
+                Said::read(line),
+                None,
+                "« {line} » should have been ignored"
+            );
         }
     }
 

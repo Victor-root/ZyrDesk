@@ -507,14 +507,14 @@ mod tests {
         // A departure announced twice, or that of a machine never seen,
         // must not report anything at all.
         assert!(found.forget(&announced_as(&fingerprint(1))).is_none());
-        assert!(found.forget("une-machine-inconnue").is_none());
+        assert!(found.forget("an-unknown-machine").is_none());
     }
 
     #[test]
     fn a_full_mdns_name_gives_back_what_the_computer_is_announced_under() {
         let announced = announced_as(&fingerprint(1));
         assert_eq!(instance_of(&format!("{announced}.{SERVICE}")), announced);
-        assert_eq!(instance_of("sans-point"), "sans-point");
+        assert_eq!(instance_of("no-dot"), "no-dot");
     }
 
     #[test]
