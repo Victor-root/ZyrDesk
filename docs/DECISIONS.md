@@ -3668,6 +3668,16 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce que ça change à la procédure d'essai.** Rien à taper de plus, mais un geste devient obligatoire : après une mise à jour, ouvrir ZyrDesk sur l'hôte, sans quoi il n'est pas joignable.
 
+## D232. Les statistiques deviennent un bandeau collé en haut de l'image (2026-09-28, pendant MZ)
+
+**La demande.** « Pour les statistiques en surimpression, au lieu d'une petite fiche, un bandeau collé sur le haut du stream, tout aligné sur une ligne si possible, sinon ça continue sur une deuxième ligne. »
+
+**Ce qui change.** La fiche en bas à gauche de l'image devient un bandeau sur toute la largeur de l'image, collé à son bord du haut. Les chiffres s'y suivent comme des mots : le codec, la taille et les images par seconde en premier, puis chaque chiffre après son nom, séparés par un trait fin. Un chiffre qui ne tient plus sur la ligne commence la suivante. Le bandeau reste sombre quel que soit le thème, comme les voyants, et les clics le traversent.
+
+**Le bouton et les voyants passent dessous.** Ils se posent sous le bandeau et le suivent quand il apparaît, disparaît, ou gagne ou perd une ligne. L'endroit où le bouton a été déplacé à la main se compte depuis le bas du bandeau : il ne bouge pas par rapport à lui quand on l'affiche ou le retire. Sur une image trop petite pour les deux, le bandeau cède la place au bouton plutôt que de le pousser hors de l'image, puisque c'est la seule sortie d'une session.
+
+**Des chiffres qui ne dansent pas.** Chaque chiffre garde la place du plus large qu'il prend dans une session qui marche : moins de cent millisecondes pour ceux lus au centième, moins de mille pour ceux lus en entier, moins de mille mégabits par seconde, moins de cent pour cent. Il s'aligne à droite de cette place. Ainsi rien ne se décale quand un chiffre change, et le bandeau s'ouvre directement à la hauteur qu'il gardera. Un chiffre qui dépasse ces bornes agrandit sa place une fois pour toutes, au lieu de faire sauter les suivants d'une ligne à l'autre à chaque changement.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

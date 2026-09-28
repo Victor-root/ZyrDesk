@@ -25,7 +25,7 @@ Vocabulaire : **PC hôte** = celui qu'on contrôle. **PC client** = celui depuis
 | **Z3** | La souris, en mode Bureau et en mode Jeu |
 | **Z4** | Le clavier, en Partagé et en Immersif, et Ctrl+Alt+Suppr |
 | **Z5** | Le son, et l'interrupteur « Son » |
-| **Z6** | La fiche « Statistiques », et ce que dit chaque chiffre |
+| **Z6** | Le bandeau « Statistiques », et ce que dit chaque chiffre |
 | **Z7** | Les changements en pleine session : débit, codec, résolution, écran de l'hôte |
 | **Z8** | Le plein écran |
 | **Z9** | L'écran de verrouillage et l'invite administrateur de l'hôte, vus et utilisés à distance |
@@ -135,13 +135,13 @@ Lancer une vidéo ou de la musique sur l'hôte.
 
 **Ce qu'il ne faut pas voir.** Un son qui arrive en retard sur l'image, qui hache, ou pas de son du tout alors que l'hôte en joue.
 
-## Z6. La fiche « Statistiques »
+## Z6. Le bandeau « Statistiques »
 
-Menu de la session, entrée **Statistiques**. Une petite fiche s'affiche en bas à gauche de l'image, mise à jour cinq fois par seconde. Chaque chiffre est une moyenne sur la dernière seconde.
+Menu de la session, entrée **Statistiques**. Un bandeau s'affiche collé en haut de l'image, sur toute sa largeur, mis à jour cinq fois par seconde : sur une seule ligne quand la fenêtre est assez large, sur deux ou plus sinon. Le bouton ZyrDesk et les voyants se posent juste en dessous. Chaque chiffre est une moyenne sur la dernière seconde.
 
-| Ligne | Ce qu'elle dit |
+| Chiffre | Ce qu'il dit |
 |---|---|
-| Première ligne | Le codec, la taille de l'image et le nombre d'images reçues par seconde. Sur un bureau qui bouge, on attend 60 |
+| En premier, en gras | Le codec, la taille de l'image et le nombre d'images reçues par seconde. Sur un bureau qui bouge, on attend 60 |
 | **Hôte** | Le temps passé sur l'hôte, de la capture de l'écran à l'envoi de l'image |
 | **Réseau** | Le temps d'un aller-retour entre les deux PC |
 | **Décodage** | Le temps que met la carte graphique du client à décompresser une image |
@@ -154,14 +154,16 @@ Menu de la session, entrée **Statistiques**. Une petite fiche s'affiche en bas 
 
 En haut du menu, quatre de ces chiffres sont aussi lus en direct : Décodage, Encodage (qui est le temps « Hôte »), Réseau, Débit.
 
-**Ce qu'il ne faut pas voir.** Des tirets `-` qui ne se remplissent jamais alors que l'image bouge, ou une latence qui grimpe sans cesse pendant la session.
+En rétrécissant la fenêtre, les chiffres qui ne tiennent plus passent à la ligne suivante, et le bouton et les voyants descendent avec le bandeau. En l'élargissant, tout remonte sur une ligne.
+
+**Ce qu'il ne faut pas voir.** Des tirets `-` qui ne se remplissent jamais alors que l'image bouge, une latence qui grimpe sans cesse pendant la session, des chiffres qui se décalent de gauche à droite ou d'une ligne à l'autre quand ils changent, ou un bandeau qui cache le bouton ou les voyants.
 
 ## Z7. Les changements en pleine session
 
 Tout se change dans le menu, sans rien valider, et **rien ne doit se relancer** : la fenêtre reste, la session reste.
 
-- **Débit** : pousser la barre, de 5 à 80 Mb/s. **Attendu** : à 5 Mb/s, l'image devient plus floue quand beaucoup de choses bougent ; à 50, elle redevient nette. La ligne « Débit » de la fiche suit. Pas de coupure.
-- **Codec** : les boutons Automatique, H.264, HEVC, AV1. Ceux que l'hôte ne sait pas produire sont barrés (comparer avec la liste de Z1). **Attendu** : un clic sur un autre codec, et l'image revient en une ou deux secondes au plus ; la première ligne de la fiche dit le nouveau codec.
+- **Débit** : pousser la barre, de 5 à 80 Mb/s. **Attendu** : à 5 Mb/s, l'image devient plus floue quand beaucoup de choses bougent ; à 50, elle redevient nette. Le chiffre « Débit » du bandeau suit. Pas de coupure.
+- **Codec** : les boutons Automatique, H.264, HEVC, AV1. Ceux que l'hôte ne sait pas produire sont barrés (comparer avec la liste de Z1). **Attendu** : un clic sur un autre codec, et l'image revient en une ou deux secondes au plus ; le début du bandeau dit le nouveau codec.
 - **Résolution** : choisir une autre taille dans la liste. **Attendu** : l'image revient à la nouvelle taille en quelques secondes, sans bande noire, et le bureau de l'hôte a changé de taille. Revenir ensuite à « Résolution du client ».
 - **Écran de l'hôte** : cette ligne n'apparaît que si l'hôte a au moins deux écrans. **Attendu** : l'image passe sur l'autre écran en une seconde environ.
 
@@ -217,7 +219,7 @@ Les journaux des **deux PC**, pris **juste après** l'essai raté, sans rien red
 - sur le **PC hôte** : `engine gateway`. Les lignes `engine` sont celles du moteur lui-même : quels encodeurs il a trouvés, quel écran il filme, chaque flux qu'il ouvre. Les lignes `gateway` disent quand le service l'a lancé, et comment il s'est arrêté ;
 - sur le **PC client** : `player picture session`. Les lignes `player` et `picture` sont celles du lecteur : le décodage de chaque flux (`decoding stream …`), et ce qui a été perdu ou refusé.
 
-**Si l'image n'est pas fluide** (la fiche dit 60 images par seconde, mais une fenêtre qu'on déplace avance par à-coups), ce sont les lignes écrites chaque seconde qui comptent ([MOTEUR.md](../MOTEUR.md), section 9) :
+**Si l'image n'est pas fluide** (le bandeau dit 60 images par seconde, mais une fenêtre qu'on déplace avance par à-coups), ce sont les lignes écrites chaque seconde qui comptent ([MOTEUR.md](../MOTEUR.md), section 9) :
 
 1. sur les deux PC, dans le journal, **Vider** puis **Confirmer** ;
 2. ouvrir la session, puis déplacer une fenêtre en rond sur l'hôte pendant 30 secondes, sans s'arrêter ;
