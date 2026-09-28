@@ -496,23 +496,23 @@ impl Expected {
         let mut said = String::new();
         for path in &self.paths {
             if !said.is_empty() {
-                said.push_str(" ; ");
+                said.push_str("; ");
             }
             said.push_str(&self.named(path.through));
             if Some(path.through) == self.elected {
-                said.push_str(" [en service]");
+                said.push_str(" [in use]");
                 if path.proven_at.is_none() {
-                    said.push_str(", jamais traversée par du trafic réel");
+                    said.push_str(", never crossed by real traffic");
                 }
             }
             if timed {
                 said.push_str(&format!(" {} ms", path.round_trip.as_millis()));
             }
             if path.misses > 0 {
-                said.push_str(&format!(", {} sondes sans réponse", path.misses));
+                said.push_str(&format!(", {} probes unanswered", path.misses));
             }
             if !path.asked {
-                said.push_str(", dernière sonde jamais partie d'ici");
+                said.push_str(", last probe never left here");
             }
         }
         for candidate in &self.candidates {
@@ -524,17 +524,17 @@ impl Expected {
                 continue;
             }
             if !said.is_empty() {
-                said.push_str(" ; ");
+                said.push_str("; ");
             }
             said.push_str(&self.named(candidate.through));
             said.push_str(if candidate.probed.is_some() {
-                " sondée, sans réponse"
+                " probed, no answer"
             } else {
-                " jamais sondée"
+                " never probed"
             });
         }
         if said.is_empty() {
-            said.push_str("aucune route connue");
+            said.push_str("no road known");
         }
         said
     }
@@ -1001,8 +1001,8 @@ impl Junction {
         say: Say,
         marking: Marking,
     ) -> io::Result<Self> {
-        let runtime = quinn::default_runtime()
-            .ok_or_else(|| io::Error::other("aucun exécuteur asynchrone"))?;
+        let runtime =
+            quinn::default_runtime().ok_or_else(|| io::Error::other("no async runtime"))?;
         let socket = bind_socket(listen)?;
         let ipv6 = socket.local_addr()?.is_ipv6();
         let room = arriving_room(&socket);
@@ -1043,7 +1043,7 @@ impl Junction {
     /// is to reach it at.
     pub fn expect(&self, peer: Fingerprint, session: &str) -> SocketAddr {
         let card = card_of(peer);
-        let mut table = self.inner.table.lock().expect("aiguilleur");
+        let mut table = self.inner.table.lock().expect("junction table");
         table
             .expected
             .insert(card, Expected::new(card, peer, session, Instant::now()));
@@ -1063,7 +1063,7 @@ impl Junction {
             branch.clone(),
         ));
         {
-            let mut table = self.inner.table.lock().expect("aiguilleur");
+            let mut table = self.inner.table.lock().expect("junction table");
             let Some(expected) = table.expected.get_mut(&card) else {
                 reading.abort();
                 return;
@@ -1091,7 +1091,7 @@ impl Junction {
         candidates: impl IntoIterator<Item = SocketAddr>,
     ) {
         let fresh: Vec<Through> = {
-            let mut table = self.inner.table.lock().expect("aiguilleur");
+            let mut table = self.inner.table.lock().expect("junction table");
             let Some(expected) = table.expected.get_mut(&card) else {
                 return;
             };
@@ -1115,7 +1115,7 @@ impl Junction {
     /// the far computer dies of an absence half a minute later. Only
     /// the session the card is held for can give it back.
     pub fn forget(&self, card: SocketAddr, session: &str) {
-        let mut table = self.inner.table.lock().expect("aiguilleur");
+        let mut table = self.inner.table.lock().expect("junction table");
         if table
             .expected
             .get(&card)
@@ -1138,7 +1138,7 @@ impl Junction {
         self.inner
             .table
             .lock()
-            .expect("aiguilleur")
+            .expect("junction table")
             .expected
             .get(&card)
             .is_some_and(|held| held.session == session)
@@ -1146,7 +1146,7 @@ impl Junction {
 
     /// What carries the session towards that card right now.
     pub fn road(&self, card: SocketAddr) -> Option<Road> {
-        let table = self.inner.table.lock().expect("aiguilleur");
+        let table = self.inner.table.lock().expect("junction table");
         let expected = table.expected.get(&card)?;
         let elected = expected.elected?;
         let round_trip = expected.round_trip_of(elected)?;
@@ -1173,7 +1173,7 @@ impl Junction {
     /// knowing its own retries have gone stale, a road switching under
     /// it being exactly what this transport is for.
     pub fn recovered(&self, card: SocketAddr) -> bool {
-        let mut table = self.inner.table.lock().expect("aiguilleur");
+        let mut table = self.inner.table.lock().expect("junction table");
         table
             .expected
             .get_mut(&card)
@@ -1192,13 +1192,13 @@ impl Junction {
                 return None;
             }
             let (answer, waiting) = oneshot::channel();
-            self.inner.table.lock().expect("aiguilleur").asked = Some(Asked { nonce, answer });
+            self.inner.table.lock().expect("junction table").asked = Some(Asked { nonce, answer });
             self.inner.send_to(mirror, &probe::who_am_i(nonce));
             if let Ok(Ok(seen)) = tokio::time::timeout(MIRROR_PATIENCE, waiting).await {
                 return Some(seen);
             }
         }
-        self.inner.table.lock().expect("aiguilleur").asked = None;
+        self.inner.table.lock().expect("junction table").asked = None;
         None
     }
 }
@@ -1280,7 +1280,7 @@ impl Inner {
                 let branch = self
                     .table
                     .lock()
-                    .expect("aiguilleur")
+                    .expect("junction table")
                     .expected
                     .get(&card)
                     .and_then(|expected| expected.relay.as_ref())
@@ -1304,7 +1304,7 @@ impl Inner {
     fn probe_now(&self, card: SocketAddr, roads: &[Through]) {
         let mut probes = Vec::new();
         {
-            let mut table = self.table.lock().expect("aiguilleur");
+            let mut table = self.table.lock().expect("junction table");
             let Some(expected) = table.expected.get_mut(&card) else {
                 return;
             };
@@ -1337,7 +1337,7 @@ impl Inner {
         let mut flushed: Vec<(Through, Held)> = Vec::new();
         let mut said = Vec::new();
         {
-            let mut table = self.table.lock().expect("aiguilleur");
+            let mut table = self.table.lock().expect("junction table");
             let mut gone = Vec::new();
             for (card, expected) in table.expected.iter_mut() {
                 if expected.paths.is_empty()
@@ -1454,7 +1454,7 @@ impl Inner {
         if never_left.is_empty() {
             return;
         }
-        let mut table = self.table.lock().expect("aiguilleur");
+        let mut table = self.table.lock().expect("junction table");
         for (card, road) in never_left {
             if let Some(expected) = table.expected.get_mut(card)
                 && let Some(path) = expected.paths.iter_mut().find(|path| path.through == *road)
@@ -1492,7 +1492,15 @@ impl Inner {
             ));
         }
         let quiet = now.duration_since(last.1);
-        if *said || quiet < DEAF || self.table.lock().expect("aiguilleur").expected.is_empty() {
+        if *said
+            || quiet < DEAF
+            || self
+                .table
+                .lock()
+                .expect("junction table")
+                .expected
+                .is_empty()
+        {
             return None;
         }
         *said = true;
@@ -1512,7 +1520,7 @@ impl Inner {
     /// costs one string per card per look-over, built and thrown away
     /// when it matches the last.
     fn roads_that_moved(&self, said: &mut HashMap<SocketAddr, String>) -> Vec<String> {
-        let table = self.table.lock().expect("aiguilleur");
+        let table = self.table.lock().expect("junction table");
         let mut lines = Vec::new();
         for (card, expected) in &table.expected {
             let moved = expected.how_the_roads_stand(false);
@@ -1572,7 +1580,7 @@ impl Inner {
                 if claimed.to != self.me {
                     return None;
                 }
-                let mut table = self.table.lock().expect("aiguilleur");
+                let mut table = self.table.lock().expect("junction table");
                 let (card, expected) = table.expectation_of(claimed.from, &claimed.session)?;
                 let probe = sealed.opened_by(expected.peer)?.clone();
                 // Where it came from can reach this computer, so it is
@@ -1609,7 +1617,7 @@ impl Inner {
                     return None;
                 }
                 let round_trip = Duration::from_millis(self.now_ms().saturating_sub(claimed.sent));
-                let mut table = self.table.lock().expect("aiguilleur");
+                let mut table = self.table.lock().expect("junction table");
                 let (card, expected) = table.expectation_of(claimed.from, &claimed.session)?;
                 let echo = sealed.opened_by(expected.peer)?;
                 if !expected.answered(came_by, echo.probe.number, round_trip, now) {
@@ -1638,7 +1646,7 @@ impl Inner {
                 None
             }
             Heard::SeenAs { nonce, seen } => {
-                let mut table = self.table.lock().expect("aiguilleur");
+                let mut table = self.table.lock().expect("junction table");
                 let asked = table.asked.take()?;
                 if asked.nonce != nonce {
                     table.asked = Some(asked);
@@ -1668,7 +1676,7 @@ impl Inner {
                 // traffic, on its way to the transport. Its mere arrival
                 // is what an echo alone cannot prove of the road it just
                 // came by.
-                let mut table = self.table.lock().expect("aiguilleur");
+                let mut table = self.table.lock().expect("junction table");
                 let card = *table.by_real.get(&from)?;
                 if let Some(expected) = table.expected.get_mut(&card) {
                     expected.proven(Through::Direct(from), Instant::now());
@@ -1698,7 +1706,7 @@ impl Inner {
             return;
         }
         let waiting = {
-            let mut table = self.table.lock().expect("aiguilleur");
+            let mut table = self.table.lock().expect("junction table");
             if let Some(expected) = table.expected.get_mut(&card) {
                 expected.proven(Through::Relay(card), Instant::now());
             }
@@ -1722,7 +1730,7 @@ impl Inner {
         bufs: &mut [io::IoSliceMut<'_>],
         meta: &mut [RecvMeta],
     ) -> usize {
-        let mut table = self.table.lock().expect("aiguilleur");
+        let mut table = self.table.lock().expect("junction table");
         let room = bufs.len().min(meta.len());
         let mut taken = 0;
         while taken < room {
@@ -1817,7 +1825,7 @@ impl AsyncUdpSocket for Junction {
             return self.inner.socket.try_send(transmit);
         }
         let road = {
-            let mut table = self.inner.table.lock().expect("aiguilleur");
+            let mut table = self.inner.table.lock().expect("junction table");
             let Some(expected) = table.expected.get_mut(&destination) else {
                 // A card nobody is expected behind: the packet has
                 // nowhere to go, and the transport will try again.
@@ -2099,7 +2107,7 @@ mod tests {
             ),
         )
         .await
-        .expect("la connexion n'est pas venue");
+        .expect("the connection never came");
         let host_side = accepted.unwrap();
         let client_side = connected.unwrap();
 
@@ -2123,7 +2131,7 @@ mod tests {
         // This real traffic proved the road on the host side, which
         // received it: a probe alone would never have done so.
         {
-            let table = pair.host.inner.table.lock().expect("aiguilleur");
+            let table = pair.host.inner.table.lock().expect("junction table");
             let expected = table.expected.get(&pair.client_card).unwrap();
             let elected = expected.elected.unwrap();
             let path = expected
@@ -2133,7 +2141,7 @@ mod tests {
                 .unwrap();
             assert!(
                 path.proven_at.is_some(),
-                "le trafic réel reçu n'a pas prouvé la route"
+                "the real traffic received did not prove the road"
             );
         }
     }
@@ -2156,7 +2164,7 @@ mod tests {
 
         let accepted = tokio::time::timeout(PATIENCE, pair.host_end.accept())
             .await
-            .expect("personne n'est venu")
+            .expect("nobody came")
             .unwrap();
         let connected = connecting.await.unwrap().unwrap();
         assert_eq!(connected.remote_address(), pair.host_card);
@@ -2194,7 +2202,7 @@ mod tests {
             }
         })
         .await
-        .expect("aucune route");
+        .expect("no road");
         send();
 
         let arrived = || {
@@ -2207,7 +2215,7 @@ mod tests {
             }
         })
         .await
-        .expect("les paquets ne sont jamais arrivés");
+        .expect("the packets never arrived");
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -2245,7 +2253,7 @@ mod tests {
             (&client, host_card, &client_identity),
         ] {
             let branch = crate::relay::Branch::open(
-                &relay.wanted(b"laissez-passer"),
+                &relay.wanted(b"pass"),
                 identity,
                 crate::congestion::Sending::Pictures,
                 MediaProfile::default(),
@@ -2261,7 +2269,7 @@ mod tests {
             futures_join(host_end.accept(), client_end.connect(host_card)),
         )
         .await
-        .expect("la session n'est jamais partie par le relais");
+        .expect("the session never left through the relay");
         let host_side = accepted.unwrap();
         let client_side = connected.unwrap();
         let road = client.road(host_card).unwrap();
@@ -2269,28 +2277,25 @@ mod tests {
         assert_eq!(road.through, relay.address);
 
         client_side
-            .send_datagram(Bytes::from_static(b"par le relais"))
+            .send_datagram(Bytes::from_static(b"through the relay"))
             .unwrap();
         let received = tokio::time::timeout(PATIENCE, host_side.read_datagram())
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(&received[..], b"par le relais");
+        assert_eq!(&received[..], b"through the relay");
 
         // The relay is proven on the host side, which received this
         // real traffic.
         {
-            let table = host.inner.table.lock().expect("aiguilleur");
+            let table = host.inner.table.lock().expect("junction table");
             let expected = table.expected.get(&client_card).unwrap();
             let path = expected
                 .paths
                 .iter()
                 .find(|path| path.through == Through::Relay(client_card))
                 .unwrap();
-            assert!(
-                path.proven_at.is_some(),
-                "le relais prouvé n'a pas été noté"
-            );
+            assert!(path.proven_at.is_some(), "the proven relay was not noted");
         }
 
         // The direct road becomes possible: the switch is immediate,
@@ -2311,18 +2316,18 @@ mod tests {
             }
         })
         .await
-        .expect("le direct n'a jamais repris la session");
+        .expect("the direct road never took the session back");
         assert_eq!(direct.through, host.local_address().unwrap());
         assert_eq!(client_side.remote_address(), host_card);
 
         client_side
-            .send_datagram(Bytes::from_static(b"en direct"))
+            .send_datagram(Bytes::from_static(b"direct"))
             .unwrap();
         let received = tokio::time::timeout(PATIENCE, host_side.read_datagram())
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(&received[..], b"en direct");
+        assert_eq!(&received[..], b"direct");
     }
 
     #[tokio::test]
@@ -2399,7 +2404,7 @@ mod tests {
         let mut buf = [0u8; 1500];
         let answered =
             tokio::time::timeout(Duration::from_millis(300), raw.recv_from(&mut buf)).await;
-        assert!(answered.is_err(), "un écho est parti vers un inconnu");
+        assert!(answered.is_err(), "an echo went out to a stranger");
         assert!(door.road(card).is_none());
 
         // The real client, for its part, gets its echo.
@@ -2412,7 +2417,7 @@ mod tests {
             .unwrap()
             .unwrap();
         let Some(Heard::Echo(sealed)) = probe::heard(&buf[..count]) else {
-            panic!("pas un écho");
+            panic!("not an echo");
         };
         let echo = sealed.opened_by(host_identity.fingerprint()).unwrap();
         assert_eq!(echo.seen, raw.local_addr().unwrap());
@@ -2511,7 +2516,7 @@ mod tests {
         assert_eq!(
             moved(expected.elect(now)),
             None,
-            "une route prouvée a cédé la place à une inconnue plus rapide mais non prouvée"
+            "a proven road gave way to a faster but unproven stranger"
         );
 
         // It proves itself in its turn: the ordinary rule takes over
@@ -2547,7 +2552,7 @@ mod tests {
         assert_eq!(
             moved(expected.elect(later)),
             Some((Some(a), b)),
-            "une route jamais prouvée a gardé la main indéfiniment"
+            "a road never proven kept the session for ever"
         );
 
         // b proves itself: the ordinary margin applies again, this time
@@ -2598,7 +2603,7 @@ mod tests {
         assert_eq!(
             moved(expected.elect(still_fresh)),
             None,
-            "une route qui venait de reprendre après une vraie coupure a perdu sa place trop tôt"
+            "a road that had just come back after a real outage lost its place too soon"
         );
     }
 
@@ -2652,7 +2657,7 @@ mod tests {
         assert_eq!(
             moved(expected.elect(long_after)),
             Some((Some(c), b)),
-            "une route restée muette longtemps sur une carte pourtant éprouvée a gardé la main indéfiniment"
+            "a road long silent on a card proven all the same kept the session for ever"
         );
     }
 
@@ -2692,7 +2697,7 @@ mod tests {
         assert_eq!(
             moved(expected.elect(now)),
             None,
-            "une seule sonde manquée a coûté sa place à la route la plus rapide"
+            "a single missed probe cost the fastest road its place"
         );
     }
 
@@ -2708,11 +2713,14 @@ mod tests {
         let first = expected.number(start);
         assert!(expected.answered(a, first, Duration::from_millis(5), start));
         assert_eq!(moved(expected.elect(start)), Some((None, a)));
-        assert!(!expected.take_recovery(), "rien à récupérer à l'élection");
+        assert!(
+            !expected.take_recovery(),
+            "nothing to recover at the election"
+        );
 
         let second = expected.number(start);
         assert!(expected.answered(b, second, Duration::from_millis(80), start));
-        assert!(!expected.take_recovery(), "b n'est pas la route élue");
+        assert!(!expected.take_recovery(), "b is not the elected road");
 
         // A missed probe round on a, as in the test above.
         expected.look_over(start + KEEP_EVERY);
@@ -2733,7 +2741,7 @@ mod tests {
         assert!(expected.answered(a, third, Duration::from_millis(5), now));
         assert!(
             expected.take_recovery(),
-            "le retour de la route élue n'a pas été vu"
+            "the elected road coming back was not seen"
         );
         // Taken once, cleared: asking again with nothing new says no.
         assert!(!expected.take_recovery());
@@ -2755,7 +2763,7 @@ mod tests {
         assert!(expected.answered(a, second, Duration::from_millis(5), now));
         assert!(
             !expected.take_recovery(),
-            "un écho ordinaire a été pris pour un retour"
+            "an ordinary echo was taken for a comeback"
         );
     }
 
@@ -2793,7 +2801,7 @@ mod tests {
         assert!(expected.answered(b, third, Duration::from_millis(80), now));
         assert!(
             !expected.take_recovery(),
-            "le retour d'une route qui ne porte pas la connexion a été signalé"
+            "a road not carrying the connection was reported coming back"
         );
     }
 
@@ -2819,19 +2827,19 @@ mod tests {
         let now = goes_quiet(&mut expected, start);
         assert!(
             expected.paths.iter().all(|path| path.through != a),
-            "a aurait dû être abandonnée, b restant pour recevoir"
+            "a should have been given up, b being left to receive"
         );
         assert_eq!(
             expected.elected,
             Some(a),
-            "toujours élue jusqu'au prochain elect()"
+            "still elected until the next elect()"
         );
 
         let third = expected.number(now);
         assert!(expected.answered(a, third, Duration::from_millis(5), now));
         assert!(
             expected.take_recovery(),
-            "le retour d'une route élue abandonnée puis reprise n'a pas été vu"
+            "an elected road given up then taken up again was not seen coming back"
         );
     }
 
@@ -2867,7 +2875,7 @@ mod tests {
         assert_eq!(
             expected.elected,
             Some(only),
-            "la session s'est retrouvée sans aucune route où envoyer"
+            "the session was left with no road at all to send on"
         );
         // And it is still probed, without which its return would go
         // unnoticed.
@@ -2902,7 +2910,7 @@ mod tests {
         assert_eq!(expected.elected, Some(sound));
         assert!(
             !expected.paths.iter().any(|path| path.through == dying),
-            "une route abandonnée alors qu'il en restait une autre doit disparaître"
+            "a road given up while another one was left must disappear"
         );
     }
 
@@ -2990,7 +2998,7 @@ mod tests {
         }
         assert!(
             expected.paths.iter().any(|path| path.through == relay),
-            "le relais a été jeté"
+            "the relay was thrown away"
         );
     }
 
@@ -3021,11 +3029,11 @@ mod tests {
         assert_eq!(
             expected.every(late),
             EAGER_EVERY,
-            "un chemin qui meurt doit être cherché comme à l'ouverture"
+            "a path that dies must be looked for as at the opening"
         );
         assert!(
             late.duration_since(expected.answered_at) < EXPECTATION_LIFE,
-            "la session a été jetée dès la mort de son chemin"
+            "the session was thrown away as soon as its path died"
         );
         // And two minutes with nothing answering, then yes.
         assert!(
@@ -3061,10 +3069,10 @@ mod tests {
             .paths
             .iter()
             .find(|path| path.through == only)
-            .expect("la route a été abandonnée sur nos propres refus");
+            .expect("the road was given up over our own refusals");
         assert_eq!(
             path.misses, 0,
-            "des sondes jamais parties ont été comptées contre la route"
+            "probes that never left were counted against the road"
         );
     }
 
@@ -3089,14 +3097,11 @@ mod tests {
             now += KEEP_EVERY;
             let looked = expected.look_over(now);
             if probe <= MISSES_TO_DIE {
-                assert!(looked.probe.contains(&a), "relance {probe}");
-                assert!(looked.given_up.is_empty(), "abandonné à la relance {probe}");
+                assert!(looked.probe.contains(&a), "retry {probe}");
+                assert!(looked.given_up.is_empty(), "given up at retry {probe}");
             } else {
-                assert!(
-                    !looked.probe.contains(&a),
-                    "le chemin mort a encore été sondé"
-                );
-                assert_eq!(looked.given_up, vec![a], "l'abandon n'est dit nulle part");
+                assert!(!looked.probe.contains(&a), "the dead path was probed again");
+                assert_eq!(looked.given_up, vec![a], "giving up is said nowhere");
             }
         }
         assert!(!expected.paths.iter().any(|path| path.through == a));
@@ -3123,12 +3128,12 @@ mod tests {
         assert_eq!(
             junction.expect(peer, "s2"),
             card,
-            "une carte par ordinateur"
+            "one card for each computer"
         );
 
         junction.forget(card, "s1");
         let session_of = |card| {
-            let table = junction.inner.table.lock().expect("aiguilleur");
+            let table = junction.inner.table.lock().expect("junction table");
             table.expected.get(&card).map(|held| held.session.clone())
         };
         assert_eq!(session_of(card).as_deref(), Some("s2"));
@@ -3148,9 +3153,9 @@ mod tests {
         let card = junction.expect(Identity::generate().unwrap().fingerprint(), "s1");
         junction.add_candidates(card, ["10.0.0.1:47000".parse().unwrap()]);
 
-        let table = junction.inner.table.lock().expect("aiguilleur");
-        let expected = table.expected.get(&card).expect("l'attente a disparu");
-        assert_eq!(expected.in_flight.len(), 1, "aucune sonde n'est partie");
+        let table = junction.inner.table.lock().expect("junction table");
+        let expected = table.expected.get(&card).expect("the expectation vanished");
+        assert_eq!(expected.in_flight.len(), 1, "no probe left");
         assert!(expected.candidates[0].probed.is_some());
     }
 
@@ -3163,7 +3168,7 @@ mod tests {
             unreachable!()
         };
         assert!(expected.add_candidate(address));
-        assert!(!expected.add_candidate(address), "deux fois la même");
+        assert!(!expected.add_candidate(address), "the same one twice");
         expected.probed(a, start);
         assert!(expected.look_over(start).probe.is_empty());
         assert_eq!(expected.look_over(start + EAGER_EVERY).probe, vec![a]);

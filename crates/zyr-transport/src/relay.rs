@@ -66,12 +66,12 @@ impl std::fmt::Display for RelayError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RelayError::Endpoint(e) => write!(f, "{e}"),
-            RelayError::Refused(why) => write!(f, "le relais a refusé le laissez-passer : {why}"),
-            RelayError::Silent => f.write_str("le relais n'a rien répondu au laissez-passer"),
+            RelayError::Refused(why) => write!(f, "the relay refused the pass: {why}"),
+            RelayError::Silent => f.write_str("the relay gave no answer to the pass"),
             RelayError::TooNarrow(room) => write!(
                 f,
-                "le chemin vers le relais ne porte que {room} octets par paquet, et il en faut \
-                 {GUARANTEED_MTU} : ce réseau ne peut pas passer par un relais"
+                "the path to the relay carries only {room} bytes a packet, and {GUARANTEED_MTU} \
+                 are needed: this network cannot go through a relay"
             ),
         }
     }
@@ -305,7 +305,7 @@ impl Presenting {
     pub async fn heard(connection: &Connection) -> Result<Self, RelayError> {
         let fingerprint = connection
             .peer_fingerprint()
-            .ok_or_else(|| RelayError::Refused("aucun certificat présenté".to_string()))?;
+            .ok_or_else(|| RelayError::Refused("no certificate presented".to_string()))?;
         let (answering, mut reading) = connection.accept_stream().await?;
         let pass = reading
             .read_to_end(LONGEST_WORD)
@@ -383,8 +383,8 @@ impl Doorway {
     /// To be called from inside the runtime: the relay registers its
     /// endpoint on this socket.
     pub fn bind(listen: SocketAddr) -> io::Result<Self> {
-        let runtime = quinn::default_runtime()
-            .ok_or_else(|| io::Error::other("aucun exécuteur asynchrone"))?;
+        let runtime =
+            quinn::default_runtime().ok_or_else(|| io::Error::other("no async runtime"))?;
         let socket = bind_socket(listen)?;
         let ipv6 = socket.local_addr()?.is_ipv6();
         let socket = runtime.wrap_udp_socket(socket)?;
@@ -507,10 +507,7 @@ impl Bare {
                 tokio::spawn(async move {
                     let presenting = Presenting::heard(&connection).await.unwrap();
                     if presenting.pass.first() == Some(&0) {
-                        presenting
-                            .refused("ce n'est pas un laissez-passer")
-                            .await
-                            .ok();
+                        presenting.refused("this is not a pass").await.ok();
                         return;
                     }
                     presenting.taken().await.unwrap();
@@ -557,7 +554,7 @@ mod tests {
         let profile = MediaProfile::default();
 
         let first = Branch::open(
-            &relay.wanted(b"laissez-passer"),
+            &relay.wanted(b"pass"),
             &here,
             Sending::Pictures,
             profile,
@@ -566,7 +563,7 @@ mod tests {
         .await
         .unwrap();
         let second = Branch::open(
-            &relay.wanted(b"laissez-passer"),
+            &relay.wanted(b"pass"),
             &there,
             Sending::Pictures,
             profile,
@@ -582,7 +579,7 @@ mod tests {
         assert!(first.send(&packet));
         let arrived = tokio::time::timeout(PATIENCE, second.arrived())
             .await
-            .expect("rien n'est arrivé par le relais")
+            .expect("nothing came through the relay")
             .unwrap();
         assert_eq!(&arrived[..], &packet[..]);
     }
@@ -598,7 +595,7 @@ mod tests {
         let relay = Bare::open();
         let profile = MediaProfile::default();
         let branch = Branch::open(
-            &relay.wanted(b"laissez-passer"),
+            &relay.wanted(b"pass"),
             &Identity::generate().unwrap(),
             Sending::Pictures,
             profile,
@@ -615,10 +612,10 @@ mod tests {
         }
 
         let carried = branch.carried();
-        assert!(carried.sent > 0, "rien n'a été confié à la branche");
+        assert!(carried.sent > 0, "nothing was handed to the branch");
         assert!(
             carried.crowded > 0,
-            "{} paquets confiés et aucun manque de place compté",
+            "{} packets handed over and no lack of room counted",
             carried.sent
         );
     }
@@ -637,7 +634,7 @@ mod tests {
         .await
         .unwrap_err();
         assert!(
-            matches!(&refused, RelayError::Refused(why) if why.contains("laissez-passer")),
+            matches!(&refused, RelayError::Refused(why) if why.contains("not a pass")),
             "{refused:?}"
         );
     }
@@ -648,7 +645,7 @@ mod tests {
         // is not the one the server named.
         let relay = Bare::open();
         let device = Identity::generate().unwrap();
-        let mut wanted = relay.wanted(b"laissez-passer");
+        let mut wanted = relay.wanted(b"pass");
         wanted.fingerprint = Identity::generate().unwrap().fingerprint();
         let refused = Branch::open(
             &wanted,
@@ -681,7 +678,7 @@ mod tests {
         let mut buf = [0u8; 1500];
         let (count, from) = tokio::time::timeout(PATIENCE, asking.recv_from(&mut buf))
             .await
-            .expect("le miroir n'a pas répondu")
+            .expect("the mirror did not answer")
             .unwrap();
         assert_eq!(from, address);
         let Some(probe::Heard::SeenAs {
@@ -689,7 +686,7 @@ mod tests {
             seen,
         }) = probe::heard(&buf[..count])
         else {
-            panic!("pas une réponse de miroir");
+            panic!("not an answer from a mirror");
         };
         assert_eq!(answered, nonce);
         assert_eq!(seen, asking.local_addr().unwrap());

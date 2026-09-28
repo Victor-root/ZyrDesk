@@ -134,7 +134,7 @@ mod tests {
         Transmit {
             destination: "127.0.0.1:47000".parse().unwrap(),
             ecn: Some(EcnCodepoint::Ect0),
-            contents: b"paquet",
+            contents: b"packet",
             segment_size: None,
             src_ip: None,
         }

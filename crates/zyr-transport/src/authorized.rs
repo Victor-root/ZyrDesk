@@ -35,7 +35,7 @@ pub fn read(path: &Path) -> io::Result<Vec<Fingerprint>> {
         let device = line.parse::<Fingerprint>().map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("{} ligne {} : {e}", path.display(), number + 1),
+                format!("{} line {}: {e}", path.display(), number + 1),
             )
         })?;
         if !devices.contains(&device) {
@@ -73,8 +73,8 @@ fn write(path: &Path, devices: &[Fingerprint]) -> io::Result<()> {
         fs::create_dir_all(parent)?;
     }
     let mut contents = String::from(
-        "# Ordinateurs autorisés à joindre celui-ci, une empreinte par ligne.\n\
-         # Géré par « zyr-cli host authorize ».\n",
+        "# Computers allowed to reach this one, one fingerprint per line.\n\
+         # Managed by « zyr-cli host authorize ».\n",
     );
     for device in devices {
         contents.push_str(&device.to_string());
@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn comments_and_blank_lines_are_ignored() {
         let path = temporary_path();
-        fs::write(&path, format!("# un commentaire\n\n  {}  \n\n", a_device())).unwrap();
+        fs::write(&path, format!("# a comment\n\n  {}  \n\n", a_device())).unwrap();
         assert_eq!(read(&path).unwrap(), vec![a_device()]);
         fs::remove_file(&path).unwrap();
     }
@@ -137,11 +137,11 @@ mod tests {
     #[test]
     fn a_mistyped_fingerprint_is_reported_rather_than_skipped() {
         let path = temporary_path();
-        fs::write(&path, format!("{}\nnimportequoi\n", a_device())).unwrap();
+        fs::write(&path, format!("{}\nnonsense\n", a_device())).unwrap();
         let failure = read(&path).unwrap_err();
         assert_eq!(failure.kind(), io::ErrorKind::InvalidData);
         // The line number is what makes the file correctable.
-        assert!(failure.to_string().contains("ligne 2"), "{failure}");
+        assert!(failure.to_string().contains("line 2"), "{failure}");
         fs::remove_file(&path).unwrap();
     }
 }

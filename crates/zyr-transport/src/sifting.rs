@@ -139,7 +139,7 @@ mod tests {
             |from, datagram| {
                 assert_eq!(from, somewhere());
                 assert!(probe::is_ours(datagram));
-                Some((from, b"reponse".to_vec()))
+                Some((from, b"answer".to_vec()))
             },
             |_| None,
         );
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn a_datagram_of_the_transport_may_be_renamed() {
         let card: SocketAddr = "240.1.2.3:47000".parse().unwrap();
-        let (mut buffer, entry) = batch(&[b"paquet"]);
+        let (mut buffer, entry) = batch(&[b"packet"]);
         let mut meta = [entry];
         let mut bufs = [io::IoSliceMut::new(&mut buffer)];
         let (kept, _) = sift(

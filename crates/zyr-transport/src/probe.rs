@@ -356,15 +356,15 @@ mod tests {
         assert_eq!(bytes[0] & 0x40, 0);
         // As big as a session packet, and never bigger: that is all a
         // probe proves, and a road is judged on it.
-        assert!(bytes.len() <= AS_BIG_AS_A_PACKET, "{} octets", bytes.len());
+        assert!(bytes.len() <= AS_BIG_AS_A_PACKET, "{} bytes", bytes.len());
         assert!(
             bytes.len() >= AS_BIG_AS_A_PACKET - 2,
-            "{} octets",
+            "{} bytes",
             bytes.len()
         );
 
         let Some(Heard::Probe(sealed)) = heard(&bytes) else {
-            panic!("pas lu comme une sonde");
+            panic!("not read as a probe");
         };
         assert_eq!(sealed.claims(), &sent);
         assert_eq!(sealed.opened_by(sender.fingerprint()), Some(&sent));
@@ -382,7 +382,7 @@ mod tests {
         };
         let bytes = seal_echo(&receiver, &echo).unwrap();
         let Some(Heard::Echo(sealed)) = heard(&bytes) else {
-            panic!("pas lu comme un écho");
+            panic!("not read as an echo");
         };
         assert_eq!(sealed.opened_by(receiver.fingerprint()), Some(&echo));
     }
@@ -397,20 +397,20 @@ mod tests {
         let at = MAGIC.len() + 1 + 1 + 2 + 32 + 32;
         bytes[at] ^= 0x01;
         let Some(Heard::Probe(sealed)) = heard(&bytes) else {
-            panic!("pas lu comme une sonde");
+            panic!("not read as a probe");
         };
         assert!(sealed.opened_by(sender.fingerprint()).is_none());
         // And a truncated datagram does not read at all.
         assert!(heard(&bytes[..bytes.len() - 3]).is_none());
         assert!(heard(b"\x00ZYR\x09").is_none());
-        assert!(heard(b"pas a nous").is_none());
+        assert!(heard(b"not ours").is_none());
     }
 
     #[test]
     fn the_mirror_words_read_back() {
         let nonce = [1, 2, 3, 4, 5, 6, 7, 8];
         let Some(Heard::WhoAmI(read)) = heard(&who_am_i(nonce)) else {
-            panic!("pas lu comme une question au miroir");
+            panic!("not read as a question to the mirror");
         };
         assert_eq!(read, nonce);
 
@@ -423,7 +423,7 @@ mod tests {
                 .map(|read| matches!(read, Heard::SeenAs { seen, .. } if seen == asking)),
             Some(true)
         );
-        assert!(what_the_mirror_answers(b"bonjour", asking).is_none());
+        assert!(what_the_mirror_answers(b"hello", asking).is_none());
         let sender = Identity::generate().unwrap();
         let sealed = seal_probe(&sender, &probe(&sender, &sender)).unwrap();
         assert!(what_the_mirror_answers(&sealed, asking).is_none());
@@ -434,7 +434,7 @@ mod tests {
             seen: read_seen,
         }) = heard(&seen_as(nonce, seen))
         else {
-            panic!("pas lu comme une réponse du miroir");
+            panic!("not read as the mirror's answer");
         };
         assert_eq!(read, nonce);
         assert_eq!(read_seen, seen);
@@ -447,7 +447,7 @@ mod tests {
         long.session = "x".repeat(200);
         let bytes = seal_probe(&sender, &long).unwrap();
         let Some(Heard::Probe(sealed)) = heard(&bytes) else {
-            panic!("pas lu comme une sonde");
+            panic!("not read as a probe");
         };
         assert_eq!(sealed.claims().session.len(), LONGEST_SESSION);
     }

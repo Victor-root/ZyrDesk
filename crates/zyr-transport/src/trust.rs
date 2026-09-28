@@ -109,7 +109,7 @@ impl Verifier {
         };
         let public = WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider())
             .build()
-            .expect("les racines publiques se chargent");
+            .expect("the public roots load");
         Self {
             trust,
             public,
@@ -119,7 +119,7 @@ impl Verifier {
 
     /// Why the last handshake was refused, if it was.
     pub fn why_refused(&self) -> Option<Untrusted> {
-        self.refused.lock().expect("refus").take()
+        self.refused.lock().expect("refusal").take()
     }
 }
 
@@ -147,7 +147,7 @@ impl ServerCertVerifier for Verifier {
             (Some(presented), Trust::Pinned(pinned)) => Untrusted::Changed { pinned, presented },
             (Some(presented), Trust::PublicOnly) => Untrusted::Unpinned { presented },
         };
-        *self.refused.lock().expect("refus") = Some(refusal.clone());
+        *self.refused.lock().expect("refusal") = Some(refusal.clone());
         Err(rustls::Error::General(refusal.to_string()))
     }
 
@@ -180,7 +180,7 @@ pub fn client_config(trust: Trust) -> (Arc<rustls::ClientConfig>, Arc<Verifier>)
     let verifier = Arc::new(Verifier::new(trust));
     let config = rustls::ClientConfig::builder_with_provider(provider())
         .with_protocol_versions(&[&rustls::version::TLS13])
-        .expect("TLS 1.3 est connu du fournisseur")
+        .expect("TLS 1.3 is known to the provider")
         .dangerous()
         .with_custom_certificate_verifier(verifier.clone())
         .with_no_client_auth();
@@ -193,15 +193,15 @@ mod tests {
 
     fn self_signed() -> CertificateDer<'static> {
         let generated =
-            rcgen::generate_simple_self_signed(vec!["zyr.exemple.fr".to_string()]).unwrap();
+            rcgen::generate_simple_self_signed(vec!["zyr.example.com".to_string()]).unwrap();
         CertificateDer::from(generated.cert)
     }
 
     fn judged(verifier: &Verifier, certificate: &CertificateDer<'_>) -> Result<(), Untrusted> {
-        let name = ServerName::try_from("zyr.exemple.fr").unwrap();
+        let name = ServerName::try_from("zyr.example.com").unwrap();
         match verifier.verify_server_cert(certificate, &[], &name, &[], UnixTime::now()) {
             Ok(_) => Ok(()),
-            Err(_) => Err(verifier.why_refused().expect("un refus a une raison")),
+            Err(_) => Err(verifier.why_refused().expect("a refusal has a reason")),
         }
     }
 
@@ -237,7 +237,7 @@ mod tests {
         assert_eq!(
             judged(
                 &Verifier::new(Trust::Pinned(other)),
-                &CertificateDer::from(b"pas un certificat".to_vec())
+                &CertificateDer::from(b"not a certificate".to_vec())
             ),
             Err(Untrusted::Unreadable)
         );

@@ -40,15 +40,15 @@ pub enum IdentityError {
 impl std::fmt::Display for IdentityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            IdentityError::Generation(e) => write!(f, "génération d'identité impossible : {e}"),
-            IdentityError::File(path, e) => write!(f, "{} : {e}", path.display()),
+            IdentityError::Generation(e) => write!(f, "identity cannot be generated: {e}"),
+            IdentityError::File(path, e) => write!(f, "{}: {e}", path.display()),
             IdentityError::Signing(e) => {
-                write!(f, "signature avec la clé de l'appareil impossible : {e}")
+                write!(f, "cannot sign with the device's key: {e}")
             }
             IdentityError::Incomplete(folder) => write!(
                 f,
-                "identité incomplète dans {} : effacer le dossier pour en refaire une, \
-                 en sachant que les appairages existants seront perdus",
+                "incomplete identity in {}: erase the folder to make a new one, knowing that \
+                 the existing pairings will be lost",
                 folder.display()
             ),
         }
@@ -325,7 +325,7 @@ impl PinnedPeer {
             Ok(())
         } else {
             Err(rustls::Error::General(format!(
-                "empreinte du pair inattendue : {obtained}"
+                "unexpected peer fingerprint: {obtained}"
             )))
         }
     }
@@ -489,27 +489,27 @@ mod tests {
         // showing it: the server only has the certificate, and that is
         // enough.
         let device = Identity::generate().unwrap();
-        let signature = device.sign("un défi".as_bytes()).unwrap();
+        let signature = device.sign("a challenge".as_bytes()).unwrap();
         assert!(signed_by(
             device.certificate(),
-            "un défi".as_bytes(),
+            "a challenge".as_bytes(),
             &signature
         ));
         assert!(!signed_by(
             device.certificate(),
-            "un autre défi".as_bytes(),
+            "another challenge".as_bytes(),
             &signature
         ));
         let other = Identity::generate().unwrap();
         assert!(!signed_by(
             other.certificate(),
-            "un défi".as_bytes(),
+            "a challenge".as_bytes(),
             &signature
         ));
         assert!(!signed_by(
             device.certificate(),
-            "un défi".as_bytes(),
-            b"pas une signature"
+            "a challenge".as_bytes(),
+            b"not a signature"
         ));
     }
 
@@ -518,11 +518,11 @@ mod tests {
         // Two certificates on the same key have the same key fingerprint:
         // that is what lets the first be renewed without pinning again.
         let key = rcgen::KeyPair::generate().unwrap();
-        let first = rcgen::CertificateParams::new(vec!["zyr.exemple.fr".to_string()])
+        let first = rcgen::CertificateParams::new(vec!["zyr.example.com".to_string()])
             .unwrap()
             .self_signed(&key)
             .unwrap();
-        let second = rcgen::CertificateParams::new(vec!["autre.exemple.fr".to_string()])
+        let second = rcgen::CertificateParams::new(vec!["other.example.com".to_string()])
             .unwrap()
             .self_signed(&key)
             .unwrap();
@@ -536,7 +536,7 @@ mod tests {
             of_first
         );
         assert_eq!(
-            public_key_fingerprint(&CertificateDer::from(b"pas un certificat".to_vec())),
+            public_key_fingerprint(&CertificateDer::from(b"not a certificate".to_vec())),
             None
         );
     }

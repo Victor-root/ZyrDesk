@@ -78,7 +78,7 @@ pub enum EndpointError {
     /// The far end hung up, which is how a session ends when somebody
     /// closes it. Told apart from the rest because it is not a fault:
     /// read as one, every ordinary end of every session was written down
-    /// as « connexion impossible », and a journal that calls the normal
+    /// as « connection failed », and a journal that calls the normal
     /// case a failure is a journal nobody can read a real failure out of.
     Ended,
     Closed,
@@ -87,11 +87,11 @@ pub enum EndpointError {
 impl std::fmt::Display for EndpointError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EndpointError::Configuration(e) => write!(f, "configuration du transport : {e}"),
-            EndpointError::Network(e) => write!(f, "erreur réseau : {e}"),
-            EndpointError::Connection(e) => write!(f, "connexion impossible : {e}"),
-            EndpointError::Ended => write!(f, "l'ordinateur d'en face a raccroché"),
-            EndpointError::Closed => write!(f, "le point de connexion est fermé"),
+            EndpointError::Configuration(e) => write!(f, "transport configuration: {e}"),
+            EndpointError::Network(e) => write!(f, "network error: {e}"),
+            EndpointError::Connection(e) => write!(f, "connection failed: {e}"),
+            EndpointError::Ended => write!(f, "the far computer hung up"),
+            EndpointError::Closed => write!(f, "the endpoint is closed"),
         }
     }
 }
@@ -174,8 +174,8 @@ pub enum DatagramError {
 impl std::fmt::Display for DatagramError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DatagramError::TooLarge => write!(f, "datagramme trop gros pour le chemin"),
-            DatagramError::Lost(e) => write!(f, "connexion perdue : {e}"),
+            DatagramError::TooLarge => write!(f, "datagram too large for the path"),
+            DatagramError::Lost(e) => write!(f, "connection lost: {e}"),
         }
     }
 }
@@ -596,7 +596,7 @@ impl Knocking {
         let connection = self
             .0
             .await
-            .map_err(|e| EndpointError::Connection(format!("{from} : {e}")))?;
+            .map_err(|e| EndpointError::Connection(format!("{from}: {e}")))?;
         Ok(Connection::new(connection))
     }
 }
@@ -896,14 +896,16 @@ mod tests {
         let pair = pair().await;
         let now = pair.client_side.usable_datagram().unwrap();
         let promised = pair.client_side.guaranteed_usable_datagram().unwrap();
-        assert!(promised <= now, "{promised} promis contre {now} mesurés");
+        assert!(
+            promised <= now,
+            "{promised} promised against {now} measured"
+        );
         // And enough of it is left for a real video packet, or the
         // caution would only serve to refuse sessions.
-        let budget =
-            crate::mtu::datagram_budget(promised).expect("le plancher doit rester utilisable");
+        let budget = crate::mtu::datagram_budget(promised).expect("the floor must stay usable");
         assert!(
             budget >= A_PICTURE_DATAGRAM,
-            "{budget} octets par datagramme (promis {promised}, mesuré {now})"
+            "{budget} bytes a datagram (promised {promised}, measured {now})"
         );
     }
 
@@ -922,7 +924,7 @@ mod tests {
         // What the computer being watched sees when the person closes
         // their session: the other end hangs up, with no code and
         // without a word. Read as a fault, every ordinary end of a
-        // session was written as "connexion impossible" in its journal,
+        // session was written as "connection failed" in its journal,
         // and a real fault could no longer be told apart from anything
         // there.
         let pair = pair().await;
@@ -967,10 +969,10 @@ mod tests {
         // the transport for a promise it does not make: it is a
         // reliable stream that says whether the connection is still
         // there.
-        let said = tokio::time::timeout(PATIENCE, pair.word_across(b"apres")).await;
+        let said = tokio::time::timeout(PATIENCE, pair.word_across(b"after")).await;
         assert_eq!(
-            said.expect("la connexion n'a pas survécu à la rafale"),
-            b"apres"
+            said.expect("the connection did not survive the burst"),
+            b"after"
         );
     }
 

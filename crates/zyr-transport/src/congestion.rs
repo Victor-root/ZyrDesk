@@ -388,8 +388,8 @@ mod tests {
             let over_the_silence = profile.bits_per_second / 8 * MAXIMUM_IDLE.as_secs();
             assert!(
                 profile.window() >= over_the_silence * 2,
-                "{} octets de fenêtre à {mbps} Mb/s, pour {over_the_silence} octets de flux \
-                 pendant la limite d'inactivité",
+                "{} bytes of window at {mbps} Mb/s, for {over_the_silence} bytes of stream \
+                 during the idle limit",
                 profile.window()
             );
         }
@@ -429,7 +429,7 @@ mod tests {
             let frame = u64::from(kbps) * 1_000 / 8 / 60;
             assert!(
                 FASTEST.send_queue() as u64 >= frame * 2,
-                "{} octets de file pour des images de {frame} à {kbps} kb/s",
+                "{} bytes of queue for frames of {frame} at {kbps} kb/s",
                 FASTEST.send_queue()
             );
         }
@@ -447,7 +447,7 @@ mod tests {
         // sent again, and the resend fell into the same full queue.
         assert!(
             Sending::Inputs.queue() * 8 < Sending::Pictures.queue(),
-            "les deux côtés ont presque la même file : {} contre {}",
+            "both sides have almost the same queue: {} against {}",
             Sending::Inputs.queue(),
             Sending::Pictures.queue()
         );
@@ -473,7 +473,7 @@ mod tests {
         media.serving(profile(80));
         assert!(
             controller.window() > nominal,
-            "la fenêtre est restée à {nominal} octets pendant que la session passait à 80 Mb/s"
+            "the window stayed at {nominal} bytes while the session went up to 80 Mb/s"
         );
         assert_eq!(controller.window(), profile(80).window());
 
