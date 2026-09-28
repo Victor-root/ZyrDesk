@@ -109,7 +109,7 @@ impl Live {
 
     /// Whether that device is connected, and what it accepts.
     pub fn status_of(&self, device: &str) -> (bool, Access) {
-        match self.online.lock().expect("en ligne").get(device) {
+        match self.online.lock().expect("online devices").get(device) {
             Some(online) => (true, online.access),
             None => (false, Access::Off),
         }
@@ -119,14 +119,14 @@ impl Live {
     pub fn account_online(&self, account: &str) -> bool {
         self.online
             .lock()
-            .expect("en ligne")
+            .expect("online devices")
             .values()
             .any(|online| online.account == account)
     }
 
     /// Says that to every connected device of the account.
     pub fn notify_account(&self, account: &str, told: FromServer) {
-        for online in self.online.lock().expect("en ligne").values() {
+        for online in self.online.lock().expect("online devices").values() {
             if online.account == account {
                 let _ = online.tx.send(told.clone());
             }
@@ -136,7 +136,7 @@ impl Live {
     /// The same, leaving one device out: the one the news is about, when
     /// it is its own.
     fn notify_account_except(&self, account: &str, except: &str, told: FromServer) {
-        for (id, online) in self.online.lock().expect("en ligne").iter() {
+        for (id, online) in self.online.lock().expect("online devices").iter() {
             if online.account == account && id != except {
                 let _ = online.tx.send(told.clone());
             }
@@ -144,7 +144,7 @@ impl Live {
     }
 
     pub fn notify_device(&self, device: &str, told: FromServer) {
-        if let Some(online) = self.online.lock().expect("en ligne").get(device) {
+        if let Some(online) = self.online.lock().expect("online devices").get(device) {
             let _ = online.tx.send(told);
         }
     }
@@ -185,7 +185,11 @@ impl Live {
     /// The device is no longer of its account: its channel is closed with
     /// the reason, its sessions end, and whoever knew of it is told.
     pub async fn revoked(&self, device: &Device, shares: &[Share]) {
-        let taken = self.online.lock().expect("en ligne").remove(&device.id);
+        let taken = self
+            .online
+            .lock()
+            .expect("online devices")
+            .remove(&device.id);
         if let Some(online) = taken {
             let _ = online.tx.send(FromServer::Bye {
                 code: Code::DeviceRevoked,
@@ -239,7 +243,7 @@ impl Live {
         let opening = self
             .openings
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.online.lock().expect("en ligne").insert(
+        self.online.lock().expect("online devices").insert(
             bearer.device.id.clone(),
             Online {
                 account: bearer.account.id.clone(),
@@ -254,7 +258,7 @@ impl Live {
     /// Takes the device off the list, unless another opening of its
     /// channel has taken its place.
     fn unregister(&self, device: &str, opening: u64) -> bool {
-        let mut online = self.online.lock().expect("en ligne");
+        let mut online = self.online.lock().expect("online devices");
         match online.get(device) {
             Some(current) if current.opening == opening => {
                 online.remove(device);
@@ -471,7 +475,7 @@ impl Live {
             FromDevice::Hello { .. } => {}
             FromDevice::State { access } => {
                 let changed = {
-                    let mut online = self.online.lock().expect("en ligne");
+                    let mut online = self.online.lock().expect("online devices");
                     match online.get_mut(&bearer.device.id) {
                         Some(me) if me.access != access => {
                             me.access = access;
@@ -635,7 +639,7 @@ impl Live {
 }
 
 async fn send(socket: &mut WebSocket, told: &FromServer) -> Result<(), axum::Error> {
-    let text = serde_json::to_string(told).expect("un message sérialisable");
+    let text = serde_json::to_string(told).expect("a serializable message");
     socket.send(Message::Text(text.into())).await
 }
 

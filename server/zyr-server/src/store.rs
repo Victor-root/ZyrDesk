@@ -126,7 +126,7 @@ impl fmt::Display for Fault {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Fault::Refused(code) => write!(f, "{code:?}"),
-            Fault::Broken(e) => write!(f, "base de données : {e}"),
+            Fault::Broken(e) => write!(f, "database: {e}"),
         }
     }
 }
@@ -283,7 +283,7 @@ fn hash_password(password: &str) -> Result<String, Fault> {
     Argon2::default()
         .hash_password(password.as_bytes())
         .map(|hash| hash.to_string())
-        .map_err(|e| Fault::Broken(format!("hachage du mot de passe : {e}")))
+        .map_err(|e| Fault::Broken(format!("password hashing: {e}")))
 }
 
 fn password_matches(password: &str, hash: &str) -> bool {
@@ -358,7 +358,7 @@ impl Store {
     pub fn open(path: &Path) -> Result<Self, Fault> {
         if let Some(folder) = path.parent() {
             std::fs::create_dir_all(folder)
-                .map_err(|e| Fault::Broken(format!("{} : {e}", folder.display())))?;
+                .map_err(|e| Fault::Broken(format!("{}: {e}", folder.display())))?;
         }
         Self::prepare(Connection::open(path)?)
     }
@@ -381,13 +381,13 @@ impl Store {
     }
 
     fn with<T>(&self, work: impl FnOnce(&Connection) -> Result<T, Fault>) -> Result<T, Fault> {
-        let conn = self.conn.lock().expect("connexion à la base");
+        let conn = self.conn.lock().expect("database connection");
         work(&conn)
     }
 
     /// The same, inside one transaction.
     fn within<T>(&self, work: impl FnOnce(&Connection) -> Result<T, Fault>) -> Result<T, Fault> {
-        let conn = self.conn.lock().expect("connexion à la base");
+        let conn = self.conn.lock().expect("database connection");
         conn.execute_batch("BEGIN IMMEDIATE")?;
         match work(&conn) {
             Ok(value) => {
@@ -711,7 +711,7 @@ impl Store {
                         id: id(),
                         account: account.to_string(),
                         certificate: certificate.to_vec(),
-                        fingerprint: fingerprint.parse().expect("empreinte calculée"),
+                        fingerprint: fingerprint.parse().expect("a computed fingerprint"),
                         name: name.to_string(),
                         created: now,
                         last_seen: Some(now),
@@ -1307,7 +1307,7 @@ mod tests {
     use super::*;
     use zyr_transport::Identity;
 
-    const PASSWORD: &str = "douze caractères";
+    const PASSWORD: &str = "twelve characters";
 
     fn store() -> Store {
         Store::in_memory().unwrap()
@@ -1355,7 +1355,9 @@ mod tests {
             Fault::Refused(Code::Unauthorized)
         ));
         assert!(matches!(
-            store.account_of_token("n'importe quoi", 2_500).unwrap_err(),
+            store
+                .account_of_token("anything at all", 2_500)
+                .unwrap_err(),
             Fault::Refused(Code::Unauthorized)
         ));
     }
@@ -1364,7 +1366,7 @@ mod tests {
     fn a_wrong_password_and_an_unknown_name_are_refused_alike() {
         let store = store();
         account(&store, "victor");
-        for (name, password) in [("victor", "pas le bon mot de passe"), ("inconnu", PASSWORD)] {
+        for (name, password) in [("victor", "not the right password"), ("unknown", PASSWORD)] {
             assert!(matches!(
                 store.login(name, password, 2_000).unwrap_err(),
                 Fault::Refused(Code::InvalidCredentials)
@@ -1375,12 +1377,7 @@ mod tests {
     #[test]
     fn names_and_passwords_have_a_shape() {
         let store = store();
-        for name in [
-            "ab",
-            "trop long pour un nom d'utilisateur ici",
-            "a b",
-            "é.è",
-        ] {
+        for name in ["ab", "far too long to be a username here", "a b", "é.è"] {
             assert!(
                 matches!(
                     store
@@ -1393,7 +1390,7 @@ mod tests {
         }
         assert!(matches!(
             store
-                .create_account("victor", "court", None, None, Registration::Open, 1)
+                .create_account("victor", "short", None, None, Registration::Open, 1)
                 .unwrap_err(),
             Fault::Refused(Code::WeakPassword)
         ));
@@ -1444,7 +1441,7 @@ mod tests {
         assert!(matches!(
             store
                 .create_account(
-                    "autre",
+                    "other",
                     PASSWORD,
                     None,
                     Some(&code),
@@ -1488,12 +1485,12 @@ mod tests {
             .link_device(
                 &victor.id,
                 identity.certificate().as_ref(),
-                "PC renommé",
+                "Renamed PC",
                 2_000,
             )
             .unwrap();
         assert_eq!(again.id, first.id);
-        assert_eq!(again.name, "PC renommé");
+        assert_eq!(again.name, "Renamed PC");
         assert!(store.bearer_of_token(&old_token.raw, 2_001).is_err());
         assert!(store.bearer_of_token(&new_token.raw, 2_001).is_ok());
         assert_eq!(store.devices_of(&victor.id).unwrap().len(), 1);
@@ -1505,11 +1502,18 @@ mod tests {
         // first account, whose shares on it fall away.
         let store = store();
         let victor = account(&store, "victor");
-        let friend = account(&store, "ami");
+        let friend = account(&store, "friend");
         let (first, token, identity) = device(&store, &victor, "PC");
         friends(&store, &victor, &friend);
         let share = store
-            .give_share(&victor.id, &first.id, "ami", &Permission::ALL, None, 1_100)
+            .give_share(
+                &victor.id,
+                &first.id,
+                "friend",
+                &Permission::ALL,
+                None,
+                1_100,
+            )
             .unwrap();
 
         let (moved, _) = store
@@ -1529,11 +1533,18 @@ mod tests {
     fn a_revoked_device_is_gone_with_its_tokens_and_shares() {
         let store = store();
         let victor = account(&store, "victor");
-        let friend = account(&store, "ami");
+        let friend = account(&store, "friend");
         let (device, token, _) = device(&store, &victor, "PC");
         friends(&store, &victor, &friend);
         store
-            .give_share(&victor.id, &device.id, "ami", &Permission::ALL, None, 1_100)
+            .give_share(
+                &victor.id,
+                &device.id,
+                "friend",
+                &Permission::ALL,
+                None,
+                1_100,
+            )
             .unwrap();
         // Only its account can revoke it.
         assert!(matches!(
@@ -1557,20 +1568,24 @@ mod tests {
     fn a_contact_is_asked_answered_and_removed() {
         let store = store();
         let victor = account(&store, "victor");
-        let friend = account(&store, "ami");
+        let friend = account(&store, "friend");
         assert!(matches!(
             store.ask_contact(&victor.id, "victor", 1).unwrap_err(),
             Fault::Refused(Code::ContactSelf)
         ));
         assert!(matches!(
-            store.ask_contact(&victor.id, "personne", 1).unwrap_err(),
+            store.ask_contact(&victor.id, "nobody", 1).unwrap_err(),
             Fault::Refused(Code::NotFound)
         ));
-        let asked = store.ask_contact(&victor.id, "ami", 1_000).unwrap();
+        let asked = store.ask_contact(&victor.id, "friend", 1_000).unwrap();
         assert!(!asked.accepted);
         // Neither one asks again while it is waiting.
         for who in [&victor, &friend] {
-            let other = if who.id == victor.id { "ami" } else { "victor" };
+            let other = if who.id == victor.id {
+                "friend"
+            } else {
+                "victor"
+            };
             assert!(matches!(
                 store.ask_contact(&who.id, other, 1_001).unwrap_err(),
                 Fault::Refused(Code::ContactExists)
@@ -1611,16 +1626,16 @@ mod tests {
     fn a_share_names_one_machine_and_one_contact_and_gives_a_right() {
         let store = store();
         let victor = account(&store, "victor");
-        let friend = account(&store, "ami");
-        let stranger = account(&store, "etranger");
+        let friend = account(&store, "friend");
+        let stranger = account(&store, "stranger");
         let (pc, _, _) = device(&store, &victor, "PC de Victor");
-        let (laptop, _, _) = device(&store, &friend, "Portable");
-        let (other, _, _) = device(&store, &stranger, "Autre");
+        let (laptop, _, _) = device(&store, &friend, "Laptop");
+        let (other, _, _) = device(&store, &stranger, "Other");
 
         // No share without an accepted contact.
         assert!(matches!(
             store
-                .give_share(&victor.id, &pc.id, "ami", &Permission::ALL, None, 1_100)
+                .give_share(&victor.id, &pc.id, "friend", &Permission::ALL, None, 1_100)
                 .unwrap_err(),
             Fault::Refused(Code::NotAContact)
         ));
@@ -1628,7 +1643,14 @@ mod tests {
         // Nor on a machine that is not its own.
         assert!(matches!(
             store
-                .give_share(&victor.id, &laptop.id, "ami", &Permission::ALL, None, 1_100)
+                .give_share(
+                    &victor.id,
+                    &laptop.id,
+                    "friend",
+                    &Permission::ALL,
+                    None,
+                    1_100
+                )
                 .unwrap_err(),
             Fault::Refused(Code::ShareInvalid)
         ));
@@ -1636,7 +1658,7 @@ mod tests {
             .give_share(
                 &victor.id,
                 &pc.id,
-                "ami",
+                "friend",
                 &Permission::ALL,
                 Some(5_000),
                 1_100,
@@ -1668,7 +1690,7 @@ mod tests {
             .give_share(
                 &victor.id,
                 &pc.id,
-                "ami",
+                "friend",
                 &[Permission::Connect],
                 None,
                 1_300,
@@ -1688,11 +1710,11 @@ mod tests {
     fn ending_a_contact_takes_the_shares_between_the_two_with_it() {
         let store = store();
         let victor = account(&store, "victor");
-        let friend = account(&store, "ami");
+        let friend = account(&store, "friend");
         let (pc, _, _) = device(&store, &victor, "PC");
         let contact = friends(&store, &victor, &friend);
         let share = store
-            .give_share(&victor.id, &pc.id, "ami", &Permission::ALL, None, 1_100)
+            .give_share(&victor.id, &pc.id, "friend", &Permission::ALL, None, 1_100)
             .unwrap();
         store
             .remove_contact(&friend.id, &contact.id, 1_200)
@@ -1726,16 +1748,16 @@ mod tests {
         // server's counter stays at zero, and there is not even a
         // relayed row.
         let store = store();
-        for session in ["direct", "relayee"] {
+        for session in ["direct", "relayed"] {
             store
                 .session_started(session, "d1", "d2", &Grant::Owner, 1_000)
                 .unwrap();
         }
-        store.session_relayed("relayee", 1_200).unwrap();
+        store.session_relayed("relayed", 1_200).unwrap();
         // A device that came back to the relay after a cut has two
         // rounds under its name: what it carried adds up.
-        store.session_relayed("relayee", 800).unwrap();
-        for session in ["direct", "relayee"] {
+        store.session_relayed("relayed", 800).unwrap();
+        for session in ["direct", "relayed"] {
             store.session_ended(session, 1_500).unwrap();
         }
         assert_eq!(
@@ -1775,16 +1797,10 @@ mod tests {
         let store = store();
         let victor = account(&store, "victor");
         let (_, token) = store.login("victor", PASSWORD, 1_000).unwrap();
-        store
-            .reset_password("victor", "un autre mot de passe")
-            .unwrap();
+        store.reset_password("victor", "another password").unwrap();
         assert!(store.account_of_token(&token.raw, 1_001).is_err());
         assert!(store.login("victor", PASSWORD, 1_002).is_err());
-        assert!(
-            store
-                .login("victor", "un autre mot de passe", 1_002)
-                .is_ok()
-        );
+        assert!(store.login("victor", "another password", 1_002).is_ok());
         device(&store, &victor, "PC");
         store.delete_account("victor").unwrap();
         assert!(store.account_by_username("victor").unwrap().is_none());

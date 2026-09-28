@@ -44,7 +44,7 @@ impl Limiter {
     }
 
     fn allows_at(&self, who: IpAddr, now: Instant) -> bool {
-        let mut buckets = self.buckets.lock().expect("seaux");
+        let mut buckets = self.buckets.lock().expect("buckets");
         if buckets.len() >= MOST_REMEMBERED {
             buckets.retain(|_, bucket| now.duration_since(bucket.counted) < WINDOW);
         }

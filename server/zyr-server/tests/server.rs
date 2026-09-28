@@ -42,12 +42,12 @@ impl Server {
         ));
         let config = Config::parse(&format!(
             r#"
-name = "Essai"
+name = "Test"
 data_dir = '{}'
 
 [api]
 listen = "127.0.0.1:0"
-public_url = "https://essai.invalid"
+public_url = "https://test.invalid"
 
 [relay]
 listen = "127.0.0.1:0"
@@ -140,7 +140,7 @@ login_attempts_per_minute = 1000
             None,
             &Register {
                 username: username.into(),
-                password: "douze caractères".into(),
+                password: "twelve characters".into(),
                 email: None,
                 invitation: None,
             },
@@ -191,12 +191,12 @@ async fn next(channel: &mut Channel) -> FromServer {
     loop {
         let frame = tokio::time::timeout(PATIENCE, channel.next())
             .await
-            .expect("le serveur devait dire quelque chose")
-            .expect("le canal est fermé")
+            .expect("the server should have said something")
+            .expect("the channel is closed")
             .unwrap();
         match frame {
             Message::Text(text) => return serde_json::from_str(text.as_str()).unwrap(),
-            Message::Close(_) => panic!("le canal s'est fermé"),
+            Message::Close(_) => panic!("the channel closed"),
             _ => {}
         }
     }
@@ -218,7 +218,7 @@ async fn open_channel(
 ) -> (Channel, FromServer) {
     let mut channel = connect(server, token).await;
     let FromServer::Challenge { nonce } = next(&mut channel).await else {
-        panic!("le serveur devait commencer par un défi");
+        panic!("the server should have started with a challenge");
     };
     let signature = identity
         .sign(&challenge_message(signing_key, &nonce, Purpose::Live))
@@ -227,7 +227,7 @@ async fn open_channel(
         &mut channel,
         &FromDevice::Hello {
             protocol: PROTOCOL,
-            build: "essai".into(),
+            build: "test".into(),
             signature: BASE64.encode(signature),
         },
     )
@@ -262,7 +262,7 @@ async fn connect(server: &Server, token: &str) -> Channel {
 async fn accounts_devices_contacts_and_shares_from_the_outside() {
     let server = Server::start("open").await;
     let info = server.info();
-    assert_eq!(info.name, "Essai");
+    assert_eq!(info.name, "Test");
     assert_eq!(info.registration, Registration::Open);
     assert_eq!(info.protocol, PROTOCOL);
     // The test server is that very binary: its build stamp is
@@ -276,7 +276,7 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
         None,
         &Login {
             username: "victor".into(),
-            password: "pas le bon".into(),
+            password: "not the right one".into(),
         },
     );
     assert_eq!((status, error.error), (401, Code::InvalidCredentials));
@@ -285,7 +285,7 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
         None,
         &Login {
             username: "victor".into(),
-            password: "douze caractères".into(),
+            password: "twelve characters".into(),
         },
     );
     assert_eq!(status, 200);
@@ -294,7 +294,7 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
     // Two devices, one of them attached with the freshly obtained account
     // token; a device token then does everything the account does.
     let (_, pc1) = server.link(&victor.token, "PC de Victor");
-    let (_, pc2) = server.link(&again.token, "Portable");
+    let (_, pc2) = server.link(&again.token, "Laptop");
     let (status, devices) = server.get::<Vec<DeviceInfo>>(paths::DEVICES, Some(&pc1.token));
     assert_eq!(status, 200);
     assert_eq!(devices.len(), 2);
@@ -335,13 +335,13 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
     assert_eq!((status, error.error), (401, Code::Unauthorized));
 
     // A contact, asked for and accepted, then a share.
-    let friend_account = server.register("ami");
-    let (_, laptop) = server.link(&friend_account.token, "PC de l'ami");
+    let friend_account = server.register("friend");
+    let (_, laptop) = server.link(&friend_account.token, "Friend's PC");
     let (status, asked) = server.post::<ContactInfo>(
         paths::CONTACTS,
         Some(&pc1.token),
         &ContactRequest {
-            username: "ami".into(),
+            username: "friend".into(),
         },
     );
     assert_eq!(status, 200);
@@ -356,7 +356,7 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
         Some(&pc1.token),
         &ShareRequest {
             device: pc1.device.id.clone(),
-            with: "ami".into(),
+            with: "friend".into(),
             permissions: Permission::ALL.to_vec(),
             expires: None,
         },
@@ -371,13 +371,13 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
         Some(&pc1.token),
         &ShareRequest {
             device: pc1.device.id.clone(),
-            with: "ami".into(),
+            with: "friend".into(),
             permissions: Permission::ALL.to_vec(),
             expires: None,
         },
     );
     assert_eq!(status, 200);
-    assert_eq!(share.with, "ami");
+    assert_eq!(share.with, "friend");
     assert_eq!(share.device.id, pc1.device.id);
     let (_, received) = server.get::<Vec<ShareInfo>>(paths::SHARES, Some(&laptop.token));
     assert_eq!(received.len(), 1);
@@ -397,21 +397,21 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
     let info = server.info();
     let victor = server.register("victor");
     let (pc_identity, pc) = server.link(&victor.token, "PC de Victor");
-    let (other_identity, other) = server.link(&victor.token, "Portable");
-    let friend_account = server.register("ami");
-    let (friend_identity, friend) = server.link(&friend_account.token, "PC de l'ami");
+    let (other_identity, other) = server.link(&victor.token, "Laptop");
+    let friend_account = server.register("friend");
+    let (friend_identity, friend) = server.link(&friend_account.token, "Friend's PC");
 
     // A false proof closes the channel with the reason.
     let mut liar = connect(&server, &pc.token).await;
     let FromServer::Challenge { .. } = next(&mut liar).await else {
-        panic!("un défi d'abord");
+        panic!("a challenge first");
     };
     say(
         &mut liar,
         &FromDevice::Hello {
             protocol: PROTOCOL,
-            build: "essai".into(),
-            signature: BASE64.encode(b"pas une signature"),
+            build: "test".into(),
+            signature: BASE64.encode(b"not a signature"),
         },
     )
     .await;
@@ -477,7 +477,7 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
         relay,
     } = next(&mut other_channel).await
     else {
-        panic!("le portable devait recevoir le début de session");
+        panic!("the laptop should have received the start of the session");
     };
     assert_eq!(peer.device, pc.device.id);
     assert_eq!(peer.fingerprint, pc_identity.fingerprint());
@@ -489,7 +489,7 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
         relay: pc_relay,
     } = next(&mut pc_channel).await
     else {
-        panic!("le PC devait recevoir le début de session");
+        panic!("the PC should have received the start of the session");
     };
     assert_eq!(same, session);
     assert_eq!(same_ticket, ticket);
@@ -498,13 +498,13 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
     // Each one receives its own pass, which only lets it reach the
     // other, at the relay the server names.
     assert!(info.relay);
-    let relay = relay.expect("le portable n'a pas eu de laissez-passer");
-    let pc_relay = pc_relay.expect("le PC n'a pas eu de laissez-passer");
+    let relay = relay.expect("the laptop got no pass");
+    let pc_relay = pc_relay.expect("the PC got no pass");
     assert_eq!(relay.address, pc_relay.address);
     assert_eq!(relay.fingerprint, pc_relay.fingerprint);
     assert_eq!(
         relay.address,
-        format!("essai.invalid:{}", info.udp_port.unwrap())
+        format!("test.invalid:{}", info.udp_port.unwrap())
     );
     let read = |signed: &zyr_broker::Signed, bearer| {
         Verifier::new(info.signing_key)
@@ -606,7 +606,7 @@ async fn registration_by_invitation_takes_a_code_once() {
         None,
         &Register {
             username: "victor".into(),
-            password: "douze caractères".into(),
+            password: "twelve characters".into(),
             email: None,
             invitation: None,
         },
@@ -615,7 +615,7 @@ async fn registration_by_invitation_takes_a_code_once() {
     let code = server.running.app.store.new_invitation(now()).unwrap();
     let invited = Register {
         username: "victor".into(),
-        password: "douze caractères".into(),
+        password: "twelve characters".into(),
         email: Some("victor@exemple.fr".into()),
         invitation: Some(code),
     };
@@ -625,7 +625,7 @@ async fn registration_by_invitation_takes_a_code_once() {
         paths::ACCOUNTS,
         None,
         &Register {
-            username: "autre".into(),
+            username: "other".into(),
             ..invited
         },
     );

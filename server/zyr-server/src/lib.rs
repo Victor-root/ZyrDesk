@@ -67,7 +67,7 @@ impl fmt::Display for StartError {
         match self {
             StartError::Store(e) => write!(f, "{e}"),
             StartError::Keys(e) => write!(f, "{e}"),
-            StartError::Bind(listen, e) => write!(f, "écoute impossible sur {listen} : {e}"),
+            StartError::Bind(listen, e) => write!(f, "cannot listen on {listen}: {e}"),
         }
     }
 }
@@ -190,7 +190,7 @@ pub async fn start(config: Config) -> Result<Running, StartError> {
     let Some(address) = handle.listening().await else {
         let failure = match serving.await {
             Ok(Err(e)) => e,
-            Ok(Ok(())) => std::io::Error::other("le serveur s'est arrêté avant d'écouter"),
+            Ok(Ok(())) => std::io::Error::other("the server stopped before listening"),
             Err(e) => std::io::Error::other(e.to_string()),
         };
         return Err(StartError::Bind(listen, failure));

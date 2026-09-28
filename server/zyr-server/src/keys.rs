@@ -31,12 +31,12 @@ pub enum KeyError {
 impl fmt::Display for KeyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            KeyError::File(path, e) => write!(f, "{} : {e}", path.display()),
+            KeyError::File(path, e) => write!(f, "{}: {e}", path.display()),
             KeyError::Malformed(path) => {
-                write!(f, "{} : ce n'est pas une clé de signature", path.display())
+                write!(f, "{}: this is not a signing key", path.display())
             }
-            KeyError::Pem(path, e) => write!(f, "{} : {e}", path.display()),
-            KeyError::Tls(e) => write!(f, "configuration TLS : {e}"),
+            KeyError::Pem(path, e) => write!(f, "{}: {e}", path.display()),
+            KeyError::Tls(e) => write!(f, "TLS configuration: {e}"),
         }
     }
 }
@@ -96,7 +96,7 @@ impl Tls {
         if chain.is_empty() {
             return Err(KeyError::Pem(
                 certificate.to_path_buf(),
-                "aucun certificat dans ce fichier".to_string(),
+                "no certificate in this file".to_string(),
             ));
         }
         let key = PrivateKeyDer::from_pem_file(key)
@@ -139,11 +139,11 @@ mod tests {
 
     #[test]
     fn the_signing_key_is_made_once_and_kept() {
-        let folder = fresh_folder("cles");
+        let folder = fresh_folder("keys");
         let first = load_or_create_signing_key(&folder).unwrap();
         let second = load_or_create_signing_key(&folder).unwrap();
         assert_eq!(first.public(), second.public());
-        std::fs::write(folder.join(SIGNING_KEY_FILE), b"court").unwrap();
+        std::fs::write(folder.join(SIGNING_KEY_FILE), b"short").unwrap();
         assert!(matches!(
             load_or_create_signing_key(&folder).unwrap_err(),
             KeyError::Malformed(_)
@@ -167,7 +167,7 @@ mod tests {
         assert!(tls.fingerprint().is_some());
         assert!(tls.server_config().is_ok());
 
-        std::fs::write(&certificate, "pas du PEM").unwrap();
+        std::fs::write(&certificate, "not PEM").unwrap();
         assert!(matches!(
             Tls::load(&certificate, &key),
             Err(KeyError::Pem(..))

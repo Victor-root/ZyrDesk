@@ -104,15 +104,15 @@ mod tests {
             seen,
         }) = probe::heard(&buf[..count])
         else {
-            panic!("pas une réponse du miroir");
+            panic!("not an answer from the mirror");
         };
         assert_eq!(answered, nonce);
         assert_eq!(seen, asking.local_addr().unwrap());
 
         // Any other datagram is ignored, with no answer.
-        asking.send_to(b"bonjour", mirror.address()).await.unwrap();
+        asking.send_to(b"hello", mirror.address()).await.unwrap();
         let silence =
             tokio::time::timeout(Duration::from_millis(300), asking.recv_from(&mut buf)).await;
-        assert!(silence.is_err(), "le miroir a répondu à autre chose");
+        assert!(silence.is_err(), "the mirror answered something else");
     }
 }

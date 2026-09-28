@@ -239,13 +239,13 @@ impl Relayed {
     /// a device whose connection to the relay broke comes back with the
     /// same pass, and the one before it has to be shown out.
     fn takes_its_place(&self, side: usize, connection: Connection) -> Option<Connection> {
-        self.flow.lock().expect("session relayée").ends[side].replace(connection)
+        self.flow.lock().expect("relayed session").ends[side].replace(connection)
     }
 
     /// Takes that end away when it is still the one registered, and says
     /// whether anybody is left.
     fn leaves(&self, side: usize, connection: &Connection) -> bool {
-        let mut flow = self.flow.lock().expect("session relayée");
+        let mut flow = self.flow.lock().expect("relayed session");
         if flow.ends[side]
             .as_ref()
             .is_some_and(|held| held.stable_id() == connection.stable_id())
@@ -277,7 +277,7 @@ impl Relayed {
         let upkeep = zyr_transport::probe::is_ours(&packet);
         let mut broken = None;
         let other = {
-            let mut flow = self.flow.lock().expect("session relayée");
+            let mut flow = self.flow.lock().expect("relayed session");
             flow.refill(bytes_per_second, now);
             // The session only, and not the upkeep of the road: a
             // session the relay merely holds while a direct road
@@ -320,13 +320,13 @@ impl Relayed {
         let crowded = other.send_queue_room() < packet.len();
         let handed = other.send_datagram(packet).is_ok();
         if crowded || !handed {
-            self.flow.lock().expect("session relayée").crowded_to[1 - from] += 1;
+            self.flow.lock().expect("relayed session").crowded_to[1 - from] += 1;
         }
         broken
     }
 
     fn carried(&self) -> u64 {
-        self.flow.lock().expect("session relayée").carried
+        self.flow.lock().expect("relayed session").carried
     }
 
     /// Watches the road towards the other end, and says when it starts
@@ -339,7 +339,7 @@ impl Relayed {
     /// answer says which of the two ends the queue is at.
     fn watch_the_road(&self, from: usize) -> Option<(Fingerprint, Duration)> {
         let to = 1 - from;
-        let mut flow = self.flow.lock().expect("session relayée");
+        let mut flow = self.flow.lock().expect("relayed session");
         let round_trip = flow.ends[to].as_ref()?.round_trip();
         let slow = round_trip > QUEUED;
         if slow == flow.said_slow[to] {
@@ -352,7 +352,7 @@ impl Relayed {
     /// What each of the two did, which is what tells the two legs of a
     /// relayed road apart.
     fn seen(&self, now: Instant) -> [Seen; 2] {
-        let flow = self.flow.lock().expect("session relayée");
+        let flow = self.flow.lock().expect("relayed session");
         std::array::from_fn(|side| Seen {
             device: self.between[side],
             sent: flow.carried_by[side],
@@ -385,13 +385,13 @@ enum Turned {
 impl std::fmt::Display for Turned {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Turned::Unreadable => f.write_str("ce n'est pas un laissez-passer"),
+            Turned::Unreadable => f.write_str("this is not a pass"),
             Turned::Refused(why) => f.write_str(why),
             Turned::TooMany => {
-                f.write_str("ce relais porte déjà autant de sessions qu'il en accepte")
+                f.write_str("this relay already carries as many sessions as it accepts")
             }
             Turned::NotOfThisSession => {
-                f.write_str("cette session est déjà tenue entre deux autres appareils")
+                f.write_str("this session is already held between two other devices")
             }
         }
     }
@@ -407,7 +407,7 @@ struct LetIn {
 impl Carrying {
     /// How many sessions the relay is carrying right now.
     fn how_many(&self) -> usize {
-        self.open.lock().expect("sessions relayées").len()
+        self.open.lock().expect("relayed sessions").len()
     }
 
     /// Reads the pass and puts the device on its side of the session.
@@ -418,7 +418,7 @@ impl Carrying {
             .pass(&signed, device, now())
             .map_err(|refusal| Turned::Refused(refusal.to_string()))?;
         let relayed = {
-            let mut open = self.open.lock().expect("sessions relayées");
+            let mut open = self.open.lock().expect("relayed sessions");
             match open.get(&pass.session) {
                 Some(relayed) => relayed.clone(),
                 None => {
@@ -458,7 +458,7 @@ impl Carrying {
             return;
         }
         {
-            let mut open = self.open.lock().expect("sessions relayées");
+            let mut open = self.open.lock().expect("relayed sessions");
             match open.get(&held.session) {
                 Some(known) if Arc::ptr_eq(known, &held.relayed) => open.remove(&held.session),
                 // Replaced by a session of the same name, which only a
@@ -633,7 +633,7 @@ mod tests {
     impl Standing {
         fn open(limits: config::Relay) -> Self {
             let folder = std::env::temp_dir().join(format!(
-                "zyrdesk-server-relais-{}",
+                "zyrdesk-server-relay-{}",
                 zyr_proto::random::alphanumeric_string(8)
             ));
             std::fs::create_dir_all(&folder).unwrap();
@@ -726,7 +726,7 @@ mod tests {
         assert!(first.send(&packet));
         let arrived = tokio::time::timeout(PATIENCE, second.arrived())
             .await
-            .expect("rien n'est passé par le relais")
+            .expect("nothing went through the relay")
             .unwrap();
         assert_eq!(&arrived[..], &packet[..]);
         assert_eq!(standing.relay.sessions(), 1);
@@ -745,7 +745,7 @@ mod tests {
             }
         })
         .await
-        .expect("la session relayée n'a jamais été comptée");
+        .expect("the relayed session was never counted");
         assert_eq!(
             counted,
             crate::store::Relayed {
@@ -785,7 +785,7 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(refused.to_string().contains("deux autres"), "{refused}");
+        assert!(refused.to_string().contains("two other"), "{refused}");
 
         // And a pass signed by another server is worth nothing.
         let impostor = ServerKey::generate();
@@ -829,7 +829,7 @@ mod tests {
         .await
         .unwrap_err();
         assert!(
-            refused.to_string().contains("autant de sessions"),
+            refused.to_string().contains("as many sessions"),
             "{refused}"
         );
     }
@@ -873,7 +873,7 @@ mod tests {
         assert_eq!(
             relayed.carry(0, packet.clone(), per_second, start + QUIET),
             None,
-            "un silence tout juste à la limite n'en est pas un"
+            "a silence right at the limit is not one"
         );
         let gone = QUIET + Duration::from_secs(3);
         assert_eq!(
@@ -912,14 +912,14 @@ mod tests {
         for _ in 0..20 {
             relayed.carry(0, packet.clone(), per_second, start);
         }
-        assert_eq!(relayed.carried(), 12_000, "le plafond de la session");
+        assert_eq!(relayed.carried(), 12_000, "the session's ceiling");
 
         // The session is at its ceiling, and a probe goes through all
         // the same, on a bucket of its own, without adding anything to
         // the count.
         let upkeep = per_second * UPKEEP_SHARE;
         relayed.carry(0, probe.clone(), per_second, start);
-        assert_eq!(relayed.carried(), 12_000, "une sonde n'est pas la session");
+        assert_eq!(relayed.carried(), 12_000, "a probe is not the session");
         assert_eq!(relayed.flow.lock().unwrap().upkeep, upkeep - 60.0);
 
         // And that bucket has a bound too: a hundredth of the session's

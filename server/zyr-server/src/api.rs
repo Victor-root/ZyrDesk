@@ -356,7 +356,7 @@ async fn challenge(
     let at = now();
     let nonce = zyr_proto::random::alphanumeric_string(32);
     let expires = at + CHALLENGE_LIFE;
-    let mut challenges = app.challenges.lock().expect("défis");
+    let mut challenges = app.challenges.lock().expect("challenges");
     challenges.retain(|_, until| *until > at);
     challenges.insert(nonce.clone(), expires);
     Ok(Json(Challenge { nonce, expires }))
@@ -364,7 +364,7 @@ async fn challenge(
 
 /// Takes the challenge back, once, if it is still good.
 fn take_challenge(app: &App, nonce: &str) -> Result<(), Refusal> {
-    let mut challenges = app.challenges.lock().expect("défis");
+    let mut challenges = app.challenges.lock().expect("challenges");
     match challenges.remove(nonce) {
         Some(expires) if expires > now() => Ok(()),
         _ => Err(Refusal(Code::ChallengeExpired)),

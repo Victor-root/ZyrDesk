@@ -76,25 +76,25 @@ impl fmt::Display for Trouble {
             Trouble::Keys(e) => write!(f, "{e}"),
             Trouble::Unreachable(address, e) => write!(
                 f,
-                "rien ne répond sur {address} : {e}\n  Le service tourne-t-il ? systemctl status \
+                "nothing answers on {address}: {e}\n  Is the service running? systemctl status \
                  zyrdesk-server"
             ),
-            Trouble::Tls(e) => write!(f, "un appareil refuserait ce serveur : {e}"),
-            Trouble::Answer(e) => write!(f, "le serveur a répondu quelque chose d'illisible : {e}"),
+            Trouble::Tls(e) => write!(f, "a device would refuse this server: {e}"),
+            Trouble::Answer(e) => write!(f, "the server answered something unreadable: {e}"),
             Trouble::Protocol(version) => write!(
                 f,
-                "le serveur qui répond parle le dialecte {version}, ce programme le {PROTOCOL} : \
-                 ce n'est pas le même programme"
+                "the server that answers speaks dialect {version}, this program {PROTOCOL}: it \
+                 is not the same program"
             ),
             Trouble::OtherServer(address) => write!(
                 f,
-                "le serveur qui répond sur {address} signe avec une autre clé que celle de cette \
-                 configuration : ce n'est pas celui-ci"
+                "the server that answers on {address} signs with a key other than this \
+                 configuration's: it is not this one"
             ),
             Trouble::Mirror(address, e) => write!(
                 f,
-                "le miroir sur UDP {address} ne répond pas : {e}\n  Le port est-il pris par un \
-                 autre programme, ou filtré sur la machine elle-même ?"
+                "the mirror on UDP {address} does not answer: {e}\n  Is the port taken by \
+                 another program, or filtered on the machine itself?"
             ),
         }
     }
@@ -198,9 +198,9 @@ pub fn check(config: &Config) -> Result<Checked, Trouble> {
 fn knock_on_the_mirror(mirror: SocketAddr) -> Result<SocketAddr, Trouble> {
     let trouble = |e: &dyn fmt::Display| Trouble::Mirror(mirror, e.to_string());
     let anywhere: SocketAddr = if mirror.is_ipv6() {
-        "[::]:0".parse().expect("une adresse écrite en dur")
+        "[::]:0".parse().expect("a hard-coded address")
     } else {
-        "0.0.0.0:0".parse().expect("une adresse écrite en dur")
+        "0.0.0.0:0".parse().expect("a hard-coded address")
     };
     let socket = std::net::UdpSocket::bind(anywhere).map_err(|e| trouble(&e))?;
     socket
@@ -217,7 +217,7 @@ fn knock_on_the_mirror(mirror: SocketAddr) -> Result<SocketAddr, Trouble> {
             nonce: answered,
             seen,
         }) if answered == nonce => Ok(seen),
-        _ => Err(trouble(&"la réponse n'est pas celle d'un miroir ZyrDesk")),
+        _ => Err(trouble(&"the answer is not that of a ZyrDesk mirror")),
     }
 }
 
@@ -238,7 +238,7 @@ fn exchange(stream: &mut (impl Read + Write), request: &str) -> io::Result<Vec<u
         if count == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                "le serveur a fermé avant de répondre",
+                "the server closed before answering",
             ));
         }
         read.extend_from_slice(&piece[..count]);
@@ -249,9 +249,9 @@ fn exchange(stream: &mut (impl Read + Write), request: &str) -> io::Result<Vec<u
         .next()
         .and_then(|line| line.split_whitespace().nth(1))
         .and_then(|code| code.parse::<u16>().ok())
-        .ok_or_else(|| io::Error::other("réponse sans code HTTP"))?;
+        .ok_or_else(|| io::Error::other("answer without an HTTP code"))?;
     if status != 200 {
-        return Err(io::Error::other(format!("le serveur a répondu {status}")));
+        return Err(io::Error::other(format!("the server answered {status}")));
     }
     let length = head
         .lines()
@@ -318,7 +318,7 @@ mod tests {
             (String::new(), None)
         };
         let config = Config::parse(&format!(
-            "name = \"Essai\"\ndata_dir = '{}'\n\n[api]\nlisten = \"127.0.0.1:0\"\n{files}\
+            "name = \"Test\"\ndata_dir = '{}'\n\n[api]\nlisten = \"127.0.0.1:0\"\n{files}\
              public_url = \"https://localhost\"\n\n[relay]\nlisten = \"127.0.0.1:0\"\n",
             folder.display()
         ))
@@ -340,7 +340,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn the_server_passes_its_own_check_with_and_without_tls() {
         for tls in [true, false] {
-            let (config, folder, fingerprint) = configured("passe", tls);
+            let (config, folder, fingerprint) = configured("passes", tls);
             let running = crate::start(config.clone()).await.unwrap();
             let probed = at(&config, running.address);
             let checked = tokio::task::spawn_blocking(move || check(&probed))
@@ -349,11 +349,11 @@ mod tests {
                 .unwrap();
             assert_eq!(checked.address, running.address);
             assert_eq!(checked.fingerprint, fingerprint);
-            assert_eq!(checked.info.name, "Essai");
+            assert_eq!(checked.info.name, "Test");
             assert_eq!(checked.info.protocol, PROTOCOL);
             // The mirror answered, and saw the question come from
             // here.
-            let seen = checked.mirror.expect("le miroir n'a pas été joint");
+            let seen = checked.mirror.expect("the mirror was not reached");
             assert!(seen.ip().is_loopback(), "{seen}");
             assert_eq!(checked.info.udp_port, running.app.udp_port);
             running.stop().await;
@@ -373,9 +373,9 @@ mod tests {
         // Two configurations, two keys: the one that answers is not
         // the one being checked, and that is said rather than taken
         // as good.
-        let (theirs, their_folder, _) = configured("autre", true);
+        let (theirs, their_folder, _) = configured("other", true);
         let running = crate::start(theirs.clone()).await.unwrap();
-        let (ours, our_folder, _) = configured("notre", true);
+        let (ours, our_folder, _) = configured("ours", true);
         // Our configuration, but with the certificate and the port of
         // the other: the signing key is the only thing that differs.
         let probed = Config {
@@ -394,7 +394,7 @@ mod tests {
 
         // And nothing answering is said along with the
         // address.
-        let (silent, silent_folder, _) = configured("muet", false);
+        let (silent, silent_folder, _) = configured("silent", false);
         let refused = tokio::task::spawn_blocking(move || {
             check(&at(&silent, "127.0.0.1:9".parse().unwrap()))
         })

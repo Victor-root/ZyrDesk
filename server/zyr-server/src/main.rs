@@ -149,7 +149,7 @@ fn status(path: &Path) -> Result<(), String> {
     let counts = store.counts().map_err(|e| e.to_string())?;
     println!("{}", zyr_proto::version_line());
     println!(
-        "Serveur        : {} ({})",
+        "Server         : {} ({})",
         config.name, config.api.public_url
     );
     let listening = std::net::TcpStream::connect_timeout(
@@ -158,42 +158,41 @@ fn status(path: &Path) -> Result<(), String> {
     )
     .is_ok();
     println!(
-        "État           : {}",
+        "State          : {}",
         if listening {
-            "en marche, l'API répond"
+            "running, the API answers"
         } else {
-            "arrêté, ou l'API ne répond pas"
+            "stopped, or the API does not answer"
         }
     );
-    println!("Comptes        : {}", counts.accounts);
-    println!("Appareils      : {}", counts.devices);
+    println!("Accounts       : {}", counts.accounts);
+    println!("Devices        : {}", counts.devices);
     println!("Contacts       : {}", counts.contacts);
-    println!("Partages       : {}", counts.shares);
+    println!("Shares         : {}", counts.shares);
     let relayed = store.relayed().map_err(|e| e.to_string())?;
     println!(
-        "Relais         : {}",
+        "Relay          : {}",
         if config.relay.enabled {
             format!(
-                "UDP {}, {} session{} relayée{} et {} Mo portés en 30 jours",
+                "UDP {}, {} session{} relayed and {} MB carried in 30 days",
                 config.relay.listen,
                 relayed.sessions,
-                if relayed.sessions == 1 { "" } else { "s" },
                 if relayed.sessions == 1 { "" } else { "s" },
                 relayed.bytes / 1_000_000
             )
         } else {
-            format!("désactivé, miroir seul sur UDP {}", config.relay.listen)
+            format!("disabled, mirror alone on UDP {}", config.relay.listen)
         }
     );
     println!(
-        "Inscriptions   : {}",
+        "Registrations  : {}",
         match config.registration.policy {
-            zyr_broker::rest::Registration::Open => "ouvertes",
-            zyr_broker::rest::Registration::Invitation => "sur invitation",
-            zyr_broker::rest::Registration::Closed => "fermées",
+            zyr_broker::rest::Registration::Open => "open",
+            zyr_broker::rest::Registration::Invitation => "by invitation",
+            zyr_broker::rest::Registration::Closed => "closed",
         }
     );
-    println!("Données        : {}", config.data_dir.display());
+    println!("Data           : {}", config.data_dir.display());
     Ok(())
 }
 
@@ -202,14 +201,14 @@ fn status(path: &Path) -> Result<(), String> {
 fn password_from_stdin(asked: bool) -> Result<String, String> {
     if !asked {
         return Err(
-            "le mot de passe se lit sur l'entrée standard : ajouter --password-stdin et \
-             l'écrire sur une ligne"
+            "the password is read from standard input: add --password-stdin and write it on \
+             one line"
                 .to_string(),
         );
     }
     let mut read = String::new();
     if std::io::stdin().is_terminal() {
-        eprintln!("Mot de passe (douze caractères au moins), puis Entrée :");
+        eprintln!("Password (at least twelve characters), then Enter:");
     }
     std::io::stdin()
         .read_to_string(&mut read)
@@ -238,7 +237,7 @@ fn user(path: &Path, action: UserAction) -> Result<(), String> {
                     now(),
                 )
                 .map_err(refused)?;
-            println!("Compte {} créé.", account.username);
+            println!("Account {} created.", account.username);
         }
         UserAction::List => {
             for account in store.accounts().map_err(|e| e.to_string())? {
@@ -247,7 +246,7 @@ fn user(path: &Path, action: UserAction) -> Result<(), String> {
                     .map_err(|e| e.to_string())?
                     .len();
                 println!(
-                    "{:<32} {} appareil{}{}",
+                    "{:<32} {} device{}{}",
                     account.username,
                     devices,
                     if devices == 1 { "" } else { "s" },
@@ -266,11 +265,11 @@ fn user(path: &Path, action: UserAction) -> Result<(), String> {
             store
                 .reset_password(&username, &password)
                 .map_err(refused)?;
-            println!("Mot de passe de {username} remis. Le compte est déconnecté partout.");
+            println!("Password of {username} reset. The account is signed out everywhere.");
         }
         UserAction::Delete { username } => {
             store.delete_account(&username).map_err(refused)?;
-            println!("Compte {username} supprimé, avec ses appareils, contacts et partages.");
+            println!("Account {username} deleted, with its devices, contacts and shares.");
         }
     }
     Ok(())
@@ -290,15 +289,15 @@ fn invite(path: &Path, action: InviteAction) -> Result<(), String> {
                     "{}  {}",
                     invitation.code,
                     match invitation.used {
-                        Some(_) => "employé",
-                        None => "libre",
+                        Some(_) => "used",
+                        None => "available",
                     }
                 );
             }
         }
         InviteAction::Revoke { code } => {
             store.revoke_invitation(&code).map_err(refused)?;
-            println!("Code {code} retiré.");
+            println!("Code {code} withdrawn.");
         }
     }
     Ok(())
@@ -329,18 +328,18 @@ fn fingerprint(path: &Path) -> Result<(), String> {
             let tls = Tls::load(certificate, key_file).map_err(|e| e.to_string())?;
             match tls.fingerprint() {
                 Some(fingerprint) => {
-                    println!("Empreinte du serveur, à comparer dans l'application :");
+                    println!("Server fingerprint, to compare in the application:");
                     println!("  {}", grouped(&fingerprint));
                 }
-                None => println!("Le certificat ne se lit pas : pas de clé publique trouvée."),
+                None => println!("The certificate cannot be read: no public key found."),
             }
         }
         None => println!(
-            "Derrière un mandataire inverse, le certificat est le sien : rien à comparer dans \
-             l'application."
+            "Behind a reverse proxy, the certificate is the proxy's: nothing to compare in the \
+             application."
         ),
     }
-    println!("Clé de signature : {}", key.public());
+    println!("Signing key: {}", key.public());
     Ok(())
 }
 
@@ -353,55 +352,52 @@ fn check(path: &Path) -> Result<(), String> {
     let config = load(path)?;
     let checked = zyr_server::check::check(&config).map_err(|e| e.to_string())?;
     println!(
-        "Le serveur répond sur {}{}.",
+        "The server answers on {}{}.",
         checked.address,
         if checked.fingerprint.is_some() {
-            ", en TLS"
+            ", over TLS"
         } else {
-            ", en clair derrière le mandataire inverse"
+            ", in the clear behind the reverse proxy"
         }
     );
     println!(
-        "  {} (version {}, dialecte {})",
+        "  {} (version {}, dialect {})",
         checked.info.name, checked.info.version, checked.info.protocol
     );
     println!(
-        "  Inscriptions : {}",
+        "  Registrations: {}",
         match checked.info.registration {
-            zyr_broker::rest::Registration::Open => "ouvertes",
-            zyr_broker::rest::Registration::Invitation => "sur invitation",
-            zyr_broker::rest::Registration::Closed => "fermées",
+            zyr_broker::rest::Registration::Open => "open",
+            zyr_broker::rest::Registration::Invitation => "by invitation",
+            zyr_broker::rest::Registration::Closed => "closed",
         }
     );
     if let Some(fingerprint) = checked.fingerprint {
         println!(
-            "  Empreinte du serveur, à comparer dans l'application : {}",
+            "  Server fingerprint, to compare in the application: {}",
             grouped(&fingerprint)
         );
     }
     match (checked.info.udp_port, checked.mirror) {
         (Some(port), Some(seen)) => {
-            println!("  Miroir : répond sur UDP {port}, cette question venait de {seen}");
+            println!("  Mirror: answers on UDP {port}, this question came from {seen}");
         }
-        _ => println!(
-            "  Miroir : aucun, le port UDP n'a pas pu être ouvert au démarrage (voir le journal)"
-        ),
+        _ => {
+            println!("  Mirror: none, the UDP port could not be opened at start (see the journal)")
+        }
     }
     match &checked.relay {
         Some(relay) => {
-            println!(
-                "  Relais : les appareils y sont envoyés sur {}",
-                relay.address
-            );
+            println!("  Relay: the devices are sent to it at {}", relay.address);
             if relay.resolved.is_none() {
                 println!(
-                    "           mais ce nom ne mène nulle part depuis cette machine, donc pas \
-                     davantage depuis les appareils.\n           \
-                     C'est api.public_url qui le donne : corrigez-le et relancez le service."
+                    "         but that name leads nowhere from this machine, so nowhere from the \
+                     devices either.\n         \
+                     It comes from api.public_url: correct it and restart the service."
                 );
             }
         }
-        None => println!("  Relais : aucun, les sessions sans chemin direct n'aboutiront pas"),
+        None => println!("  Relay: none, sessions without a direct path will not get through"),
     }
     Ok(())
 }
@@ -409,25 +405,25 @@ fn check(path: &Path) -> Result<(), String> {
 fn backup(path: &Path, folder: &Path) -> Result<(), String> {
     let config = load(path)?;
     let store = open_store(&config)?;
-    std::fs::create_dir_all(folder).map_err(|e| format!("{} : {e}", folder.display()))?;
+    std::fs::create_dir_all(folder).map_err(|e| format!("{}: {e}", folder.display()))?;
     let database = folder.join("zyrdesk.db");
     if database.exists() {
-        std::fs::remove_file(&database).map_err(|e| format!("{} : {e}", database.display()))?;
+        std::fs::remove_file(&database).map_err(|e| format!("{}: {e}", database.display()))?;
     }
     store.copy_to(&database).map_err(|e| e.to_string())?;
     std::fs::copy(path, folder.join("server.toml"))
-        .map_err(|e| format!("{} : {e}", path.display()))?;
+        .map_err(|e| format!("{}: {e}", path.display()))?;
     let keys = folder.join("keys");
-    std::fs::create_dir_all(&keys).map_err(|e| format!("{} : {e}", keys.display()))?;
+    std::fs::create_dir_all(&keys).map_err(|e| format!("{}: {e}", keys.display()))?;
     for entry in std::fs::read_dir(config.keys_dir())
-        .map_err(|e| format!("{} : {e}", config.keys_dir().display()))?
+        .map_err(|e| format!("{}: {e}", config.keys_dir().display()))?
     {
         let entry = entry.map_err(|e| e.to_string())?;
         if entry.path().is_file() {
             std::fs::copy(entry.path(), keys.join(entry.file_name()))
-                .map_err(|e| format!("{} : {e}", entry.path().display()))?;
+                .map_err(|e| format!("{}: {e}", entry.path().display()))?;
         }
     }
-    println!("Sauvegarde écrite dans {}.", folder.display());
+    println!("Backup written to {}.", folder.display());
     Ok(())
 }

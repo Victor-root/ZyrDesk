@@ -85,7 +85,7 @@ impl Default for Relay {
     fn default() -> Self {
         Self {
             enabled: true,
-            listen: "0.0.0.0:443".parse().expect("une adresse écrite en dur"),
+            listen: "0.0.0.0:443".parse().expect("a hard-coded address"),
             max_sessions: 10,
             max_kbps_per_session: 60_000,
             connections_per_minute: 60,
@@ -123,21 +123,20 @@ pub enum ConfigError {
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ConfigError::Read(path, e) => write!(f, "{} : {e}", path.display()),
-            ConfigError::Parse(path, e) => write!(f, "{} : {e}", path.display()),
+            ConfigError::Read(path, e) => write!(f, "{}: {e}", path.display()),
+            ConfigError::Parse(path, e) => write!(f, "{}: {e}", path.display()),
             ConfigError::ClearOffLoopback(listen) => write!(
                 f,
-                "api.listen = {listen} sans certificat TLS : le serveur ne parle jamais en clair \
-                 ailleurs que sur 127.0.0.1, derrière un mandataire inverse qui termine TLS sur \
-                 cette machine. Donner tls_cert et tls_key, ou écouter sur une adresse de boucle \
-                 locale"
+                "api.listen = {listen} without a TLS certificate: the server never speaks in the \
+                 clear anywhere but on 127.0.0.1, behind a reverse proxy that terminates TLS on \
+                 this machine. Give tls_cert and tls_key, or listen on a loopback address"
             ),
             ConfigError::HalfTls => f.write_str(
-                "api.tls_cert et api.tls_key vont ensemble : l'un sans l'autre ne dit rien",
+                "api.tls_cert and api.tls_key go together: one without the other says nothing",
             ),
             ConfigError::NotHttps(url) => write!(
                 f,
-                "api.public_url = {url} : les appareils ne joignent un serveur qu'en https://"
+                "api.public_url = {url}: the devices only reach a server over https://"
             ),
         }
     }
@@ -226,7 +225,7 @@ mod tests {
     use super::*;
 
     const BEHIND_A_PROXY: &str = r#"
-name = "Maison"
+name = "Home"
 data_dir = "/var/lib/zyrdesk-server"
 
 [api]
@@ -280,7 +279,7 @@ public_url = "https://zyr.exemple.fr"
     #[test]
     fn everything_can_be_said() {
         let text = r#"
-name = "Maison"
+name = "Home"
 data_dir = "/var/lib/zyrdesk-server"
 
 [api]
@@ -328,7 +327,7 @@ login_attempts_per_minute = 3
     fn a_key_nobody_knows_is_refused_rather_than_ignored() {
         // A typo in the file would otherwise be a setting silently
         // left at its default.
-        let text = BEHIND_A_PROXY.replace("name =", "nom =");
+        let text = BEHIND_A_PROXY.replace("name =", "nmae =");
         assert!(matches!(
             Config::parse(&text).unwrap_err(),
             ConfigError::Parse(..)
