@@ -493,7 +493,7 @@ pub fn keep_up_with_the_picture(app: &App) {
     crate::badges::watch(app);
     // And its figures, when they are asked for.
     if the_figures_are_shown(app) {
-        crate::statistics::watch(app, the_bottom_corner(picture));
+        crate::statistics::watch(app);
     }
     // And what arrives of the files being pasted, read again at the same
     // rhythm and for the same reason: a bar that moves once a second does
@@ -545,6 +545,7 @@ fn put_the_button_up(app: &App, picture: (i32, i32, i32, i32)) {
 
     let size = button_size() as i32;
     ITS_LOGO.store(size, Ordering::Relaxed);
+    let under = under_the_figures(picture);
 
     // The button is made of two windows this program draws: the logo,
     // which a hand comes down on, and the menu card. Opening them costs
@@ -552,7 +553,7 @@ fn put_the_button_up(app: &App, picture: (i32, i32, i32, i32)) {
     // work at every turn of the watch.
     #[cfg(windows)]
     {
-        let anchor = hung_from(picture, nudge(), (size, size), margin());
+        let anchor = hung_from(under, nudge(), (size, size), margin());
         let opens = Opens::from_number(OPENS.load(Ordering::Relaxed));
         let room_right = TO_THE_RIGHT.load(Ordering::Relaxed);
         crate::logo::raise(app, size as u32, opens == Opens::Up, room_right, anchor);
@@ -567,7 +568,7 @@ fn put_the_button_up(app: &App, picture: (i32, i32, i32, i32)) {
     // And the two badges, in the opposite corner. What opens here is the
     // window that will carry them: it stays put away as long as there is
     // nothing to say, which is most of a session.
-    crate::badges::raise(app, the_other_corner(picture));
+    crate::badges::raise(app, the_other_corner(under));
     lay_the_button(picture);
 }
 
@@ -594,11 +595,21 @@ fn the_other_corner(picture: (i32, i32, i32, i32)) -> (i32, i32) {
     (picture.0 + margin, picture.1 + margin)
 }
 
-/// The bottom left corner of the picture, at the same margin again: where
-/// the figures of the session stand.
-fn the_bottom_corner(picture: (i32, i32, i32, i32)) -> (i32, i32) {
-    let margin = margin();
-    (picture.0 + margin, picture.3 - margin)
+/// What the figures' banner leaves of the picture: where the button and
+/// the badges hang, under it, so that it never covers them.
+fn under_the_figures(picture: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
+    below_a_banner(picture, crate::statistics::strip(), logo().1)
+}
+
+/// That picture, less a banner that tall along its top.
+///
+/// Never so much that the button no longer fits in what is left: it is
+/// the one way out of a session, so on a picture too short for both, the
+/// banner gives way to the button rather than push it off the picture.
+fn below_a_banner(picture: (i32, i32, i32, i32), banner: i32, button: i32) -> (i32, i32, i32, i32) {
+    let (left, top, right, bottom) = picture;
+    let banner = banner.min((bottom - top - button).max(0));
+    (left, top + banner, right, bottom)
 }
 
 /// What the button comes to in real pixels, on the screen it hangs over.
@@ -659,9 +670,12 @@ pub fn hide(app: &App) -> Result<(), String> {
 /// open if it was: a window that changes size under the mouse gets away
 /// from it.
 pub async fn grabbed() -> bool {
-    // The picture is read once: it does not move while the button is
-    // being dragged over it.
-    let (Some(start), Some(picture)) = (cursor_now(), crate::video::where_it_is()) else {
+    // The picture is read once, less the figures' banner along its top:
+    // it does not move while the button is being dragged over it.
+    let (Some(start), Some(picture)) = (
+        cursor_now(),
+        crate::video::where_it_is().map(under_the_figures),
+    ) else {
         return true;
     };
     // Where the button starts from, worked out and not read back: it is
@@ -900,8 +914,8 @@ async fn share_the_clipboard(app: &App) -> Result<(), String> {
     Ok(())
 }
 
-/// Shows the figures of the session in the corner of the picture, or
-/// takes them away.
+/// Shows the figures of the session in a banner along the top of the
+/// picture, or takes them away.
 ///
 /// For this session only, like the badges held up: the settings screen
 /// says whether a session opens with them.
@@ -1103,14 +1117,15 @@ fn end_the_session(app: &App) -> Result<(), String> {
 /// Called at every turn of the watch and at every step of a drag, so
 /// nothing here waits for anything.
 pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
-    let anchor = hung_from(picture, nudge(), logo(), margin());
-    decide_the_direction(picture, anchor, menu_height());
-    put_the_button(picture, anchor);
+    let under = under_the_figures(picture);
+    let anchor = hung_from(under, nudge(), logo(), margin());
+    decide_the_direction(under, anchor, menu_height());
+    put_the_button(under, anchor);
     // The badges and the figures follow the picture from here, and not
     // from a watch of their own: a picture being resized would carry each
     // of them off at its own rhythm.
-    crate::badges::lay(the_other_corner(picture));
-    crate::statistics::lay(the_bottom_corner(picture));
+    crate::badges::lay(the_other_corner(under));
+    crate::statistics::lay(picture);
 }
 
 /// How tall the menu card is, which decides the direction it opens in.
@@ -1336,9 +1351,27 @@ mod tests {
     }
 
     #[test]
-    fn the_figures_stand_in_the_corner_under_the_badges() {
+    fn the_button_and_the_badges_hang_under_the_figures() {
         let image = (100, 200, 1_000, 800);
+        let button = 91;
+        // Without the banner, the whole picture.
+        assert_eq!(below_a_banner(image, 0, button), image);
         assert_eq!(the_other_corner(image), (100 + MARGIN, 200 + MARGIN));
-        assert_eq!(the_bottom_corner(image), (100 + MARGIN, 800 - MARGIN));
+        // With it, what it leaves under it.
+        let under = below_a_banner(image, 40, button);
+        assert_eq!(under, (100, 240, 1_000, 800));
+        assert_eq!(the_other_corner(under), (100 + MARGIN, 240 + MARGIN));
+        assert_eq!(
+            hung_from(under, (0, 0), (button, button), MARGIN),
+            (1_000 - MARGIN, 240 + MARGIN)
+        );
+        // On a picture too short for both, the banner gives way and the
+        // button stays on the picture.
+        let crowded = below_a_banner(image, 580, button);
+        assert_eq!(crowded, (100, 800 - button, 1_000, 800));
+        assert_eq!(
+            hung_from(crowded, (0, 0), (button, button), MARGIN),
+            (1_000 - MARGIN, 800 - button)
+        );
     }
 }

@@ -1,18 +1,23 @@
-//! The figures of a session, in the bottom left corner of the picture.
+//! The figures of a session, in a banner along the top of the picture.
 //!
-//! What « Statistiques » shows: a small card laid over the picture,
-//! drawn by this program with the same tools as the badges, that says
-//! what every frame costs on its way, from the far computer's screen to
-//! this one, five times a second. The player measures; this only reads
-//! what it measured and writes it out.
+//! What « Statistiques » shows: a strip across the whole width of the
+//! picture, stuck to its top edge, drawn by this program with the same
+//! tools as the badges, that says what every frame costs on its way,
+//! from the far computer's screen to this one, five times a second. The
+//! player measures; this only reads what it measured and writes it out.
+//!
+//! One line when the picture is wide enough for all of it, more when it
+//! is not: the figures follow one another like words, and one that no
+//! longer fits on a line starts the next. The floating button and the
+//! badges hang under the banner, which never covers them.
 //!
 //! A window of ours and never a drawing in the picture: the picture is
-//! the far computer's desktop, and what this card says belongs to this
-//! side. Clicks go through it, as they go through the badges: the corner
+//! the far computer's desktop, and what this banner says belongs to this
+//! side. Clicks go through it, as they go through the badges: the strip
 //! it covers is the far computer's.
 //!
-//! What is written compiles everywhere and is tested; the card is a
-//! window, so Windows code.
+//! What is written and where it goes compile everywhere and are tested;
+//! the banner is a window, so Windows code.
 
 // Outside Windows there is no picture to cover, but what is written is
 // compiled and tested everywhere.
@@ -58,21 +63,38 @@ fn figure(value: Option<f64>, decimals: usize, unit: &str) -> String {
     )
 }
 
-/// What the card says: the stream's line, then a word and its figure on
-/// each line under it.
+/// What the banner says: the stream's line, then each figure after its
+/// word.
 #[derive(Clone, PartialEq, Debug)]
-struct Card {
+struct Banner {
     stream: String,
     rows: [(&'static str, String); 7],
 }
 
-/// The card for those measures.
+impl Banner {
+    /// Its pieces in the order they are read: the stream's line, with no
+    /// word before it, then each figure after its word.
+    fn pieces(&self) -> impl Iterator<Item = (Option<&'static str>, &str)> {
+        let stream = if self.stream.is_empty() {
+            NOTHING
+        } else {
+            &self.stream
+        };
+        std::iter::once((None, stream)).chain(
+            self.rows
+                .iter()
+                .map(|(word, figure)| (Some(*word), figure.as_str())),
+        )
+    }
+}
+
+/// The banner for those measures.
 ///
-/// The lines in the order a frame goes: made over there, carried,
+/// The figures in the order a frame goes: made over there, carried,
 /// decoded here, shown; then what the wire carries and what it loses; and
 /// last the one figure that adds it all up, from the far screen to this
 /// one.
-fn card(said: &Measures) -> Card {
+fn banner(said: &Measures) -> Banner {
     let losses = match (said.dropped_network_pct, said.dropped_jitter_pct) {
         (None, None) => NOTHING.to_string(),
         (lost, late) => format!(
@@ -81,7 +103,7 @@ fn card(said: &Measures) -> Card {
             figure(late, 1, "%")
         ),
     };
-    Card {
+    Banner {
         stream: stream(said),
         rows: [
             ("Hôte", figure(said.host_ms, 2, "ms")),
@@ -95,33 +117,80 @@ fn card(said: &Measures) -> Card {
     }
 }
 
-/* ---- The card --------------------------------------------------------- */
+/// The widest the figures of a session get short of a broken one: under
+/// a hundred milliseconds where they are read to the hundredth, under a
+/// thousand where they are whole, under a thousand megabits a second and
+/// under a hundred per cent.
+///
+/// The room each figure keeps from the moment the banner opens, so that
+/// it opens at the height it keeps and nothing moves as the figures
+/// change. The stream says nothing here: its line only changes with the
+/// stream itself, and takes the room it needs.
+fn widest() -> Banner {
+    banner(&Measures {
+        host_ms: Some(88.88),
+        network_ms: Some(888.0),
+        decode_ms: Some(88.88),
+        render_ms: Some(88.88),
+        bitrate_mbps: Some(888.88),
+        dropped_network_pct: Some(88.8),
+        dropped_jitter_pct: Some(88.8),
+        latency_ms: Some(888.0),
+        ..Measures::default()
+    })
+}
+
+/// Where each piece of the banner goes, laid out like words: the line it
+/// lands on, and how far along that line it starts.
+///
+/// A piece that does not fit after the ones before it on a line starts
+/// the next one. The first piece of a line stays on it however wide it
+/// is: pushed on, it would only leave an empty line behind.
+fn flowed(widths: &[f32], room: f32, gap: f32) -> Vec<(usize, f32)> {
+    let mut line = 0;
+    let mut along = 0.0;
+    widths
+        .iter()
+        .enumerate()
+        .map(|(rank, &width)| {
+            if rank > 0 && along + width > room {
+                line += 1;
+                along = 0.0;
+            }
+            let at = (line, along);
+            along += width + gap;
+            at
+        })
+        .collect()
+}
+
+/* ---- The banner ------------------------------------------------------- */
 
 /// How often the figures are read again: as often as the player takes
 /// them.
 #[cfg(windows)]
 const LOOK_EVERY: std::time::Duration = std::time::Duration::from_millis(200);
 
-/// The card's width, in page pixels.
+/// The size of what is written on it, in page pixels: the product's
+/// captions.
 #[cfg(windows)]
-const WIDTH: f32 = 300.0;
+const WORDS: f32 = crate::design::CAPTION;
 
-/// Its inner margin.
+/// The room above and below its lines.
 #[cfg(windows)]
-const PADDING: f32 = 10.0;
+const ABOVE: f32 = crate::design::SPACE_1;
 
-/// The radius of its corners.
+/// The room before its lines and after them.
 #[cfg(windows)]
-const CORNER: f32 = 8.0;
+const ASIDE: f32 = crate::design::SPACE_3;
 
-/// The size of what is written on it.
+/// What separates two pieces of a line, a stroke standing in the middle.
 #[cfg(windows)]
-const WORDS: f32 = 12.0;
+const BETWEEN: f32 = crate::design::SPACE_4;
 
-/// The height of a line of it: what twelve-pixel type takes with the
-/// room above and below it the font asks for.
+/// What separates a word from its figure: about a space.
 #[cfg(windows)]
-const LINE: f32 = 17.0;
+const AFTER_THE_WORD: f32 = crate::design::SPACE_1;
 
 /// The window, and whether the loop that fills it runs.
 #[cfg(windows)]
@@ -129,10 +198,24 @@ static ITS_WINDOW: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsi
 #[cfg(windows)]
 static WATCHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// What the card says right now, kept for the drawing, which happens on
+/// The program, kept to ask the thread that draws for a new drawing from
+/// wherever the banner is laid.
+#[cfg(windows)]
+static PROGRAM: std::sync::Mutex<Option<crate::app::App>> = std::sync::Mutex::new(None);
+
+/// What the banner says right now, kept for the drawing, which happens on
 /// the thread that owns the window.
 #[cfg(windows)]
-static SAID: std::sync::Mutex<Option<Card>> = std::sync::Mutex::new(None);
+static SAID: std::sync::Mutex<Option<Banner>> = std::sync::Mutex::new(None);
+
+/// What its pieces take; see `Measured`.
+#[cfg(windows)]
+static MEASURED: std::sync::Mutex<Option<Measured>> = std::sync::Mutex::new(None);
+
+/// How tall it stands over the top of the picture, in real pixels, and
+/// nought while it does not: the button and the badges hang under it.
+#[cfg(windows)]
+static STRIP: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 
 #[cfg(windows)]
 thread_local! {
@@ -140,39 +223,167 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-/// What the window takes up, in real pixels.
+/// What the banner's pieces take, in real pixels on a screen of one
+/// magnification.
+///
+/// Measured on the thread that draws, the only one with something to
+/// measure text with, and read wherever the banner is laid: how tall it
+/// is depends on how many lines its pieces take across the picture.
 #[cfg(windows)]
-fn its_size() -> (i32, i32) {
-    let scale = crate::main_window::scale();
-    let high = 2.0 * PADDING + (1 + card(&Measures::default()).rows.len()) as f32 * LINE;
-    ((WIDTH * scale).ceil() as i32, (high * scale).ceil() as i32)
+#[derive(Clone)]
+struct Measured {
+    scale: f32,
+    /// The height of one of its lines.
+    line: f32,
+    /// The room each piece keeps whatever its figure says: never less
+    /// than the widest it usually gets, and grown for good the first time
+    /// it needs more. Pieces that followed their figures would dance from
+    /// side to side five times a second, and from one line to the next.
+    slots: Vec<f32>,
 }
 
-/// Where its top left corner goes for a card whose bottom left corner is
-/// `anchor`.
 #[cfg(windows)]
-fn window_corner(anchor: (i32, i32)) -> (i32, i32) {
-    (anchor.0, anchor.1 - its_size().1)
+impl Measured {
+    /// Where its pieces go across a banner that wide.
+    fn flowed(&self, wide: i32) -> Vec<(usize, f32)> {
+        flowed(
+            &self.slots,
+            wide as f32 - 2.0 * ASIDE * self.scale,
+            BETWEEN * self.scale,
+        )
+    }
+}
+
+/// The three ways the banner writes: its words, the stream's line, and
+/// its figures.
+#[cfg(windows)]
+#[derive(Clone, Copy)]
+struct Pens {
+    word: crate::paint::Pen,
+    stream: crate::paint::Pen,
+    /// Of fixed width: figures that change five times a second cannot be
+    /// read unless every digit keeps its own room.
+    figure: crate::paint::Pen,
+}
+
+#[cfg(windows)]
+impl Pens {
+    /// The pens at that magnification, on one line whatever the room:
+    /// where each piece goes is decided by `flowed`, not by the pen.
+    fn at(scale: f32) -> Self {
+        let word = crate::paint::Pen::of(WORDS * scale).overflowing();
+        Pens {
+            word,
+            stream: word.in_bold(),
+            figure: word.monospaced(),
+        }
+    }
+}
+
+/// How wide each piece of that banner is written, in the order it is
+/// read.
+#[cfg(windows)]
+fn widths(canvas: &crate::paint::Canvas, banner: &Banner, pens: Pens, scale: f32) -> Vec<f32> {
+    banner
+        .pieces()
+        .map(|(word, text)| match word {
+            None => canvas.width_of(text, pens.stream),
+            Some(word) => {
+                canvas.width_of(word, pens.word)
+                    + AFTER_THE_WORD * scale
+                    + canvas.width_of(text, pens.figure)
+            }
+        })
+        .collect()
+}
+
+/// What the pieces of that banner take now, kept for wherever it is laid.
+///
+/// Started again from the widest the figures usually get when the banner
+/// opens, and when the screen's magnification changes: every length here
+/// is in its real pixels.
+#[cfg(windows)]
+fn measure(canvas: &crate::paint::Canvas, banner: &Banner, scale: f32) -> Measured {
+    let pens = Pens::at(scale);
+    let mut kept = MEASURED.lock().expect("mesures des statistiques");
+    let had = kept
+        .take()
+        .filter(|had| had.scale == scale)
+        .unwrap_or_else(|| Measured {
+            scale,
+            line: canvas.line_height(pens.word),
+            slots: widths(canvas, &widest(), pens, scale),
+        });
+    let slots = had
+        .slots
+        .iter()
+        .zip(widths(canvas, banner, pens, scale))
+        .map(|(slot, now)| slot.max(now))
+        .collect();
+    let measured = Measured { slots, ..had };
+    *kept = Some(measured.clone());
+    measured
+}
+
+/// The size of the banner across that picture, in real pixels: its whole
+/// width, and as many lines as its pieces take there, never taller than
+/// the picture itself.
+#[cfg(windows)]
+fn size_of(picture: (i32, i32, i32, i32), measured: &Measured) -> (i32, i32) {
+    let (left, top, right, bottom) = picture;
+    let lines = measured
+        .flowed(right - left)
+        .last()
+        .map_or(1, |&(line, _)| line + 1);
+    let high = (2.0 * ABOVE * measured.scale + lines as f32 * measured.line).ceil() as i32;
+    (right - left, high.min(bottom - top))
+}
+
+/// The same from what was last measured, for wherever the banner is laid:
+/// nothing when that was on a screen of another magnification, or not
+/// yet at all.
+#[cfg(windows)]
+fn size_for(picture: (i32, i32, i32, i32)) -> Option<(i32, i32)> {
+    let scale = crate::main_window::scale();
+    MEASURED
+        .lock()
+        .expect("mesures des statistiques")
+        .as_ref()
+        .filter(|measured| measured.scale == scale)
+        .map(|measured| size_of(picture, measured))
+}
+
+/// How tall the banner stands over the top of the picture, in real
+/// pixels, and nought while there is none: what the button and the
+/// badges hang under.
+#[cfg(windows)]
+pub fn strip() -> i32 {
+    STRIP.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(not(windows))]
+pub fn strip() -> i32 {
+    0
 }
 
 /// Follows the figures for as long as the session shows and they are
-/// asked for, and puts the card away afterwards.
+/// asked for, and puts the banner away afterwards.
 ///
 /// Called at every turn of the floating button's watch: it does nothing
 /// while a loop is already running.
 #[cfg(windows)]
-pub fn watch(app: &crate::app::App, anchor: (i32, i32)) {
+pub fn watch(app: &crate::app::App) {
     use std::sync::atomic::Ordering;
 
     if WATCHING.swap(true, Ordering::SeqCst) {
         return;
     }
-    raise(app, anchor);
+    raise(app);
     let app = app.clone();
     crate::app::spawn(async move {
         while crate::floating::a_session_is_up(&app) && crate::floating::the_figures_are_shown(&app)
         {
-            let now = Some(card(&crate::session::measures()));
+            let now = Some(banner(&crate::session::measures()));
             let changed = {
                 let mut kept = SAID.lock().expect("statistiques");
                 let changed = *kept != now;
@@ -190,22 +401,26 @@ pub fn watch(app: &crate::app::App, anchor: (i32, i32)) {
 }
 
 #[cfg(not(windows))]
-pub fn watch(_app: &crate::app::App, _anchor: (i32, i32)) {}
+pub fn watch(_app: &crate::app::App) {}
 
-/// Opens the card's window, hidden: it shows itself once drawn.
+/// Opens the banner's window, hidden: it shows itself once drawn.
 #[cfg(windows)]
-fn raise(app: &crate::app::App, anchor: (i32, i32)) {
+fn raise(app: &crate::app::App) {
     use std::sync::atomic::Ordering;
 
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
     }
     *SAID.lock().expect("statistiques") = None;
+    // What the figures of a session once took is no reason for the next
+    // banner to keep room for it.
+    *MEASURED.lock().expect("mesures des statistiques") = None;
+    *PROGRAM.lock().expect("programme des statistiques") = Some(app.clone());
     let owner = crate::main_window::handle();
-    let _ = app.run_on_main_thread(move || build(owner, anchor));
+    let _ = app.run_on_main_thread(move || build(owner));
 }
 
-/// Puts it away.
+/// Puts it away, and the button and the badges back up where it stood.
 #[cfg(windows)]
 fn lower(app: &crate::app::App) {
     use std::sync::atomic::Ordering;
@@ -214,41 +429,65 @@ fn lower(app: &crate::app::App) {
     if window == 0 {
         return;
     }
+    *PROGRAM.lock().expect("programme des statistiques") = None;
     let _ = app.run_on_main_thread(move || {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow;
 
         // SAFETY: a window of ours, destroyed on the thread that made it.
         unsafe { DestroyWindow(window as HWND) };
+        if STRIP.swap(0, Ordering::Relaxed) != 0
+            && let Some(picture) = crate::video::where_it_is()
+        {
+            crate::floating::lay_the_button(picture);
+        }
     });
 }
 
-/// Lays it in the bottom left corner of the picture.
+/// Lays it along the top of the picture.
 ///
 /// Called from where the floating button is laid, so at every step of a
-/// hand resizing the window: nothing here waits for anything.
+/// hand resizing the window: nothing here waits for anything. A picture
+/// of another width asks for a banner of another size, which may take a
+/// line more or less: that is a new drawing, asked of the thread that
+/// draws, which hands the window its place, its size and its picture in
+/// one move. So it is never seen at its new size with its old picture.
 #[cfg(windows)]
-pub fn lay(anchor: (i32, i32)) {
+pub fn lay(picture: (i32, i32, i32, i32)) {
     use std::sync::atomic::Ordering;
 
-    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::Foundation::{HWND, RECT};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+        GetWindowRect, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
     };
 
-    let window = ITS_WINDOW.load(Ordering::Relaxed);
-    if window == 0 {
+    let window = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
+    if window.is_null() {
         return;
     }
-    let (left, top) = window_corner(anchor);
+    let mut now = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: a window of ours, whose rectangle is read into ours.
+    let same_size = unsafe { GetWindowRect(window, &mut now) } != 0
+        && size_for(picture) == Some((now.right - now.left, now.bottom - now.top));
+    if !same_size {
+        if let Some(app) = PROGRAM.lock().expect("programme des statistiques").clone() {
+            let _ = app.run_on_main_thread(repaint);
+        }
+        return;
+    }
     // SAFETY: a window of ours, placed without being activated or
     // resized.
     unsafe {
         SetWindowPos(
-            window as HWND,
+            window,
             std::ptr::null_mut(),
-            left,
-            top,
+            picture.0,
+            picture.1,
             0,
             0,
             SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER,
@@ -257,11 +496,11 @@ pub fn lay(anchor: (i32, i32)) {
 }
 
 #[cfg(not(windows))]
-pub fn lay(_anchor: (i32, i32)) {}
+pub fn lay(_picture: (i32, i32, i32, i32)) {}
 
 /// Builds the window, hidden.
 #[cfg(windows)]
-fn build(owner: isize, anchor: (i32, i32)) {
+fn build(owner: isize) {
     use std::sync::atomic::Ordering;
 
     use windows_sys::Win32::Foundation::{GetLastError, HWND};
@@ -279,8 +518,6 @@ fn build(owner: isize, anchor: (i32, i32)) {
         .encode_utf16()
         .chain(Some(0))
         .collect();
-    let (width, height) = its_size();
-    let (left, top) = window_corner(anchor);
     // SAFETY: a class registered once and a window built on it, on the
     // thread that will pump its messages. A class already registered is
     // refused and nothing more: a second session finds the first one's.
@@ -299,17 +536,19 @@ fn build(owner: isize, anchor: (i32, i32)) {
             lpszClassName: name.as_ptr(),
         };
         RegisterClassW(&class);
-        // Transparent to clicks: the corner it covers is the far
-        // computer's, and a hand aiming at something there must reach it.
+        // Of no size and nowhere yet: a layered window takes both with its
+        // first drawing. Transparent to clicks: the strip it covers is the
+        // far computer's, and a hand aiming at something there must reach
+        // it.
         CreateWindowExW(
             WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT,
             name.as_ptr(),
             std::ptr::null(),
             WS_POPUP,
-            left,
-            top,
-            width,
-            height,
+            0,
+            0,
+            0,
+            0,
             owner as HWND,
             std::ptr::null_mut(),
             instance,
@@ -330,100 +569,136 @@ fn build(owner: isize, anchor: (i32, i32)) {
     repaint();
 }
 
-/// Draws the card with what it says now, and shows it.
+/// Draws the banner with what it says now across the picture, and shows
+/// it.
 #[cfg(windows)]
 fn repaint() {
     use std::sync::atomic::Ordering;
 
-    use windows_sys::Win32::Foundation::{HWND, RECT};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetWindowRect, SW_SHOWNOACTIVATE, ShowWindow,
-    };
-
-    use crate::design::{Colour, DARK};
-    use crate::paint::{Align, Pen, Rect};
-
-    let window = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
-    if window.is_null() {
+    let window = ITS_WINDOW.load(Ordering::Relaxed);
+    // A window put down in the taskbar takes the banner down with it;
+    // shown then, the banner would be the only thing left on the desktop.
+    if window == 0 || !crate::main_window::on_screen() {
         return;
     }
-    // A window put down in the taskbar takes the card down with it; shown
-    // then, the card would be the only thing left on the desktop.
-    if !crate::main_window::on_screen() {
-        return;
-    }
-    let Some(Card { stream, rows }) = SAID.lock().expect("statistiques").clone() else {
+    let (Some(banner), Some(picture)) = (
+        SAID.lock().expect("statistiques").clone(),
+        crate::video::where_it_is(),
+    ) else {
         return;
     };
     let scale = crate::main_window::scale();
-    let (width, height) = its_size();
-    CANVAS.with_borrow_mut(|canvas| {
-        // Made again when the screen's magnification has changed: the
-        // canvas is an image of a given size, and the window follows.
-        if canvas
-            .as_ref()
-            .is_none_or(|had| had.size() != (width, height))
-        {
-            *canvas = crate::paint::Canvas::new(width, height);
-        }
-        let Some(canvas) = canvas.as_ref() else {
-            return;
-        };
-        canvas.begin(Colour::TRANSPARENT);
-        let card = Rect::at(0.0, 0.0, width as f32, height as f32);
-        let radius = CORNER * scale;
-        // The dark card whatever the theme, like the badges: it lies on
-        // the far computer's desktop, which can be any colour.
-        canvas.fill(card, radius, DARK.surface_1.faded(0.92));
-        canvas.stroke_inside(card, radius, scale, DARK.border_strong);
-        let inside = card.grown(-PADDING * scale);
-        let line = LINE * scale;
-        let pen = Pen::of(WORDS * scale).ellipsized();
-        canvas.draw_text(
-            if stream.is_empty() { NOTHING } else { &stream },
-            pen.in_bold(),
-            DARK.text,
-            Rect::at(inside.left, inside.top, inside.right - inside.left, line),
+    let Some(high) = CANVAS.with_borrow_mut(|canvas| draw(canvas, window, &banner, picture, scale))
+    else {
+        return;
+    };
+    // The button and the badges hang under it, so they follow it when it
+    // shows and when it takes a line more or less.
+    if STRIP.swap(high, Ordering::Relaxed) != high {
+        crate::floating::lay_the_button(picture);
+    }
+}
+
+/// Draws that banner across that picture and lays it, shown, along its
+/// top edge; says how tall it came out.
+#[cfg(windows)]
+fn draw(
+    kept: &mut Option<crate::paint::Canvas>,
+    window: isize,
+    banner: &Banner,
+    picture: (i32, i32, i32, i32),
+    scale: f32,
+) -> Option<i32> {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SW_SHOWNOACTIVATE, ShowWindow};
+
+    use crate::design::{Colour, DARK};
+    use crate::paint::{Align, Canvas, Rect};
+
+    // Measured on whatever canvas there is: measuring text takes
+    // something to measure it with, not a canvas of the right size.
+    if kept.is_none() {
+        *kept = Canvas::new(1, 1);
+    }
+    let measured = measure(kept.as_ref()?, banner, scale);
+    let (wide, high) = size_of(picture, &measured);
+    // Made again when it is no longer the right size, which includes the
+    // one-pixel canvas that has just measured.
+    if kept.as_ref().is_none_or(|had| had.size() != (wide, high)) {
+        *kept = Canvas::new(wide, high);
+    }
+    let canvas = kept.as_ref()?;
+    let pens = Pens::at(scale);
+    let line = measured.line;
+    let between = BETWEEN * scale;
+    // One page pixel.
+    let hairline = scale;
+
+    canvas.begin(Colour::TRANSPARENT);
+    // Dark whatever the theme, like the badges: it lies on the far
+    // computer's desktop, which can be any colour. Edged where it meets
+    // the picture.
+    let (across, down) = (wide as f32, high as f32);
+    canvas.fill(
+        Rect::at(0.0, 0.0, across, down),
+        0.0,
+        DARK.surface_1.faded(0.92),
+    );
+    canvas.fill(
+        Rect::at(0.0, down - hairline, across, hairline),
+        0.0,
+        DARK.border_strong,
+    );
+    let pieces = measured
+        .flowed(wide)
+        .into_iter()
+        .zip(banner.pieces())
+        .zip(&measured.slots);
+    for (((on, along), (word, text)), &slot) in pieces {
+        let at = Rect::at(
+            ASIDE * scale + along,
+            ABOVE * scale + on as f32 * line,
+            slot,
+            line,
         );
-        for (rank, (label, value)) in rows.iter().enumerate() {
-            let at = Rect::at(
-                inside.left,
-                inside.top + (rank + 1) as f32 * line,
-                inside.right - inside.left,
-                line,
+        // A stroke between two pieces of one line, as tall as the type.
+        if along > 0.0 {
+            canvas.fill(
+                Rect::at(
+                    at.left - (between + hairline) / 2.0,
+                    at.top + (line - pens.word.size) / 2.0,
+                    hairline,
+                    pens.word.size,
+                ),
+                0.0,
+                DARK.border_strong,
             );
-            canvas.draw_text(label, pen, DARK.text_faint, at);
-            // Figures of fixed width, lined up on the right: they change
-            // five times a second, and figures that dance side to side
-            // cannot be read.
-            canvas.draw_text(value, pen.monospaced().aligned(Align::Right), DARK.text, at);
         }
-        if !canvas.finish() {
-            return;
+        match word {
+            None => canvas.draw_text(text, pens.stream, DARK.text, at),
+            Some(word) => {
+                canvas.draw_text(word, pens.word, DARK.text_faint, at);
+                // Against the right of the room the piece keeps: as a
+                // figure changes, only its own digits move.
+                canvas.draw_text(text, pens.figure.aligned(Align::Right), DARK.text, at);
+            }
         }
-        let mut place = RECT {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-        // SAFETY: a window of ours, whose rectangle is read into ours.
-        if unsafe { GetWindowRect(window, &mut place) } == 0 {
-            return;
-        }
-        canvas.lay_on(window as isize, place.left, place.top);
-        // SAFETY: a window of ours, shown without taking the front.
-        unsafe { ShowWindow(window, SW_SHOWNOACTIVATE) };
-    });
+    }
+    if !canvas.finish() || !canvas.lay_on(window, picture.0, picture.1) {
+        return None;
+    }
+    // SAFETY: a window of ours, shown without taking the front.
+    unsafe { ShowWindow(window as HWND, SW_SHOWNOACTIVATE) };
+    Some(high)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_session_measured_says_every_figure_with_its_unit() {
-        let said = Measures {
+    /// A session as it goes.
+    fn a_session() -> Measures {
+        Measures {
             codec: Some("HEVC".to_string()),
             width: Some(2560),
             height: Some(1440),
@@ -437,11 +712,16 @@ mod tests {
             dropped_jitter_pct: Some(0.14),
             latency_ms: Some(38.2),
             ..Measures::default()
-        };
-        let card = card(&said);
-        assert_eq!(card.stream, "HEVC · 2560x1440 · 60 images/s");
+        }
+    }
+
+    #[test]
+    fn a_session_measured_says_every_figure_with_its_unit() {
+        let banner = banner(&a_session());
+        assert_eq!(banner.stream, "HEVC · 2560x1440 · 60 images/s");
         let value = |label: &str| {
-            card.rows
+            banner
+                .rows
                 .iter()
                 .find(|(named, _)| *named == label)
                 .map(|(_, value)| value.clone())
@@ -454,21 +734,96 @@ mod tests {
         assert_eq!(value("Débit"), "18.40 Mb/s");
         assert_eq!(value("Pertes"), "0.0 % en route, 0.1 % trop tard");
         assert_eq!(value("Latence de bout en bout"), "38 ms");
+        // Read in that order, the stream first.
+        let pieces: Vec<_> = banner.pieces().collect();
+        assert_eq!(pieces.len(), 8);
+        assert_eq!(pieces[0], (None, "HEVC · 2560x1440 · 60 images/s"));
+        assert_eq!(pieces[1], (Some("Hôte"), "4.25 ms"));
     }
 
     #[test]
     fn a_figure_not_measured_says_so_rather_than_nought() {
-        let empty = card(&Measures::default());
+        let empty = banner(&Measures::default());
         assert!(
             empty.rows.iter().all(|(_, value)| value == NOTHING),
             "{empty:?}"
         );
         assert_eq!(empty.stream, "");
+        // A stream not known yet is said the same way, not left blank.
+        assert_eq!(empty.pieces().next(), Some((None, NOTHING)));
         // Half a loss measured is still worth saying.
         let half = Measures {
             dropped_jitter_pct: Some(2.0),
             ..Measures::default()
         };
-        assert_eq!(card(&half).rows[5].1, "- en route, 2.0 % trop tard");
+        assert_eq!(banner(&half).rows[5].1, "- en route, 2.0 % trop tard");
+    }
+
+    #[test]
+    fn a_heavy_session_takes_no_more_room_than_the_banner_keeps_from_the_start() {
+        // The figures are written with every digit as wide as the next:
+        // what one takes is how many characters it has.
+        let heavy = banner(&Measures {
+            host_ms: Some(16.67),
+            network_ms: Some(250.0),
+            decode_ms: Some(12.5),
+            render_ms: Some(8.33),
+            bitrate_mbps: Some(150.0),
+            dropped_network_pct: Some(12.5),
+            dropped_jitter_pct: Some(3.2),
+            latency_ms: Some(320.0),
+            ..a_session()
+        });
+        let widest = widest();
+        assert_eq!(widest.rows[0].1, "88.88 ms");
+        for ((word, figure), (_, room)) in heavy.rows.iter().zip(&widest.rows) {
+            assert!(
+                figure.chars().count() <= room.chars().count(),
+                "{word} : « {figure} » ne tient pas dans « {room} »"
+            );
+        }
+    }
+
+    #[test]
+    fn the_figures_hold_on_one_line_when_the_picture_is_wide_enough() {
+        // 200, then 16 and 90, then 16 and 80: 402 in all.
+        let pieces = [200.0, 90.0, 80.0];
+        assert_eq!(
+            flowed(&pieces, 402.0, 16.0),
+            vec![(0, 0.0), (0, 216.0), (0, 322.0)]
+        );
+    }
+
+    #[test]
+    fn a_figure_that_no_longer_fits_starts_the_next_line() {
+        let pieces = [200.0, 90.0, 80.0];
+        assert_eq!(
+            flowed(&pieces, 401.0, 16.0),
+            vec![(0, 0.0), (0, 216.0), (1, 0.0)]
+        );
+        // Narrower, the second starts a line the third still fits on.
+        assert_eq!(
+            flowed(&pieces, 250.0, 16.0),
+            vec![(0, 0.0), (1, 0.0), (1, 106.0)]
+        );
+        // Narrower still, one on each line.
+        assert_eq!(
+            flowed(&pieces, 150.0, 16.0),
+            vec![(0, 0.0), (1, 0.0), (2, 0.0)]
+        );
+    }
+
+    #[test]
+    fn a_figure_wider_than_the_picture_keeps_a_line_to_itself() {
+        // First, it stays on the first line rather than leave it empty.
+        assert_eq!(
+            flowed(&[500.0, 50.0], 300.0, 16.0),
+            vec![(0, 0.0), (1, 0.0)]
+        );
+        // After others, it starts a line, and whatever follows the next.
+        assert_eq!(
+            flowed(&[50.0, 500.0, 50.0], 300.0, 16.0),
+            vec![(0, 0.0), (1, 0.0), (2, 0.0)]
+        );
     }
 }
