@@ -24,7 +24,7 @@ pub struct UnknownChannel(pub u8);
 
 impl std::fmt::Display for UnknownChannel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "canal inconnu : {}", self.0)
+        write!(f, "unknown channel: {}", self.0)
     }
 }
 

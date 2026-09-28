@@ -42,7 +42,7 @@ const SETUP: &[u8] = b"setup: 1161";
 
 /// What someone had copied on the far machine before the session
 /// opened.
-const HOST_CLIPBOARD: &str = "l'adresse du serveur : 10.0.0.4";
+const HOST_CLIPBOARD: &str = "the server's address: 10.0.0.4";
 
 /// Two screens switched on at the far machine, the main one first, named
 /// the way the engine names them.
@@ -62,7 +62,7 @@ const HOST_SCREEN: (u32, u32) = (1366, 768);
 /// everything asked of it written down instead of done.
 #[derive(Default)]
 struct FarComputer {
-    /// Times Ctrl+Alt+Suppr was asked for. Counted rather than done:
+    /// Times Ctrl+Alt+Del was asked for. Counted rather than done:
     /// nothing here has a Windows to press it on.
     attended: AtomicU32,
     hushed: AtomicBool,
@@ -119,7 +119,7 @@ impl Answers for FarComputer {
         // back says which sift it was given back under, which is enough
         // to see that the sift did get across.
         if !sift.is_empty() {
-            return Ok(format!("trié par « {sift} »"));
+            return Ok(format!("sifted through « {sift} »"));
         }
         Ok(host_journal())
     }
@@ -194,11 +194,11 @@ impl Answers for FarComputer {
 /// A journal the size of the ones the product really writes: a page and
 /// not a line.
 fn host_journal() -> String {
-    let mut page = String::from("ZyrDesk 0.1.0\nOrdinateur       : PC du SAV");
-    page.push_str("\n\n--- Le service (service.log) ---");
+    let mut page = String::from("ZyrDesk 0.1.0\nComputer         : PC-SAV");
+    page.push_str("\n\n--- The service (service.log) ---");
     for line in 0..480 {
         page.push_str(&format!(
-            "\n2026-08-30T12:00:{:02}Z  ligne {line} du journal de la machine d'en face",
+            "\n2026-08-30T12:00:{:02}Z  line {line} of the far machine's journal",
             line % 60
         ));
     }
@@ -655,7 +655,7 @@ async fn a_second_opening_is_refused_and_the_session_goes_on() {
     let refusal = before_the_end(aside::ask_to_open(&bench.connection, SERVED))
         .await
         .unwrap_err();
-    assert!(refusal.to_string().contains("déjà ouverte"), "{refusal}");
+    assert!(refusal.to_string().contains("already open"), "{refusal}");
 
     bench.the_player_speaks_first().await;
     bench.engine.say(Channel::Video, b"picture").await;
@@ -724,7 +724,7 @@ async fn a_refused_opening_says_why_though_the_connection_goes_at_once() {
             .await
             .unwrap();
         opening
-            .refused("le moteur s'est arrêté avant de rejoindre sa liaison")
+            .refused("the engine stopped before joining its link")
             .await
             .unwrap();
         drop(host_connection);
@@ -734,7 +734,7 @@ async fn a_refused_opening_says_why_though_the_connection_goes_at_once() {
     })
     .await;
     let refusal = asked.unwrap_err().to_string();
-    assert!(refusal.contains("s'est arrêté"), "{refusal}");
+    assert!(refusal.contains("stopped"), "{refusal}");
 }
 
 #[tokio::test]
@@ -830,7 +830,7 @@ async fn the_far_machine_s_journal_arrives_whole_and_empties() {
         .await
         .unwrap();
     assert_eq!(page, host_journal());
-    assert!(page.len() > 20_000, "{} octets", page.len());
+    assert!(page.len() > 20_000, "{} bytes", page.len());
 
     before_the_end(aside::ask_to_empty_the_journal(&bench.connection))
         .await
@@ -849,7 +849,7 @@ async fn the_far_machine_s_journal_arrives_whole_and_empties() {
     ))
     .await
     .unwrap();
-    assert_eq!(sifted, "trié par « tag:clipboard »");
+    assert_eq!(sifted, "sifted through « tag:clipboard »");
 }
 
 #[tokio::test]
@@ -863,7 +863,7 @@ async fn the_clipboard_crosses_the_tunnel_both_ways() {
     ))
     .await
     .unwrap()
-    .expect("ce qui était copié en face");
+    .expect("what was copied over there");
     assert_eq!(arrived.said(), Some(HOST_CLIPBOARD));
 
     // Asked again while saying it is already held: nothing comes back.
@@ -917,7 +917,7 @@ async fn the_pieces_of_a_file_cross_both_ways() {
 
     // The pulling way: the far machine copied, this one pastes.
     let file: Vec<u8> = (0..200_000u32).map(|at| (at % 251) as u8).collect();
-    *bench.far.has.lock().unwrap() = vec![b"court".to_vec(), file.clone()];
+    *bench.far.has.lock().unwrap() = vec![b"short".to_vec(), file.clone()];
     let mut gathered = Vec::new();
     let mut offset = 0u64;
     while (offset as usize) < file.len() {
@@ -930,9 +930,9 @@ async fn the_pieces_of_a_file_cross_both_ways() {
             before_the_end(aside::ask_for_pieces(&bench.connection, Some(asked), None))
                 .await
                 .unwrap();
-        let given = given.expect("le morceau demandé");
+        let given = given.expect("the piece asked for");
         assert_eq!(given.from, offset);
-        assert!(!given.bytes.is_empty(), "un morceau vide ne finit jamais");
+        assert!(!given.bytes.is_empty(), "an empty piece never ends");
         offset += given.bytes.len() as u64;
         gathered.extend_from_slice(&given.bytes);
     }

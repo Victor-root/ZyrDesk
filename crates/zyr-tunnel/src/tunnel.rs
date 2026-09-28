@@ -106,7 +106,7 @@ impl Tunnel {
                 let accepted = async {
                     handed
                         .await
-                        .map_err(|_| io::Error::other("le flux du moteur n'est jamais arrivé"))
+                        .map_err(|_| io::Error::other("the engine's stream never came"))
                 };
                 pump::between(
                     engine,
@@ -323,7 +323,7 @@ async fn one_stream(
             }
         }
         Ok(StreamChannel::Engine) => {
-            let handing = engine_stream.lock().expect("flux du moteur").take();
+            let handing = engine_stream.lock().expect("engine's stream").take();
             match handing {
                 Some(handing) => {
                     if let Some(log) = &log {

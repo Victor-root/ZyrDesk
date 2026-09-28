@@ -206,7 +206,7 @@ async fn last_words(delivered: impl Future<Output = io::Result<()>>) -> io::Resu
         .map_err(|_| {
             io::Error::new(
                 io::ErrorKind::TimedOut,
-                "les derniers mots d'un bout du tunnel n'ont pas atteint l'autre à temps",
+                "the last words of one end of the tunnel did not reach the other in time",
             )
         })?
 }
@@ -228,7 +228,7 @@ async fn off_the_link(
             Channel::Control => towards_the_stream
                 .send(payload)
                 .await
-                .map_err(|_| io::Error::other("le flux du moteur s'est fermé"))?,
+                .map_err(|_| io::Error::other("the engine's stream closed"))?,
             // Never waited for: a service that stopped reading must not
             // hold up the picture travelling on the same link.
             Channel::Service => {
@@ -360,7 +360,7 @@ async fn stream_to_link(
         towards_the_link
             .send(piece.bytes)
             .await
-            .map_err(|_| io::Error::other("le lien s'est fermé"))?;
+            .map_err(|_| io::Error::other("the link closed"))?;
     }
     Ok(())
 }

@@ -54,7 +54,7 @@ impl DatagramQueue {
         let mut dropped = 0;
         let left;
         {
-            let mut waiting = self.waiting.lock().expect("datagrammes en attente");
+            let mut waiting = self.waiting.lock().expect("waiting datagrams");
             waiting.bytes += weight(&payload);
             waiting
                 .datagrams
@@ -81,7 +81,7 @@ impl DatagramQueue {
         loop {
             let arrived = self.arrived.notified();
             {
-                let mut waiting = self.waiting.lock().expect("datagrammes en attente");
+                let mut waiting = self.waiting.lock().expect("waiting datagrams");
                 if let Some((channel, payload, queued)) = waiting.datagrams.pop_front() {
                     waiting.bytes -= weight(&payload);
                     return (channel, payload, queued.elapsed());

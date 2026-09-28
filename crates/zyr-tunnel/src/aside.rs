@@ -166,7 +166,7 @@ const REFUSAL_DELIVERED: Duration = Duration::from_secs(2);
 /// whole by [`until_a_session_opens`], since what answers it is the
 /// engine being brought up, and the tunnel is only started once it is.
 pub trait Answers: Send + Sync + 'static {
-    /// Presses Ctrl+Alt+Suppr on this computer.
+    /// Presses Ctrl+Alt+Del on this computer.
     ///
     /// It travels here and not through the engines, and that is not a
     /// preference. Windows reserves this one combination for itself at
@@ -192,7 +192,7 @@ pub trait Answers: Send + Sync + 'static {
 
     /// Puts this computer's lock screen up.
     ///
-    /// The other half of Ctrl+Alt+Suppr and the mirror of it. That one
+    /// The other half of Ctrl+Alt+Del and the mirror of it. That one
     /// only a service may press; this one only a program sitting on the
     /// interactive desktop may ask for. The two refusals are the same
     /// idea seen from both sides: a lock screen nobody can raise or
@@ -385,19 +385,19 @@ impl Wanted {
             pieces
                 .next()
                 .and_then(|said| said.parse::<u64>().ok())
-                .ok_or_else(|| format!("un morceau de fichier sans {what}"))
+                .ok_or_else(|| format!("a piece of a file with no {what}"))
         };
-        let rank = number("rang")?;
-        let from = number("départ")?;
-        let how_many = number("longueur")?;
+        let rank = number("rank")?;
+        let from = number("start")?;
+        let how_many = number("length")?;
         Ok(Self {
             rank: rank
                 .try_into()
-                .map_err(|_| "un rang hors de tout".to_string())?,
+                .map_err(|_| "a rank out of range".to_string())?,
             from,
             how_many: how_many
                 .try_into()
-                .map_err(|_| "une longueur hors de tout".to_string())?,
+                .map_err(|_| "a length out of range".to_string())?,
         })
     }
 }
@@ -429,17 +429,17 @@ impl Given {
             pieces
                 .next()
                 .and_then(|said| said.parse::<u64>().ok())
-                .ok_or_else(|| format!("un morceau de fichier sans {what}"))
+                .ok_or_else(|| format!("a piece of a file with no {what}"))
         };
-        let rank = number("rang")?;
-        let from = number("départ")?;
+        let rank = number("rank")?;
+        let from = number("start")?;
         let bytes = BASE64
             .decode(pieces.next().unwrap_or("").trim())
-            .map_err(|_| "un morceau de fichier illisible".to_string())?;
+            .map_err(|_| "an unreadable piece of a file".to_string())?;
         Ok(Self {
             rank: rank
                 .try_into()
-                .map_err(|_| "un rang hors de tout".to_string())?,
+                .map_err(|_| "a rank out of range".to_string())?,
             from,
             bytes,
         })
@@ -467,10 +467,10 @@ fn halves<'a>(said: &'a str, first: &str, second: &str) -> Result<(&'a str, &'a 
     let said = said.trim();
     let rest = said
         .strip_prefix(first)
-        .ok_or_else(|| format!("un message qui ne dit pas « {first} »"))?;
+        .ok_or_else(|| format!("a message that does not say « {first} »"))?;
     let (before, after) = rest
         .split_once(second)
-        .ok_or_else(|| format!("un message qui ne dit pas « {second} »"))?;
+        .ok_or_else(|| format!("a message that does not say « {second} »"))?;
     Ok((before.trim(), after.trim()))
 }
 
@@ -495,7 +495,7 @@ pub enum Question {
     /// window the far computer holds open is worked out from it, and this
     /// is the first word of every session.
     Open { serving: MediaProfile },
-    /// Press Ctrl+Alt+Suppr on yourself.
+    /// Press Ctrl+Alt+Del on yourself.
     SecureAttention,
     /// Go quiet, or play again, for as long as this session lasts.
     Hush { quiet: bool },
@@ -728,7 +728,7 @@ impl Question {
                         stamp => Some(
                             stamp
                                 .parse()
-                                .map_err(|_| format!("« {stamp} » ne nomme rien"))?,
+                                .map_err(|_| format!("« {stamp} » names nothing"))?,
                         ),
                     },
                 })
@@ -743,9 +743,9 @@ impl Question {
             "hush" => match rest {
                 "quiet" => Ok(Question::Hush { quiet: true }),
                 "play" => Ok(Question::Hush { quiet: false }),
-                other => Err(format!("« {other} » ne dit ni de se taire ni de jouer")),
+                other => Err(format!("« {other} » says neither to go quiet nor to play")),
             },
-            other => Err(format!("question inconnue « {other} »")),
+            other => Err(format!("unknown question « {other} »")),
         }
     }
 }
@@ -796,7 +796,7 @@ impl Told {
             }
             "filming" => Ok(Ok(Told::Filming)),
             "no" => Ok(Err(rest.to_string())),
-            other => Err(unreadable(format!("réponse inconnue « {other} »"))),
+            other => Err(unreadable(format!("unknown answer « {other} »"))),
         }
     }
 }
@@ -807,9 +807,9 @@ fn after_the_version(message: &str) -> Result<&str, String> {
     match head.parse::<u32>() {
         Ok(VERSION) => Ok(rest),
         Ok(other) => Err(format!(
-            "l'autre ordinateur parle la version {other} du tunnel, celui-ci la version {VERSION}"
+            "the other computer speaks version {other} of the tunnel, this one version {VERSION}"
         )),
-        Err(_) => Err("l'autre ordinateur ne parle pas le langage du tunnel".to_string()),
+        Err(_) => Err("the other computer does not speak the tunnel's language".to_string()),
     }
 }
 
@@ -822,7 +822,7 @@ fn served(said: &str) -> Result<MediaProfile, String> {
             bits_per_second: u64::from(kbps) * 1_000,
             frames_per_second,
         }),
-        _ => Err(format!("« {said} » ne dit pas ce qu'une session demande")),
+        _ => Err(format!("« {said} » does not say what a session asks for")),
     }
 }
 
@@ -912,15 +912,15 @@ pub async fn ask(connection: &Connection, question: &Question) -> io::Result<Tol
 pub async fn ask_to_open(connection: &Connection, serving: MediaProfile) -> io::Result<()> {
     match ask(connection, &Question::Open { serving }).await? {
         Told::Opened => Ok(()),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
 
-/// Asks the far ZyrDesk to press Ctrl+Alt+Suppr on itself.
+/// Asks the far ZyrDesk to press Ctrl+Alt+Del on itself.
 pub async fn ask_for_the_secure_attention(connection: &Connection) -> io::Result<()> {
     match ask(connection, &Question::SecureAttention).await? {
         Told::Attended => Ok(()),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
 
@@ -934,7 +934,7 @@ pub async fn ask_for_the_secure_attention(connection: &Connection) -> io::Result
 pub async fn ask_to_hush(connection: &Connection, quiet: bool) -> io::Result<()> {
     match ask(connection, &Question::Hush { quiet }).await? {
         Told::Hushed => Ok(()),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
 
@@ -948,7 +948,7 @@ pub async fn ask_to_hush(connection: &Connection, quiet: bool) -> io::Result<()>
 pub async fn ask_to_lock(connection: &Connection) -> io::Result<()> {
     match ask(connection, &Question::Lock).await? {
         Told::Locked => Ok(()),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
 
@@ -968,7 +968,7 @@ pub async fn ask_for_a_screen(
 ) -> io::Result<Option<(u32, u32)>> {
     match ask(connection, &Question::Screen { wanted }).await? {
         Told::Screen { size } => Ok(size),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
 
@@ -984,7 +984,7 @@ pub async fn ask_for_the_journal(connection: &Connection, sift: &str) -> io::Res
     };
     match ask(connection, &asking).await? {
         Told::Journal { text } => Ok(text),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
 
@@ -997,7 +997,7 @@ pub async fn ask_for_the_journal(connection: &Connection, sift: &str) -> io::Res
 pub async fn ask_for_the_reach_log(connection: &Connection) -> io::Result<String> {
     match ask(connection, &Question::ReachLog).await? {
         Told::ReachLog { text } => Ok(text),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
 
@@ -1016,7 +1016,7 @@ pub async fn ask_for_the_pointer(
 ) -> io::Result<zyr_proto::session::Pointer> {
     match ask(connection, &Question::Pointer).await? {
         Told::Pointer { shape } => Ok(shape),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
 
@@ -1029,7 +1029,7 @@ pub async fn ask_for_the_pointer(
 pub async fn ask_to_empty_the_journal(connection: &Connection) -> io::Result<()> {
     match ask(connection, &Question::EmptyTheJournal).await? {
         Told::Emptied => Ok(()),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
 
@@ -1041,7 +1041,7 @@ pub async fn ask_to_empty_the_journal(connection: &Connection) -> io::Result<()>
 pub async fn ask_what_screens_it_has(connection: &Connection) -> io::Result<String> {
     match ask(connection, &Question::Screens).await? {
         Told::Screens { listed } => Ok(listed),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
 
@@ -1056,7 +1056,7 @@ pub async fn ask_to_film_this_screen(
 ) -> io::Result<()> {
     match ask(connection, &Question::FilmThisScreen { id }).await? {
         Told::Filming => Ok(()),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
 
@@ -1079,7 +1079,7 @@ pub async fn ask_about_the_clipboard(
 ) -> io::Result<Option<Clip>> {
     match ask(connection, &Question::Clipboard { pushing, seen }).await? {
         Told::Clipboard { theirs } => Ok(theirs),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
 
@@ -1099,7 +1099,7 @@ pub async fn ask_for_pieces(
 ) -> io::Result<(Option<Given>, Option<Wanted>)> {
     match ask(connection, &Question::Pieces { asking, giving }).await? {
         Told::Pieces { given, wanted } => Ok((given, wanted)),
-        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
 
@@ -1171,7 +1171,7 @@ pub async fn until_a_session_opens(
                             before_the_opening(sending, receiving, answering, heard).await
                         }
                         Ok(StreamChannel::Engine) => Err(io::Error::other(
-                            "le flux du moteur est arrivé avant l'ouverture de la session",
+                            "the engine's stream came before the session opened",
                         )),
                         Err(e) => Err(e),
                     };
@@ -1201,7 +1201,7 @@ async fn before_the_opening(
                     answer: sending,
                 })
                 .await
-                .map_err(|_| io::Error::other("une autre ouverture est déjà en cours"));
+                .map_err(|_| io::Error::other("another opening is already under way"));
         }
         Ok(question) => attended(question, answering).await,
         Err(refusal) => Err(refusal),
@@ -1249,9 +1249,7 @@ async fn a_question(receiving: &mut RecvStream) -> io::Result<String> {
             continue;
         }
         if room != LONGEST_QUESTION || !carries_a_page(&said) {
-            return Err(unreadable(
-                "une question plus longue que ce que ce canal porte",
-            ));
+            return Err(unreadable("a question longer than this channel carries"));
         }
         room = LONGEST_PAGE;
     }
@@ -1279,7 +1277,7 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
     match question {
         // A session already stands on this tunnel, with its engine: a
         // second one would have nowhere to go.
-        Question::Open { .. } => Err("une session est déjà ouverte sur ce tunnel".to_string()),
+        Question::Open { .. } => Err("a session is already open on this tunnel".to_string()),
         // Off the thread that carries the tunnel: pressing this starts a
         // program in another Windows session and waits for it, which is a
         // long time to hold a channel every other session is queueing
@@ -1287,7 +1285,7 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
         Question::SecureAttention => {
             tokio::task::spawn_blocking(move || answering.secure_attention())
                 .await
-                .map_err(|e| format!("la frappe n'a pas pu être menée : {e}"))?
+                .map_err(|e| format!("the keystroke could not be carried out: {e}"))?
                 .map(|()| Told::Attended)
         }
         // Off that thread too: silencing a machine's speakers means
@@ -1296,14 +1294,14 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
         Question::Hush { quiet } => {
             tokio::task::spawn_blocking(move || answering.hush_the_speakers(quiet))
                 .await
-                .map_err(|e| format!("les enceintes n'ont pas pu être touchées : {e}"))?
+                .map_err(|e| format!("the speakers could not be changed: {e}"))?
                 .map(|()| Told::Hushed)
         }
         // And off it again: locking means starting a program in the
         // session that owns the screen and waiting for it.
         Question::Lock => tokio::task::spawn_blocking(move || answering.lock_the_screen())
             .await
-            .map_err(|e| format!("le verrouillage n'a pas pu être mené : {e}"))?
+            .map_err(|e| format!("the locking could not be carried out: {e}"))?
             .map(|()| Told::Locked),
         // Off it too, and this one takes the longest of them all: waking
         // a screen is Windows starting a device, and the answer is not
@@ -1312,7 +1310,7 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
         Question::Screen { wanted } => {
             tokio::task::spawn_blocking(move || answering.screen_for_a_session(wanted))
                 .await
-                .map_err(|e| format!("l'écran n'a pas pu être préparé : {e}"))?
+                .map_err(|e| format!("the screen could not be prepared: {e}"))?
                 .map(|size| Told::Screen { size })
         }
         // Off the thread as well: gathering a journal is four files read
@@ -1320,19 +1318,19 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
         // about waking up.
         Question::Journal { sift } => tokio::task::spawn_blocking(move || answering.journal(&sift))
             .await
-            .map_err(|e| format!("le journal n'a pas pu être rassemblé : {e}"))?
+            .map_err(|e| format!("the journal could not be gathered: {e}"))?
             .map(|text| Told::Journal { text }),
         // Off the thread as well, and for the same reason: it is a file
         // read from a disk.
         Question::ReachLog => tokio::task::spawn_blocking(move || answering.reach_log())
             .await
-            .map_err(|e| format!("le relevé n'a pas pu être lu : {e}"))?
+            .map_err(|e| format!("the reach log could not be read: {e}"))?
             .map(|text| Told::ReachLog { text }),
         // Off it too: emptying is four files opened and cut on a disk.
         Question::EmptyTheJournal => {
             tokio::task::spawn_blocking(move || answering.empty_the_journal())
                 .await
-                .map_err(|e| format!("le journal n'a pas pu être vidé : {e}"))?
+                .map_err(|e| format!("the journal could not be emptied: {e}"))?
                 .map(|()| Told::Emptied)
         }
         // On the thread, alone of all of these: it is a reading of what
@@ -1344,14 +1342,14 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
         // journal, which is a disk.
         Question::Screens => tokio::task::spawn_blocking(move || answering.screens())
             .await
-            .map_err(|e| format!("les écrans n'ont pas pu être lus : {e}"))?
+            .map_err(|e| format!("the screens could not be read: {e}"))?
             .map(|listed| Told::Screens { listed }),
         // And off it too: the engine is told without waiting, and the
         // choice is written down in the journal, which is a disk.
         Question::FilmThisScreen { id } => {
             tokio::task::spawn_blocking(move || answering.film_this_screen(id))
                 .await
-                .map_err(|e| format!("l'écran à filmer n'a pas pu être choisi : {e}"))?
+                .map_err(|e| format!("the screen to film could not be chosen: {e}"))?
                 .map(|()| Told::Filming)
         }
         // Off the thread as well: it writes what came down on a disk and
@@ -1359,7 +1357,7 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
         Question::Clipboard { pushing, seen } => {
             tokio::task::spawn_blocking(move || answering.clipboard(pushing, seen))
                 .await
-                .map_err(|e| format!("le presse-papiers n'a pas pu être échangé : {e}"))?
+                .map_err(|e| format!("the clipboard could not be exchanged: {e}"))?
                 .map(|theirs| Told::Clipboard { theirs })
         }
         // And off it too, and this one more than any: both halves of it
@@ -1367,7 +1365,7 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
         Question::Pieces { asking, giving } => {
             tokio::task::spawn_blocking(move || answering.pieces(asking, giving))
                 .await
-                .map_err(|e| format!("les morceaux n'ont pas pu être échangés : {e}"))?
+                .map_err(|e| format!("the pieces could not be exchanged: {e}"))?
                 .map(|(given, wanted)| Told::Pieces { given, wanted })
         }
     }
@@ -1454,16 +1452,16 @@ mod tests {
                 seen: None,
             },
             Question::Clipboard {
-                pushing: Some(Clip::text("l'adresse du serveur : 10.0.0.4")),
+                pushing: Some(Clip::text("the server's address: 10.0.0.4")),
                 seen: None,
             },
             Question::Clipboard {
                 pushing: None,
-                seen: Some(Clip::text("déjà partagé").stamp()),
+                seen: Some(Clip::text("already shared").stamp()),
             },
             Question::Clipboard {
                 pushing: Some(Clip::picture(vec![0x89, b'P', b'N', b'G', 0x00, 0xff])),
-                seen: Some(Clip::text("déjà partagé").stamp()),
+                seen: Some(Clip::text("already shared").stamp()),
             },
             // An empty text is not the absence of text, and the two
             // must stay apart from one end of the channel to the
@@ -1511,7 +1509,7 @@ mod tests {
             },
         ] {
             let said = question.to_string();
-            assert_eq!(Question::parse(&said), Ok(question), "sur « {said} »");
+            assert_eq!(Question::parse(&said), Ok(question), "on « {said} »");
         }
     }
 
@@ -1530,8 +1528,8 @@ mod tests {
             // ends a message by closing the stream, so nothing
             // needs to be folded onto one line.
             Told::Journal {
-                text: "ZyrDesk 0.1.0\nOrdinateur       : PC de Victor\n\n--- Le service ---\nune \
-                       ligne\nune autre"
+                text: "ZyrDesk 0.1.0\nComputer         : PC de Victor\n\n--- The service ---\na \
+                       line\nanother one"
                     .to_string(),
             },
             // The record travels whole, lines included, for the same
@@ -1559,7 +1557,7 @@ mod tests {
             // one is never asked for.
             Told::Clipboard { theirs: None },
             Told::Clipboard {
-                theirs: Some(Clip::text("deux lignes\net la seconde")),
+                theirs: Some(Clip::text("two lines\nand the second")),
             },
             Told::Clipboard {
                 theirs: Some(Clip::picture(vec![0x89, b'P', b'N', b'G', 0x00, 0xff])),
@@ -1585,17 +1583,17 @@ mod tests {
             },
         ] {
             let said = told.to_string();
-            assert_eq!(Told::parse(&said).unwrap(), Ok(told), "sur « {said} »");
+            assert_eq!(Told::parse(&said).unwrap(), Ok(told), "on « {said} »");
         }
     }
 
     #[test]
     fn a_refusal_comes_back_as_a_refusal_and_not_as_nonsense() {
-        let said = format!("{VERSION} no l'accès distant est arrêté sur cet ordinateur");
+        let said = format!("{VERSION} no remote access is off on this computer");
         let Ok(Err(reason)) = Told::parse(&said) else {
-            panic!("« {said} » n'est pas relu comme un refus");
+            panic!("« {said} » is not read back as a refusal");
         };
-        assert!(reason.contains("accès distant"), "{reason}");
+        assert!(reason.contains("remote access"), "{reason}");
     }
 
     #[test]
@@ -1622,9 +1620,9 @@ mod tests {
         // A rate that will not read must not become nought, which would
         // size the far computer's window on nothing: it is refused,
         // saying why.
-        for said in ["open", "open 20000", "open beaucoup 60", "open -5 60"] {
+        for said in ["open", "open 20000", "open plenty 60", "open -5 60"] {
             let refusal = Question::parse(&format!("{VERSION} {said}")).unwrap_err();
-            assert!(refusal.contains("session"), "sur « {said} » : {refusal}");
+            assert!(refusal.contains("session"), "on « {said} »: {refusal}");
         }
     }
 
@@ -1634,7 +1632,7 @@ mod tests {
         // first; these are what a client of this one could never say.
         for said in ["ports 20000 60", "pair 0429 PC", "bitrate 20000", "codecs"] {
             let refusal = Question::parse(&format!("{VERSION} {said}")).unwrap_err();
-            assert!(refusal.contains("question inconnue"), "{refusal}");
+            assert!(refusal.contains("unknown question"), "{refusal}");
         }
     }
 
@@ -1642,11 +1640,11 @@ mod tests {
     fn a_reason_written_over_two_lines_arrives_whole() {
         // A refusal is written to be read, sometimes over several lines.
         // It travels flat and must stay entirely readable.
-        let folded = format!("{VERSION} no {}", shortened("deux\nlignes"));
+        let folded = format!("{VERSION} no {}", shortened("two\nlines"));
         let Ok(Err(reason)) = Told::parse(&folded) else {
-            panic!("« {folded} » n'est pas relu comme un refus");
+            panic!("« {folded} » is not read back as a refusal");
         };
-        assert_eq!(reason, "deux lignes");
+        assert_eq!(reason, "two lines");
     }
 
     #[test]
@@ -1660,18 +1658,14 @@ mod tests {
             format!("{}é", "x".repeat(ROOM - 1)),
         ] {
             let message = format!("{VERSION} no {}", shortened(&reason));
-            assert!(
-                message.len() <= LONGEST_QUESTION,
-                "{} octets",
-                message.len()
-            );
+            assert!(message.len() <= LONGEST_QUESTION, "{} bytes", message.len());
             assert!(matches!(Told::parse(&message), Ok(Err(_))), "{message}");
         }
 
         // And a reason that fits is not touched.
         assert_eq!(
-            shortened("le moteur n'attend aucun code"),
-            "le moteur n'attend aucun code"
+            shortened("the engine expects no code"),
+            "the engine expects no code"
         );
     }
 }
