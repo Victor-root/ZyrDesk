@@ -53,9 +53,9 @@ impl Choice {
     /// What the file writes.
     fn name(self) -> &'static str {
         match self {
-            Choice::System => "system",
-            Choice::Light => "light",
-            Choice::Dark => "dark",
+            Choice::System => "systeme",
+            Choice::Light => "clair",
+            Choice::Dark => "sombre",
         }
     }
 
@@ -143,8 +143,8 @@ pub fn light() -> bool {
 pub fn choose(choice: Choice) {
     CHOSEN.store(choice.rank(), Ordering::Relaxed);
     let written = format!(
-        "# The theme of ZyrDesk's interface: system, light or dark.\n\
-         # « system » follows what Windows asks for.\n\
+        "# The theme of ZyrDesk's interface: systeme, clair or sombre.\n\
+         # « systeme » follows what Windows asks for.\n\
          # Written by ZyrDesk, can be corrected by hand.\n\
          theme = {}\n",
         choice.name()
