@@ -138,6 +138,8 @@ L'ajout par empreinte écrit l'ordinateur dans les deux sens : il le laisse entr
 
 ## D20. Rien ne tourne quand personne ne s'en sert (2026-08-19, pendant M4)
 
+> Complétée par [D231](#d231-cet-ordinateur-ne-se-prend-en-main-que-si-zyrdesk-est-visible-à-son-écran-2026-09-28-pendant-mz) : l'icône n'était qu'un témoin, le service ne vérifiait pas qu'elle était là. Il le vérifie désormais avant d'accepter qui que ce soit.
+
 **Décision.** Le service n'est plus enregistré pour démarrer avec Windows. C'est la fenêtre qui le lance en s'ouvrant et qui l'arrête en étant quittée, et une icône dans la zone de notification dit, tant que le produit tourne, si cet ordinateur peut être pris en main. Fermer la fenêtre la range sans rien arrêter ; « Quitter », dans le menu de cette icône, arrête tout. Un réglage, décoché par défaut, rétablit l'ancien comportement : le service démarre alors avec la machine, l'ordinateur répond avant même qu'on ouvre une session dessus, et ZyrDesk revient tout seul avec son icône.
 
 **Ce que ça corrige.** Un service qui rend la machine joignable tournait en permanence sans que rien à l'écran ne le dise, et l'arrêter demandait une ligne de commande. Ce n'est pas une question de goût : un produit de prise en main à distance qui tourne invisiblement est un produit dont personne ne peut dire s'il est actif.
@@ -3651,6 +3653,20 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 **Ce qui se lit dans le journal.** Une nouvelle étiquette, `wifi`, sur le service de chaque ordinateur : au début de chaque session, pour chaque carte Wi-Fi connectée, ce qu'elle a accepté et en combien de temps, ou qu'aucune n'est connectée ; et de nouveau si elle se reconnecte pendant la session. La ligne `pacing:` compte en plus les images que l'écran n'a pas permis de juger. Les étiquettes à envoyer deviennent `pace engine tunnel wifi` sur l'hôte et `flow measures tunnel wifi` sur le client ([MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.md)).
 
 **Ce qui reste.** Dans ce journal, la fenêtre s'est fermée 8 ms avant chaque rafraîchissement au lieu de 6 dès la cinquième seconde, après une image qui a raté le sien dans une seconde où le réseau avait coupé : le compositeur a pu vraiment le manquer, occupé par les images lâchées d'un coup, et rien ne permet de dire le contraire. Sans coupures, le prochain journal dira si cela recommence. Certains pilotes Wi-Fi ignorent le mode streaming, et le journal le dira carte par carte. Si les coupures continuent malgré tout, le cran suivant serait d'interdire toute recherche de réseau pendant la session. Mais cela coupe aussi la reconnexion automatique, et un service arrêté brutalement la laisserait coupée : c'est une décision pour Victor, pas un réglage à prendre à sa place.
+
+## D231. Cet ordinateur ne se prend en main que si ZyrDesk est visible à son écran (2026-09-28, pendant MZ)
+
+**Le relevé.** « Sur le PC-ACCUEIL je vois le logo ZyrDesk nulle part, et pourtant je peux le prendre en main en tant qu'hôte. Je ne veux pas de ça : si je peux le prendre en main, c'est que le logo est visible dans la barre des tâches. C'est primordial pour la sécurité. »
+
+**Ce qui se passait.** [D20](#d20-rien-ne-tourne-quand-personne-ne-sen-sert-2026-08-19-pendant-m4) voulait que l'icône dise toujours si l'ordinateur peut être pris en main. Mais c'était l'icône qui regardait le service, jamais l'inverse : un service démarré sans la fenêtre accueillait quiconque était autorisé, sans rien à l'écran. Deux chemins y mènent sans que personne l'ait voulu : la commande de mise à jour de la procédure d'essai, qui redémarre le service à la main, et une fenêtre qui plante en laissant son service derrière elle.
+
+**Ce qui change.** Le service n'ouvre sa porte que si ZyrDesk tourne dans la session Windows affichée à l'écran. Il le vérifie lui-même, deux fois par seconde, dans la liste des programmes de cette session, et reconnaît ZyrDesk à son chemin complet, à côté du service : un autre programme qui porterait le même nom ne compte pas. Tant qu'il tourne, son icône est à côté de l'horloge. Dès qu'il s'arrête, de quelque façon que ce soit, la porte se ferme et les sessions en cours avec elle. Faute de pouvoir le vérifier, la porte reste fermée et le journal dit pourquoi.
+
+**L'exception, choisie par Victor.** Un ordinateur sur lequel personne n'est encore connecté à Windows n'a pas de barre des tâches où montrer une icône. S'il a « Démarrer avec Windows » coché, il reste joignable : c'est exactement ce que ce réglage sert à demander. Si quelqu'un se connecte à Windows pendant une telle session, ZyrDesk a une minute pour réapparaître tout seul, comme il le fait avec ce réglage ; passé ce délai, la porte se ferme. Cette minute ne sert qu'à revenir : une fenêtre qui disparaît après s'être montrée ferme la porte aussitôt. Sans le réglage, l'écran de connexion de Windows ne laisse entrer personne.
+
+**Ce qui se voit.** De loin, un ordinateur dont ZyrDesk n'est pas ouvert apparaît comme ayant l'accès distant désactivé, ce qu'il est de fait. Dans son journal, la ligne « Accès distant » le dit en toutes lettres, et le service écrit une ligne quand il ferme ou rouvre sa porte pour cette raison, sous l'étiquette `service`.
+
+**Ce que ça change à la procédure d'essai.** Rien à taper de plus, mais un geste devient obligatoire : après une mise à jour, ouvrir ZyrDesk sur l'hôte, sans quoi il n'est pas joignable.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

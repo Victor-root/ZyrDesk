@@ -61,7 +61,7 @@ Rien à faire pour le pare-feu : le service retire lui-même, à son démarrage,
 
 ### Lancer l'application
 
-Sur **les deux PC** : double-clic sur `target\release\ZyrDesk.exe`, jamais depuis la fenêtre administrateur.
+Sur **les deux PC** : double-clic sur `target\release\ZyrDesk.exe`, jamais depuis la fenêtre administrateur. Tant que ZyrDesk n'est pas ouvert sur un PC, personne ne peut le prendre en main ([D231](../DECISIONS.md)).
 
 ---
 
