@@ -28,5 +28,5 @@ fn main() {
             &std::env::var("CARGO_PKG_DESCRIPTION").expect("CARGO_PKG_DESCRIPTION"),
         )
         .compile()
-        .expect("icône du service");
+        .expect("the service's icon is embedded");
 }

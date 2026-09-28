@@ -3,7 +3,7 @@ name = "zyrdeskd"
 # What the Task Manager shows. No accents: the Windows resource compiler
 # reads this name in the system's character set, and an accented letter
 # arrives there cut in two.
-description = "ZyrDesk : Service de connexion distante"
+description = "ZyrDesk: Remote connection service"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

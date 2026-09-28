@@ -25,10 +25,10 @@ fn main() {
     println!("cargo:rerun-if-changed=../../packaging/brand/zyrdesk.ico");
 
     let css = std::fs::read_to_string(DESIGN)
-        .unwrap_or_else(|e| panic!("le système de design {DESIGN} n'a pas pu être lu : {e}"));
+        .unwrap_or_else(|e| panic!("the design system {DESIGN} could not be read: {e}"));
     let written = design(&plain(&css));
     let out = std::path::Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join("design.rs");
-    std::fs::write(&out, written).expect("le système de design n'a pas pu être écrit");
+    std::fs::write(&out, written).expect("the design system is written");
 
     // The Windows resource: the manifest, the icon and what the program
     // says about itself. What comes back is said and not kept quiet: on
@@ -38,11 +38,10 @@ fn main() {
     println!("cargo:rerun-if-changed=zyrdesk.manifest");
     let resource_path =
         std::path::Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join(RESOURCE);
-    std::fs::write(&resource_path, resource())
-        .expect("la ressource Windows n'a pas pu être écrite");
+    std::fs::write(&resource_path, resource()).expect("the Windows resource is written");
     let compiled = embed_resource::compile(&resource_path, embed_resource::NONE);
     if let Err(e) = compiled.manifest_optional() {
-        println!("cargo:warning=ressource Windows non gravée : {e}");
+        println!("cargo:warning=Windows resource not embedded: {e}");
     }
 }
 
@@ -85,7 +84,7 @@ FILETYPE 0x1L
 {{
 BLOCK "StringFileInfo"
 {{
-BLOCK "040C04B0"
+BLOCK "040904B0"
 {{
 VALUE "CompanyName", "ZyrDesk"
 VALUE "FileDescription", "{what}"
@@ -98,7 +97,7 @@ VALUE "ProductVersion", "{version}"
 }}
 BLOCK "VarFileInfo"
 {{
-VALUE "Translation", 0x40C, 1200
+VALUE "Translation", 0x409, 1200
 }}
 }}
 "#
@@ -126,14 +125,14 @@ fn plain(css: &str) -> String {
 fn block<'a>(css: &'a str, selector: &str) -> Vec<(String, &'a str)> {
     let from = css
         .find(selector)
-        .unwrap_or_else(|| panic!("{selector} est introuvable dans {DESIGN}"));
+        .unwrap_or_else(|| panic!("{selector} is not found in {DESIGN}"));
     let open = css[from..]
         .find('{')
-        .unwrap_or_else(|| panic!("{selector} n'ouvre pas d'accolade"))
+        .unwrap_or_else(|| panic!("{selector} opens no brace"))
         + from;
     let close = css[open..]
         .find('}')
-        .unwrap_or_else(|| panic!("{selector} ne se referme pas"))
+        .unwrap_or_else(|| panic!("{selector} does not close"))
         + open;
     css[open + 1..close]
         .split(';')
@@ -208,7 +207,7 @@ fn design(css: &str) -> String {
                 assert_eq!(
                     mine.kind(),
                     theirs.kind(),
-                    "« {name} » n'est pas de la même sorte dans les deux thèmes"
+                    "« {name} » is not of the same sort in the two themes"
                 );
                 let _ = writeln!(palette, "    pub {name}: {},", mine.kind());
                 let _ = writeln!(dark_fields, "    {name}: {},", mine.written());
@@ -227,17 +226,17 @@ fn design(css: &str) -> String {
     }
 
     format!(
-        "// Écrit par build.rs depuis {DESIGN}. Ne pas modifier à la main :\n\
-         // c'est la feuille de style qui décide, et elle seule.\n\
+        "// Written by build.rs from {DESIGN}. Not to be edited by hand:\n\
+         // the stylesheet decides, and it alone.\n\
          \n\
-         /// Ce qu'un thème dit de chaque rôle.\n\
+         /// What a theme says of each role.\n\
          #[derive(Clone, Copy)]\n\
          pub struct Palette {{\n{palette}}}\n\
          \n\
-         /// Le thème sombre, celui que la feuille de style pose d'abord.\n\
+         /// The dark theme, the one the stylesheet lays down first.\n\
          pub const DARK: Palette = Palette {{\n{dark_fields}}};\n\
          \n\
-         /// Le thème clair, celui qu'elle redit ensuite.\n\
+         /// The light theme, the one it says again afterwards.\n\
          pub const LIGHT: Palette = Palette {{\n{light_fields}}};\n\
          \n\
          {apart}"
@@ -253,18 +252,20 @@ fn read(name: &str, value: &str) -> Sort {
         return Sort::Shadow(shadow);
     }
     if let Some(number) = value.strip_suffix("px") {
-        return Sort::Length(number.trim().parse().unwrap_or_else(|e| {
-            panic!("« {name} » vaut « {value} », qui n'est pas une longueur : {e}")
-        }));
+        return Sort::Length(
+            number.trim().parse().unwrap_or_else(|e| {
+                panic!("« {name} » is « {value} », which is not a length: {e}")
+            }),
+        );
     }
     if let Some(number) = value.strip_suffix("ms") {
         return Sort::Time(number.trim().parse().unwrap_or_else(|e| {
-            panic!("« {name} » vaut « {value} », qui n'est pas une durée : {e}")
+            panic!("« {name} » is « {value} », which is not a duration: {e}")
         }));
     }
     panic!(
-        "« {name} » vaut « {value} », que le dessin ne sait pas lire. \
-         L'ajouter à NOT_DRAWN dans build.rs s'il n'a pas à être dessiné."
+        "« {name} » is « {value} », which the drawing cannot read. \
+         Add it to NOT_DRAWN in build.rs if it is not to be drawn."
     )
 }
 

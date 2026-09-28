@@ -53,9 +53,9 @@ impl Choice {
     /// What the file writes.
     fn name(self) -> &'static str {
         match self {
-            Choice::System => "systeme",
-            Choice::Light => "clair",
-            Choice::Dark => "sombre",
+            Choice::System => "system",
+            Choice::Light => "light",
+            Choice::Dark => "dark",
         }
     }
 
@@ -143,14 +143,14 @@ pub fn light() -> bool {
 pub fn choose(choice: Choice) {
     CHOSEN.store(choice.rank(), Ordering::Relaxed);
     let written = format!(
-        "# Le thème de l'interface ZyrDesk : systeme, clair ou sombre.\n\
-         # « systeme » suit ce que Windows demande.\n\
-         # Écrit par ZyrDesk, peut se corriger à la main.\n\
+        "# The theme of ZyrDesk's interface: system, light or dark.\n\
+         # « system » follows what Windows asks for.\n\
+         # Written by ZyrDesk, can be corrected by hand.\n\
          theme = {}\n",
         choice.name()
     );
     if let Err(e) = zyr_proto::files::replace(&zyr_proto::paths::chosen_theme(), &written) {
-        note(&format!("thème non retenu : {e}"));
+        note(&format!("theme not kept: {e}"));
     }
     on_the_window();
 }
@@ -194,7 +194,7 @@ pub fn watch(app: App) {
             unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, name.as_ptr(), 0, KEY_NOTIFY, &mut key) };
         if opened != 0 {
             note(&format!(
-                "le thème de Windows ne sera pas suivi : sa clé ne s'ouvre pas (code {opened})"
+                "Windows' theme will not be followed: its key does not open (code {opened})"
             ));
             return;
         }
@@ -203,7 +203,7 @@ pub fn watch(app: App) {
         if woken.is_null() {
             // SAFETY: a key this thread opened, closed once.
             unsafe { RegCloseKey(key) };
-            note("le thème de Windows ne sera pas suivi : pas de réveil à poser");
+            note("Windows' theme will not be followed: no wake-up to set");
             return;
         }
 
@@ -215,7 +215,7 @@ pub fn watch(app: App) {
                 unsafe { RegNotifyChangeKeyValue(key, 0, REG_NOTIFY_CHANGE_LAST_SET, woken, 1) };
             if armed != 0 {
                 note(&format!(
-                    "le thème de Windows n'est plus suivi : {armed} en posant la garde"
+                    "Windows' theme is no longer followed: {armed} while setting the watch"
                 ));
                 break;
             }
@@ -231,8 +231,8 @@ pub fn watch(app: App) {
                 said = now;
                 WINDOWS_WANTS_LIGHT.store(now, Ordering::Relaxed);
                 note(&format!(
-                    "Windows demande maintenant une interface {}",
-                    if now { "claire" } else { "sombre" }
+                    "Windows now asks for a {} interface",
+                    if now { "light" } else { "dark" }
                 ));
                 // Only when nobody has chosen: a window forced to a theme
                 // does not follow, and redrawing it here would repaint the
@@ -313,7 +313,7 @@ mod tests {
             assert_eq!(Choice::read(choice.name()), Some(choice));
             assert!(!choice.word().is_empty());
         }
-        assert_eq!(Choice::read("bleu"), None);
+        assert_eq!(Choice::read("blue"), None);
     }
 
     #[test]

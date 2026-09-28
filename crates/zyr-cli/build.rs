@@ -21,5 +21,5 @@ fn main() {
             &std::env::var("CARGO_PKG_DESCRIPTION").expect("CARGO_PKG_DESCRIPTION"),
         )
         .compile()
-        .expect("icône de l'outil en ligne de commande");
+        .expect("the command line tool's icon is embedded");
 }
