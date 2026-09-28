@@ -145,7 +145,7 @@ impl Rest {
         if status.is_success() {
             if status == StatusCode::NO_CONTENT || bytes.is_empty() {
                 return serde_json::from_slice(b"null")
-                    .map_err(|_| Failure::Unreadable("réponse vide".to_string()));
+                    .map_err(|_| Failure::Unreadable("empty answer".to_string()));
             }
             return serde_json::from_slice(&bytes).map_err(|e| Failure::Unreadable(e.to_string()));
         }
@@ -155,7 +155,7 @@ impl Rest {
                 message: error.message,
             }),
             Err(_) => Err(Failure::Unreadable(format!(
-                "{status} sans code : {}",
+                "{status} without a code: {}",
                 String::from_utf8_lossy(&bytes[..bytes.len().min(200)])
             ))),
         }

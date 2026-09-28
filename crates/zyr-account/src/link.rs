@@ -35,7 +35,7 @@ pub struct Unreadable(pub String);
 
 impl fmt::Display for Unreadable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "le lien de compte ne se lit pas : {}", self.0)
+        write!(f, "the account link cannot be read: {}", self.0)
     }
 }
 
@@ -71,20 +71,20 @@ impl Link {
                     pin = Some(
                         value
                             .parse()
-                            .map_err(|_| Unreadable(format!("pin : {value}")))?,
+                            .map_err(|_| Unreadable(format!("pin: {value}")))?,
                     )
                 }
                 "signing_key" => {
                     signing_key = Some(
                         value
                             .parse()
-                            .map_err(|_| Unreadable(format!("signing_key : {value}")))?,
+                            .map_err(|_| Unreadable(format!("signing_key: {value}")))?,
                     )
                 }
                 _ => {}
             }
         }
-        let missing = |what: &str| Unreadable(format!("{what} manque"));
+        let missing = |what: &str| Unreadable(format!("{what} missing"));
         Ok(Link {
             server: server.ok_or_else(|| missing("server"))?,
             name: name.unwrap_or_default(),
@@ -98,8 +98,8 @@ impl Link {
 
     fn render(&self) -> String {
         let mut lines = vec![
-            "# Le lien de cet appareil à un compte ZyrDesk. Le jeton est un secret :".to_string(),
-            "# effacer ce fichier détache l'appareil.".to_string(),
+            "# The link of this device to a ZyrDesk account. The token is a secret:".to_string(),
+            "# deleting this file detaches the device.".to_string(),
             format!("server = {}", self.server),
             format!("name = {}", self.name),
             format!("username = {}", self.username),
@@ -143,14 +143,14 @@ mod tests {
 
     #[test]
     fn a_link_survives_the_disk_with_or_without_a_pin() {
-        let path = fresh_file("aller-retour");
+        let path = fresh_file("round-trip");
         assert_eq!(Link::read(&path).unwrap(), None);
         let mut link = Link {
             server: "https://zyr.exemple.fr:443".into(),
-            name: "Maison".into(),
+            name: "Home".into(),
             username: "victor".into(),
             device: "d1".into(),
-            token: "un jeton".into(),
+            token: "a token".into(),
             pin: Some(Identity::generate().unwrap().fingerprint()),
             signing_key: ServerKey::generate().public(),
         };
@@ -168,7 +168,7 @@ mod tests {
     fn a_file_that_is_not_a_link_is_said_rather_than_taken_for_none() {
         // An unreadable link is not "no link": the service must say so, or
         // a lost token would pass for a choice.
-        let path = fresh_file("illisible");
+        let path = fresh_file("unreadable");
         std::fs::write(&path, "server = https://x:443\nusername = v\n").unwrap();
         let refusal = Link::read(&path).unwrap_err();
         assert_eq!(refusal.kind(), io::ErrorKind::InvalidData);

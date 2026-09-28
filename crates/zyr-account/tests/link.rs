@@ -42,7 +42,7 @@ impl Server {
         let fingerprint = public_key_fingerprint(generated.cert.der()).unwrap();
         let config = Config::parse(&format!(
             r#"
-name = "Essai"
+name = "Test"
 data_dir = '{}'
 
 [api]
@@ -90,7 +90,7 @@ fn log() -> Arc<dyn Fn(&str) + Send + Sync> {
 fn credentials(username: &str, register: bool) -> Credentials {
     Credentials {
         username: username.to_string(),
-        password: "douze caractères".to_string(),
+        password: "twelve characters".to_string(),
         register: register.then(Registering::default),
     }
 }
@@ -98,8 +98,8 @@ fn credentials(username: &str, register: bool) -> Credentials {
 async fn expect(events: &mut mpsc::UnboundedReceiver<Event>) -> Event {
     tokio::time::timeout(PATIENCE, events.recv())
         .await
-        .expect("le canal devait dire quelque chose")
-        .expect("le canal est fermé")
+        .expect("the channel says something in time")
+        .expect("the channel stays open")
 }
 
 async fn until_connected(live: &Live) -> zyr_account::Snapshot {
@@ -111,7 +111,7 @@ async fn until_connected(live: &Live) -> zyr_account::Snapshot {
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "jamais connecté : {:?}",
+            "never connected: {:?}",
             snapshot.trouble
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -171,7 +171,7 @@ async fn a_self_signed_server_is_refused_until_its_key_is_pinned() {
     .await
     .unwrap();
     assert_eq!(link.server, format!("https://{}", server.address()));
-    assert_eq!(link.name, "Essai");
+    assert_eq!(link.name, "Test");
     assert_eq!(link.username, "victor");
     assert_eq!(link.pin, Some(server.fingerprint));
 
@@ -195,7 +195,7 @@ async fn a_self_signed_server_is_refused_until_its_key_is_pinned() {
         Trust::Pinned(server.fingerprint),
         &identity,
         &Credentials {
-            password: "pas le bon mot de passe".into(),
+            password: "not the right password".into(),
             ..credentials("victor", false)
         },
         "PC",
@@ -254,7 +254,7 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
     while pc.snapshot().devices.len() < 2 {
         assert!(
             tokio::time::Instant::now() < deadline,
-            "le portable n'est jamais apparu"
+            "the laptop never showed up"
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
@@ -277,11 +277,11 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
         to: pc_link.device.clone(),
     });
     let Event::SessionStart(seen_by_laptop) = expect(&mut laptop_events).await else {
-        panic!("le portable devait voir la session commencer");
+        panic!("the laptop should have seen the session start");
     };
     assert_eq!(seen_by_laptop.peer.device, pc_link.device);
     let Event::SessionStart(seen_by_pc) = expect(&mut pc_events).await else {
-        panic!("le PC devait voir la session commencer");
+        panic!("the PC should have seen the session start");
     };
     let session = seen_by_laptop.session.clone();
     assert_eq!(seen_by_pc.session, session);
@@ -296,16 +296,13 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
     let relay = seen_by_laptop
         .relay
         .as_ref()
-        .expect("le portable n'a pas eu de laissez-passer");
+        .expect("the laptop gets a relay pass");
     let mine = Verifier::new(pc_link.signing_key)
         .pass(&relay.pass, laptop_identity.fingerprint(), now())
         .unwrap();
     assert_eq!(mine.session, session);
     assert_eq!(mine.peer, pc_identity.fingerprint());
-    let theirs = seen_by_pc
-        .relay
-        .as_ref()
-        .expect("le PC n'a pas eu de laissez-passer");
+    let theirs = seen_by_pc.relay.as_ref().expect("the PC gets a relay pass");
     assert_eq!(theirs.address, relay.address);
     assert_eq!(theirs.fingerprint, relay.fingerprint);
 
@@ -335,10 +332,7 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
     assert_eq!(expect(&mut laptop_events).await, Event::Revoked);
     let deadline = tokio::time::Instant::now() + PATIENCE;
     while pc.snapshot().devices.len() > 1 {
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "le portable est resté"
-        );
+        assert!(tokio::time::Instant::now() < deadline, "the laptop stayed");
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 

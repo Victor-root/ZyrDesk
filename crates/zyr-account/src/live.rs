@@ -216,7 +216,7 @@ impl Live {
     }
 
     pub fn snapshot(&self) -> Snapshot {
-        self.snapshot.lock().expect("instantané").clone()
+        self.snapshot.lock().expect("account snapshot").clone()
     }
 
     /// Tells the server whether this device accepts remote access.
@@ -283,7 +283,7 @@ async fn keep_open(
         };
         snapshot
             .lock()
-            .expect("instantané")
+            .expect("account snapshot")
             .disconnected(why.clone());
         log(&format!(
             "account channel down ({why}), back in {} s",
@@ -299,7 +299,7 @@ async fn keep_open(
         }
         wait = (wait * 2).min(RETRY_MOST);
     }
-    snapshot.lock().expect("instantané").connected = false;
+    snapshot.lock().expect("account snapshot").connected = false;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -354,7 +354,7 @@ async fn serve_once(
             {
                 let _ = events.send(Event::TokenRenewed(token.clone()));
             }
-            snapshot.lock().expect("instantané").apply(&welcome);
+            snapshot.lock().expect("account snapshot").apply(&welcome);
         }
         Ok(Some(FromServer::Bye { code })) => {
             return match code {
@@ -406,7 +406,7 @@ async fn serve_once(
             }
             heard = next(&mut channel, SILENCE) => match heard {
                 Ok(Some(told)) => {
-                    snapshot.lock().expect("instantané").apply(&told);
+                    snapshot.lock().expect("account snapshot").apply(&told);
                     match told {
                         FromServer::SessionStart { session, ticket, peer, relay } => {
                             let _ = events.send(Event::SessionStart(Box::new(Start {
@@ -544,7 +544,7 @@ mod tests {
         ShareInfo {
             id: id.into(),
             device,
-            owner: "ami".into(),
+            owner: "friend".into(),
             with: "victor".into(),
             permissions: Permission::ALL.to_vec(),
             expires: None,
@@ -556,7 +556,7 @@ mod tests {
     fn the_snapshot_follows_what_the_server_says() {
         let mut snapshot = Snapshot::default();
         let server = ServerInfo {
-            name: "Maison".into(),
+            name: "Home".into(),
             version: "0.1.0".into(),
             build: "abc1234 2026-01-01".into(),
             protocol: PROTOCOL,
@@ -610,7 +610,7 @@ mod tests {
         // Contacts and shares.
         let contact = ContactInfo {
             id: "c1".into(),
-            username: "ami".into(),
+            username: "friend".into(),
             status: ContactStatus::Pending,
             asked_by_me: false,
             online: true,
