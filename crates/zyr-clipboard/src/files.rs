@@ -3,8 +3,8 @@
 //! The Explorer hands over a handful of paths, and any of them may be a
 //! folder holding a thousand more. What crosses is the flat list of the
 //! files inside them, each under a path relative to what was copied:
-//! `D:\Photos\2026` copied whole travels as `2026/lac.jpg`,
-//! `2026/mer.jpg`, and so on. That is what the Explorer itself does when
+//! `D:\Photos\2026` copied whole travels as `2026/lake.jpg`,
+//! `2026/sea.jpg`, and so on. That is what the Explorer itself does when
 //! it pastes a folder, and it is what makes the far computer able to
 //! choose where the whole thing lands.
 //!
