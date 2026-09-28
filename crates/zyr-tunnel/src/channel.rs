@@ -31,6 +31,8 @@ impl std::fmt::Display for UnknownChannel {
 impl std::error::Error for UnknownChannel {}
 
 impl DatagramChannel {
+    /// Every channel, for the tests that go through them all.
+    #[cfg(test)]
     pub const ALL: [DatagramChannel; 2] = [DatagramChannel::Video, DatagramChannel::Audio];
 
     /// Leading byte that names the channel inside a datagram. The same
@@ -81,6 +83,8 @@ pub enum StreamChannel {
 }
 
 impl StreamChannel {
+    /// Every channel, for the tests that go through them all.
+    #[cfg(test)]
     pub const ALL: [StreamChannel; 2] = [StreamChannel::Engine, StreamChannel::ZyrDesk];
 
     pub fn identifier(self) -> u8 {

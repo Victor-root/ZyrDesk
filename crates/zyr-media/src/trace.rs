@@ -97,11 +97,6 @@ impl Seconds {
             _ => false,
         }
     }
-
-    /// Whether a second is under way.
-    pub fn under_way(&self) -> bool {
-        self.next.is_some()
-    }
 }
 
 #[cfg(test)]
@@ -131,7 +126,6 @@ mod tests {
         let at = Instant::now();
         let mut seconds = Seconds::default();
         assert!(!seconds.over(at + EVERY * 5));
-        assert!(!seconds.under_way());
         seconds.started(at);
         seconds.started(at + EVERY / 2);
         assert!(!seconds.over(at + EVERY / 2));

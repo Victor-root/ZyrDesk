@@ -179,7 +179,6 @@ pub fn bearer_of(headers: &HeaderMap) -> Option<String> {
 /// what attaches a device in the first place.
 pub struct Actor {
     pub account: Account,
-    pub device: Option<Device>,
 }
 
 impl FromRequestParts<App> for Actor {
@@ -192,12 +191,10 @@ impl FromRequestParts<App> for Actor {
             match store.bearer_of_token(&raw, at) {
                 Ok(bearer) => Ok(Actor {
                     account: bearer.account,
-                    device: Some(bearer.device),
                 }),
                 Err(Fault::Refused(Code::DeviceRevoked)) => Err(Code::DeviceRevoked.into()),
                 Err(_) => Ok(Actor {
                     account: store.account_of_token(&raw, at)?,
-                    device: None,
                 }),
             }
         })

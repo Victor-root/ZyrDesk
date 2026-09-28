@@ -125,12 +125,8 @@ impl Journal {
         let _ = writeln!(self.0, "{label:<17}: {value}");
     }
 
-    /// Closes the heading, then gathers the files.
-    pub fn gathered(self) -> String {
-        self.sifted(&Sifting::everything())
-    }
-
-    /// The same, keeping only the lines that answer what was asked.
+    /// Closes the heading, then gathers the files, keeping only the lines
+    /// that answer what was asked.
     ///
     /// The asking happens as the files are read and never on the page
     /// once it is made, and that is the whole of what makes it worth
@@ -574,7 +570,11 @@ mod tests {
         assert!(text.contains("tag:clipboard"), "{}", &text[..400]);
         // And a page that was not sifted does not carry the
         // line at all.
-        assert!(!Journal::of_this_computer().gathered().contains("\nTri "));
+        assert!(
+            !Journal::of_this_computer()
+                .sifted(&Sifting::everything())
+                .contains("\nTri ")
+        );
     }
 
     #[test]
@@ -612,7 +612,7 @@ mod tests {
         // Two halves of the product compiled at different times is the
         // fault nobody thinks to check for: it is on the first line,
         // before anything else.
-        let text = Journal::of_this_computer().gathered();
+        let text = Journal::of_this_computer().sifted(&Sifting::everything());
         let mut lines = text.lines();
         assert_eq!(lines.next().unwrap(), crate::version_line());
         assert!(lines.next().unwrap().starts_with("Ordinateur"), "{text}");

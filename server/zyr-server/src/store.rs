@@ -364,7 +364,8 @@ impl Store {
     }
 
     /// A store that lives in memory, for the tests.
-    pub fn in_memory() -> Result<Self, Fault> {
+    #[cfg(test)]
+    fn in_memory() -> Result<Self, Fault> {
         Self::prepare(Connection::open_in_memory()?)
     }
 

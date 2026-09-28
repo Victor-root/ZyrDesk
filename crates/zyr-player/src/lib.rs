@@ -45,7 +45,6 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use zyr_codec::CodecError;
 use zyr_proto::log::Log;
 
-pub use present::Rect;
 pub use tallies::{LinkTallies, PictureTallies, SoundTallies, Tallies};
 /// FFmpeg as the player loads it: whoever starts a player, or wants to
 /// know whether it could, takes it from here and never from the codecs.
@@ -57,7 +56,7 @@ pub use zyr_media::stats::Measures;
 
 use audio::{Muted, Sound};
 use link::{Inner, Order};
-use present::{Headless, Presenter};
+use present::{Headless, Presenter, Rect};
 use stats::{Clock, Tally};
 use video::{Said, Video, VideoInput};
 

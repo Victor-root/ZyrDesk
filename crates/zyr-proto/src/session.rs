@@ -525,22 +525,6 @@ fn even(value: u32) -> u32 {
     (value & !1).max(2)
 }
 
-/// The value after this one in a list, back to the first at the end.
-///
-/// What a setting offered as one line of a menu does when it is clicked.
-/// A value that is not in the list at all lands on the first, which is
-/// what a list that has changed since a choice was written down leaves
-/// behind.
-pub fn next_in<T: PartialEq + Copy>(list: &[T], current: T) -> T {
-    let Some(first) = list.first().copied() else {
-        return current;
-    };
-    match list.iter().position(|value| *value == current) {
-        Some(at) => list.get(at + 1).copied().unwrap_or(first),
-        None => first,
-    }
-}
-
 impl fmt::Display for Asked {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -1084,23 +1068,6 @@ mod tests {
         assert_eq!("SCREEN".parse::<Asked>().unwrap(), Asked::Client);
         assert_eq!("host".parse::<Asked>().unwrap(), Asked::Host);
         assert!("n'importe quoi".parse::<Asked>().is_err());
-    }
-
-    #[test]
-    fn a_menu_line_walks_its_list_and_comes_back_to_the_start() {
-        assert_eq!(next_in(SIZES_OFFERED, Asked::Client), SIZES_OFFERED[1]);
-        assert_eq!(
-            next_in(SIZES_OFFERED, *SIZES_OFFERED.last().unwrap()),
-            SIZES_OFFERED[0]
-        );
-        // A value written by a version that offered something else
-        // must not jam the line: it falls back on the first.
-        assert_eq!(
-            next_in(SIZES_OFFERED, Asked::Fixed(640, 480)),
-            SIZES_OFFERED[0]
-        );
-        assert_eq!(next_in(&RATES_OFFERED, 20_000), 21_000);
-        assert_eq!(next_in(CODECS_OFFERED, Codec::Av1), Codec::Auto);
     }
 
     #[test]

@@ -262,17 +262,6 @@ impl Media {
             .store(profile.frames_per_second, Ordering::Relaxed);
     }
 
-    /// The rate changed under a session already running.
-    ///
-    /// Its cadence does not: what the person moves in the middle of a
-    /// session is the rate, and the picture goes on being made at the
-    /// rhythm of the screen it lands on.
-    pub fn serving_at(&self, bits_per_second: u64) {
-        self.0
-            .bits_per_second
-            .store(bits_per_second, Ordering::Relaxed);
-    }
-
     /// Nothing is being served through it any more.
     pub fn serving_nobody(&self) {
         self.serving(self.0.built);
@@ -492,7 +481,7 @@ mod tests {
         // same session: without that, the window would freeze at the
         // first clone.
         let copy = controller.clone_box();
-        media.serving_at(profile(40).bits_per_second);
+        media.serving(profile(40));
         assert_eq!(copy.window(), controller.window());
 
         // Nobody left to serve: it goes back to what the door was built

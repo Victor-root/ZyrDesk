@@ -32,7 +32,6 @@
 //! the shadows, the home window the rest. A layer cut to fit its first
 //! client is reopened for every one that follows, and a layer that gets
 //! reopened is a layer whose rules nobody knows any more.
-#![allow(dead_code)]
 
 use windows::Win32::Foundation::{HWND, POINT, RECT, SIZE};
 use windows::Win32::Graphics::Direct2D::Common::{

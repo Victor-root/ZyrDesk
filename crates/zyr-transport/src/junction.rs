@@ -37,7 +37,7 @@ use std::time::{Duration, Instant};
 use quinn::udp::{EcnCodepoint, RecvMeta, Transmit};
 use quinn::{AsyncUdpSocket, UdpPoller};
 use ring::rand::SecureRandom;
-use tokio::sync::{Notify, oneshot};
+use tokio::sync::oneshot;
 use zyr_proto::fingerprint::Fingerprint;
 
 use crate::endpoint::Bytes;
@@ -915,8 +915,6 @@ struct Table {
     /// The real addresses known to belong to a card.
     by_real: HashMap<SocketAddr, SocketAddr>,
     asked: Option<Asked>,
-    /// This socket, as other computers and the mirror saw it.
-    seen_as: Vec<SocketAddr>,
     /// What a relay brought, waiting to be handed to the transport as
     /// coming from a card.
     relayed: VecDeque<(SocketAddr, Bytes)>,
@@ -937,14 +935,6 @@ impl Table {
             return None;
         }
         Some((card, expected))
-    }
-
-    fn note_seen(&mut self, seen: SocketAddr) -> bool {
-        if self.seen_as.contains(&seen) {
-            return false;
-        }
-        self.seen_as.push(seen);
-        true
     }
 }
 
@@ -976,7 +966,6 @@ struct Inner {
     me: Fingerprint,
     started: Instant,
     table: Mutex<Table>,
-    seen_changed: Notify,
     say: Say,
 }
 
@@ -1040,7 +1029,6 @@ impl Junction {
             me,
             started: Instant::now(),
             table: Mutex::new(Table::default()),
-            seen_changed: Notify::new(),
             say,
         });
         tokio::spawn(look_after(Arc::downgrade(&inner)));
@@ -1190,17 +1178,6 @@ impl Junction {
             .expected
             .get_mut(&card)
             .is_some_and(Expected::take_recovery)
-    }
-
-    /// This socket as it was seen from elsewhere: by the mirror, and by
-    /// every computer that echoed a probe.
-    pub fn seen_as(&self) -> Vec<SocketAddr> {
-        self.inner.table.lock().expect("aiguilleur").seen_as.clone()
-    }
-
-    /// Waits until this socket is seen from somewhere new.
-    pub async fn seen_changed(&self) {
-        self.inner.seen_changed.notified().await;
     }
 
     /// Asks the mirror at that address where this socket is seen from.
@@ -1635,7 +1612,6 @@ impl Inner {
                 let mut table = self.table.lock().expect("aiguilleur");
                 let (card, expected) = table.expectation_of(claimed.from, &claimed.session)?;
                 let echo = sealed.opened_by(expected.peer)?;
-                let seen = echo.seen;
                 if !expected.answered(came_by, echo.probe.number, round_trip, now) {
                     return None;
                 }
@@ -1649,22 +1625,15 @@ impl Inner {
                 }
                 // An address is worth writing down only when the echo
                 // really came from one.
-                let newly_seen = match came_by {
-                    Through::Direct(from) => {
-                        table.by_real.insert(from, card);
-                        table.note_seen(seen)
-                    }
-                    Through::Relay(_) => false,
-                };
+                if let Through::Direct(from) = came_by {
+                    table.by_real.insert(from, card);
+                }
                 drop(table);
                 if let Some(line) = said {
                     (self.say)(Aloud::Says, &line);
                 }
                 for (road, held) in flushed {
                     self.send_held(road, &held);
-                }
-                if newly_seen {
-                    self.seen_changed.notify_waiters();
                 }
                 None
             }
@@ -1675,12 +1644,8 @@ impl Inner {
                     table.asked = Some(asked);
                     return None;
                 }
-                let newly_seen = table.note_seen(seen);
                 drop(table);
                 let _ = asked.answer.send(seen);
-                if newly_seen {
-                    self.seen_changed.notify_waiters();
-                }
                 None
             }
             // This computer is no mirror.
@@ -2171,18 +2136,6 @@ mod tests {
                 "le trafic réel reçu n'a pas prouvé la route"
             );
         }
-
-        // Each was seen by the other, at its real address.
-        assert!(
-            pair.client
-                .seen_as()
-                .contains(&pair.client.local_address().unwrap())
-        );
-        assert!(
-            pair.host
-                .seen_as()
-                .contains(&pair.host.local_address().unwrap())
-        );
     }
 
     #[tokio::test]
@@ -2495,7 +2448,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(seen, Some(junction.local_address().unwrap()));
-        assert_eq!(junction.seen_as(), vec![junction.local_address().unwrap()]);
 
         // A silent mirror: nothing, without getting stuck.
         let silent = tokio::net::UdpSocket::bind(local()).await.unwrap();

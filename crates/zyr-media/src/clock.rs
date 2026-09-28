@@ -47,12 +47,6 @@ impl ClockOffset {
         self.best().map(|sample| sample.rtt_us)
     }
 
-    /// Where a time on the host's clock falls on the local one.
-    pub fn host_to_local(&self, host_us: u64) -> Option<i64> {
-        let best = self.best()?;
-        i64::try_from(i128::from(host_us) - i128::from(best.offset_us)).ok()
-    }
-
     /// Where a host time given by its low 32 bits, as the video and audio
     /// headers carry it, falls on the local clock: the full host time
     /// taken is the one with those bits closest to the host's now.
@@ -96,7 +90,6 @@ mod tests {
     fn nothing_is_known_before_a_first_answer() {
         let clock = ClockOffset::new();
         assert_eq!(clock.rtt_us(), None);
-        assert_eq!(clock.host_to_local(1), None);
         assert_eq!(clock.captured_to_local(1, 1), None);
     }
 
@@ -111,14 +104,19 @@ mod tests {
         }
         assert_eq!(ping(&mut clock, 9_000_000, 1_000, 1_000), Some(2_000));
         assert_eq!(clock.rtt_us(), Some(2_000));
-        assert_eq!(clock.host_to_local(10_000_000 + AHEAD), Some(10_000_000));
+        let captured = (10_000_000 + AHEAD) as u32;
+        assert_eq!(
+            clock.captured_to_local(captured, 10_000_000),
+            Some(10_000_000)
+        );
     }
 
     #[test]
     fn uneven_halves_err_by_at_most_half_their_difference() {
         let mut clock = ClockOffset::new();
         ping(&mut clock, 1_000, 3_000, 1_000);
-        let local = clock.host_to_local(50_000 + AHEAD).unwrap();
+        let captured = (50_000 + AHEAD) as u32;
+        let local = clock.captured_to_local(captured, 50_000).unwrap();
         assert_eq!(local, 50_000 - (3_000 - 1_000) / 2);
     }
 
