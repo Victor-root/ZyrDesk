@@ -21,7 +21,7 @@ pub fn speakers_muted() -> Result<bool, Trouble> {
     // SAFETY: an interface this call obtained and still holds.
     unsafe { speakers.GetMute() }
         .map(|is| is.as_bool())
-        .map_err(|e| Trouble::of(format!("le muet des enceintes est illisible : {e}")))
+        .map_err(|e| Trouble::of(format!("the speakers' mute is unreadable: {e}")))
 }
 
 pub fn mute_speakers(quiet: bool) -> Result<(), Trouble> {
@@ -30,7 +30,7 @@ pub fn mute_speakers(quiet: bool) -> Result<(), Trouble> {
     // SAFETY: the same, and no event context is offered since nothing of
     // ours is listening for one.
     unsafe { speakers.SetMute(quiet, std::ptr::null()) }
-        .map_err(|e| Trouble::of(format!("les enceintes n'ont pas obéi : {e}")))
+        .map_err(|e| Trouble::of(format!("the speakers did not obey: {e}")))
 }
 
 /// COM, brought up for as long as one question takes.
@@ -73,10 +73,10 @@ fn playing_to() -> Result<IMMDevice, Trouble> {
     // SAFETY: a standard class asked of COM, with no aggregation.
     let mixer: IMMDeviceEnumerator =
         unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }
-            .map_err(|e| Trouble::of(format!("le mélangeur audio ne s'ouvre pas : {e}")))?;
+            .map_err(|e| Trouble::of(format!("the audio mixer does not open: {e}")))?;
     // SAFETY: an interface this call obtained and still holds.
     unsafe { mixer.GetDefaultAudioEndpoint(eRender, eConsole) }
-        .map_err(|e| Trouble::of(format!("cet ordinateur n'a pas de sortie audio : {e}")))
+        .map_err(|e| Trouble::of(format!("this computer has no audio output: {e}")))
 }
 
 /// Whether this computer has anything to play a sound through at all.
@@ -95,5 +95,5 @@ fn the_speakers() -> Result<IAudioEndpointVolume, Trouble> {
     // SAFETY: an interface this call obtained and still holds; no
     // activation parameters, this one takes none.
     unsafe { device.Activate(CLSCTX_ALL, None) }
-        .map_err(|e| Trouble::of(format!("le volume des enceintes est hors d'atteinte : {e}")))
+        .map_err(|e| Trouble::of(format!("the speakers' volume is out of reach: {e}")))
 }

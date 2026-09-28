@@ -7,7 +7,7 @@
 use crate::Trouble;
 
 fn nowhere<T>() -> Result<T, Trouble> {
-    Err(Trouble::of("le son ne se règle ainsi que sous Windows"))
+    Err(Trouble::of("the sound is only set this way on Windows"))
 }
 
 pub fn speakers_muted() -> Result<bool, Trouble> {

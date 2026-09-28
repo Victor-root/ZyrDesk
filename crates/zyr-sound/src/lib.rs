@@ -89,8 +89,8 @@ mod tests {
     fn a_refusal_reads_in_plain_words() {
         // This text ends up in the journal and sometimes in front of a
         // person: it must be read, not decoded.
-        let trouble = Trouble::of("le mélangeur n'a pas répondu");
-        assert_eq!(trouble.to_string(), "le mélangeur n'a pas répondu");
+        let trouble = Trouble::of("the mixer did not answer");
+        assert_eq!(trouble.to_string(), "the mixer did not answer");
     }
 
     #[cfg(not(windows))]
