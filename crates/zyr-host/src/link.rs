@@ -24,12 +24,12 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc as queue;
 use zyr_link::{Channel, Link, LinkReader, LinkWriter};
 use zyr_media::WireError;
+use zyr_media::clock::Clock;
 use zyr_media::control::{ControlReader, ToEngine as FromPlayer, ToPlayer};
 use zyr_media::service::{ToEngine as FromService, ToService};
 use zyr_media::video::Packets;
 use zyr_proto::log::Log;
 
-use crate::clock::HostClock;
 use crate::input;
 use crate::session::{self, Asked, Event, Heard};
 use crate::timeline::Written;
@@ -146,7 +146,7 @@ pub(crate) fn start(
     runtime: Runtime,
     link: Link,
     handlers: Handlers,
-    clock: HostClock,
+    clock: Clock,
     log: Log,
 ) -> io::Result<(Outbox, Spares, JoinHandle<()>)> {
     let (reliable, reliable_queue) = queue::unbounded_channel();
@@ -194,7 +194,7 @@ async fn read(
     mut reader: LinkReader,
     handlers: &Handlers,
     pongs: &queue::UnboundedSender<Vec<u8>>,
-    clock: HostClock,
+    clock: Clock,
     log: &Log,
 ) -> Option<String> {
     let mut control = ControlReader::<FromPlayer>::new();
@@ -235,7 +235,7 @@ fn pass_on(
     message: Result<FromPlayer, WireError>,
     handlers: &Handlers,
     pongs: &queue::UnboundedSender<Vec<u8>>,
-    clock: HostClock,
+    clock: Clock,
 ) {
     let asked = match message {
         Ok(FromPlayer::Input(event)) => {

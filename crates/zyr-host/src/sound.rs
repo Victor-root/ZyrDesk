@@ -14,14 +14,13 @@ use std::time::{Duration, Instant};
 
 use zyr_codec::{Ffmpeg, OpusEncoder};
 use zyr_media::audio::write_audio;
+use zyr_media::clock::Clock;
 use zyr_media::control::{NoticeKind, ToPlayer};
-use zyr_proto::log::Log;
+use zyr_proto::log::{Log, Seldom};
 
-use crate::clock::HostClock;
 use crate::link::{Outbox, Sent};
 use crate::parts::{Sound, SoundCapture, SoundError};
 use crate::session::{self, Event};
-use crate::throttle::Throttle;
 
 /// Opus's rate for the session's sound, in bits a second.
 pub(crate) const OPUS_BITRATE: u32 = 128_000;
@@ -48,7 +47,7 @@ pub(crate) enum Command {
 pub(crate) struct Shared {
     pub(crate) ffmpeg: Arc<Ffmpeg>,
     pub(crate) outbox: Outbox,
-    pub(crate) clock: HostClock,
+    pub(crate) clock: Clock,
     pub(crate) log: Log,
 }
 
@@ -110,11 +109,11 @@ struct Listener {
     told: bool,
     sequence: u16,
     counts: Counts,
-    crowded: Throttle,
+    crowded: Seldom,
     /// A sound card that cannot be listened to is tried every second,
     /// for the whole session if need be.
-    refusals: Throttle,
-    unencoded: Throttle,
+    refusals: Seldom,
+    unencoded: Seldom,
 }
 
 impl Listener {
@@ -128,9 +127,9 @@ impl Listener {
             told: false,
             sequence: 0,
             counts: Counts::default(),
-            crowded: Throttle::new(REPORT_EVERY),
-            refusals: Throttle::new(REPORT_EVERY),
-            unencoded: Throttle::new(REPORT_EVERY),
+            crowded: Seldom::default(),
+            refusals: Seldom::default(),
+            unencoded: Seldom::default(),
         }
     }
 

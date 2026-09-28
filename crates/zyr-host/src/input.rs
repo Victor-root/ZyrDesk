@@ -16,12 +16,11 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use zyr_media::input::{Held, InputEvent};
-use zyr_proto::log::Log;
+use zyr_proto::log::{Log, Seldom};
 
 use crate::parts::{Injected, Injector, MakeInjector};
 use crate::picture::Mapping;
 use crate::session::{self, Event};
-use crate::throttle::Throttle;
 
 /// How often the counts are written.
 const REPORT_EVERY: Duration = Duration::from_secs(10);
@@ -94,7 +93,7 @@ struct Player {
     held: Held,
     mapping: Option<Mapping>,
     counts: Counts,
-    failures: Throttle,
+    failures: Seldom,
     log: Log,
 }
 
@@ -105,7 +104,7 @@ impl Player {
             held: Held::new(),
             mapping: None,
             counts: Counts::default(),
-            failures: Throttle::new(REPORT_EVERY),
+            failures: Seldom::default(),
             log,
         }
     }

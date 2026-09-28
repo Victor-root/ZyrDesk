@@ -13,7 +13,7 @@ const DIR_VARIABLE: &str = "ZYR_FFMPEG_DIR";
 ///
 /// A test that needs it fails when it cannot be loaded, saying where it
 /// looked and how to get it, rather than passing without having run.
-pub(crate) fn ffmpeg() -> Arc<Ffmpeg> {
+pub fn ffmpeg() -> Arc<Ffmpeg> {
     static LOADED: OnceLock<Arc<Ffmpeg>> = OnceLock::new();
     Arc::clone(LOADED.get_or_init(|| {
         let dir = std::env::var_os(DIR_VARIABLE)

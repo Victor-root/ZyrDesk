@@ -42,8 +42,8 @@ mod owned;
 mod probe;
 mod resample;
 mod sys;
-#[cfg(test)]
-mod testing;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 mod tuning;
 
 #[cfg(windows)]

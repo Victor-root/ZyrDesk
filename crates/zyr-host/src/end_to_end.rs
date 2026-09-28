@@ -8,14 +8,12 @@
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use tokio::time::timeout;
 use zyr_codec::{
-    DecodeOutput, DecodedFrame, Ffmpeg, Frame, GpuVendor, Input, OpusDecoder, VideoDecoder,
-    VideoEncoder,
+    DecodeOutput, DecodedFrame, Frame, GpuVendor, Input, OpusDecoder, VideoDecoder, VideoEncoder,
 };
 use zyr_link::{Access, Channel, LinkListener, LinkReader, LinkWriter};
 use zyr_media::MEDIA_VERSION;
@@ -77,28 +75,7 @@ impl Drop for TestLog {
     }
 }
 
-/// Names the folder of a Linux build of FFmpeg for the tests.
-const FFMPEG_VARIABLE: &str = "ZYR_FFMPEG_DIR";
-
-/// FFmpeg, from `ZYR_FFMPEG_DIR` or else `vendor/ffmpeg`: a test that
-/// needs it fails when it cannot be had, saying how to get it.
-pub(crate) fn ffmpeg() -> Arc<Ffmpeg> {
-    static LOADED: OnceLock<Arc<Ffmpeg>> = OnceLock::new();
-    Arc::clone(LOADED.get_or_init(|| {
-        let dir = std::env::var_os(FFMPEG_VARIABLE)
-            .filter(|dir| !dir.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(zyr_proto::paths::ffmpeg_dir);
-        Ffmpeg::load(&dir).unwrap_or_else(|e| {
-            panic!(
-                "these tests need FFmpeg and could not load it from {}: {e}\n\
-                 Build it for this system with `packaging/ffmpeg/build.sh linux <out-dir>` and \
-                 run the tests with {FFMPEG_VARIABLE}=<out-dir>/lib.",
-                dir.display()
-            )
-        })
-    }))
-}
+pub(crate) use zyr_codec::testing::ffmpeg;
 
 /// Longest wait for anything from the engine.
 const PATIENCE: Duration = Duration::from_secs(10);

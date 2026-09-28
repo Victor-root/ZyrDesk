@@ -31,7 +31,6 @@
 //! `platform` module); the `fake` feature brings stand-ins (`fake`) with
 //! which the whole engine runs anywhere, and is tested so.
 
-mod clock;
 #[cfg(any(windows, test, feature = "fake"))]
 mod color;
 #[cfg(any(test, feature = "fake"))]
@@ -47,7 +46,6 @@ mod platform;
 mod pointer;
 mod session;
 mod sound;
-mod throttle;
 mod timeline;
 
 #[cfg(test)]

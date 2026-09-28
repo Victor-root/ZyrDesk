@@ -31,21 +31,20 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use zyr_codec::{Backend, EncoderConfig, Ffmpeg, Input, VideoEncoder, probe};
+use zyr_media::clock::Clock;
 use zyr_media::codec::{CodecSet, VideoCodec, negotiate};
 use zyr_media::control::{NoticeKind, ToPlayer, Wanted};
 use zyr_media::pace::{Cadence, Due, Now};
 use zyr_media::service::{Display, ToService};
 use zyr_media::video::{DEFAULT_FEC_PERCENT, OutgoingFrame, Packetizer};
-use zyr_proto::log::Log;
+use zyr_proto::log::{Log, Seldom};
 
-use crate::clock::HostClock;
 use crate::input;
 use crate::link::{Outbox, Sent, Spares};
 use crate::parts::{Aimed, Captured, Drawing, Feed, MakeScreen, Screen, ScreenError};
 use crate::picture::{Mapping, Rect, Size, picture_size, placement};
 use crate::session::{self, Event};
 use crate::sound::OPUS_BITRATE;
-use crate::throttle::Throttle;
 use crate::timeline::{self, Left, Picture, Timeline};
 
 /// Fewest milliseconds between two key frames.
@@ -110,7 +109,7 @@ pub(crate) struct Shared {
     pub(crate) spares: Spares,
     pub(crate) events: mpsc::Sender<Event>,
     pub(crate) input: mpsc::Sender<input::Command>,
-    pub(crate) clock: HostClock,
+    pub(crate) clock: Clock,
     pub(crate) log: Log,
 }
 
@@ -372,11 +371,11 @@ struct Pipeline {
     /// Whether the viewer was told the capture fails, since it last
     /// worked.
     told_capture: bool,
-    troubles: Throttle,
-    crowded: Throttle,
-    oversized: Throttle,
+    troubles: Seldom,
+    crowded: Seldom,
+    oversized: Seldom,
     /// Key frames asked for that the encoder did not make.
-    unkeyed: Throttle,
+    unkeyed: Seldom,
     timeline: Timeline,
 }
 
@@ -395,10 +394,10 @@ impl Pipeline {
             last_stream: 0,
             counts: Counts::default(),
             told_capture: false,
-            troubles: Throttle::new(REPORT_EVERY),
-            crowded: Throttle::new(REPORT_EVERY),
-            oversized: Throttle::new(REPORT_EVERY),
-            unkeyed: Throttle::new(REPORT_EVERY),
+            troubles: Seldom::default(),
+            crowded: Seldom::default(),
+            oversized: Seldom::default(),
+            unkeyed: Seldom::default(),
             timeline,
         }
     }
@@ -1376,7 +1375,7 @@ mod tests {
                 spares,
                 events,
                 input,
-                clock: HostClock::new(),
+                clock: Clock::starting_now(),
                 log: journal.log.clone(),
             },
         );

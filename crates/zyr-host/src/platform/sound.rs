@@ -25,12 +25,11 @@ use windows::Win32::System::Com::{
 };
 use windows::core::w;
 use zyr_codec::{AudioFormat, Ffmpeg, OPUS_FRAME, Resampler};
-use zyr_proto::log::Log;
+use zyr_proto::log::{Log, Seldom};
 
 use super::tuning::ThreadTask;
 use super::{Counter, failed};
 use crate::parts::{Sound, SoundBlock, SoundCapture, SoundError};
-use crate::throttle::Throttle;
 
 /// How often the card is asked for what it has.
 const POLL: Duration = Duration::from_millis(5);
@@ -103,7 +102,7 @@ struct Listening {
     next_look: Instant,
     counter: Counter,
     log: Log,
-    left_out: Throttle,
+    left_out: Seldom,
     /// Dropped after the interfaces above, in this order.
     _task: ThreadTask,
     _com: Com,
@@ -189,7 +188,7 @@ impl Listening {
             next_look: Instant::now() + LOOK_EVERY,
             counter: Counter::new(),
             log: log.clone(),
-            left_out: Throttle::new(LOOK_EVERY * 10),
+            left_out: Seldom::default(),
             _task: task,
             _com: com,
         })

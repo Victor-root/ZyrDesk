@@ -29,13 +29,12 @@ use bytes::Bytes;
 use zyr_codec::{DecodedFrame, Ffmpeg, VideoDecoder};
 use zyr_media::codec::VideoCodec;
 use zyr_media::video::{Assembled, AssembledFrame, Assembler, AssemblyLimits};
-use zyr_proto::log::Log;
+use zyr_proto::log::{Log, Seldom};
 
 use crate::flow::Flow;
 use crate::lock;
 use crate::pacing::Pacer;
 use crate::present::{Fault, Presenter, Rect};
-use crate::seldom::Seldom;
 use crate::stats::Tally;
 use crate::tallies::{PictureTallies, Tallies};
 
@@ -770,9 +769,9 @@ fn take<P: Presenter>(video: &mut Video<P>, message: VideoInput) {
 mod tests {
     use super::*;
     use crate::present::{Headless, Shown};
-    use crate::stats::Clock;
     use crate::testing::{self, Encoded, HEIGHT, WIDTH, h264};
     use zyr_codec::DecodeOutput;
+    use zyr_media::clock::Clock;
     use zyr_media::codec::CodecSet;
     use zyr_media::video::VideoHeader;
 
@@ -835,7 +834,7 @@ mod tests {
         Video::new(
             testing::ffmpeg(),
             presenter,
-            Arc::new(Mutex::new(Tally::new(Clock::new()))),
+            Arc::new(Mutex::new(Tally::new(Clock::starting_now()))),
             Arc::new(Mutex::new(Tallies::default())),
             Arc::new(Mutex::new(None)),
             testing::log(TAG),

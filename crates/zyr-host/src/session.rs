@@ -19,25 +19,21 @@ use std::io;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use tokio::runtime::Runtime;
 use zyr_link::Link;
+use zyr_media::clock::Clock;
 use zyr_media::codec::CodecSet;
 use zyr_media::control::{ByeReason, NoticeKind, ToPlayer, Wanted};
 use zyr_media::service::{Display, ToEngine as FromService, ToService};
 use zyr_media::{MEDIA_VERSION, WireError};
-use zyr_proto::log::Log;
+use zyr_proto::log::{Log, Seldom};
 use zyr_proto::net::UNHEARD_LIMIT;
 
-use crate::clock::HostClock;
 use crate::link::{self, Handlers, Outbox};
 use crate::pipeline::{self, Report};
-use crate::throttle::Throttle;
 use crate::{Ending, Parts, input, sound};
-
-/// How often a line about something the player keeps doing is written.
-const SAY_EVERY: Duration = Duration::from_secs(10);
 
 /// What reaches the engine's thread.
 pub(crate) enum Event {
@@ -90,7 +86,7 @@ pub(crate) enum Asked {
 
 pub(crate) fn run(runtime: Runtime, link: Link, parts: Parts, log: &Log) -> Ending {
     log.write("link connected");
-    let clock = HostClock::new();
+    let clock = Clock::starting_now();
     let (events, received) = mpsc::channel();
     let Parts {
         ffmpeg,
@@ -199,8 +195,8 @@ struct Engine {
     welcomed: bool,
     sound_on: bool,
     /// Lines about what the player may say many times a second.
-    recovers: Throttle,
-    unreadable: Throttle,
+    recovers: Seldom,
+    unreadable: Seldom,
 }
 
 impl Engine {
@@ -224,8 +220,8 @@ impl Engine {
             hello: None,
             welcomed: false,
             sound_on: false,
-            recovers: Throttle::new(SAY_EVERY),
-            unreadable: Throttle::new(SAY_EVERY),
+            recovers: Seldom::default(),
+            unreadable: Seldom::default(),
         }
     }
 

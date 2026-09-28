@@ -16,10 +16,9 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use zyr_codec::{CodecError, Ffmpeg, OPUS_FRAME, OpusDecoder};
 use zyr_media::audio::{JitterBuffer, Popped, read_audio};
-use zyr_proto::log::Log;
+use zyr_proto::log::{Log, Seldom};
 
 use crate::lock;
-use crate::seldom::Seldom;
 use crate::tallies::{SoundTallies, Tallies};
 
 /// The tag of the sound's lines in the journal.
@@ -73,9 +72,9 @@ impl Sound {
             pending: Vec::with_capacity(PACKET),
             at: 0,
             counters: SoundTallies::default(),
-            malformed: Seldom::new(),
-            broken: Seldom::new(),
-            concealed: Seldom::new(),
+            malformed: Seldom::default(),
+            broken: Seldom::default(),
+            concealed: Seldom::default(),
             tallies,
             log,
         })

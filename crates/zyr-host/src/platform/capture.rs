@@ -42,7 +42,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{IUnknown, Interface, w};
 use zyr_codec::{Frame, GpuVendor, Input, VideoEncoder};
 use zyr_media::service::Display;
-use zyr_proto::log::Log;
+use zyr_proto::log::{Log, Seldom};
 
 use super::convert::{Converter, PointerImages, Scene};
 use super::desktop::InputDesktop;
@@ -53,7 +53,6 @@ use super::{Counter, failed};
 use crate::parts::{Aimed, Captured, Drawing, Feed, Screen, ScreenError};
 use crate::picture::{Rect, Size};
 use crate::pointer::{Kind, shape};
-use crate::throttle::Throttle;
 
 /// How often duplication is tried again at first after it stopped, and
 /// for how long.
@@ -147,8 +146,8 @@ pub(super) struct DuplicatedScreen {
     lost: Option<Lost>,
     /// Duplication stopping and coming back, which some screens do at
     /// every picture for as long as a program holds them.
-    losses: Throttle,
-    returns: Throttle,
+    losses: Seldom,
+    returns: Seldom,
     latest: Option<Latest>,
     pointer: Pointer,
     /// Last, so that the thread leaves its class once all the rest is
@@ -193,8 +192,8 @@ impl DuplicatedScreen {
             described: String::new(),
             filming: None,
             lost: None,
-            losses: Throttle::new(SAY_EVERY),
-            returns: Throttle::new(SAY_EVERY),
+            losses: Seldom::default(),
+            returns: Seldom::default(),
             latest: None,
             pointer: Pointer::default(),
             _task: task,

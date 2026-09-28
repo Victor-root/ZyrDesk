@@ -2,11 +2,11 @@
 //! and sound as the host engine sends them.
 
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 use zyr_codec::{
-    Backend, DecodeOutput, DecodedFrame, EncoderConfig, Ffmpeg, Frame, Input, OPUS_FRAME,
-    OpusEncoder, VideoDecoder, VideoEncoder,
+    Backend, DecodeOutput, DecodedFrame, EncoderConfig, Frame, Input, OPUS_FRAME, OpusEncoder,
+    VideoDecoder, VideoEncoder,
 };
 use zyr_media::audio::write_audio;
 use zyr_media::codec::VideoCodec;
@@ -16,34 +16,11 @@ use zyr_proto::log::Log;
 use crate::audio::PACKET;
 use crate::present::checksum;
 
-/// Names the folder of a Linux build of FFmpeg for the tests.
-const DIR_VARIABLE: &str = "ZYR_FFMPEG_DIR";
-
 /// The size of the tests' pictures.
 pub const WIDTH: u32 = 320;
 pub const HEIGHT: u32 = 240;
 
-/// FFmpeg, from `ZYR_FFMPEG_DIR` or else `vendor/ffmpeg`.
-///
-/// A test that needs it fails when it cannot be loaded, saying where it
-/// looked and how to get it, rather than passing without having run.
-pub fn ffmpeg() -> Arc<Ffmpeg> {
-    static LOADED: OnceLock<Arc<Ffmpeg>> = OnceLock::new();
-    Arc::clone(LOADED.get_or_init(|| {
-        let dir = std::env::var_os(DIR_VARIABLE)
-            .filter(|dir| !dir.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(zyr_proto::paths::ffmpeg_dir);
-        Ffmpeg::load(&dir).unwrap_or_else(|e| {
-            panic!(
-                "these tests need FFmpeg and could not load it from {dir}: {e}\n\
-                 Build it for this system with `packaging/ffmpeg/build.sh linux <out-dir>` \
-                 and run the tests with {DIR_VARIABLE}=<out-dir>/lib.",
-                dir = dir.display(),
-            )
-        })
-    }))
-}
+pub use zyr_codec::testing::ffmpeg;
 
 /// The journal of this run of the tests, under `tag`.
 pub fn log(tag: &'static str) -> Log {

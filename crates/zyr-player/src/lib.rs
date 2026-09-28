@@ -23,7 +23,6 @@ mod flow;
 mod link;
 mod pacing;
 mod present;
-mod seldom;
 mod stats;
 mod tallies;
 #[cfg(test)]
@@ -43,6 +42,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use bytes::Bytes;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use zyr_codec::CodecError;
+use zyr_media::clock::Clock;
 use zyr_proto::log::Log;
 
 pub use tallies::{LinkTallies, PictureTallies, SoundTallies, Tallies};
@@ -57,7 +57,7 @@ pub use zyr_media::stats::Measures;
 use audio::{Muted, Sound};
 use link::{Inner, Order};
 use present::{Headless, Presenter, Rect};
-use stats::{Clock, Tally};
+use stats::Tally;
 use video::{Said, Video, VideoInput};
 
 /// The tag of the player's lines in the journal.
@@ -189,7 +189,7 @@ impl Player {
         }
         ff.log_into(&log);
         let events = Arc::new(Events::new(events));
-        let clock = Clock::new();
+        let clock = Clock::starting_now();
         let tally = Arc::new(Mutex::new(Tally::new(clock)));
         let tallies = Arc::new(Mutex::new(Tallies::default()));
         let measures = Arc::new(Mutex::new(Measures::default()));

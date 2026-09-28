@@ -64,5 +64,6 @@ tokio = { version = "1.53.1", features = ["rt-multi-thread", "sync", "time"] }
 # The real host engine, on stand-ins for the screen, the keyboard and
 # mouse and the sound card, at the other end of a real tunnel.
 zyr-host = { workspace = true, features = ["fake"] }
+zyr-codec = { workspace = true, features = ["testing"] }
 zyr-transport.workspace = true
 zyr-tunnel.workspace = true

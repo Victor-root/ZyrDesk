@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
-use zyr_media::clock::ClockOffset;
+use zyr_media::clock::{Clock, ClockOffset};
 use zyr_media::codec::VideoCodec;
 use zyr_media::stats::{Measures, Rolling};
 use zyr_proto::log::Log;
@@ -38,25 +38,6 @@ const TUNNEL_FRESH: Duration = Duration::from_secs(3);
 /// anything: over fewer, one picture alone is several percent, and a
 /// single one replaced reads as a link that shakes.
 const REPLACED_OUT_OF: usize = 30;
-
-/// The player's clock, in microseconds since it started: what pings
-/// carry and what the host's clock is placed against.
-#[derive(Debug, Clone, Copy)]
-pub struct Clock {
-    epoch: Instant,
-}
-
-impl Clock {
-    pub fn new() -> Self {
-        Self {
-            epoch: Instant::now(),
-        }
-    }
-
-    pub fn us(&self, at: Instant) -> u64 {
-        u64::try_from(at.saturating_duration_since(self.epoch).as_micros()).unwrap_or(u64::MAX)
-    }
-}
 
 /// What happened lately, noted by the threads that saw it.
 #[derive(Debug)]
@@ -179,7 +160,7 @@ impl Tally {
     /// How long before `at` a picture captured at `captured_us` on the
     /// host's clock was captured, once the two clocks are known apart.
     pub fn since_capture(&self, captured_us: u32, at: Instant) -> Option<Duration> {
-        let local_at = self.clock.us(at);
+        let local_at = self.clock.micros(at);
         let captured = self.offset.captured_to_local(captured_us, local_at)?;
         // Below zero is the estimate of the host's clock erring by more
         // than the latency itself, never a picture from the future.
@@ -192,7 +173,7 @@ impl Tally {
     /// A pong came back at `now` for a ping sent at `sent_us`, the
     /// engine having answered at `host_us` on its own clock.
     pub fn pong(&mut self, now: Instant, sent_us: u64, host_us: u64) {
-        if let Some(rtt_us) = self.offset.add(sent_us, host_us, self.clock.us(now)) {
+        if let Some(rtt_us) = self.offset.add(sent_us, host_us, self.clock.micros(now)) {
             self.round_trip_ms.add(now, rtt_us as f64 / 1000.0);
         }
     }
@@ -290,14 +271,14 @@ mod tests {
     #[test]
     fn nothing_is_known_before_anything_came() {
         let at = Instant::now();
-        let mut tally = Tally::new(Clock { epoch: at });
+        let mut tally = Tally::new(Clock::starting_at(at));
         assert_eq!(tally.measures(at), Measures::default());
     }
 
     #[test]
     fn a_steady_stream_gives_every_measure() {
         let at = Instant::now();
-        let clock = Clock { epoch: at };
+        let clock = Clock::starting_at(at);
         let mut tally = Tally::new(clock);
         tally.streaming(VideoCodec::Hevc, 1920, 1080);
         // The host's clock runs 7 s ahead; the round trip takes 10 ms,
@@ -305,7 +286,7 @@ mod tests {
         let host_ahead_us = 7_000_000u64;
         tally.pong(
             ms_after(at, 20),
-            clock.us(ms_after(at, 10)),
+            clock.micros(ms_after(at, 10)),
             15_000 + host_ahead_us,
         );
         tally.tunnel(ms_after(at, 20), 4_000);
@@ -315,7 +296,7 @@ mod tests {
             tally.decoded(arrived, Duration::from_millis(2));
             let shown = arrived + Duration::from_millis(1);
             // Captured 30 ms before being shown, on the host's clock.
-            let captured = clock.us(shown) + host_ahead_us - 30_000;
+            let captured = clock.micros(shown) + host_ahead_us - 30_000;
             tally.shown(shown, Duration::from_millis(1), captured as u32);
         }
         tally.lost(ms_after(at, 1_000));
@@ -341,7 +322,7 @@ mod tests {
     #[test]
     fn a_stream_that_stops_shows_it() {
         let at = Instant::now();
-        let mut tally = Tally::new(Clock { epoch: at });
+        let mut tally = Tally::new(Clock::starting_at(at));
         for n in 0..30u64 {
             let arrived = ms_after(at, n * 33);
             tally.assembled(arrived, 1_000, 0);
@@ -358,7 +339,7 @@ mod tests {
     #[test]
     fn frames_waiting_for_a_key_frame_are_still_received() {
         let at = Instant::now();
-        let mut tally = Tally::new(Clock { epoch: at });
+        let mut tally = Tally::new(Clock::starting_at(at));
         for n in 0..10u64 {
             tally.assembled(ms_after(at, n * 10), 1_000, 0);
         }
@@ -371,10 +352,14 @@ mod tests {
     #[test]
     fn the_round_trip_stands_in_for_the_tunnel_until_it_speaks() {
         let at = Instant::now();
-        let clock = Clock { epoch: at };
+        let clock = Clock::starting_at(at);
         let mut tally = Tally::new(clock);
         tally.pong(ms_after(at, 8), 0, 1_000_000);
-        tally.pong(ms_after(at, 512), clock.us(ms_after(at, 500)), 2_000_000);
+        tally.pong(
+            ms_after(at, 512),
+            clock.micros(ms_after(at, 500)),
+            2_000_000,
+        );
         let measures = tally.measures(ms_after(at, 600));
         assert_eq!(measures.network_ms, Some(10.0));
         assert_eq!(measures.network_variance_ms, Some(2.0));
@@ -387,7 +372,7 @@ mod tests {
     #[test]
     fn pictures_replaced_before_being_shown_count_as_jitter() {
         let at = Instant::now();
-        let mut tally = Tally::new(Clock { epoch: at });
+        let mut tally = Tally::new(Clock::starting_at(at));
         tally.shown(at, Duration::from_millis(1), 0);
         for n in 0..40u64 {
             tally.decoded(ms_after(at, n), Duration::from_millis(1));
@@ -402,7 +387,7 @@ mod tests {
     #[test]
     fn the_start_of_a_session_is_not_jitter() {
         let at = Instant::now();
-        let mut tally = Tally::new(Clock { epoch: at });
+        let mut tally = Tally::new(Clock::starting_at(at));
         for n in 0..8u64 {
             tally.decoded(ms_after(at, n), Duration::from_millis(1));
         }

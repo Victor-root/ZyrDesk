@@ -50,6 +50,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use time::OffsetDateTime;
 use time::format_description::BorrowedFormatItem;
@@ -220,6 +221,43 @@ fn trimmed(file: &mut File) -> io::Result<()> {
     file.write_all(&end[from..])
 }
 
+/// How often a line about something that repeats is written, at most.
+const SELDOM_EVERY: Duration = Duration::from_secs(10);
+
+/// Saying something that repeats, without saying it at every turn.
+///
+/// Nothing goes without a word, but a place that fails sixty times a
+/// second would drown the journal: the first time is said at once, then
+/// at most once every ten seconds, with how many times it happened in
+/// between.
+#[derive(Debug, Clone, Default)]
+pub struct Seldom {
+    next: Option<Instant>,
+    unsaid: u64,
+}
+
+impl Seldom {
+    /// Whether to say it now, and if so how many times it happened
+    /// unsaid since the last time it was said.
+    pub fn allow(&mut self, now: Instant) -> Option<u64> {
+        if self.next.is_some_and(|next| now < next) {
+            self.unsaid += 1;
+            return None;
+        }
+        self.next = now.checked_add(SELDOM_EVERY);
+        Some(std::mem::take(&mut self.unsaid))
+    }
+
+    /// Notes one more time it happened, and writes `line` in `log`, given
+    /// how many times that makes since the last line, this one included,
+    /// when a line is due.
+    pub fn note(&mut self, log: &Log, now: Instant, line: impl FnOnce(u64) -> String) {
+        if let Some(unsaid) = self.allow(now) {
+            log.write(&line(unsaid + 1));
+        }
+    }
+}
+
 /// Universal timestamp, or an explicit marker when the clock is
 /// unreadable.
 fn now() -> String {
@@ -231,6 +269,40 @@ fn now() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_repeats_is_said_the_first_time_then_once_in_a_while_with_the_count() {
+        let start = Instant::now();
+        let second = Duration::from_secs(1);
+        let mut seldom = Seldom::default();
+        assert_eq!(seldom.allow(start), Some(0));
+        for n in 1..=5 {
+            assert_eq!(seldom.allow(start + n * second), None);
+        }
+        assert_eq!(seldom.allow(start + 10 * second), Some(5));
+        assert_eq!(seldom.allow(start + 11 * second), None);
+        assert_eq!(seldom.allow(start + 30 * second), Some(1));
+    }
+
+    #[test]
+    fn a_line_about_what_repeats_counts_itself_in() {
+        let path = fresh_path("seldom");
+        let log = Log::open(&path).unwrap();
+        let mut seldom = Seldom::default();
+        let at = Instant::now();
+        for n in 0..25u64 {
+            seldom.note(&log, at + Duration::from_secs(n), |times| {
+                format!("{times} times")
+            });
+        }
+        let written = std::fs::read_to_string(&path).unwrap();
+        let counts: Vec<&str> = written
+            .lines()
+            .map(|line| line.rsplit("] ").next().unwrap())
+            .collect();
+        assert_eq!(counts, ["1 times", "10 times", "10 times"]);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
 
     fn fresh_path(name: &str) -> std::path::PathBuf {
         let path = std::env::temp_dir()

@@ -37,11 +37,10 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 use windows::core::{Interface, PCWSTR, implement, w};
-use zyr_proto::log::Log;
+use zyr_proto::log::{Log, Seldom};
 
 use super::{Multimedia, failure};
 use crate::audio::{Muted, Sound, pace};
-use crate::seldom::Seldom;
 
 /// The engine's sound: 48 kHz, two channels, 32-bit float.
 const RATE: u32 = 48_000;
@@ -109,7 +108,7 @@ pub fn run(mut sound: Sound, input: &Receiver<Bytes>, muted: &Muted, log: &Log) 
         drop(output);
         // Then every second, for as long as the session lasts if need
         // be: said once in a while, not every time.
-        let mut still = Seldom::new();
+        let mut still = Seldom::default();
         output = loop {
             if wait && !pace(&mut sound, input, Some(Instant::now() + LOOK_AGAIN)) {
                 return;
@@ -338,7 +337,7 @@ impl Output {
             wake,
             frames,
             muted: None,
-            silent: Seldom::new(),
+            silent: Seldom::default(),
             log: log.clone(),
         })
     }

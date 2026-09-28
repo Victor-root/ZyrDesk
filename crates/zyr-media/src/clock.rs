@@ -1,4 +1,5 @@
-//! The host's clock, as seen from the client.
+//! The engine's clocks: the one each half dates what it sends with, and
+//! the host's as seen from the client.
 //!
 //! Each ping carries when it left, on the player's clock; its pong adds
 //! when the engine answered, on the host's, and the player notes when
@@ -7,6 +8,38 @@
 //! The halves of a round trip are rarely equal, and the shortest round
 //! trip is the one where they can differ least: the estimate is the one
 //! from the shortest of the last 16.
+
+use std::time::Instant;
+
+/// A clock in microseconds from its own start, on the monotonic clock so
+/// that it never goes back: what each half of the engine dates its
+/// pictures, its sound, its pings and its pongs with.
+#[derive(Debug, Clone, Copy)]
+pub struct Clock {
+    start: Instant,
+}
+
+impl Clock {
+    /// A clock that starts now.
+    pub fn starting_now() -> Self {
+        Self::starting_at(Instant::now())
+    }
+
+    /// A clock that started at `start`.
+    pub fn starting_at(start: Instant) -> Self {
+        Self { start }
+    }
+
+    /// `at` on this clock; the start for anything before it.
+    pub fn micros(&self, at: Instant) -> u64 {
+        u64::try_from(at.saturating_duration_since(self.start).as_micros()).unwrap_or(u64::MAX)
+    }
+
+    /// Now, on this clock.
+    pub fn now(&self) -> u64 {
+        self.micros(Instant::now())
+    }
+}
 
 /// Round trips remembered.
 const SAMPLES: usize = 16;
@@ -74,8 +107,20 @@ impl ClockOffset {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::testing::Noise;
+
+    #[test]
+    fn times_are_counted_from_the_start_and_never_before_it() {
+        let start = Instant::now();
+        let clock = Clock::starting_at(start);
+        assert_eq!(clock.micros(start + Duration::from_millis(1500)), 1_500_000);
+        if let Some(before) = start.checked_sub(Duration::from_secs(1)) {
+            assert_eq!(clock.micros(before), 0);
+        }
+    }
 
     /// The host's clock runs this far ahead of the player's.
     const AHEAD: u64 = 5_000_000_000;

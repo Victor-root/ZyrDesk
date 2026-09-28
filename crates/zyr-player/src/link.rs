@@ -22,14 +22,14 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use zyr_link::{Channel, Link, LinkWriter};
 use zyr_media::MEDIA_VERSION;
 use zyr_media::WireError;
+use zyr_media::clock::Clock;
 use zyr_media::codec::CodecSet;
 use zyr_media::control::{ByeReason, ControlReader, ToEngine, ToPlayer, Wanted};
 use zyr_media::input::{InputEvent, Outgoing};
 use zyr_media::service;
-use zyr_proto::log::Log;
+use zyr_proto::log::{Log, Seldom};
 
-use crate::seldom::Seldom;
-use crate::stats::{Clock, Tally};
+use crate::stats::Tally;
 use crate::tallies::{LinkTallies, Tallies};
 use crate::video::{Recover, VideoInput};
 use crate::{Ending, Event, Events, lock};
@@ -248,7 +248,7 @@ async fn session(link: Link, parts: Parts) {
                 }
             }
             _ = ping.tick(), if session.hello_sent => {
-                let sent_us = session.clock.us(Instant::now());
+                let sent_us = session.clock.now();
                 session.say(&ToEngine::Ping { sent_us });
             }
         }

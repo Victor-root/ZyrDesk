@@ -20,14 +20,15 @@ use std::fmt::Debug;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::mpsc::{self as std_mpsc, Receiver};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
-use zyr_codec::{Ffmpeg, Frame, GpuVendor, Input, VideoEncoder};
+use zyr_codec::testing::ffmpeg;
+use zyr_codec::{Frame, GpuVendor, Input, VideoEncoder};
 use zyr_host::fake::{Recorded, RecordingInjector, SilentSound, SyntheticScreen, ToneSound};
 use zyr_host::picture::{Mapping, Rect, Size, picture_size, placement};
 use zyr_host::{
@@ -68,9 +69,6 @@ const HEIGHT: u32 = 144;
 const OTHER_WIDTH: u32 = 192;
 const OTHER_HEIGHT: u32 = 108;
 
-/// Names the folder of a build of FFmpeg for this system.
-const FFMPEG_VARIABLE: &str = "ZYR_FFMPEG_DIR";
-
 /// What the viewer asks for.
 fn wanted() -> Wanted {
     Wanted {
@@ -95,26 +93,6 @@ fn synthetic_screen() -> MakeScreen {
 fn at_the_rate_asked(rate: f64) -> bool {
     let asked = f64::from(FPS);
     (asked * 0.9..=asked * 1.1).contains(&rate)
-}
-
-/// FFmpeg, from `ZYR_FFMPEG_DIR` or else `vendor/ffmpeg`: a test that
-/// needs it fails when it cannot be had, saying how to get it.
-fn ffmpeg() -> Arc<Ffmpeg> {
-    static LOADED: OnceLock<Arc<Ffmpeg>> = OnceLock::new();
-    Arc::clone(LOADED.get_or_init(|| {
-        let dir = std::env::var_os(FFMPEG_VARIABLE)
-            .filter(|dir| !dir.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(zyr_proto::paths::ffmpeg_dir);
-        Ffmpeg::load(&dir).unwrap_or_else(|e| {
-            panic!(
-                "these tests need FFmpeg and could not load it from {}: {e}\n\
-                 Build it for this system with `packaging/ffmpeg/build.sh linux <out-dir>` and \
-                 run the tests with {FFMPEG_VARIABLE}=<out-dir>/lib.",
-                dir.display()
-            )
-        })
-    }))
 }
 
 /// Who may open the tests' links: the system, and every account signed
