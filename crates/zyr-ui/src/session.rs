@@ -66,7 +66,7 @@ pub struct Ongoing {
     ///
     /// Carried because some things a session asks travel on the
     /// product's own channel rather than through the player, and that
-    /// channel is reached by naming the way: pressing Ctrl+Alt+Suppr
+    /// channel is reached by naming the way: pressing Ctrl+Alt+Del
     /// over there.
     pub way: u64,
 }

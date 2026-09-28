@@ -1,7 +1,7 @@
 //! The keys Windows keeps for itself, taken for the session when the
 //! keyboard is « Immersif ».
 //!
-//! Alt+Tab, the Windows key, Ctrl+Échap and a few more never reach a
+//! Alt+Tab, the Windows key, Ctrl+Escape and a few more never reach a
 //! window: the system acts on them before any window hears them. The only
 //! way to have them go to the far computer is to step in front of every
 //! keystroke of the whole computer with a low-level hook, take those, and
@@ -143,7 +143,7 @@ fn slot(key: u32) -> Option<u8> {
 }
 
 /// Whether the system would act on that press itself, the modifiers held
-/// being what they are: Alt+Tab, Alt+Échap, Ctrl+Échap, either Windows
+/// being what they are: Alt+Tab, Alt+Escape, Ctrl+Escape, either Windows
 /// key, Impr. écran, Alt+F4, and the media key that plays and pauses.
 fn the_system_keeps(key: u32, held: u8) -> bool {
     let (alt, ctrl) = (held & ALT != 0, held & CTRL != 0);
@@ -288,7 +288,7 @@ pub fn lay_again() {}
 ///
 /// The player lets go of everything over there at that moment, so their
 /// releases, when they come, are this computer's again. Kept, a key whose
-/// release happened where no hook sees it, on the screen Ctrl+Alt+Suppr
+/// release happened where no hook sees it, on the screen Ctrl+Alt+Del
 /// or Windows+L bring up, would stay « taken », and its next press would
 /// go to the session from any window at all.
 pub fn forget_what_was_taken() {
@@ -305,7 +305,7 @@ fn put() -> isize {
 
     PLAYER.with_borrow_mut(|player| *player = crate::session::player());
     // The modifiers let go of where no hook sees them, on the screen
-    // Ctrl+Alt+Suppr brings up, would read as held for ever, and every
+    // Ctrl+Alt+Del brings up, would read as held for ever, and every
     // Tab after that as Alt+Tab. Put down here, as the keyboard comes
     // back to the picture, when the system's own reading of the keys has
     // long settled; a modifier is only ever put down, never made up.
@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn what_the_system_would_not_act_on_goes_its_way() {
-        // Tab, Échap and F4 alone are ordinary keys, which the picture's
+        // Tab, Escape and F4 alone are ordinary keys, which the picture's
         // window hears like any other.
         assert_eq!(pressed(named::TAB, NOTHING), Verdict::Pass);
         assert_eq!(pressed(named::ESCAPE, NOTHING), Verdict::Pass);

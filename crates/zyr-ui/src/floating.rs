@@ -22,7 +22,7 @@
 //!
 //! What the menu asks of the session, it asks of the player, in the same
 //! program: a call that answers, where it once was a keystroke typed at
-//! another program in the hope that it listened. Ctrl+Alt+Suppr and the
+//! another program in the hope that it listened. Ctrl+Alt+Del and the
 //! lock screen are asked of the far computer's service through the way,
 //! since only a service may do them over there.
 
@@ -123,13 +123,13 @@ pub enum Act {
     Fullscreen,
     Stats,
     MouseMode,
-    /// Ctrl+Alt+Suppr, pressed on the far computer.
+    /// Ctrl+Alt+Del, pressed on the far computer.
     SecureAttention,
     /// The lock screen of the far computer, put up.
     LockScreen,
     /// The session's own sound, hushed or given back on this computer.
     Sound,
-    /// Which of the two computers Alt+Tab, Échap and the Windows key
+    /// Which of the two computers Alt+Tab, Escape and the Windows key
     /// belong to.
     SystemKeys,
     /// Whether the two computers share one clipboard.
@@ -1006,7 +1006,7 @@ fn the_menu_is_open() -> bool {
     }
 }
 
-/// Presses Ctrl+Alt+Suppr on the far computer.
+/// Presses Ctrl+Alt+Del on the far computer.
 ///
 /// It goes nowhere near the picture, and could not. Windows keeps that
 /// combination for itself at both ends of a session: this computer never
@@ -1035,7 +1035,7 @@ async fn press_ctrl_alt_del_over_there() -> Result<(), Fact> {
 /// computer whatever a session is doing, and there is no way to type it
 /// over there either.
 ///
-/// So it goes round the same way Ctrl+Alt+Suppr does, and for the same
+/// So it goes round the same way Ctrl+Alt+Del does, and for the same
 /// reason: some things a session needs have no letter, no place on a
 /// keyboard, and never will.
 async fn lock_over_there() -> Result<(), Fact> {
