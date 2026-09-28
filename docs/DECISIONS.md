@@ -3715,6 +3715,22 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Comment, à l'étape 3 de [D233](#d233-les-briques-en-couches-et-les-moteurs-à-part-2026-09-28-pendant-mz).** Les moteurs, le service et le serveur ne composent plus de phrases pour la personne : ils disent des faits, par des codes, et c'est l'interface qui choisit les mots, dans la langue de la personne. Une petite brique tient les textes. L'interface de session y passe ; l'accueil, qui sera refait de zéro, n'est pas traduit maintenant et naîtra directement branché sur elle. D'ici là, les textes et les journaux restent tels qu'ils sont.
 
+## D235. Le grand ménage (2026-09-28, pendant MZ)
+
+> Étape 2 de [D233](#d233-les-briques-en-couches-et-les-moteurs-à-part-2026-09-28-pendant-mz).
+
+**Le code mort, cherché par le compilateur lui-même.** Chaque brique a été rendue privée à son tour, sauf ce que les autres nomment, et le compilateur a dit ce que plus rien n'atteignait ; chaque trouvaille a ensuite été vérifiée à la main, essais de bout en bout compris. Sont partis : le suivi des adresses sous lesquelles les autres ordinateurs nous voient (noté, jamais lu), la taille de l'écran principal que plus personne ne demande, un débit changé en cours de session par un chemin que rien n'empruntait, quatre fonctions de la base et du moteur que seuls leurs essais appelaient, un champ du serveur jamais lu, et trois dépendances (le son dans la fenêtre, rustls dans les comptes, deux familles de Windows restées du pavé tactile).
+
+**Les restes de la page web.** `design.css` ne garde que ce que la compilation en lit, les deux thèmes ; ses quatre cents lignes de règles de page (boutons, cartes, code d'appairage, animations) n'étaient plus lues. Les commentaires qui renvoyaient à la page, à sa feuille de style ou à JavaScript disent la règle elle-même, et le protocole M4 renvoie au protocole MZ pour tout ce qui touche au moteur.
+
+**Un seul exemplaire de chaque petit outil.** L'horloge en microsecondes du moteur (deux copies), « dire la première fois, puis une fois toutes les dix secondes avec le compte » (deux), le chargement d'FFmpeg pour les essais (quatre, derrière une fonction que seuls les essais allument), le texte mis dans la forme que Windows lit (dix-huit fois ; il en reste une par brique qui parle à Windows), la position de la souris dans un message (trois), « toutes les interfaces du réseau » (trois), l'écriture d'un fichier d'un seul coup (refaite à la main dans le service), la lecture d'un fichier de réglages (quatre), l'écriture des chiffres du menu et du bandeau (deux), la traduction du codec choisi dans les mots du moteur (deux), la taille du bouton flottant au repos (deux, qui avaient déjà divergé une fois).
+
+**Ce qui se voit.** Deux choses seulement. Dans le menu du bouton flottant, le temps passé chez l'hôte s'appelle « Hôte » comme dans le bandeau, et non plus « Encodage » : il compte de la capture à l'envoi. Les notes de l'écran virtuel et le fichier des raccourcis s'écrivent d'un seul coup, comme les autres réglages, et ne peuvent plus être lus à moitié écrits.
+
+**Gardé exprès.** La palette entière de `design.css`, couleurs pas encore dessinées comprises : c'est un système de design, pas une liste de courses. Le retrait des règles de pare-feu des anciens moteurs, tant qu'une installation d'avant peut encore être mise à jour. Les réglages `ecn` et `fixed_port`, qui servent à comparer deux sessions. Les compteurs du lecteur et le nombre de sessions du relais, que les essais de bout en bout lisent.
+
+**Laissé aux étapes suivantes, parce que ce n'est plus du ménage.** Les deux gardiens d'assistants du service (pointeur et presse-papiers) et la course « le premier qui répond », écrite deux fois dans le service : une mécanique commune à l'étape 4. Les petits outils Windows que plusieurs briques refont (mettre un texte dans la forme que Windows lit, lire le programme d'un processus, écrire un code d'erreur) : une brique Windows commune à l'étape 4. « Vu il y a » dans l'accueil et la ligne de commande : l'étape 3, avec les textes. Les listes du menu rangées dans la base (tailles, codecs offerts) : l'étape 5.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
