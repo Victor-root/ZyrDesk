@@ -297,7 +297,7 @@ impl VideoEncoder {
                 self.reads_memory()?;
                 if (frame.width(), frame.height()) != (self.width, self.height) {
                     return Err(CodecError::Invalid(format!(
-                        "une image de {} sur {} ne va pas à un encodeur de {} sur {}",
+                        "a picture of {} by {} does not fit an encoder of {} by {}",
                         frame.width(),
                         frame.height(),
                         self.width,
@@ -339,7 +339,7 @@ impl VideoEncoder {
     /// a key frame, and flagged so.
     pub fn set_bitrate(&mut self, kbps: u32) -> Result<Applied, CodecError> {
         if kbps == 0 {
-            return Err(CodecError::Invalid("un débit nul".to_string()));
+            return Err(CodecError::Invalid("a zero rate".to_string()));
         }
         if !self.backend.changes_rate_in_place() {
             return Ok(Applied::NeedsRebuild);
@@ -375,7 +375,7 @@ impl VideoEncoder {
     #[cfg(windows)]
     fn surfaces(&self) -> Result<&Surfaces, CodecError> {
         self.surfaces.as_ref().ok_or_else(|| {
-            CodecError::Invalid("cet encodeur lit la mémoire, pas des textures".to_string())
+            CodecError::Invalid("this encoder reads memory, not textures".to_string())
         })
     }
 
@@ -383,7 +383,7 @@ impl VideoEncoder {
         #[cfg(windows)]
         if self.surfaces.is_some() {
             return Err(CodecError::Invalid(
-                "cet encodeur lit des textures, pas la mémoire".to_string(),
+                "this encoder reads textures, not memory".to_string(),
             ));
         }
         Ok(())
@@ -403,27 +403,23 @@ fn checked(config: &EncoderConfig) -> Result<&'static str, CodecError> {
         ..
     } = *config;
     let name = backend.encoder_name(codec).ok_or_else(|| {
-        CodecError::Invalid(format!(
-            "{} ne sait pas encoder en {}",
-            backend.name(),
-            codec.name()
-        ))
+        CodecError::Invalid(format!("{} cannot encode {}", backend.name(), codec.name()))
     })?;
     let fits = |value: u32| value > 0 && value.is_multiple_of(2) && c_int::try_from(value).is_ok();
     if !fits(width) || !fits(height) {
         return Err(CodecError::Invalid(format!(
-            "une image de {width} sur {height} ne s'encode pas : il faut des dimensions paires"
+            "a picture of {width} by {height} cannot be encoded: its dimensions must be even"
         )));
     }
     if fps == 0 || c_int::try_from(fps).is_err() || bitrate_kbps == 0 {
         return Err(CodecError::Invalid(format!(
-            "{fps} images par seconde à {bitrate_kbps} kb/s ne s'encodent pas"
+            "{fps} frames per second at {bitrate_kbps} kb/s cannot be encoded"
         )));
     }
     #[cfg(windows)]
     if backend == Backend::Software && matches!(config.input, Input::D3d11 { .. }) {
         return Err(CodecError::Invalid(
-            "x264 lit la mémoire, pas des textures".to_string(),
+            "x264 reads memory, not textures".to_string(),
         ));
     }
     Ok(name)

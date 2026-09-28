@@ -111,7 +111,7 @@ fn works(
     };
     if !packet.is_some_and(|packet| packet.key) {
         return Err(CodecError::Invalid(
-            "l'image d'essai n'a pas donné d'image clé".to_string(),
+            "the trial picture gave no key frame".to_string(),
         ));
     }
     Ok(())

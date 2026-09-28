@@ -46,14 +46,14 @@ impl Resampler {
         for format in [from, to] {
             if format.rate == 0 || format.channels == 0 {
                 return Err(CodecError::Invalid(format!(
-                    "format de son impossible : {} Hz, {} canaux",
+                    "impossible sound format: {} Hz, {} channels",
                     format.rate, format.channels
                 )));
             }
         }
         let rate = |format: AudioFormat| {
             c_int::try_from(format.rate).map_err(|_| {
-                CodecError::Invalid(format!("fréquence de son impossible : {} Hz", format.rate))
+                CodecError::Invalid(format!("impossible sound rate: {} Hz", format.rate))
             })
         };
         let (from_rate, to_rate) = (rate(from)?, rate(to)?);
@@ -75,9 +75,9 @@ impl Resampler {
                 ptr::null_mut(),
             )
         };
-        ff.check(allocated, "préparation de la conversion du son")?;
+        ff.check(allocated, "preparing the sound conversion")?;
         let raw = NonNull::new(raw).ok_or(CodecError::OutOfMemory {
-            what: "la conversion du son",
+            what: "the sound conversion",
         })?;
         let resampler = Self {
             ff: Arc::clone(ff),
@@ -87,7 +87,7 @@ impl Resampler {
         };
         // SAFETY: a context set up just above.
         let initialised = unsafe { ff.swresample.swr_init(resampler.raw.as_ptr()) };
-        ff.check(initialised, "préparation de la conversion du son")?;
+        ff.check(initialised, "preparing the sound conversion")?;
         Ok(resampler)
     }
 
@@ -100,12 +100,12 @@ impl Resampler {
         let from_channels = usize::from(self.from.channels);
         if !input.len().is_multiple_of(from_channels) {
             return Err(CodecError::Invalid(format!(
-                "{} échantillons ne se répartissent pas sur {from_channels} canaux",
+                "{} samples do not divide evenly among {from_channels} channels",
                 input.len()
             )));
         }
         let in_count = c_int::try_from(input.len() / from_channels).map_err(|_| {
-            CodecError::Invalid(format!("{} échantillons d'un coup, trop", input.len()))
+            CodecError::Invalid(format!("{} samples at once, too many", input.len()))
         })?;
         // SAFETY: a live context; returns an upper bound for what the
         // next call can give back.
@@ -114,7 +114,7 @@ impl Resampler {
                 .swresample
                 .swr_get_out_samples(self.raw.as_ptr(), in_count)
         };
-        let room = self.ff.check(room, "conversion du son")?;
+        let room = self.ff.check(room, "converting the sound")?;
         let to_channels = usize::from(self.to.channels);
         let mut output = vec![0.0f32; usize::try_from(room).unwrap_or(0) * to_channels];
         let output_planes = [output.as_mut_ptr().cast::<u8>()];
@@ -131,7 +131,7 @@ impl Resampler {
                 in_count,
             )
         };
-        let converted = self.ff.check(converted, "conversion du son")?;
+        let converted = self.ff.check(converted, "converting the sound")?;
         output.truncate(usize::try_from(converted).unwrap_or(0) * to_channels);
         Ok(output)
     }

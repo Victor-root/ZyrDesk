@@ -78,7 +78,7 @@ impl CpuPicture {
             sys::AVPixelFormat::AV_PIX_FMT_NV12 => PictureLayout::Nv12,
             other => {
                 return Err(CodecError::Invalid(format!(
-                    "le décodeur a rendu une image dans un format inattendu ({})",
+                    "the decoder returned a picture in an unexpected format ({})",
                     other.0
                 )));
             }
@@ -89,7 +89,7 @@ impl CpuPicture {
         };
         if fields.linesize[..planes].iter().any(|stride| *stride <= 0) {
             return Err(CodecError::Invalid(
-                "le décodeur a rendu une image retournée".to_string(),
+                "the decoder returned an upside-down picture".to_string(),
             ));
         }
         Ok(Self { frame, layout })
@@ -149,7 +149,7 @@ impl VideoDecoder {
     ) -> Result<Self, CodecError> {
         if codec == VideoCodec::Av1 && !output.on_card() {
             return Err(CodecError::Invalid(
-                "FFmpeg ne décode l'AV1 que par la carte graphique".to_string(),
+                "FFmpeg only decodes AV1 on the graphics card".to_string(),
             ));
         }
         let mut context = CodecContext::decoder(ff, decoder_name(codec))?;

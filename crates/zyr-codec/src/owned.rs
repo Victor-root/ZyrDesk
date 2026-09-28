@@ -48,7 +48,7 @@ impl CodecContext {
         // SAFETY: the codec is one FFmpeg returned.
         let raw = unsafe { ff.avcodec.avcodec_alloc_context3(codec.as_ptr()) };
         let raw = NonNull::new(raw).ok_or(CodecError::OutOfMemory {
-            what: "un contexte de codec",
+            what: "a codec context",
         })?;
         Ok(Self {
             ff: Arc::clone(ff),
@@ -89,7 +89,7 @@ impl CodecContext {
             )
         };
         self.ff
-            .check(opened, format_args!("ouverture de {}", self.name))?;
+            .check(opened, format_args!("opening {}", self.name))?;
         let unknown = dictionary.left();
         if !unknown.is_empty() {
             return Err(CodecError::UnknownOptions {
@@ -110,7 +110,7 @@ impl CodecContext {
                 .avcodec_send_frame(self.raw.as_ptr(), frame.as_ptr())
         };
         self.ff
-            .check(sent, format_args!("envoi d'une image à {}", self.name))?;
+            .check(sent, format_args!("sending a picture to {}", self.name))?;
         Ok(())
     }
 
@@ -124,7 +124,7 @@ impl CodecContext {
                 .avcodec_send_frame(self.raw.as_ptr(), ptr::null())
         };
         self.ff
-            .check(sent, format_args!("fin du flux de {}", self.name))?;
+            .check(sent, format_args!("ending the stream of {}", self.name))?;
         Ok(())
     }
 
@@ -138,7 +138,7 @@ impl CodecContext {
                 .avcodec
                 .avcodec_receive_packet(self.raw.as_ptr(), packet.as_ptr())
         };
-        self.received(received, "d'un paquet")
+        self.received(received, "a packet")
     }
 
     /// Hands bytes to a decoder.
@@ -157,12 +157,12 @@ impl CodecContext {
     ) -> Result<(), CodecError> {
         if data.is_empty() {
             return Err(CodecError::Invalid(format!(
-                "un paquet vide pour {}",
+                "an empty packet for {}",
                 self.name
             )));
         }
         let size = c_int::try_from(data.len()).map_err(|_| {
-            CodecError::Invalid(format!("paquet de {} octets, trop grand", data.len()))
+            CodecError::Invalid(format!("packet of {} bytes, too large", data.len()))
         })?;
         let lent = packet.0.fields();
         lent.data = data.as_ptr().cast_mut();
@@ -179,7 +179,7 @@ impl CodecContext {
         lent.data = ptr::null_mut();
         lent.size = 0;
         self.ff
-            .check(sent, format_args!("envoi d'un paquet à {}", self.name))?;
+            .check(sent, format_args!("sending a packet to {}", self.name))?;
         Ok(())
     }
 
@@ -193,7 +193,7 @@ impl CodecContext {
                 .avcodec
                 .avcodec_receive_frame(self.raw.as_ptr(), frame.as_ptr())
         };
-        self.received(received, "d'une image")
+        self.received(received, "a picture")
     }
 
     fn received(&self, code: c_int, what: &str) -> Result<bool, CodecError> {
@@ -201,7 +201,7 @@ impl CodecContext {
             return Ok(false);
         }
         self.ff
-            .check(code, format_args!("lecture {what} de {}", self.name))?;
+            .check(code, format_args!("reading {what} from {}", self.name))?;
         Ok(true)
     }
 }
@@ -224,7 +224,7 @@ impl OwnedFrame {
     pub(crate) fn new(ff: &Arc<Ffmpeg>) -> Result<Self, CodecError> {
         // SAFETY: allocates an empty frame or returns null.
         let raw = unsafe { ff.avutil.av_frame_alloc() };
-        let raw = NonNull::new(raw).ok_or(CodecError::OutOfMemory { what: "une image" })?;
+        let raw = NonNull::new(raw).ok_or(CodecError::OutOfMemory { what: "a picture" })?;
         Ok(Self {
             ff: Arc::clone(ff),
             raw,
@@ -250,7 +250,7 @@ impl OwnedFrame {
         // SAFETY: a frame of ours with its format and size set; 0 lets
         // FFmpeg pick the alignment its code wants.
         let allocated = unsafe { self.ff.avutil.av_frame_get_buffer(self.raw.as_ptr(), 0) };
-        self.ff.check(allocated, "réservation d'une image")?;
+        self.ff.check(allocated, "reserving a picture")?;
         Ok(())
     }
 }
@@ -274,7 +274,7 @@ impl OwnedPacket {
     pub(crate) fn new(ff: &Arc<Ffmpeg>) -> Result<Self, CodecError> {
         // SAFETY: allocates an empty packet or returns null.
         let raw = unsafe { ff.avcodec.av_packet_alloc() };
-        let raw = NonNull::new(raw).ok_or(CodecError::OutOfMemory { what: "un paquet" })?;
+        let raw = NonNull::new(raw).ok_or(CodecError::OutOfMemory { what: "a packet" })?;
         Ok(Self {
             ff: Arc::clone(ff),
             raw,
@@ -352,7 +352,7 @@ impl Options {
                 .avutil
                 .av_dict_set(&mut self.raw, key.as_ptr(), value.as_ptr(), 0)
         };
-        self.ff.check(set, "préparation des réglages")?;
+        self.ff.check(set, "preparing the settings")?;
         Ok(())
     }
 
@@ -393,5 +393,5 @@ impl Drop for Options {
 
 /// A name or value as C wants it.
 fn c_name(text: &str) -> Result<CString, CodecError> {
-    CString::new(text).map_err(|_| CodecError::Invalid(format!("« {text} » contient un zéro")))
+    CString::new(text).map_err(|_| CodecError::Invalid(format!("« {text} » contains a zero")))
 }

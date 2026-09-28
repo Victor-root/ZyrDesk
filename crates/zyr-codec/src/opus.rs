@@ -53,7 +53,7 @@ impl OpusEncoder {
         let frame_size = context.get().frame_size;
         if usize::try_from(frame_size) != Ok(OPUS_FRAME) {
             return Err(CodecError::Invalid(format!(
-                "libopus a choisi des paquets de {frame_size} échantillons au lieu de {OPUS_FRAME}"
+                "libopus chose packets of {frame_size} samples instead of {OPUS_FRAME}"
             )));
         }
         Ok(Self {
@@ -69,7 +69,7 @@ impl OpusEncoder {
     pub fn encode(&mut self, pcm: &[f32]) -> Result<Vec<u8>, CodecError> {
         if pcm.len() != INTERLEAVED {
             return Err(CodecError::Invalid(format!(
-                "Opus prend {INTERLEAVED} échantillons entrelacés à la fois, pas {}",
+                "Opus takes {INTERLEAVED} interleaved samples at a time, not {}",
                 pcm.len()
             )));
         }
@@ -96,7 +96,7 @@ impl OpusEncoder {
         self.context.send_frame(&frame)?;
         if !self.context.receive_packet(&mut self.packet)? {
             return Err(CodecError::Invalid(
-                "libopus n'a rendu aucun paquet pour 10 ms de son".to_string(),
+                "libopus returned no packet for 10 ms of sound".to_string(),
             ));
         }
         Ok(self.packet.to_vec())
@@ -153,7 +153,7 @@ fn interleave(frame: &sys::AVFrame, pcm: &mut Vec<f32>) -> Result<(), CodecError
     let channels = usize::try_from(frame.ch_layout.nb_channels).unwrap_or(0);
     if channels == 0 || channels > frame.data.len() {
         return Err(CodecError::Invalid(format!(
-            "le décodeur Opus a rendu {channels} canaux"
+            "the Opus decoder returned {channels} channels"
         )));
     }
     match sys::AVSampleFormat(frame.format) {
@@ -180,7 +180,7 @@ fn interleave(frame: &sys::AVFrame, pcm: &mut Vec<f32>) -> Result<(), CodecError
         }
         other => {
             return Err(CodecError::Invalid(format!(
-                "le décodeur Opus a rendu un format de son inattendu ({})",
+                "the Opus decoder returned an unexpected sound format ({})",
                 other.0
             )));
         }

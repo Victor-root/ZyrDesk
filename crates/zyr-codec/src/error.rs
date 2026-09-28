@@ -58,13 +58,13 @@ impl fmt::Display for CodecError {
             CodecError::Library { path, reason } => {
                 write!(
                     f,
-                    "FFmpeg introuvable : {} ne s'ouvre pas ({reason})",
+                    "FFmpeg not found: {} does not open ({reason})",
                     path.display()
                 )
             }
             CodecError::Function { path, function } => write!(
                 f,
-                "{} n'a pas la fonction {function} : ce n'est pas le FFmpeg attendu",
+                "{} has no function {function}: it is not the FFmpeg expected",
                 path.display()
             ),
             CodecError::Version {
@@ -73,27 +73,27 @@ impl fmt::Display for CodecError {
                 expected,
             } => write!(
                 f,
-                "{} est en version {found}, le moteur attend la version {expected}",
+                "{} is version {found}, the engine expects version {expected}",
                 path.display()
             ),
             CodecError::Missing { codec } => {
-                write!(f, "cette version de FFmpeg n'a pas {codec}")
+                write!(f, "this version of FFmpeg has no {codec}")
             }
             CodecError::Refused { what, code, text } => {
-                write!(f, "{what} : {text} (code {code})")
+                write!(f, "{what}: {text} (code {code})")
             }
             CodecError::UnknownOptions { codec, options } => {
                 write!(
                     f,
-                    "{codec} ne connaît pas les réglages {}",
+                    "{codec} does not know the settings {}",
                     options.join(", ")
                 )
             }
             CodecError::OutOfMemory { what } => {
-                write!(f, "mémoire insuffisante pour {what}")
+                write!(f, "not enough memory for {what}")
             }
             CodecError::Graphics { what, reason } => {
-                write!(f, "Direct3D refuse {what} : {reason}")
+                write!(f, "Direct3D refuses {what}: {reason}")
             }
             CodecError::Invalid(reason) => f.write_str(reason),
         }

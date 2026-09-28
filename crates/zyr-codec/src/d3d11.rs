@@ -61,7 +61,7 @@ impl Surfaces {
             // Intel's runtime works on the device from threads of its own.
             let multithread: ID3D11Multithread = device
                 .cast()
-                .map_err(|e| graphics("la protection du périphérique Direct3D 11", &e))?;
+                .map_err(|e| graphics("the protection of the Direct3D 11 device", &e))?;
             // SAFETY: a plain setter on a live interface. It returns the
             // state before, which does not matter here.
             let _ = unsafe { multithread.SetMultithreadProtected(true) };
@@ -76,9 +76,9 @@ impl Surfaces {
                     0,
                 )
             };
-            ff.check(made, "préparation de Quick Sync sur le périphérique")?;
+            ff.check(made, "preparing Quick Sync on the device")?;
             // SAFETY: the reference FFmpeg just made, ours alone.
-            Some(unsafe { BufferRef::from_raw(ff, derived, "un contexte Quick Sync") }?)
+            Some(unsafe { BufferRef::from_raw(ff, derived, "a Quick Sync context") }?)
         } else {
             None
         };
@@ -87,7 +87,7 @@ impl Surfaces {
         // context or null.
         let raw = unsafe { ff.avutil.av_hwframe_ctx_alloc(device_context.as_ptr()) };
         // SAFETY: the reference FFmpeg just made, ours alone.
-        let frames = unsafe { BufferRef::from_raw(ff, raw, "un ensemble de textures") }?;
+        let frames = unsafe { BufferRef::from_raw(ff, raw, "a set of textures") }?;
         // SAFETY: a frames context of a D3D11VA device, not yet
         // initialised: `data` is its AVHWFramesContext and `hwctx` its
         // AVD3D11VAFramesContext.
@@ -105,7 +105,7 @@ impl Surfaces {
         }
         // SAFETY: the frames context configured above.
         let initialised = unsafe { ff.avutil.av_hwframe_ctx_init(frames.as_ptr()) };
-        ff.check(initialised, "préparation des textures de l'encodeur")?;
+        ff.check(initialised, "preparing the encoder's textures")?;
 
         let qsv = match qsv_device {
             Some(qsv_device) => {
@@ -121,9 +121,9 @@ impl Surfaces {
                         0,
                     )
                 };
-                ff.check(made, "préparation des textures de Quick Sync")?;
+                ff.check(made, "preparing the Quick Sync textures")?;
                 // SAFETY: the reference FFmpeg just made, ours alone.
-                Some(unsafe { BufferRef::from_raw(ff, derived, "des textures Quick Sync") }?)
+                Some(unsafe { BufferRef::from_raw(ff, derived, "Quick Sync textures") }?)
             }
             None => None,
         };
@@ -153,14 +153,14 @@ impl Surfaces {
             ff.avutil
                 .av_hwframe_get_buffer(self.frames.as_ptr(), frame.as_ptr(), 0)
         };
-        ff.check(got, "réservation d'une texture de l'encodeur")?;
+        ff.check(got, "reserving a texture of the encoder")?;
         let raw = frame.get().data[0].cast::<c_void>();
         // SAFETY: a D3D11 frame holds its texture in `data[0]`; the new
         // reference taken here keeps it whatever becomes of the frame.
         let texture = unsafe { ID3D11Texture2D::from_raw_borrowed(&raw) }
             .cloned()
             .ok_or(CodecError::OutOfMemory {
-                what: "une texture de l'encodeur",
+                what: "a texture of the encoder",
             })?;
         Ok(GpuFrame { frame, texture })
     }
@@ -180,7 +180,7 @@ impl Surfaces {
         let pool = unsafe { frame.frame.get().hw_frames_ctx.as_ref() };
         if !pool.is_some_and(|pool| pool.data == self.frames.data()) {
             return Err(CodecError::Invalid(
-                "cette texture vient d'un autre encodeur".to_string(),
+                "this texture comes from another encoder".to_string(),
             ));
         }
         let Some(qsv) = &self.qsv else {
@@ -199,7 +199,7 @@ impl Surfaces {
             ff.avutil
                 .av_hwframe_map(mapped.as_ptr(), frame.frame.as_ptr(), 0)
         };
-        ff.check(done, "passage d'une texture à Quick Sync")?;
+        ff.check(done, "handing a texture to Quick Sync")?;
         Ok(mapped)
     }
 }
@@ -289,7 +289,7 @@ impl Pictures {
         fields.extra_hw_frames = HELD_BY_PLAYER;
         // SAFETY: a getter on a live device.
         let immediate = unsafe { device.GetImmediateContext() }
-            .map_err(|e| graphics("le contexte du périphérique Direct3D 11", &e))?;
+            .map_err(|e| graphics("the context of the Direct3D 11 device", &e))?;
         Ok(Self {
             sampling,
             device: device.clone(),
@@ -307,19 +307,21 @@ impl Pictures {
         let fields = frame.get();
         if sys::AVPixelFormat(fields.format) != sys::AVPixelFormat::AV_PIX_FMT_D3D11 {
             return Err(CodecError::Invalid(
-                "le décodeur a rendu une image hors de la carte graphique".to_string(),
+                "the decoder returned a picture outside the graphics card".to_string(),
             ));
         }
         let (width, height) = (fields.width.unsigned_abs(), fields.height.unsigned_abs());
         // A D3D11 frame holds the index of its slice in `data[1]`.
         let index = u32::try_from(fields.data[1].addr()).map_err(|_| {
-            CodecError::Invalid("le décodeur a rendu une texture d'indice impossible".to_string())
+            CodecError::Invalid(
+                "the decoder returned a texture with an impossible index".to_string(),
+            )
         })?;
         let raw = fields.data[0].cast::<c_void>();
         // SAFETY: a D3D11 frame holds its texture in `data[0]`, alive as
         // long as the frame is.
         let source = unsafe { ID3D11Texture2D::from_raw_borrowed(&raw) }.ok_or_else(|| {
-            CodecError::Invalid("le décodeur a rendu une image sans texture".to_string())
+            CodecError::Invalid("the decoder returned a picture without a texture".to_string())
         })?;
         match self.sampling {
             Sampling::Direct => Ok(D3d11Picture {
@@ -379,9 +381,9 @@ impl Pictures {
             self.device
                 .CreateTexture2D(&description, None, Some(&mut texture))
         }
-        .map_err(|e| graphics("la texture où copier les images décodées", &e))?;
+        .map_err(|e| graphics("the texture to copy decoded pictures into", &e))?;
         let texture = texture.ok_or(CodecError::OutOfMemory {
-            what: "la texture où copier les images décodées",
+            what: "the texture to copy decoded pictures into",
         })?;
         self.copy = Some((texture.clone(), width, height));
         Ok(texture)
@@ -480,7 +482,7 @@ fn device_context(
             .av_hwdevice_ctx_alloc(sys::AVHWDeviceType::AV_HWDEVICE_TYPE_D3D11VA)
     };
     // SAFETY: the reference FFmpeg just made, ours alone.
-    let context = unsafe { BufferRef::from_raw(ff, raw, "un contexte Direct3D 11") }?;
+    let context = unsafe { BufferRef::from_raw(ff, raw, "a Direct3D 11 context") }?;
     // SAFETY: a D3D11VA device context, not yet initialised: `data` is
     // its AVHWDeviceContext and `hwctx` its AVD3D11VADeviceContext. FFmpeg
     // releases the device with the context, so it is given a reference
@@ -493,7 +495,7 @@ fn device_context(
     }
     // SAFETY: the context configured above.
     let initialised = unsafe { ff.avutil.av_hwdevice_ctx_init(context.as_ptr()) };
-    ff.check(initialised, "préparation de Direct3D 11 pour FFmpeg")?;
+    ff.check(initialised, "preparing Direct3D 11 for FFmpeg")?;
     Ok(context)
 }
 
@@ -547,7 +549,7 @@ impl BufferRef {
         let raw = unsafe { self.ff.avutil.av_buffer_ref(self.raw.as_ptr()) };
         if raw.is_null() {
             return Err(CodecError::OutOfMemory {
-                what: "une référence de contexte matériel",
+                what: "a hardware context reference",
             });
         }
         Ok(raw)

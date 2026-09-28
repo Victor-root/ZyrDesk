@@ -243,7 +243,7 @@ unsafe fn load(path: &Path) -> Result<Library, libloading::Error> {
 /// A loader error with the system's own explanation behind it.
 fn described(error: &libloading::Error) -> String {
     match std::error::Error::source(error) {
-        Some(source) => format!("{error} : {source}"),
+        Some(source) => format!("{error}: {source}"),
         None => error.to_string(),
     }
 }
@@ -281,7 +281,7 @@ mod tests {
             other => panic!("unexpected error: {other:?}"),
         }
         let said = refused.to_string();
-        assert!(said.starts_with("FFmpeg introuvable"), "{said}");
+        assert!(said.starts_with("FFmpeg not found"), "{said}");
         assert!(said.contains(&empty.display().to_string()), "{said}");
     }
 
@@ -328,8 +328,8 @@ mod tests {
         assert_eq!(ff.error_text(crate::error::END), "End of file");
         let again = ff.error_text(crate::error::AGAIN);
         assert!(again.contains("temporarily unavailable"), "{again}");
-        let refused = ff.check(crate::error::END, "essai").unwrap_err();
-        assert_eq!(refused.to_string(), "essai : End of file (code -541478725)");
-        assert_eq!(ff.check(3, "essai").unwrap(), 3);
+        let refused = ff.check(crate::error::END, "trial").unwrap_err();
+        assert_eq!(refused.to_string(), "trial: End of file (code -541478725)");
+        assert_eq!(ff.check(3, "trial").unwrap(), 3);
     }
 }
