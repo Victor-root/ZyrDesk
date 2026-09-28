@@ -526,7 +526,7 @@ fn build(owner: isize) {
     if !WATCHING.load(Ordering::SeqCst) || !crate::floating::still_to_be_made(&ITS_WINDOW) {
         return;
     }
-    let name: Vec<u16> = "ZyrDeskFigures".encode_utf16().chain(Some(0)).collect();
+    let name = crate::win32::wide("ZyrDeskStatistiques");
     // SAFETY: a class registered once and a window built on it, on the
     // thread that will pump its messages. A class already registered is
     // refused and nothing more: a second session finds the first one's.

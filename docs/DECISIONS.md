@@ -3752,14 +3752,19 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 - La ligne de commande, les commandes du service et celles du serveur parlent anglais.
 - Les noms que le Gestionnaire des tâches montre pour la fenêtre, le service et l'outil en ligne de commande sont en anglais.
 - Dans la boîte de tri du journal, les voyants s'appellent `badges`.
+- La page du journal que le bouton Copier emporte a ses titres en anglais, dont `Tags` pour la ligne des étiquettes, et le service y écrit la taille des fichiers copiés en unités anglaises (`kB`, `MB`).
+- La description du service, dans la console des services de Windows, est en anglais.
+- Les deux noms donnés quand il en manque un passent en anglais : `Device` pour un appareil relié au compte sans nom (le service, lui, donne toujours le nom de l'ordinateur), `This computer` pour un ordinateur dont Windows ne dit pas le nom.
 - Un choix de session que le service refuse se dit en une seule phrase, qu'il soit illisible ou simplement pas proposé.
+
+**Gardé en français, exprès.** Les noms des règles du pare-feu, que le service retrouve par leur nom pour les retirer, et les noms des classes de fenêtres, comme le veut [D220](#d220-le-code-sécrit-en-anglais-ce-que-la-personne-lit-reste-en-français-2026-09-24-pendant-m6).
 
 **Corrigé en chemin.**
 
 - Une session relayée affiche enfin sa route sur l'accueil : l'adresse du relais voyageait avec des espaces et arrivait coupée.
 - L'explication « cet ordinateur s'annonce pourtant sur ce réseau » n'accompagne plus que le port resté muet, et non plus un ordinateur qui justement ne s'annonce pas.
 - Changer la taille en cours de session continue à la taille devinée quand l'ordinateur distant ne prépare pas son écran, au lieu d'abandonner le changement.
-- Partis parce que plus rien ne les atteignait : la description française des actions du bouton flottant, que seul un essai lisait, et une seconde vérification de la fenêtre avant le plein écran.
+- Partis parce que plus rien ne les atteignait : la description française des actions du bouton flottant, que seul un essai lisait, une seconde vérification de la fenêtre avant le plein écran, et la phrase qui disait pour l'interface où en était une copie de fichiers, que rien n'affichait.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

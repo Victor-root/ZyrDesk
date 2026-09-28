@@ -79,7 +79,7 @@ pub fn raise() -> Result<(), String> {
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return Ok(());
     }
-    let class_name = crate::win32::wide("ZyrDeskTrayIcon");
+    let class_name = crate::win32::wide("ZyrDeskIcone");
     // SAFETY: a class declared once and a window built on it, on the
     // thread that will pump its messages. It shows nothing: it is what
     // the system asks for to carry an icon.

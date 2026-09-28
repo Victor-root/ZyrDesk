@@ -119,7 +119,7 @@ pub fn open_the_mailbox() -> Result<(), String> {
         CreateWindowExW, HWND_MESSAGE, RegisterClassW, WNDCLASSW,
     };
 
-    let class_name = crate::win32::wide("ZyrDeskMailbox");
+    let class_name = crate::win32::wide("ZyrDeskCourrier");
     // SAFETY: a class declared once and a window built on it, on the
     // thread that will pump its messages. It shows nothing: a window
     // whose parent is this one is never drawn.
