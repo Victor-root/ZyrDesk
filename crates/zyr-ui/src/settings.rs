@@ -265,18 +265,12 @@ fn beyond_the_far_computer() -> Option<Vec<String>> {
 
 /// The codecs offered that a computer able to encode `can` cannot make.
 fn beyond(can: zyr_player::CodecSet) -> Vec<String> {
-    use zyr_player::VideoCodec;
-
     CODECS_OFFERED
         .iter()
         .filter(|codec| {
-            let made_as = match codec {
-                Codec::Auto => return false,
-                Codec::H264 => VideoCodec::H264,
-                Codec::Hevc => VideoCodec::Hevc,
-                Codec::Av1 => VideoCodec::Av1,
-            };
-            !can.contains(made_as)
+            zyr_player::choice_of(**codec)
+                .codec()
+                .is_some_and(|made_as| !can.contains(made_as))
         })
         .map(Codec::to_string)
         .collect()

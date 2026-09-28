@@ -44,6 +44,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use zyr_codec::CodecError;
 use zyr_media::clock::Clock;
 use zyr_proto::log::Log;
+use zyr_proto::session::Codec;
 
 pub use tallies::{LinkTallies, PictureTallies, SoundTallies, Tallies};
 /// FFmpeg as the player loads it: whoever starts a player, or wants to
@@ -139,6 +140,20 @@ impl fmt::Display for PlayerError {
 }
 
 impl std::error::Error for PlayerError {}
+
+/// The codec asked for in the settings, in the engine's words.
+///
+/// The one place the two meet: the settings keep the person's choice,
+/// the engine carries its own on the wire, and whoever hands one to the
+/// other goes through here.
+pub fn choice_of(codec: Codec) -> CodecChoice {
+    match codec {
+        Codec::Auto => CodecChoice::Auto,
+        Codec::H264 => CodecChoice::H264,
+        Codec::Hevc => CodecChoice::Hevc,
+        Codec::Av1 => CodecChoice::Av1,
+    }
+}
 
 /// A session being played. Cheap to clone: every clone is the same
 /// player, and the session stops once all of them are gone.

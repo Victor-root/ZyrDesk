@@ -37,7 +37,7 @@ fn note(what: &str) {
 
 /// What a figure shows while it has nothing to say: a frame nobody
 /// decoded has no decoding time, not one of nought.
-const NOTHING: &str = "-";
+pub const NOTHING: &str = "-";
 
 /// What the pictures are made of, in one line: codec, size, frames a
 /// second. What is missing leaves no gap, it is not written.
@@ -55,11 +55,16 @@ pub fn stream(said: &Measures) -> String {
     pieces.join(" · ")
 }
 
-/// One figure, written with its unit.
+/// A figure, written with its unit: the banner's way and the menu's.
+pub fn written(value: f64, decimals: usize, unit: &str) -> String {
+    format!("{value:.decimals$} {unit}")
+}
+
+/// One figure, or what says it was not measured.
 fn figure(value: Option<f64>, decimals: usize, unit: &str) -> String {
     value.map_or_else(
         || NOTHING.to_string(),
-        |value| format!("{value:.decimals$} {unit}"),
+        |value| written(value, decimals, unit),
     )
 }
 

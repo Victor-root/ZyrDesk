@@ -22,10 +22,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use zyr_control::{Answer, CHANNEL, Request, Service, WayId};
-use zyr_player::{CodecChoice, Ffmpeg, Wanted as PlayerWants};
+use zyr_player::{Ffmpeg, Wanted as PlayerWants};
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::paths;
-use zyr_proto::session::{Codec, SessionSettings, WantedScreen};
+use zyr_proto::session::{SessionSettings, WantedScreen};
 
 /// What is being asked for.
 pub struct Wanted {
@@ -303,12 +303,7 @@ pub fn player_wants(settings: &SessionSettings, steady: bool) -> PlayerWants {
         height: at_most(settings.height),
         fps: at_most(settings.fps),
         bitrate_kbps: settings.bitrate_kbps,
-        codec: match settings.codec {
-            Codec::Auto => CodecChoice::Auto,
-            Codec::H264 => CodecChoice::H264,
-            Codec::Hevc => CodecChoice::Hevc,
-            Codec::Av1 => CodecChoice::Av1,
-        },
+        codec: zyr_player::choice_of(settings.codec),
         draw_pointer: !settings.absolute_mouse,
         audio: true,
         steady,
@@ -591,6 +586,8 @@ mod tests {
     use std::time::Instant;
 
     use zyr_control::{Door, Reached};
+    use zyr_player::CodecChoice;
+    use zyr_proto::session::Codec;
 
     use super::*;
 

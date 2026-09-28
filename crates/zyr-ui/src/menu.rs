@@ -331,9 +331,9 @@ struct Reading {
 /// here, what it cost over there, what lies between the two, and what the
 /// wire really carries.
 ///
-/// The same words and the same units as the page, because they are the
-/// same readings: inventing them here would give four others, and two
-/// bars that do not say the same thing about the same engine.
+/// The same words and the same units as the banner of figures, because
+/// they are the same readings: two bars that do not say the same thing
+/// about the same engine would be two engines.
 const READINGS: [Reading; 4] = [
     Reading {
         label: "Décodage",
@@ -342,7 +342,7 @@ const READINGS: [Reading; 4] = [
         read: |said| said.decode_ms,
     },
     Reading {
-        label: "Encodage",
+        label: "Hôte",
         unit: "ms",
         decimals: 2,
         read: |said| said.host_ms,
@@ -360,13 +360,6 @@ const READINGS: [Reading; 4] = [
         read: |said| said.bitrate_mbps,
     },
 ];
-
-/// What a reading shows while it has nothing to say.
-///
-/// The player says nothing rather than zero when it has measured
-/// nothing, and zero would be a lie: a second with no frame decoded
-/// does not have a zero decoding time.
-const NO_READING: &str = "-";
 
 /// How long a missing reading keeps what it was saying.
 ///
@@ -607,7 +600,7 @@ impl ReadingsBar {
         let mut read_at = [None; 4];
         for (rank, reading) in READINGS.iter().enumerate() {
             if let Some(number) = (reading.read)(readings) {
-                figures[rank] = format!("{number:.*} {}", reading.decimals, reading.unit);
+                figures[rank] = crate::statistics::written(number, reading.decimals, reading.unit);
                 read_at[rank] = Some(now);
                 continue;
             }
@@ -616,7 +609,7 @@ impl ReadingsBar {
                     figures[rank].clone_from(&before.figures[rank]);
                     read_at[rank] = Some(when);
                 }
-                _ => figures[rank] = NO_READING.to_string(),
+                _ => figures[rank] = crate::statistics::NOTHING.to_string(),
             }
         }
         ReadingsBar {
