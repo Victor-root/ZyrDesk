@@ -3,7 +3,8 @@
 //! The workspace is built in layers, and a brick only ever uses bricks of
 //! its own layer or of the layers below it:
 //!
-//! - the base, `zyr-proto`: the values every brick shares;
+//! - the base: `zyr-proto`, the values every brick shares, and
+//!   `zyr-i18n`, the words the person reads;
 //! - the platform, `zyr-screen` and `zyr-sound`: what Windows does for
 //!   the product;
 //! - the engine, `zyr-media`, `zyr-codec`, `zyr-link`, `zyr-host` and
@@ -23,6 +24,10 @@
 //! base and the platform, so that nothing done to the window, the service
 //! or the network reaches a line of it, and FFmpeg is known to its two
 //! halves alone: everyone else asks them.
+//!
+//! Words are chosen by the programs a person reads, the window and the
+//! command line, and by nothing else: the engines, the service and the
+//! server tell facts, and never write a sentence for anybody.
 //!
 //! The map at the top of the tests below is the whole of it, brick by
 //! brick. The tests read every manifest of the workspace, and fail when a
@@ -63,6 +68,7 @@ mod tests {
     /// Every brick, its layer, and the bricks of ours it is built with.
     const MAP: &[(&str, Layer, &[&str])] = &[
         ("zyr-proto", Base, &[]),
+        ("zyr-i18n", Base, &["zyr-proto"]),
         ("zyr-screen", Platform, &[]),
         ("zyr-sound", Platform, &[]),
         ("zyr-media", Engine, &[]),
@@ -165,6 +171,10 @@ mod tests {
     /// may use it.
     const FFMPEG: &str = "zyr-codec";
 
+    /// The brick that holds the words: only the programs a person reads
+    /// may use it.
+    const WORDS: &str = "zyr-i18n";
+
     fn layer_of(brick: &str) -> Layer {
         MAP.iter()
             .find(|(name, _, _)| *name == brick)
@@ -246,6 +256,19 @@ mod tests {
             .map(|(brick, _, _)| *brick)
             .collect();
         assert_eq!(knowing, ["zyr-host", "zyr-player"]);
+    }
+
+    #[test]
+    fn only_the_window_and_the_command_line_choose_words() {
+        for (brick, _, uses) in MAP {
+            if uses.contains(&WORDS) {
+                assert!(
+                    ["zyr-ui", "zyr-cli"].contains(brick),
+                    "{brick} uses {WORDS}: below the programs a person reads, a brick tells \
+                     facts and leaves the words to them"
+                );
+            }
+        }
     }
 
     #[test]

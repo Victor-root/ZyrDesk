@@ -1,0 +1,7 @@
+# ZyrDesk's texts in English, the base every other language grafts onto.
+#
+# One text per line: `key = text`. A key is lowercase words joined by
+# dots, and a fact the product tells is said by the text whose key is its
+# code. A text names the values it needs between braces, {host}, and \n
+# starts a new line. Every text here has its twin in the file of every
+# other language, asking for the same values.

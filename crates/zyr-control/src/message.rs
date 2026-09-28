@@ -15,6 +15,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use zyr_broker::rest::Access;
+use zyr_proto::fields::{packed, unpacked};
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::session::{Preferred, WantedScreen};
 
@@ -1067,40 +1068,6 @@ fn split_verb(line: &str) -> (&str, &str) {
         Some((verb, rest)) => (verb, rest),
         None => (line, ""),
     }
-}
-
-/// Packs a value so it survives inside a `key=value` field.
-///
-/// Spaces are what separate one field from the next, so a computer
-/// called « PC de Victor » would otherwise be read as three fields and
-/// lose everything after the first word.
-fn packed(text: &str) -> String {
-    text.replace('\\', r"\\")
-        .replace(' ', r"\s")
-        .replace('\n', r"\n")
-}
-
-/// Gives a packed value its spaces back.
-fn unpacked(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut pieces = text.chars();
-    while let Some(c) = pieces.next() {
-        if c != '\\' {
-            out.push(c);
-            continue;
-        }
-        match pieces.next() {
-            Some('s') => out.push(' '),
-            Some('n') => out.push('\n'),
-            Some('\\') => out.push('\\'),
-            Some(other) => {
-                out.push('\\');
-                out.push(other);
-            }
-            None => out.push('\\'),
-        }
-    }
-    out
 }
 
 /// Folds a reason onto a single line.

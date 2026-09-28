@@ -1,0 +1,10 @@
+[package]
+name = "zyr-i18n"
+description = "What the person reads, in their language: ZyrDesk's texts, and the words for every fact the product tells"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zyr-proto.workspace = true

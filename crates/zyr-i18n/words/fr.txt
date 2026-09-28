@@ -1,0 +1,4 @@
+# ZyrDesk's texts in French, grafted onto English (en.txt).
+#
+# The same keys as English, asking for the same values between braces:
+# only the texts change.

@@ -1,6 +1,8 @@
 //! Types and constants shared by the ZyrDesk components.
 
 pub mod clipboard;
+pub mod fact;
+pub mod fields;
 pub mod files;
 pub mod fingerprint;
 pub mod journal;
