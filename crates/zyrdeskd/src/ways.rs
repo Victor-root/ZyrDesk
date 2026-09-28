@@ -745,7 +745,7 @@ impl Ways {
             .ok_or_else(|| Fact::new("way.gone").with("way", way))
     }
 
-    /// Asks the far computer to press Ctrl+Alt+Suppr on itself.
+    /// Asks the far computer to press Ctrl+Alt+Del on itself.
     pub async fn ask_for_the_secure_attention(&self, way: WayId) -> Result<(), Fact> {
         let connection = self.connection_of(way)?;
         aside::ask_for_the_secure_attention(&connection)

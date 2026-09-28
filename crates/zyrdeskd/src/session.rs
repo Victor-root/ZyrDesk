@@ -725,7 +725,7 @@ pub fn move_the_speakers(quiet: bool) -> u32 {
 
 /// Locks this computer's screen, from the session that owns it.
 ///
-/// The other half of Ctrl+Alt+Suppr, and the other way round. That one
+/// The other half of Ctrl+Alt+Del, and the other way round. That one
 /// goes through the service's own process, because Windows takes it from
 /// a service and from nothing else; this one goes through a program on
 /// the interactive desktop, because Windows takes it from there and from

@@ -147,7 +147,7 @@ struct Attending {
 }
 
 impl Answers for Attending {
-    /// Presses Ctrl+Alt+Suppr on this computer, for the far one.
+    /// Presses Ctrl+Alt+Del on this computer, for the far one.
     ///
     /// It goes nowhere near the engine, and could not: the way an engine
     /// types is exactly the way Windows refuses for this combination.
@@ -189,7 +189,7 @@ impl Answers for Attending {
 
     /// Puts this computer's lock screen up, for the far one.
     ///
-    /// The mirror of Ctrl+Alt+Suppr just above, and the mirror in every
+    /// The mirror of Ctrl+Alt+Del just above, and the mirror in every
     /// sense: that one only a service may press, and this one only a
     /// program sitting on the interactive desktop may ask for. So it goes
     /// out to the session that owns the screen and comes back, where the

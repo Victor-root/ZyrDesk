@@ -105,7 +105,7 @@ fn main() -> ExitCode {
     }
 
     // And a fourth, to lock the screen. The other way round from
-    // Ctrl+Alt+Suppr, which the service presses in its own process:
+    // Ctrl+Alt+Del, which the service presses in its own process:
     // Windows takes that one from a service and nothing else, and this
     // one from the interactive desktop and nothing else. Both refusals
     // protect what a lock screen is worth.

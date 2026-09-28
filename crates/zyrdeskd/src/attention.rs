@@ -1,6 +1,6 @@
 //! The one keystroke Windows keeps for itself.
 //!
-//! Ctrl+Alt+Suppr is the system's own at both ends of a session. The
+//! Ctrl+Alt+Del is the system's own at both ends of a session. The
 //! computer watching never sees it, its Windows taking it before any
 //! program does; and the computer being watched cannot be made to feel
 //! it by an engine, because the way an engine types is exactly the way
@@ -46,7 +46,7 @@ use crate::text::wide;
 const TAG: &str = "attention";
 
 /// Where Windows keeps the one setting that decides whether a program
-/// may press Ctrl+Alt+Suppr on this computer's behalf.
+/// may press Ctrl+Alt+Del on this computer's behalf.
 const POLICY_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Policies\System";
 const POLICY_VALUE: &str = "SoftwareSASGeneration";
 
@@ -55,7 +55,7 @@ const POLICY_VALUE: &str = "SoftwareSASGeneration";
 /// that would be taking what nobody asked for.
 const BY_SERVICES: u32 = 1;
 
-/// Lets this service press Ctrl+Alt+Suppr for a session.
+/// Lets this service press Ctrl+Alt+Del for a session.
 ///
 /// Laid where the service is registered **and at every start of it**.
 /// Registration alone is never enough, and this product has learned it

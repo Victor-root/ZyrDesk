@@ -150,7 +150,7 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     crate::screen::put_in_place(Some(log));
     // And a fourth time, for the same reason again, which this one has
     // already cost: laid only where the service is registered, the
-    // policy that lets Ctrl+Alt+Suppr be pressed never reached a computer
+    // policy that lets Ctrl+Alt+Del be pressed never reached a computer
     // registered before it existed, and Windows says nothing at all when
     // it refuses a press.
     crate::attention::let_it_be_pressed(Some(log));
@@ -619,7 +619,7 @@ pub fn uninstall() -> ServiceResult<()> {
         let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
     }
 
-    // And the door this product opened on Ctrl+Alt+Suppr is closed with
+    // And the door this product opened on Ctrl+Alt+Del is closed with
     // them. A machine that no longer runs ZyrDesk has no reason to go on
     // letting a service press what Windows keeps for itself.
     crate::attention::forget_it();
