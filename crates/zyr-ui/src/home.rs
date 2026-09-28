@@ -797,7 +797,7 @@ fn palette() -> Palette {
 }
 
 fn program() -> Option<App> {
-    PROGRAM.lock().expect("programme de l'accueil").clone()
+    PROGRAM.lock().expect("home's program").clone()
 }
 
 /* ---- The window -------------------------------------------------------- */
@@ -814,10 +814,10 @@ fn program() -> Option<App> {
 pub fn raise(app: &App) {
     let outer = crate::main_window::handle() as windows_sys::Win32::Foundation::HWND;
     if outer.is_null() {
-        note("accueil : pas de fenêtre où dessiner");
+        note("home: no window to draw in");
         return;
     }
-    *PROGRAM.lock().expect("programme de l'accueil") = Some(app.clone());
+    *PROGRAM.lock().expect("home's program") = Some(app.clone());
     SCALE.store(
         (crate::main_window::scale() * 100.0).round() as u32,
         Ordering::Relaxed,
@@ -873,7 +873,7 @@ fn build(outer: windows_sys::Win32::Foundation::HWND) {
     // SAFETY: a window of the program, whose rectangle is read into
     // ours.
     if unsafe { GetClientRect(outer, &mut inside) } == 0 {
-        note("accueil : la fenêtre ne dit pas sa taille");
+        note("home: the window does not say its size");
         return;
     }
 
@@ -925,12 +925,12 @@ fn build(outer: windows_sys::Win32::Foundation::HWND) {
         )
     };
     if window.is_null() {
-        note("accueil : la toile n'a pas pu s'ouvrir");
+        note("home: the canvas could not open");
         return;
     }
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);
     note(&format!(
-        "accueil dessiné par ZyrDesk : toile de {}x{} px",
+        "home drawn by ZyrDesk: canvas of {}x{} px",
         inside.right, inside.bottom
     ));
 }
@@ -1018,7 +1018,7 @@ unsafe extern "system" fn answer(
             unsafe { DefWindowProcW(window, message, holding, with) }
         }
         WM_SETCURSOR if (with as u32 & 0xFFFF) == HTCLIENT => {
-            let cursor_shape = if STATE.lock().expect("accueil").hover.is_some() {
+            let cursor_shape = if STATE.lock().expect("home").hover.is_some() {
                 IDC_HAND
             } else {
                 IDC_ARROW
@@ -1045,8 +1045,8 @@ unsafe extern "system" fn answer(
             // Read then released: the drawing holds the state while it
             // reads the fields, and taking them here in the other order
             // would be two threads waiting for each other.
-            let sift_box = FIELDS.lock().expect("accueil")[Field::Sift.rank()];
-            if with == sift_box && STATE.lock().expect("accueil").journal_of.is_none() {
+            let sift_box = FIELDS.lock().expect("home")[Field::Sift.rank()];
+            if with == sift_box && STATE.lock().expect("home").journal_of.is_none() {
                 // SAFETY: a timer set on a window of ours, from the
                 // thread that owns it. Setting it again restarts it
                 // from zero, which is why one more letter pushes the
@@ -1137,7 +1137,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     // Every frame says again where the fields go: a field the frame
     // no longer lays down, because the dialogue has changed shape,
     // has no place any more and is put away.
-    *PLACES.lock().expect("accueil") = [None; Field::COUNT];
+    *PLACES.lock().expect("home") = [None; Field::COUNT];
     CANVAS.with_borrow_mut(|canvas| {
         if canvas
             .as_ref()
@@ -1154,7 +1154,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         if !canvas.finish() {
             return;
         }
-        *CLICKABLES.lock().expect("accueil") = clickables;
+        *CLICKABLES.lock().expect("home") = clickables;
         canvas.copy_to(windows::Win32::Graphics::Gdi::HDC(surface), 0, 0);
     });
     // SAFETY: the painting opened just above.
@@ -1170,7 +1170,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
 /// anything. Everywhere else, nothing is redrawn as long as nothing
 /// changes.
 fn clock(window: windows_sys::Win32::Foundation::HWND) {
-    if STATE.lock().expect("accueil").opening.is_some() {
+    if STATE.lock().expect("home").opening.is_some() {
         crate::pulse::beat(window, ANIMATE);
     } else {
         crate::pulse::stop(window);
@@ -1613,9 +1613,9 @@ fn thumb_of(rail: f32, visible: f32, content: f32, scale: f32) -> f32 {
 /// Draws everything on screen and returns what answers the click.
 fn paint_page(canvas: &Canvas, width: f32, height: f32, colours: Palette) -> Vec<(Target, Rect)> {
     let nothing = Seen::default();
-    let guard = SEEN.lock().expect("accueil");
+    let guard = SEEN.lock().expect("home");
     let seen = guard.as_ref().unwrap_or(&nothing);
-    let mut state = STATE.lock().expect("accueil");
+    let mut state = STATE.lock().expect("home");
 
     let (clickables, measures) = {
         let dialogue_open = state.screen != Screen::Home;
@@ -3829,7 +3829,7 @@ impl Painter<'_> {
 fn under(x: f32, y: f32) -> Option<Target> {
     CLICKABLES
         .lock()
-        .expect("accueil")
+        .expect("home")
         .iter()
         .rev()
         .find(|(_, at)| x >= at.left && x < at.right && y >= at.top && y < at.bottom)
@@ -3852,7 +3852,7 @@ fn moves(window: windows_sys::Win32::Foundation::HWND, (x, y): (f32, f32)) {
     // SAFETY: a window of ours, and the structure it asks for.
     unsafe { TrackMouseEvent(&mut tracking) };
 
-    let mut state = STATE.lock().expect("accueil");
+    let mut state = STATE.lock().expect("home");
     if let Some((which, since)) = state.held {
         let (content, visible, travel) = state.measured(which);
         if travel > 0.0 {
@@ -3873,7 +3873,7 @@ fn moves(window: windows_sys::Win32::Foundation::HWND, (x, y): (f32, f32)) {
 }
 
 fn mouse_left(window: windows_sys::Win32::Foundation::HWND) {
-    let mut state = STATE.lock().expect("accueil");
+    let mut state = STATE.lock().expect("home");
     if state.hover.is_none() {
         return;
     }
@@ -3883,7 +3883,7 @@ fn mouse_left(window: windows_sys::Win32::Foundation::HWND) {
 }
 
 fn presses(window: windows_sys::Win32::Foundation::HWND, (x, y): (f32, f32)) {
-    let mut state = STATE.lock().expect("accueil");
+    let mut state = STATE.lock().expect("home");
     match under(x, y) {
         Some(Target::Scrollbar(which)) => state.held = Some((which, y)),
         hit => state.pressed = hit,
@@ -3893,7 +3893,7 @@ fn presses(window: windows_sys::Win32::Foundation::HWND, (x, y): (f32, f32)) {
 }
 
 fn releases(window: windows_sys::Win32::Foundation::HWND, (x, y): (f32, f32)) {
-    let mut state = STATE.lock().expect("accueil");
+    let mut state = STATE.lock().expect("home");
     state.held = None;
     let pressed = state.pressed.take();
     drop(state);
@@ -3911,7 +3911,7 @@ fn releases(window: windows_sys::Win32::Foundation::HWND, (x, y): (f32, f32)) {
 }
 
 fn wheel(window: windows_sys::Win32::Foundation::HWND, notches: f32, across: bool) {
-    let mut state = STATE.lock().expect("accueil");
+    let mut state = STATE.lock().expect("home");
     let which = match state.screen {
         Screen::Home => Scroller::Page,
         // The journal's text scrolls on its own: it is what one reads
@@ -3962,7 +3962,7 @@ fn key_down(
         VK_BACK, VK_DELETE, VK_ESCAPE, VK_RETURN,
     };
 
-    let listening = STATE.lock().expect("accueil").listening;
+    let listening = STATE.lock().expect("home").listening;
     if let Some(doing) = listening {
         return the_combination(window, doing, vk, with);
     }
@@ -3970,7 +3970,7 @@ fn key_down(
     let Some(app) = program() else {
         return false;
     };
-    let screen = STATE.lock().expect("accueil").screen;
+    let screen = STATE.lock().expect("home").screen;
     match vk as u16 {
         VK_ESCAPE if screen != Screen::Home => {
             act(&app, Target::Close);
@@ -4005,7 +4005,7 @@ fn the_combination(
     };
     match vk as u16 {
         VK_ESCAPE => {
-            STATE.lock().expect("accueil").listening = None;
+            STATE.lock().expect("home").listening = None;
             invalidate(window);
             return true;
         }
@@ -4048,14 +4048,14 @@ fn the_combination(
 
 /// Writes or removes a combination, and rereads the three.
 fn set_the_combination(app: &App, doing: Doing, combination: Option<Combination>) {
-    let mut state = STATE.lock().expect("accueil");
+    let mut state = STATE.lock().expect("home");
     state.listening = None;
     state.trouble = None;
     if let Err(refusal) = crate::shortcuts::bind(doing, combination) {
         state.trouble = Some(zyr_i18n::fact(&refusal));
     }
     drop(state);
-    if let Some(seen) = SEEN.lock().expect("accueil").as_mut() {
+    if let Some(seen) = SEEN.lock().expect("home").as_mut() {
         seen.shortcuts = crate::shortcuts::engraved();
     }
     redraw(app);
@@ -4229,8 +4229,8 @@ fn dress_the_fields() {
     if font.is_null() {
         return;
     }
-    let mut before = FONT.lock().expect("accueil");
-    for edit in FIELDS.lock().expect("accueil").iter() {
+    let mut before = FONT.lock().expect("home");
+    for edit in FIELDS.lock().expect("home").iter() {
         if *edit != 0 {
             // SAFETY: a window made by us, given a font that will
             // outlive it.
@@ -4264,7 +4264,7 @@ fn open_the_fields(which_ones: &[Field]) {
         return;
     }
     let class_name = wide("EDIT");
-    let mut fields = FIELDS.lock().expect("accueil");
+    let mut fields = FIELDS.lock().expect("home");
     for field in which_ones.iter().copied() {
         let secret = if field.secret() {
             ES_PASSWORD as u32
@@ -4347,7 +4347,7 @@ unsafe extern "system" fn in_a_field(
                 // keyboard, then the keyboard given to a field of
                 // ours.
                 let backwards = unsafe { GetKeyState(i32::from(VK_SHIFT)) } < 0;
-                let fields = *FIELDS.lock().expect("accueil");
+                let fields = *FIELDS.lock().expect("home");
                 // The next of those that are open, going round: the
                 // places of the other dialogues are empty.
                 let how_many = fields.len();
@@ -4391,7 +4391,7 @@ fn close_the_fields() {
     use windows_sys::Win32::Graphics::Gdi::DeleteObject;
     use windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow;
 
-    let mut fields = FIELDS.lock().expect("accueil");
+    let mut fields = FIELDS.lock().expect("home");
     for edit in fields.iter_mut() {
         if *edit != 0 {
             // SAFETY: a window made by us, destroyed once.
@@ -4399,8 +4399,8 @@ fn close_the_fields() {
             *edit = 0;
         }
     }
-    *PLACES.lock().expect("accueil") = [None; Field::COUNT];
-    let mut font = FONT.lock().expect("accueil");
+    *PLACES.lock().expect("home") = [None; Field::COUNT];
+    let mut font = FONT.lock().expect("home");
     if *font != 0 {
         // SAFETY: a font made by us, given back once.
         unsafe { DeleteObject(*font as _) };
@@ -4412,7 +4412,7 @@ fn close_the_fields() {
 /// the frame is finished: moving a window while painting one's own
 /// mixes two drawings.
 fn place_the_field(field: Field, at: Rect) {
-    PLACES.lock().expect("accueil")[field.rank()] = Some(at);
+    PLACES.lock().expect("home")[field.rank()] = Some(at);
 }
 
 /// Sets the fields where the last frame wanted them.
@@ -4420,8 +4420,8 @@ fn place_the_fields() {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
 
-    let fields = *FIELDS.lock().expect("accueil");
-    let places = *PLACES.lock().expect("accueil");
+    let fields = *FIELDS.lock().expect("home");
+    let places = *PLACES.lock().expect("home");
     // The text breathes inside its frame: the real field is set
     // inside it, never on its outline.
     let inside = design::SPACE_3 * scale();
@@ -4464,7 +4464,7 @@ fn write_in_the_field(field: Field, text: &str) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::SetWindowTextW;
 
-    let edit = FIELDS.lock().expect("accueil")[field.rank()];
+    let edit = FIELDS.lock().expect("home")[field.rank()];
     if edit == 0 {
         return;
     }
@@ -4479,7 +4479,7 @@ fn text_of_the_field(field: Field) -> String {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowTextLengthW, GetWindowTextW};
 
-    let edit = FIELDS.lock().expect("accueil")[field.rank()];
+    let edit = FIELDS.lock().expect("home")[field.rank()];
     if edit == 0 {
         return String::new();
     }
@@ -4513,7 +4513,7 @@ fn tint_of_the_field(surface: windows_sys::Win32::Foundation::WPARAM) -> isize {
     unsafe {
         SetTextColor(surface as _, rgb(ink));
         SetBkColor(surface as _, rgb(background));
-        let mut brush = BRUSH.lock().expect("accueil");
+        let mut brush = BRUSH.lock().expect("home");
         if *brush != 0 {
             DeleteObject(*brush as _);
         }
@@ -4546,7 +4546,7 @@ fn act(app: &App, target: Target) {
         Target::JournalOf(rank) => {
             let peer = SEEN
                 .lock()
-                .expect("accueil")
+                .expect("home")
                 .as_ref()
                 .and_then(|seen| seen.peers.get(rank).cloned());
             if let Some(peer) = peer {
@@ -4555,7 +4555,7 @@ fn act(app: &App, target: Target) {
         }
         Target::OpenSettings => {
             {
-                let mut state = STATE.lock().expect("accueil");
+                let mut state = STATE.lock().expect("home");
                 state.screen = Screen::Settings;
                 state.dialogue_scroll = 0.0;
                 state.trouble = None;
@@ -4566,7 +4566,7 @@ fn act(app: &App, target: Target) {
         Target::CopyFingerprint => {
             let fingerprint = SEEN
                 .lock()
-                .expect("accueil")
+                .expect("home")
                 .as_ref()
                 .and_then(|seen| seen.machine.as_ref().map(|said| said.fingerprint.clone()))
                 .unwrap_or_default();
@@ -4580,7 +4580,7 @@ fn act(app: &App, target: Target) {
         Target::Disconnect(rank) => {
             let fingerprint = SEEN
                 .lock()
-                .expect("accueil")
+                .expect("home")
                 .as_ref()
                 .and_then(|seen| seen.peers.get(rank).map(|peer| peer.fingerprint.clone()));
             if let Some(fingerprint) = fingerprint {
@@ -4589,7 +4589,7 @@ fn act(app: &App, target: Target) {
         }
         Target::Add => {
             {
-                let mut state = STATE.lock().expect("accueil");
+                let mut state = STATE.lock().expect("home");
                 state.screen = Screen::Adding;
                 state.dialogue_scroll = 0.0;
             }
@@ -4601,7 +4601,7 @@ fn act(app: &App, target: Target) {
             redraw(app);
         }
         Target::Close => {
-            let mut state = STATE.lock().expect("accueil");
+            let mut state = STATE.lock().expect("home");
             state.screen = Screen::Home;
             state.listening = None;
             // On closing and not on its button: the Escape key closes
@@ -4618,11 +4618,11 @@ fn act(app: &App, target: Target) {
         // The Enter key does what the main button of the open dialogue
         // would do.
         Target::Confirm => {
-            let screen = STATE.lock().expect("accueil").screen;
+            let screen = STATE.lock().expect("home").screen;
             match screen {
                 Screen::Adding => connect(app),
                 Screen::Account => {
-                    let pinning = STATE.lock().expect("accueil").pinning.clone();
+                    let pinning = STATE.lock().expect("home").pinning.clone();
                     attach(app, pinning);
                 }
                 Screen::Renaming => rename(app),
@@ -4635,7 +4635,7 @@ fn act(app: &App, target: Target) {
         Target::OpenAccount => open_the_account(app),
         Target::Attach => attach(app, None),
         Target::Pin => {
-            let pinning = STATE.lock().expect("accueil").pinning.clone();
+            let pinning = STATE.lock().expect("home").pinning.clone();
             attach(app, pinning);
         }
         Target::Detach => detach(app),
@@ -4645,7 +4645,7 @@ fn act(app: &App, target: Target) {
         Target::Forget(rank) => {
             let peer = SEEN
                 .lock()
-                .expect("accueil")
+                .expect("home")
                 .as_ref()
                 .and_then(|seen| seen.peers.get(rank).cloned());
             if let Some(peer) = peer {
@@ -4655,7 +4655,7 @@ fn act(app: &App, target: Target) {
         Target::Switch(button) => push(app, button),
         Target::Segment(target, rank) => pick(app, target, rank),
         Target::Shortcut(doing) => {
-            let mut state = STATE.lock().expect("accueil");
+            let mut state = STATE.lock().expect("home");
             state.listening = if state.listening == Some(doing) {
                 None
             } else {
@@ -4665,7 +4665,7 @@ fn act(app: &App, target: Target) {
             redraw(app);
         }
         Target::Advanced => {
-            let mut state = STATE.lock().expect("accueil");
+            let mut state = STATE.lock().expect("home");
             state.advanced = !state.advanced;
             drop(state);
             redraw(app);
@@ -4681,7 +4681,7 @@ fn act(app: &App, target: Target) {
 fn remedy_it(app: &App, rank: usize) {
     let missing = SEEN
         .lock()
-        .expect("accueil")
+        .expect("home")
         .as_ref()
         .map(what_is_missing)
         .and_then(|missings| missings.get(rank).map(|missing| missing.remedy));
@@ -4712,8 +4712,8 @@ fn open_a_folder(app: &App, which: &'static str) {
 fn push(app: &App, button: Toggle) {
     let wanted = {
         let nothing = Seen::default();
-        let seen = SEEN.lock().expect("accueil");
-        let mut state = STATE.lock().expect("accueil");
+        let seen = SEEN.lock().expect("home");
+        let mut state = STATE.lock().expect("home");
         let wanted = !button.is_on(seen.as_ref().unwrap_or(&nothing), &state);
         state.pushed.retain(|(target, _)| *target != button);
         state.pushed.push((button, wanted));
@@ -4747,7 +4747,7 @@ fn push(app: &App, button: Toggle) {
         }
         STATE
             .lock()
-            .expect("accueil")
+            .expect("home")
             .pushed
             .retain(|(target, _)| *target != button);
         reread(&app).await;
@@ -4767,7 +4767,7 @@ fn pick(app: &App, target: Pick, rank: usize) {
     // This one travels nowhere: it changes the shape of the account
     // dialogue, and nothing else.
     if target == Pick::SignUp {
-        STATE.lock().expect("accueil").sign_up = rank == 1;
+        STATE.lock().expect("home").sign_up = rank == 1;
         redraw(app);
         return;
     }
@@ -4844,7 +4844,7 @@ fn connect(app: &App) {
         redraw(&app);
         let seen_name = SEEN
             .lock()
-            .expect("accueil")
+            .expect("home")
             .as_ref()
             .and_then(|seen| {
                 seen.peers
@@ -4892,7 +4892,7 @@ fn disconnect(app: &App, fingerprint: String) {
 fn launch_the_peer(app: &App, rank: usize, local_only: bool) {
     let aimed = SEEN
         .lock()
-        .expect("accueil")
+        .expect("home")
         .as_ref()
         .and_then(|seen| seen.peers.get(rank).cloned());
     if let Some(peer) = aimed {
@@ -4912,14 +4912,14 @@ fn launch_the_peer(app: &App, rank: usize, local_only: bool) {
 /// nothing else, without any server being consulted.
 fn launch(app: &App, address: &str, fingerprint: &str, name: &str, local_only: bool) {
     {
-        let seen = SEEN.lock().expect("accueil");
-        let state = STATE.lock().expect("accueil");
+        let seen = SEEN.lock().expect("home");
+        let state = STATE.lock().expect("home");
         if seen.as_ref().is_some_and(|seen| seen.busy(&state)) {
             return;
         }
     }
     {
-        let mut state = STATE.lock().expect("accueil");
+        let mut state = STATE.lock().expect("home");
         state.notice = None;
         state.opening = Some(Opening {
             // The name rather than the address: nobody recognises
@@ -4946,7 +4946,7 @@ fn launch(app: &App, address: &str, fingerprint: &str, name: &str, local_only: b
 /// Opens the account dialogue with this machine's name already written.
 fn open_the_account(app: &App) {
     {
-        let mut state = STATE.lock().expect("accueil");
+        let mut state = STATE.lock().expect("home");
         state.screen = Screen::Account;
         state.dialogue_scroll = 0.0;
         state.sign_up = false;
@@ -4972,7 +4972,7 @@ fn attach(app: &App, pinning: Option<String>) {
     if server.is_empty() || user.is_empty() || password.is_empty() {
         return;
     }
-    let sign_up = STATE.lock().expect("accueil").sign_up;
+    let sign_up = STATE.lock().expect("home").sign_up;
     let empty_or = |field: Field| {
         let text = text_of_the_field(field).trim().to_string();
         (!text.is_empty()).then_some(text)
@@ -4989,7 +4989,7 @@ fn attach(app: &App, pinning: Option<String>) {
         pin: pinning.and_then(|fingerprint| fingerprint.parse().ok()),
     };
     {
-        let mut state = STATE.lock().expect("accueil");
+        let mut state = STATE.lock().expect("home");
         state.attaching = true;
         state.trouble = None;
     }
@@ -5001,7 +5001,7 @@ fn attach(app: &App, pinning: Option<String>) {
         // What the state keeps of the answer, written under its lock,
         // which is released before waiting for anything else.
         let attached = {
-            let mut state = STATE.lock().expect("accueil");
+            let mut state = STATE.lock().expect("home");
             state.attaching = false;
             match outcome {
                 Ok(Attached::Done) => true,
@@ -5033,7 +5033,7 @@ fn attach(app: &App, pinning: Option<String>) {
 /// for, and the wait lapses by itself.
 fn detach(app: &App) {
     {
-        let mut state = STATE.lock().expect("accueil");
+        let mut state = STATE.lock().expect("home");
         let armed = state
             .detaching
             .is_some_and(|since| since.elapsed() < CONFIRM_TIME);
@@ -5061,7 +5061,7 @@ fn detach(app: &App) {
 /// The account's device at this rank, if it is still there.
 fn device_of_the_account(rank: usize) -> Option<Device> {
     SEEN.lock()
-        .expect("accueil")
+        .expect("home")
         .as_ref()
         .and_then(|seen| seen.account.as_ref())
         .and_then(|account| account.devices.get(rank).cloned())
@@ -5073,7 +5073,7 @@ fn open_the_renaming(app: &App, rank: usize) {
         return;
     };
     {
-        let mut state = STATE.lock().expect("accueil");
+        let mut state = STATE.lock().expect("home");
         state.screen = Screen::Renaming;
         state.dialogue_scroll = 0.0;
         state.renaming = Some((device.id, device.name.clone()));
@@ -5088,7 +5088,7 @@ fn open_the_renaming(app: &App, rank: usize) {
 /// Renames the device being renamed with what is written.
 fn rename(app: &App) {
     let new_name = text_of_the_field(Field::NewName).trim().to_string();
-    let Some((device, before)) = STATE.lock().expect("accueil").renaming.clone() else {
+    let Some((device, before)) = STATE.lock().expect("home").renaming.clone() else {
         return;
     };
     if new_name.is_empty() || new_name == before {
@@ -5096,7 +5096,7 @@ fn rename(app: &App) {
     }
     act(app, Target::Close);
     {
-        let mut state = STATE.lock().expect("accueil");
+        let mut state = STATE.lock().expect("home");
         state.screen = Screen::Settings;
         state.dialogue_scroll = 0.0;
     }
@@ -5116,7 +5116,7 @@ fn rename(app: &App) {
 /// the same device, and the wait lapses by itself.
 fn revoke(app: &App, rank: usize) {
     {
-        let mut state = STATE.lock().expect("accueil");
+        let mut state = STATE.lock().expect("home");
         let armed = state
             .revocation
             .is_some_and(|(which, since)| which == rank && since.elapsed() < CONFIRM_TIME);
@@ -5152,7 +5152,7 @@ fn revoke(app: &App, rank: usize) {
 /// that can say how far along something is that has no picture yet.
 pub fn step(app: &App, detail: &Fact) {
     {
-        let mut state = STATE.lock().expect("accueil");
+        let mut state = STATE.lock().expect("home");
         let Some(opening) = state.opening.as_mut() else {
             return;
         };
@@ -5171,7 +5171,7 @@ pub fn step(app: &App, detail: &Fact) {
 /// are not going well.
 pub fn coming_back(app: &App, attempt: u32) {
     {
-        let mut state = STATE.lock().expect("accueil");
+        let mut state = STATE.lock().expect("home");
         let towards = state
             .opening
             .as_ref()
@@ -5195,7 +5195,7 @@ pub fn put_the_opening_away(app: &App) {
     let app = app.clone();
     crate::app::spawn(async move {
         reread(&app).await;
-        STATE.lock().expect("accueil").opening = None;
+        STATE.lock().expect("home").opening = None;
         redraw(&app);
     });
 }
@@ -5208,7 +5208,7 @@ pub fn failed(app: &App, why: &Fact) {
 
 /// The banner at the top.
 fn notice(app: &App, text: &str, is_trouble: bool) {
-    STATE.lock().expect("accueil").notice = Some(Notice {
+    STATE.lock().expect("home").notice = Some(Notice {
         text: text.to_string(),
         is_trouble,
         since: std::time::Instant::now(),
@@ -5219,7 +5219,7 @@ fn notice(app: &App, text: &str, is_trouble: bool) {
 /// What the settings have to complain about, which lives in
 /// their dialogue.
 fn say_the_trouble(app: &App, text: &str) {
-    STATE.lock().expect("accueil").trouble = Some(text.to_string());
+    STATE.lock().expect("home").trouble = Some(text.to_string());
     redraw(app);
 }
 
@@ -5231,7 +5231,7 @@ fn open_the_journal(app: &App, from: Option<Peer>) {
     // typing it again would be half the work.
     let sift = text_of_the_field(Field::Sift);
     {
-        let mut state = STATE.lock().expect("accueil");
+        let mut state = STATE.lock().expect("home");
         state.screen = Screen::Journal;
         state.journal_of = from;
         state.emptying = None;
@@ -5278,7 +5278,7 @@ fn reread_the_journal(app: &App, after: After) {
     // and the field belongs to the drawing one.
     let sift = text_of_the_field(Field::Sift).trim().to_string();
     let from = {
-        let mut state = STATE.lock().expect("accueil");
+        let mut state = STATE.lock().expect("home");
         state.sift_asked = sift.clone();
         state.journal_of.clone()
     };
@@ -5301,7 +5301,7 @@ fn reread_the_journal(app: &App, after: After) {
         // journal may have been closed, or switched to another computer
         // or another sift, in the meantime. What arrives late does not
         // overwrite what is on screen.
-        let mut state = STATE.lock().expect("accueil");
+        let mut state = STATE.lock().expect("home");
         if state.journal_of != from || state.screen != Screen::Journal || state.sift_asked != sift {
             return;
         }
@@ -5334,7 +5334,7 @@ fn reread_the_journal(app: &App, after: After) {
 /// once, and what had been typed by hand next to them stays where it
 /// was.
 fn toggle_the_tag(app: &App, rank: usize) {
-    let Some(name) = STATE.lock().expect("accueil").tags.get(rank).cloned() else {
+    let Some(name) = STATE.lock().expect("home").tags.get(rank).cloned() else {
         return;
     };
     let mut words: Vec<String> = text_of_the_field(Field::Sift)
@@ -5364,7 +5364,7 @@ fn toggle_the_tag(app: &App, rank: usize) {
 fn copy_the_journal(app: &App) {
     let sift = text_of_the_field(Field::Sift).trim().to_string();
     let page = {
-        let state = STATE.lock().expect("accueil");
+        let state = STATE.lock().expect("home");
         (state.sift.as_deref() == Some(sift.as_str())).then(|| state.lines.join("\n"))
     };
     match page {
@@ -5377,7 +5377,7 @@ fn copy_the_journal(app: &App) {
 /// click is asked for, and the wait lapses by itself.
 fn empty_the_journal(app: &App) {
     let from = {
-        let mut state = STATE.lock().expect("accueil");
+        let mut state = STATE.lock().expect("home");
         let armed = state
             .emptying
             .is_some_and(|since| since.elapsed() < CONFIRM_TIME);
@@ -5405,7 +5405,7 @@ fn empty_the_journal(app: &App) {
             }
         };
         if let Err(reason) = done {
-            STATE.lock().expect("accueil").lines = zyr_i18n::fact(&reason)
+            STATE.lock().expect("home").lines = zyr_i18n::fact(&reason)
                 .lines()
                 .map(str::to_string)
                 .collect();
@@ -5425,20 +5425,20 @@ fn empty_the_journal(app: &App) {
 /// would send someone to paste nothing on the other computer.
 fn copy(app: &App, text: &str, target: Target) {
     if let Err(e) = zyr_clipboard::hold_this(&zyr_proto::clipboard::Clip::text(text)) {
-        note(&format!("copie refusée : {e}"));
+        note(&format!("copy refused: {e}"));
         notice(app, "La copie a été refusée par Windows.", true);
         return;
     }
     // What an incomplete placing would give back only concerns pictures,
     // and this button copies nothing but text: there is only one shape to
     // place, and either it is placed or the refusal above has said so.
-    STATE.lock().expect("accueil").copied = Some((target, std::time::Instant::now()));
+    STATE.lock().expect("home").copied = Some((target, std::time::Instant::now()));
     redraw(app);
 
     let app = app.clone();
     crate::app::spawn(async move {
         tokio::time::sleep(COPIED_TIME).await;
-        STATE.lock().expect("accueil").copied = None;
+        STATE.lock().expect("home").copied = None;
         redraw(&app);
     });
 }
@@ -5455,7 +5455,7 @@ fn watch(app: App) {
         // What does not move for the whole life of the program: asked
         // for once.
         {
-            let mut seen = SEEN.lock().expect("accueil");
+            let mut seen = SEEN.lock().expect("home");
             let new = seen.get_or_insert_with(Seen::default);
             new.version = crate::desk::build();
             new.folder = crate::folders::logs_folder();
@@ -5497,7 +5497,7 @@ async fn reread(app: &App) -> bool {
         Err(_) => None,
     };
 
-    let mut seen = SEEN.lock().expect("accueil");
+    let mut seen = SEEN.lock().expect("home");
     let new = seen.get_or_insert_with(Seen::default);
     let before = Seen {
         machine: new.machine.replace(machine),
@@ -5517,7 +5517,7 @@ async fn reread(app: &App) -> bool {
     // Good news goes away by itself: left on screen, it ends up
     // reading as a state. A problem stays until the next gesture,
     // since it is waiting to be answered.
-    let mut state = STATE.lock().expect("accueil");
+    let mut state = STATE.lock().expect("home");
     if state
         .notice
         .as_ref()
@@ -5534,7 +5534,7 @@ fn reread_the_settings(app: &App) {
     let app = app.clone();
     crate::app::spawn(async move {
         let settings = crate::settings::settings(app.clone()).await;
-        if let Some(seen) = SEEN.lock().expect("accueil").as_mut() {
+        if let Some(seen) = SEEN.lock().expect("home").as_mut() {
             seen.settings = Some(settings);
             seen.shortcuts = crate::shortcuts::engraved();
         }
