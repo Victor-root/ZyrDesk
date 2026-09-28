@@ -71,10 +71,10 @@ const BY_SERVICES: u32 = 1;
 /// entry, and the journal says which.
 pub fn let_it_be_pressed(log: Option<&Log>) {
     let said = match set_the_policy(Some(BY_SERVICES)) {
-        Ok(()) => "Ctrl+Alt+Suppr may now be pressed for a session".to_string(),
+        Ok(()) => "Ctrl+Alt+Del may now be pressed for a session".to_string(),
         Err(code) => format!(
-            "Ctrl+Alt+Suppr cannot be pressed for a session on this computer, its policy would \
-             not take (code {code})"
+            "Ctrl+Alt+Del cannot be pressed for a session on this computer, its policy would not \
+             take (code {code})"
         ),
     };
     if let Some(log) = log {
@@ -97,7 +97,7 @@ pub fn forget_it() {
 pub fn press(log: &Log) -> io::Result<()> {
     let log = &log.about(TAG);
     log.write(&format!(
-        "Ctrl+Alt+Suppr: policy {}, this service is in session {}, the screen is on session {}",
+        "Ctrl+Alt+Del: policy {}, this service is in session {}, the screen is on session {}",
         match what_the_policy_says() {
             Some(value) => value.to_string(),
             None => "unset".to_string(),
@@ -116,14 +116,12 @@ pub fn press(log: &Log) -> io::Result<()> {
     let found = unsafe {
         let library = LoadLibraryW(name.as_ptr());
         if library.is_null() {
-            return Err(io::Error::other(
-                "sas.dll est introuvable sur cet ordinateur",
-            ));
+            return Err(io::Error::other("sas.dll cannot be found on this computer"));
         }
         GetProcAddress(library, c"SendSAS".as_ptr().cast())
     };
     let Some(send) = found else {
-        return Err(io::Error::other("cet ordinateur n'a pas de SendSAS"));
+        return Err(io::Error::other("this computer has no SendSAS"));
     };
     // SAFETY: the one function that library exports, whose shape is
     // `VOID SendSAS(BOOL)`, taken from the system's own documentation.

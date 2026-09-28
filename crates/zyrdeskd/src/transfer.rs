@@ -104,7 +104,7 @@ struct Coming {
 /// and what is no longer on it is not being pasted by anybody.
 pub fn coming_in(stamp: Stamp, listed: &Listing, log: &Log) -> Result<(), String> {
     let log = &log.about(TAG);
-    let mut held = COMING.lock().expect("transfert en cours");
+    let mut held = COMING.lock().expect("transfer under way");
     if held.as_ref().is_some_and(|coming| coming.stamp == stamp) {
         return Ok(());
     }
@@ -115,7 +115,7 @@ pub fn coming_in(stamp: Stamp, listed: &Listing, log: &Log) -> Result<(), String
     // would be read as this one's.
     let _ = std::fs::remove_dir_all(&where_they_land);
     std::fs::create_dir_all(&where_they_land)
-        .map_err(|e| format!("le dossier des fichiers reçus ne s'ouvre pas : {e}"))?;
+        .map_err(|e| format!("the folder of received files does not open: {e}"))?;
 
     log.write(&format!(
         "bringing in {} from the far computer",
@@ -135,11 +135,7 @@ pub fn coming_in(stamp: Stamp, listed: &Listing, log: &Log) -> Result<(), String
         // already drawn.
         drawn: u32::MAX,
     });
-    say_how_far(
-        held.as_mut().expect("le transfert qui vient d'ouvrir"),
-        false,
-        log,
-    );
+    say_how_far(held.as_mut().expect("the transfer just opened"), false, log);
     Ok(())
 }
 
@@ -150,7 +146,7 @@ pub fn coming_in(stamp: Stamp, listed: &Listing, log: &Log) -> Result<(), String
 /// has all its bytes, which are the two ways of saying the far computer
 /// may stop sending.
 pub fn what_is_still_wanted() -> Option<Wanted> {
-    let coming = COMING.lock().expect("transfert en cours");
+    let coming = COMING.lock().expect("transfer under way");
     let coming = coming.as_ref()?;
     let rank = coming.at;
     // Nothing past the end of the list, which is a transfer with all its
@@ -178,13 +174,13 @@ pub fn what_is_still_wanted() -> Option<Wanted> {
 /// computer is told to stop sending on the very next answer.
 pub fn take(given: &Given, log: &Log) -> Result<bool, String> {
     let log = &log.about(TAG);
-    let mut held = COMING.lock().expect("transfert en cours");
+    let mut held = COMING.lock().expect("transfer under way");
     let Some(coming) = held.as_mut() else {
         return Ok(true);
     };
     let rank = given.rank as usize;
     let Some(file) = coming.listed.at(rank) else {
-        return Err(format!("un morceau du fichier {rank}, qui n'existe pas"));
+        return Err(format!("a piece of file {rank}, which does not exist"));
     };
     if coming.done.get(rank) != Some(&given.from) {
         return Ok(false);
@@ -213,18 +209,18 @@ fn write_it(coming: &Coming, file: &Listed, given: &Given) -> Result<(), String>
     let lands = coming.where_they_land.join(file.path());
     if let Some(folder) = lands.parent() {
         std::fs::create_dir_all(folder)
-            .map_err(|e| format!("le dossier de {} ne s'ouvre pas : {e}", file.path()))?;
+            .map_err(|e| format!("the folder of {} does not open: {e}", file.path()))?;
     }
     let mut writing = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(given.from == 0)
         .open(&lands)
-        .map_err(|e| format!("{} ne s'écrit pas : {e}", file.path()))?;
+        .map_err(|e| format!("{} cannot be written: {e}", file.path()))?;
     writing
         .seek(SeekFrom::Start(given.from))
         .and_then(|_| writing.write_all(&given.bytes))
-        .map_err(|e| format!("{} ne s'écrit pas : {e}", file.path()))
+        .map_err(|e| format!("{} cannot be written: {e}", file.path()))
 }
 
 /// How far a transfer has got, off the one in hand.
@@ -255,7 +251,7 @@ fn reached(coming: &Coming) -> HowFar {
 pub fn still_coming() -> bool {
     COMING
         .lock()
-        .expect("transfert en cours")
+        .expect("transfer under way")
         .as_ref()
         .is_some_and(|coming| coming.last_piece.elapsed() < zyr_clipboard::PATIENCE)
 }
@@ -268,7 +264,7 @@ pub fn still_coming() -> bool {
 /// finished.
 pub fn forget(log: &Log) {
     let log = &log.about(TAG);
-    let mut held = COMING.lock().expect("transfert en cours");
+    let mut held = COMING.lock().expect("transfer under way");
     drop_it(&mut held, "goes with the session", log);
 }
 
@@ -384,12 +380,12 @@ mod tests {
     #[test]
     fn a_transfer_moves_file_by_file_and_finishes() {
         let _alone = alone();
-        let (log, folder) = a_log("aller");
+        let (log, folder) = a_log("going");
         let listed = Listing::of(vec![
-            Listed::new("un.txt", 3).unwrap(),
-            Listed::new("dossier/deux.bin", 2).unwrap(),
+            Listed::new("one.txt", 3).unwrap(),
+            Listed::new("folder/two.bin", 2).unwrap(),
         ]);
-        coming_in(a_copy("aller"), &listed, &log).unwrap();
+        coming_in(a_copy("going"), &listed, &log).unwrap();
         let landed = paths::pasted();
 
         assert_eq!(
@@ -407,10 +403,10 @@ mod tests {
         assert_eq!(drawn().unwrap().done, 3);
 
         assert!(take(&given(1, 0, b"de".to_vec()), &log).unwrap());
-        assert_eq!(what_is_still_wanted(), None, "plus rien à demander");
-        assert_eq!(std::fs::read(landed.join("un.txt")).unwrap(), b"abc");
+        assert_eq!(what_is_still_wanted(), None, "nothing left to ask for");
+        assert_eq!(std::fs::read(landed.join("one.txt")).unwrap(), b"abc");
         assert_eq!(
-            std::fs::read(landed.join("dossier").join("deux.bin")).unwrap(),
+            std::fs::read(landed.join("folder").join("two.bin")).unwrap(),
             b"de"
         );
 
@@ -425,12 +421,12 @@ mod tests {
         // loop: without this, the transfer would start over four times a
         // second and never get past its first piece.
         let _alone = alone();
-        let (log, folder) = a_log("deux-fois");
+        let (log, folder) = a_log("twice");
         // A full piece of a longer file, so that the first piece does
         // not finish the transfer.
         let whole = A_PIECE as u64 + 3;
-        let listed = Listing::of(vec![Listed::new("un.txt", whole).unwrap()]);
-        let same = a_copy("deux-fois");
+        let listed = Listing::of(vec![Listed::new("one.txt", whole).unwrap()]);
+        let same = a_copy("twice");
 
         coming_in(same, &listed, &log).unwrap();
         take(&given(0, 0, vec![b'a'; A_PIECE]), &log).unwrap();
@@ -438,12 +434,12 @@ mod tests {
         assert_eq!(
             drawn().unwrap().done,
             A_PIECE as u64,
-            "le transfert a repris à zéro"
+            "the transfer started over from zero"
         );
 
         // Another copy, though, starts over: it is no longer the
         // same one.
-        coming_in(a_copy("une-autre"), &listed, &log).unwrap();
+        coming_in(a_copy("another"), &listed, &log).unwrap();
         assert_eq!(drawn().unwrap().done, 0);
 
         forget(&log);
@@ -460,10 +456,10 @@ mod tests {
         // shorter than what was asked for says the file has ended, and
         // what is wanted here is a first piece that does not say so.
         let _alone = alone();
-        let (log, folder) = a_log("decale");
+        let (log, folder) = a_log("shifted");
         let whole = A_PIECE as u64 + 3;
-        let listed = Listing::of(vec![Listed::new("un.txt", whole).unwrap()]);
-        coming_in(a_copy("decale"), &listed, &log).unwrap();
+        let listed = Listing::of(vec![Listed::new("one.txt", whole).unwrap()]);
+        coming_in(a_copy("shifted"), &listed, &log).unwrap();
         let landed = paths::pasted();
 
         let first = vec![b'a'; A_PIECE];
@@ -476,7 +472,7 @@ mod tests {
 
         let mut whole_of_it = first;
         whole_of_it.extend_from_slice(b"def");
-        assert_eq!(std::fs::read(landed.join("un.txt")).unwrap(), whole_of_it);
+        assert_eq!(std::fs::read(landed.join("one.txt")).unwrap(), whole_of_it);
 
         forget(&log);
         std::fs::remove_dir_all(&folder).ok();
@@ -488,11 +484,11 @@ mod tests {
         // piece says it has ended, and without that it would be asked
         // for again forever.
         let _alone = alone();
-        let (log, folder) = a_log("maigri");
-        let listed = Listing::of(vec![Listed::new("un.txt", 4_000_000).unwrap()]);
-        coming_in(a_copy("maigri"), &listed, &log).unwrap();
+        let (log, folder) = a_log("shrunk");
+        let listed = Listing::of(vec![Listed::new("one.txt", 4_000_000).unwrap()]);
+        coming_in(a_copy("shrunk"), &listed, &log).unwrap();
 
-        assert!(take(&given(0, 0, b"court".to_vec()), &log).unwrap());
+        assert!(take(&given(0, 0, b"short".to_vec()), &log).unwrap());
         assert_eq!(what_is_still_wanted(), None);
 
         forget(&log);
@@ -506,13 +502,13 @@ mod tests {
         // eighty per cent for a hiccup: what decides is the last piece
         // received, never the session.
         let _alone = alone();
-        let (log, folder) = a_log("hoquet");
+        let (log, folder) = a_log("hiccup");
         let whole = A_PIECE as u64 + 3;
-        let listed = Listing::of(vec![Listed::new("un.txt", whole).unwrap()]);
+        let listed = Listing::of(vec![Listed::new("one.txt", whole).unwrap()]);
 
-        assert!(!still_coming(), "rien ne vient encore");
-        coming_in(a_copy("hoquet"), &listed, &log).unwrap();
-        assert!(still_coming(), "un transfert qui vient d'ouvrir attend");
+        assert!(!still_coming(), "nothing is coming yet");
+        coming_in(a_copy("hiccup"), &listed, &log).unwrap();
+        assert!(still_coming(), "a transfer that just opened is waiting");
 
         take(&given(0, 0, vec![0u8; A_PIECE]), &log).unwrap();
         assert!(still_coming());
@@ -533,7 +529,7 @@ mod tests {
         // This is what a computer where nobody is pasting answers, and
         // it is what tells the other end it may stop sending.
         let _alone = alone();
-        let (log, folder) = a_log("rien");
+        let (log, folder) = a_log("nothing");
         forget(&log);
         assert_eq!(what_is_still_wanted(), None);
         assert_eq!(drawn(), None);

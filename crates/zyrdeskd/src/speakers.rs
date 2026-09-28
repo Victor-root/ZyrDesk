@@ -136,10 +136,10 @@ fn what_is_owed(owed: bool, log: &Log) {
     let outcome = if owed {
         zyr_proto::files::replace(
             &path,
-            "# ZyrDesk a coupé les enceintes de cet ordinateur pour la durée\n\
-             # d'une session, et doit les rallumer à la fin. Ce fichier est\n\
-             # ce qui s'en souvient si le service ne va pas jusqu'au bout.\n\
-             # Il disparaît tout seul dès que le son est rendu.\n",
+            "# ZyrDesk muted this computer's speakers for the length of a\n\
+             # session, and has to turn them back on at the end. This file is\n\
+             # what remembers it if the service does not see it through.\n\
+             # It goes away by itself as soon as the sound is given back.\n",
         )
     } else {
         match std::fs::remove_file(&path) {
@@ -171,7 +171,7 @@ fn moved(quiet: bool) -> std::io::Result<bool> {
 #[cfg(not(windows))]
 fn moved(_quiet: bool) -> std::io::Result<bool> {
     Err(std::io::Error::other(
-        "cet ordinateur n'a pas d'enceintes à couper ainsi",
+        "this computer has no speakers to mute this way",
     ))
 }
 

@@ -707,7 +707,7 @@ impl Ways {
             host.to_string(),
             self.log.clone(),
         )));
-        let way = self.register.lock().expect("registre des voies").settle(
+        let way = self.register.lock().expect("register of ways").settle(
             Towards {
                 host: host.to_string(),
                 peer,
@@ -739,7 +739,7 @@ impl Ways {
     fn connection_of(&self, way: WayId) -> Result<Connection, Fact> {
         self.register
             .lock()
-            .expect("registre des voies")
+            .expect("register of ways")
             .thing(way)
             .map(|open| open.connection.clone())
             .ok_or_else(|| Fact::new("way.gone").with("way", way))
@@ -751,8 +751,7 @@ impl Ways {
         aside::ask_for_the_secure_attention(&connection)
             .await
             .map_err(|e| Fact::new("far.sas_failed").with("detail", e))?;
-        self.log
-            .write(&format!("way {way} asked for Ctrl+Alt+Suppr"));
+        self.log.write(&format!("way {way} asked for Ctrl+Alt+Del"));
         Ok(())
     }
 
@@ -833,7 +832,7 @@ impl Ways {
             if listed.is_empty() {
                 "screens it has not named".to_string()
             } else {
-                listed.lines().collect::<Vec<_>>().join(" ; ")
+                listed.lines().collect::<Vec<_>>().join("; ")
             }
         ));
         Ok(listed)
@@ -879,7 +878,7 @@ impl Ways {
         let held = self
             .register
             .lock()
-            .expect("registre des voies")
+            .expect("register of ways")
             .hold(way, process);
         if held {
             self.log
@@ -889,11 +888,7 @@ impl Ways {
     }
 
     pub fn release(&self, way: WayId) -> bool {
-        let closed = self
-            .register
-            .lock()
-            .expect("registre des voies")
-            .release(way);
+        let closed = self.register.lock().expect("register of ways").release(way);
         let Some(open) = closed else {
             return false;
         };
@@ -907,14 +902,14 @@ impl Ways {
     }
 
     pub fn count(&self) -> usize {
-        self.register.lock().expect("registre des voies").count()
+        self.register.lock().expect("register of ways").count()
     }
 
     /// Whether that way still stands.
     pub fn still_open(&self, way: WayId) -> bool {
         self.register
             .lock()
-            .expect("registre des voies")
+            .expect("register of ways")
             .thing(way)
             .is_some()
     }
@@ -923,7 +918,7 @@ impl Ways {
     pub fn held(&self) -> Vec<Session> {
         self.register
             .lock()
-            .expect("registre des voies")
+            .expect("register of ways")
             .held(Instant::now(), Open::road)
     }
 
@@ -1127,7 +1122,7 @@ impl Ways {
     /// Taken and let go of in one move, so that nothing waiting on the
     /// far computer is waiting under the register's lock as well.
     fn the_open_ways(&self) -> Vec<(WayId, Connection)> {
-        let register = self.register.lock().expect("registre des voies");
+        let register = self.register.lock().expect("register of ways");
         register
             .kept
             .iter()
@@ -1143,7 +1138,7 @@ impl Ways {
             for way in self.how_the_ways_are_doing() {
                 self.release(way);
             }
-            let finished = self.register.lock().expect("registre des voies").finished(
+            let finished = self.register.lock().expect("register of ways").finished(
                 self.alive,
                 |open| open.tunnel.connected(),
                 Instant::now(),
@@ -1173,7 +1168,7 @@ impl Ways {
         let mut lines = Vec::new();
         let mut stopped = Vec::new();
         {
-            let mut register = self.register.lock().expect("registre des voies");
+            let mut register = self.register.lock().expect("register of ways");
             for (way, kept) in register.kept.iter_mut() {
                 let named = format!("way {way} towards {}", kept.towards.host);
                 let reading = kept.thing.tunnel.reading();
@@ -1307,10 +1302,10 @@ async fn race(
             Ok(connection) => {
                 return Ok((connection, started.elapsed().as_millis(), address));
             }
-            Err(e) => refused.push(format!("{address} : {e}")),
+            Err(e) => refused.push(format!("{address}: {e}")),
         }
     }
-    Err(refused.join(" ; "))
+    Err(refused.join("; "))
 }
 
 /// Where the tunnel has to knock to reach a computer named by its
@@ -1592,7 +1587,7 @@ mod tests {
             .unwrap();
         let accepted = tokio::time::timeout(Duration::from_secs(5), accepting)
             .await
-            .expect("le PC n'a jamais vu venir la connexion")
+            .expect("the PC never saw the connection coming")
             .unwrap()
             .unwrap();
 

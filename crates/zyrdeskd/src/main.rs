@@ -76,7 +76,7 @@ fn main() -> ExitCode {
     if std::env::args().any(|a| a == service::SERVICE_ARGUMENT) {
         return match service::hand_over_to_windows() {
             Ok(()) => ExitCode::SUCCESS,
-            Err(e) => failure("le service n'a pas pu démarrer", e),
+            Err(e) => failure("the service could not start", e),
         };
     }
 
@@ -90,7 +90,7 @@ fn main() -> ExitCode {
             Ok(log) => zyr_host::serve(&link, log),
             // Nothing to say it in: the console, which the service has
             // pointed at a file of its own, is all that is left.
-            Err(e) => failure("le moteur n'a pas pu ouvrir son journal", e),
+            Err(e) => failure("the engine could not open its journal", e),
         };
     }
 
@@ -155,8 +155,8 @@ fn main() -> ExitCode {
     match Cli::parse().command {
         Some(command) => run(command),
         None => {
-            eprintln!("Ce programme est le service ZyrDesk.");
-            eprintln!("Lancez « zyrdeskd --help » pour voir ce qu'il sait faire.");
+            eprintln!("This program is the ZyrDesk service.");
+            eprintln!("Run « zyrdeskd --help » to see what it can do.");
             ExitCode::FAILURE
         }
     }
@@ -171,61 +171,61 @@ fn run(command: Command) -> ExitCode {
         Command::Setup => match service::set_up() {
             Ok(_) => {
                 noted("service installed and started from the interface");
-                println!("Service installé et démarré.");
+                println!("Service installed and started.");
                 ExitCode::SUCCESS
             }
             Err(e) => {
                 let reason = with_causes(&*e);
                 noted(&format!("service could not be set up: {reason}"));
-                failure("mise en service", reason)
+                failure("setting up the service", reason)
             }
         },
         Command::Install => match service::install() {
             Ok(service::Installed::Registered) => {
-                println!("Service installé. Il attend d'être démarré.");
-                println!("  Pour le lancer tout de suite : zyrdeskd start");
+                println!("Service installed. It is waiting to be started.");
+                println!("  To start it right away: zyrdeskd start");
                 ExitCode::SUCCESS
             }
             Ok(service::Installed::Updated) => {
-                println!("Service déjà installé, sa configuration a été mise à jour.");
-                println!("  Il pointe maintenant sur ce programme.");
-                println!("  S'il tournait, relancez-le : zyrdeskd stop puis zyrdeskd start");
+                println!("Service already installed, its configuration has been updated.");
+                println!("  It now points to this program.");
+                println!("  If it was running, restart it: zyrdeskd stop then zyrdeskd start");
                 ExitCode::SUCCESS
             }
-            Err(e) => failure("installation du service", with_causes(&*e)),
+            Err(e) => failure("installing the service", with_causes(&*e)),
         },
         Command::Uninstall => match service::uninstall() {
             Ok(()) => {
-                println!("Service retiré.");
+                println!("Service removed.");
                 ExitCode::SUCCESS
             }
-            Err(e) => absent_or(&e, "retrait du service"),
+            Err(e) => absent_or(&e, "removing the service"),
         },
         Command::Start => match service::start() {
             Ok(()) => {
-                println!("Service démarré.");
+                println!("Service started.");
                 ExitCode::SUCCESS
             }
-            Err(e) => absent_or(&e, "démarrage du service"),
+            Err(e) => absent_or(&e, "starting the service"),
         },
         Command::Stop => match service::stop() {
             Ok(service::Stopped::WasRunning) => {
-                println!("Service arrêté.");
+                println!("Service stopped.");
                 ExitCode::SUCCESS
             }
             Ok(service::Stopped::AlreadyStopped) => {
-                println!("Service déjà arrêté.");
+                println!("Service already stopped.");
                 ExitCode::SUCCESS
             }
-            Err(e) => absent_or(&e, "arrêt du service"),
+            Err(e) => absent_or(&e, "stopping the service"),
         },
         Command::Status => match service::state() {
             Ok(state) => {
                 println!("{}", readable(state));
-                println!("  Journal : {}", service_log().display());
+                println!("  Journal: {}", service_log().display());
                 ExitCode::SUCCESS
             }
-            Err(e) => absent_or(&e, "état du service"),
+            Err(e) => absent_or(&e, "service status"),
         },
     }
 }
@@ -234,13 +234,13 @@ fn run(command: Command) -> ExitCode {
 fn readable(state: windows_service::service::ServiceState) -> &'static str {
     use windows_service::service::ServiceState::*;
     match state {
-        Stopped => "Arrêté",
-        StartPending => "En cours de démarrage",
-        StopPending => "En cours d'arrêt",
-        Running => "En marche",
-        ContinuePending => "Reprise en cours",
-        PausePending => "Mise en pause",
-        Paused => "En pause",
+        Stopped => "Stopped",
+        StartPending => "Starting",
+        StopPending => "Stopping",
+        Running => "Running",
+        ContinuePending => "Resuming",
+        PausePending => "Pausing",
+        Paused => "Paused",
     }
 }
 
@@ -267,14 +267,14 @@ fn noted(what: &str) {
 #[cfg(not(windows))]
 fn run(_command: Command) -> ExitCode {
     failure(
-        "service indisponible",
-        "le service ZyrDesk n'existe que sous Windows",
+        "service unavailable",
+        "the ZyrDesk service only exists on Windows",
     )
 }
 
 /// Reports a failure the same way everywhere, on the error stream.
 fn failure(context: &str, error: impl std::fmt::Display) -> ExitCode {
-    eprintln!("Échec : {context}");
+    eprintln!("Failure: {context}");
     eprintln!("  {error}");
     ExitCode::FAILURE
 }
@@ -294,27 +294,27 @@ fn absent_or(error: &windows_service::Error, context: &str) -> ExitCode {
     // leaves it pointing at the old path. The registered path is the one
     // thing missing to see it, and Windows never says it by itself.
     if service::never_reported(error) {
-        eprintln!("Le service ZyrDesk a été lancé et n'a jamais répondu.");
+        eprintln!("The ZyrDesk service was started and never answered.");
         match service::registered_at() {
             Some(program) => {
-                eprintln!("  Windows lance celui-ci :\n    {}", program.display());
+                eprintln!("  Windows starts this one:\n    {}", program.display());
                 eprintln!(
-                    "  Si ce n'est pas le programme que vous venez de compiler, réinscrivez-le,\n                       en fenêtre administrateur :\n    zyrdeskd setup"
+                    "  If it is not the program you have just built, register it again,\n  in an administrator window:\n    zyrdeskd setup"
                 );
             }
-            None => eprintln!("  Windows n'a pas dit quel programme il lance."),
+            None => eprintln!("  Windows did not say which program it starts."),
         }
         return ExitCode::FAILURE;
     }
     if !service::unknown(error) {
         return failure(context, with_causes(error));
     }
-    eprintln!("Le service ZyrDesk n'est pas installé sur cet ordinateur.");
-    eprintln!("  À installer une fois, en fenêtre administrateur :");
+    eprintln!("The ZyrDesk service is not installed on this computer.");
+    eprintln!("  To be installed once, in an administrator window:");
     eprintln!();
     eprintln!("      zyrdeskd setup");
     eprintln!();
-    eprintln!("  La fenêtre de ZyrDesk le fait aussi d'elle-même au premier lancement.");
+    eprintln!("  ZyrDesk's window also does it by itself the first time it opens.");
     ExitCode::FAILURE
 }
 
@@ -328,7 +328,7 @@ fn with_causes(error: &dyn std::error::Error) -> String {
     let mut text = error.to_string();
     let mut cause = error.source();
     while let Some(reason) = cause {
-        text.push_str(" : ");
+        text.push_str(": ");
         text.push_str(&reason.to_string());
         cause = reason.source();
     }

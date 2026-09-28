@@ -86,7 +86,7 @@ static ASKED: Mutex<Option<Instant>> = Mutex::new(None);
 /// more than an answer that holds up the channel it travels on.
 pub fn shape(log: &Log) -> Pointer {
     let log = &log.about(TAG);
-    *ASKED.lock().expect("dernière question") = Some(Instant::now());
+    *ASKED.lock().expect("last question") = Some(Instant::now());
     if !KEEPING.swap(true, Ordering::SeqCst) {
         keep_a_helper(log.clone());
     }
@@ -105,7 +105,7 @@ fn written_shape() -> Pointer {
 fn nobody_is_asking() -> bool {
     ASKED
         .lock()
-        .expect("dernière question")
+        .expect("last question")
         .is_none_or(|asked| asked.elapsed() > AFTER_THE_LAST_QUESTION)
 }
 
@@ -321,7 +321,7 @@ mod tests {
         // another one starts.
         assert!(
             START_ANOTHER_AFTER < HELPER_LIVES,
-            "un assistant doit être relancé avant la fin du précédent"
+            "a helper must be started again before the previous one ends"
         );
     }
 

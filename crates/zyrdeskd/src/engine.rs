@@ -81,26 +81,26 @@ impl Default for Engine {
 impl Engine {
     /// The engine is connected: from now on it is told things there.
     pub fn connected(&self, telling: mpsc::Sender<Vec<u8>>) {
-        *self.telling.lock().expect("moteur de la session") = Some(telling);
+        *self.telling.lock().expect("session's engine") = Some(telling);
     }
 
     /// Tells the engine something, never waiting: what the engine is
     /// told is a handful of messages a session, and a queue full of them
     /// is an engine that has stopped reading.
     pub fn tell(&self, message: &ToEngine) -> Result<(), String> {
-        let telling = self.telling.lock().expect("moteur de la session");
+        let telling = self.telling.lock().expect("session's engine");
         let Some(telling) = telling.as_ref() else {
-            return Err("aucun moteur ne sert encore cette session".to_string());
+            return Err("no engine serves this session yet".to_string());
         };
         telling
             .try_send(message.encode())
-            .map_err(|_| "le moteur de cette session ne répond plus".to_string())
+            .map_err(|_| "this session's engine no longer answers".to_string())
     }
 
     /// Decides which screen the session is served from, and tells the
     /// engine when that changes what it films.
     pub fn film(&self, wanted: Film) -> Result<(), String> {
-        let mut heard = self.heard.lock().expect("moteur de la session");
+        let mut heard = self.heard.lock().expect("session's engine");
         heard.film = wanted;
         self.film_if_it_changed(&mut heard)
     }
@@ -108,7 +108,7 @@ impl Engine {
     /// Tells the engine the screen decided on, if it has not been told
     /// already.
     pub fn film_now(&self) -> Result<(), String> {
-        let mut heard = self.heard.lock().expect("moteur de la session");
+        let mut heard = self.heard.lock().expect("session's engine");
         self.film_if_it_changed(&mut heard)
     }
 
@@ -133,7 +133,7 @@ impl Engine {
     /// Whether the session is served from the screen this computer grew,
     /// which leaves no other screen to choose between.
     pub fn films_the_grown_screen(&self) -> bool {
-        self.heard.lock().expect("moteur de la session").film == Film::Grown
+        self.heard.lock().expect("session's engine").film == Film::Grown
     }
 
     /// Serves the session from this computer's own screens again, if it
@@ -152,7 +152,7 @@ impl Engine {
         let driver = zyr_screen::shipped();
         self.heard
             .lock()
-            .expect("moteur de la session")
+            .expect("session's engine")
             .displays
             .iter()
             .filter(|display| !driver.is_its_screen(&display.name))
@@ -169,7 +169,7 @@ impl Engine {
     /// Takes in what the engine said, and tells it the screen to film if
     /// what it said lets that be named now.
     pub fn heard(&self, message: ToService) -> Said {
-        let mut heard = self.heard.lock().expect("moteur de la session");
+        let mut heard = self.heard.lock().expect("session's engine");
         let mut said = heard.take_in(message);
         if let Err(e) = self.film_if_it_changed(&mut heard) {
             said.lines.push(format!(
@@ -284,7 +284,7 @@ fn listed(displays: &[Display]) -> String {
             )
         })
         .collect::<Vec<_>>()
-        .join(" ; ")
+        .join("; ")
 }
 
 #[cfg(test)]

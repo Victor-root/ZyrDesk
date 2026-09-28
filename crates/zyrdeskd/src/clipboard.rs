@@ -132,13 +132,13 @@ static PASTE_REFUSED: Mutex<Option<String>> = Mutex::new(None);
 /// anything to say, and saying nothing is never read as « empty yours ».
 pub fn what_this_computer_has(log: &Log) -> Option<Clip> {
     let log = &log.about(TAG);
-    *ASKED.lock().expect("dernière question") = Some(Instant::now());
+    *ASKED.lock().expect("last question") = Some(Instant::now());
     if !KEEPING.swap(true, Ordering::SeqCst) {
         keep_a_helper(log.clone());
     }
     let clip =
         written_clip(&paths::clipboard_here()).filter(|clip| !more_than_it_carries(clip, log));
-    let mut given = GIVEN.lock().expect("ce qui vient d'être donné");
+    let mut given = GIVEN.lock().expect("what was just given");
     match *given {
         // It landed: the helper read back the very thing that was put on,
         // and from here on it is simply what this computer has.
@@ -171,8 +171,8 @@ pub fn what_this_computer_has(log: &Log) -> Option<Clip> {
 pub fn give_it(clip: &Clip, log: &Log) -> Result<(), String> {
     let log = &log.about(TAG);
     write_the_pair(&paths::clipboard_wanted(), clip)
-        .map_err(|e| format!("le presse-papiers n'a pas pu être posé : {e}"))?;
-    *GIVEN.lock().expect("ce qui vient d'être donné") = Some((clip.stamp(), Instant::now()));
+        .map_err(|e| format!("the clipboard could not be set: {e}"))?;
+    *GIVEN.lock().expect("what was just given") = Some((clip.stamp(), Instant::now()));
     log.write(&format!(
         "{} is going on this computer's clipboard",
         clip.in_words()
@@ -248,7 +248,7 @@ pub fn what_a_paste_here_wants(log: &Log) -> Option<zyr_tunnel::aside::Wanted> {
         // Said once: what refuses here is a folder that will not open,
         // and a disk does not change its mind between two turns of a loop
         // that turns four times a second.
-        let mut said = PASTE_REFUSED.lock().expect("ce qui empêche de coller");
+        let mut said = PASTE_REFUSED.lock().expect("what stops a paste");
         if said.replace(refused.clone()).as_deref() != Some(refused.as_str()) {
             log.write(&format!("files: nothing can be pasted here: {refused}"));
         }
@@ -285,7 +285,7 @@ fn more_than_it_carries(clip: &Clip, log: &Log) -> bool {
     if !clip.too_large() {
         return false;
     }
-    let mut said = TOO_LARGE.lock().expect("ce qui ne passe pas");
+    let mut said = TOO_LARGE.lock().expect("what does not cross");
     if said.replace(clip.stamp()) != Some(clip.stamp()) {
         log.write(&format!(
             "{} is more than a session carries, and stays on this computer",
@@ -299,7 +299,7 @@ fn more_than_it_carries(clip: &Clip, log: &Log) -> bool {
 fn nobody_is_asking() -> bool {
     ASKED
         .lock()
-        .expect("dernière question")
+        .expect("last question")
         .is_none_or(|asked| asked.elapsed() > AFTER_THE_LAST_QUESTION)
 }
 
@@ -370,7 +370,7 @@ fn keep_a_helper(log: Log) {
         // send any more.
         let _ = std::fs::remove_file(paths::clipboard_standing());
         crate::transfer::forget(&log);
-        *GIVEN.lock().expect("ce qui vient d'être donné") = None;
+        *GIVEN.lock().expect("what was just given") = None;
         KEEPING.store(false, Ordering::SeqCst);
     });
 }
@@ -554,14 +554,14 @@ pub fn carry_the_clipboard_here() {
             Ok(None) if news => say_once(
                 &mut complained,
                 &format!(
-                    "nothing on it that crosses ; it holds {}",
+                    "nothing on it that crosses; it holds {}",
                     zyr_clipboard::what_is_offered()
                 ),
             ),
             Err(e) if news => say_once(
                 &mut complained,
                 &format!(
-                    "it would not be read: {e} ; it holds {}",
+                    "it would not be read: {e}; it holds {}",
                     zyr_clipboard::what_is_offered()
                 ),
             ),
@@ -580,7 +580,7 @@ pub fn carry_the_clipboard_here() {
 fn stand_in_for_them(wanted: &Clip) -> Result<(), String> {
     let listed = wanted
         .listing()
-        .ok_or_else(|| "cette liste de fichiers ne se lit pas".to_string())?;
+        .ok_or_else(|| "this list of files cannot be read".to_string())?;
     zyr_clipboard::stand_in_for(&listed, &paths::pasted()).map_err(|e| e.to_string())?;
     // Where this computer's copied files really are stops being true of
     // anything the moment what it holds lives on the other computer.
@@ -726,11 +726,11 @@ pub fn a_piece_of(asked: zyr_tunnel::aside::Wanted) -> Result<zyr_tunnel::aside:
 
     let rank = asked.rank as usize;
     let path = where_the_file_is(rank)
-        .ok_or_else(|| format!("le fichier {rank} n'est plus celui qui est copié ici"))?;
-    let mut open = std::fs::File::open(&path)
-        .map_err(|e| format!("{} ne s'ouvre pas : {e}", path.display()))?;
+        .ok_or_else(|| format!("file {rank} is no longer the one copied here"))?;
+    let mut open =
+        std::fs::File::open(&path).map_err(|e| format!("{} does not open: {e}", path.display()))?;
     open.seek(SeekFrom::Start(asked.from))
-        .map_err(|e| format!("{} ne se lit pas : {e}", path.display()))?;
+        .map_err(|e| format!("{} cannot be read: {e}", path.display()))?;
 
     // Read to whatever really comes, which is what says a file ended:
     // a piece shorter than the one asked for is the end of it, and an
@@ -742,7 +742,7 @@ pub fn a_piece_of(asked: zyr_tunnel::aside::Wanted) -> Result<zyr_tunnel::aside:
             Ok(0) => break,
             Ok(read) => taken += read,
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(e) => return Err(format!("{} ne se lit pas : {e}", path.display())),
+            Err(e) => return Err(format!("{} cannot be read: {e}", path.display())),
         }
     }
     bytes.truncate(taken);
@@ -786,7 +786,7 @@ mod tests {
 
     #[test]
     fn a_written_clip_reads_back() {
-        let folder = fresh_folder("aller-retour");
+        let folder = fresh_folder("round-trip");
         let named = folder.join("clipboard-here.txt");
         let clip = Clip::picture(vec![0x89, b'P', b'N', b'G', 0, 255]);
 
@@ -804,10 +804,10 @@ mod tests {
         // The service reads between the two writes: that moment must
         // be "nothing to say this round" and never half of two things
         // pasted onto the far clipboard.
-        let folder = fresh_folder("entre-deux");
+        let folder = fresh_folder("in-between");
         let named = folder.join("clipboard-here.txt");
-        write_the_pair(&named, &Clip::text("le nouveau")).unwrap();
-        std::fs::write(paths::beside(&named), b"l'ancien").unwrap();
+        write_the_pair(&named, &Clip::text("the new one")).unwrap();
+        std::fs::write(paths::beside(&named), b"the old one").unwrap();
 
         assert_eq!(written_clip(&named), None);
         std::fs::remove_dir_all(&folder).ok();
@@ -833,7 +833,7 @@ mod tests {
         // leave.
         assert!(
             START_ANOTHER_AFTER < HELPER_LIVES,
-            "un assistant doit être relancé avant la fin du précédent"
+            "a helper must be started again before the previous one ends"
         );
     }
 }

@@ -125,7 +125,7 @@ pub struct NotHere;
 impl Launcher for NotHere {
     fn launch(&self, _link: &str) -> io::Result<Box<dyn Launched>> {
         Err(io::Error::other(
-            "le moteur ne tourne que sous Windows, où il filme l'écran",
+            "the engine only runs on Windows, where it films the screen",
         ))
     }
 }
@@ -156,14 +156,13 @@ impl Answers for Attending {
     fn secure_attention(&self) -> Result<(), String> {
         match press_it(&self.log) {
             Ok(()) => {
-                self.log
-                    .write("Ctrl+Alt+Suppr pressed for the far computer");
+                self.log.write("Ctrl+Alt+Del pressed for the far computer");
                 Ok(())
             }
             Err(e) => {
                 let refused = e.to_string();
                 self.log
-                    .write(&format!("Ctrl+Alt+Suppr not pressed: {refused}"));
+                    .write(&format!("Ctrl+Alt+Del not pressed: {refused}"));
                 Err(refused)
             }
         }
@@ -402,9 +401,9 @@ impl Answers for Attending {
         match std::fs::read_to_string(paths::reach_log()) {
             Ok(text) => Ok(text),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Ok("(rien de mesuré pour l'instant)".to_string())
+                Ok("(nothing measured yet)".to_string())
             }
-            Err(e) => Err(format!("le relevé n'a pas pu être lu : {e}")),
+            Err(e) => Err(format!("the measurements could not be read: {e}")),
         }
     }
 
@@ -422,8 +421,8 @@ impl Answers for Attending {
             return Ok(());
         }
         let reason = format!(
-            "une partie du journal n'a pas pu être vidée : {}",
-            refused.join(" ; ")
+            "part of the journal could not be emptied: {}",
+            refused.join("; ")
         );
         self.log.write(&reason);
         Err(reason)
@@ -466,7 +465,7 @@ impl Answers for Attending {
                     .iter()
                     .map(|screen| format!("{} ({})", screen.name, screen.id))
                     .collect::<Vec<_>>()
-                    .join(" ; ")
+                    .join("; ")
             }
         ));
         Ok(zyr_proto::session::far_screens_written(&screens))
@@ -716,7 +715,7 @@ fn hold_the_desk_for(wanted: Option<WantedScreen>) -> io::Result<String> {
 
 #[cfg(not(windows))]
 fn hold_the_desk_for(_wanted: Option<WantedScreen>) -> io::Result<String> {
-    Err(io::Error::other("cet ordinateur n'a pas d'écran à régler"))
+    Err(io::Error::other("this computer has no screen to set"))
 }
 
 /// Puts this computer's desk back where it was noted, saying what it cost.
@@ -732,9 +731,7 @@ fn give_the_desk_back() -> io::Result<String> {
 
 #[cfg(not(windows))]
 fn give_the_desk_back() -> io::Result<String> {
-    Err(io::Error::other(
-        "cet ordinateur n'a pas de bureau à rendre",
-    ))
+    Err(io::Error::other("this computer has no desk to give back"))
 }
 
 /// Moves this computer's desktop onto the screen it grew for itself,
@@ -749,9 +746,7 @@ fn take_the_grown_screen(wanted: WantedScreen) -> io::Result<String> {
 
 #[cfg(not(windows))]
 fn take_the_grown_screen(_wanted: WantedScreen) -> io::Result<String> {
-    Err(io::Error::other(
-        "cet ordinateur n'a pas d'écran à faire pousser",
-    ))
+    Err(io::Error::other("this computer has no screen to grow"))
 }
 
 /// Puts that screen back to sleep, where there is one.
@@ -762,7 +757,7 @@ fn sleep_the_grown_screen() -> Result<Vec<String>, String> {
 
 #[cfg(not(windows))]
 fn sleep_the_grown_screen() -> Result<Vec<String>, String> {
-    Err("cet ordinateur n'a pas d'écran virtuel".to_string())
+    Err("this computer has no virtual screen".to_string())
 }
 
 /// Wakes the screen this computer grew for itself, for the one machine
@@ -774,7 +769,7 @@ fn wake_the_grown_screen(size: (u32, u32)) -> Result<Vec<String>, String> {
 
 #[cfg(not(windows))]
 fn wake_the_grown_screen(_size: (u32, u32)) -> Result<Vec<String>, String> {
-    Err("cet ordinateur n'a pas d'écran virtuel".to_string())
+    Err("this computer has no virtual screen".to_string())
 }
 
 /// Locks it, where there is a Windows to lock, saying what it cost.
@@ -786,7 +781,7 @@ fn lock_it() -> io::Result<String> {
 #[cfg(not(windows))]
 fn lock_it() -> io::Result<String> {
     Err(io::Error::other(
-        "cet ordinateur n'a pas d'écran de verrouillage à lever",
+        "this computer has no lock screen to put up",
     ))
 }
 
@@ -802,7 +797,7 @@ fn press_it(log: &Log) -> io::Result<()> {
 #[cfg(not(windows))]
 fn press_it(_log: &Log) -> io::Result<()> {
     Err(io::Error::other(
-        "cet ordinateur n'a pas de Ctrl+Alt+Suppr à presser",
+        "this computer has no Ctrl+Alt+Del to press",
     ))
 }
 
@@ -1320,19 +1315,15 @@ async fn bring_up_the_engine(
     let datagram_budget = connection
         .guaranteed_usable_datagram()
         .and_then(zyr_transport::datagram_budget)
-        .ok_or("le chemin n'annonce aucune taille de datagramme")?;
-    let listener = LinkListener::create(Access::SystemOnly).map_err(|e| {
-        format!(
-            "la liaison du moteur n'a pas pu être créée : {}",
-            with_its_code(&e)
-        )
-    })?;
+        .ok_or("the path announces no datagram size")?;
+    let listener = LinkListener::create(Access::SystemOnly)
+        .map_err(|e| format!("the engine's link could not be made: {}", with_its_code(&e)))?;
     let name = listener.name().to_string();
     let launcher = door.launcher.clone();
     let launched = tokio::task::spawn_blocking(move || launcher.launch(&name))
         .await
-        .map_err(|e| format!("le moteur n'a pas pu être lancé : {e}"))?
-        .map_err(|e| format!("le moteur n'a pas pu être lancé : {}", with_its_code(&e)))?;
+        .map_err(|e| format!("the engine could not be started: {e}"))?
+        .map_err(|e| format!("the engine could not be started: {}", with_its_code(&e)))?;
     let process = launched.process();
     log.write(&format!(
         "the engine of this session was started, process {process}, and is waited for on its link"
@@ -1355,23 +1346,20 @@ async fn bring_up_the_engine(
     let link = match accepted {
         Some(Ok(Ok(link))) => link,
         Some(Ok(Err(e))) => {
-            let refused = format!(
-                "le moteur n'a pas pu rejoindre sa liaison : {}",
-                with_its_code(&e)
-            );
+            let refused = format!("the engine could not reach its link: {}", with_its_code(&e));
             let_the_engine_go(launched, log).await;
             return Err(refused);
         }
         Some(Err(_)) => {
             let_the_engine_go(launched, log).await;
             return Err(format!(
-                "le moteur n'a pas rejoint sa liaison en {} secondes",
+                "the engine did not reach its link within {} seconds",
                 ENGINE_PATIENCE.as_secs()
             ));
         }
         None => {
             let_the_engine_go(launched, log).await;
-            return Err("le moteur s'est arrêté avant de rejoindre sa liaison".to_string());
+            return Err("the engine stopped before reaching its link".to_string());
         }
     };
     // The name of a link is no secret to whoever may open one, the
@@ -1385,7 +1373,7 @@ async fn bring_up_the_engine(
         ));
         drop(link);
         let_the_engine_go(launched, log).await;
-        return Err("la liaison du moteur a été prise par un autre programme".to_string());
+        return Err("the engine's link was taken by another program".to_string());
     }
 
     let (service, spoken) = service_channel();
@@ -1645,7 +1633,7 @@ mod tests {
             "zyrdeskd-gateway-{}-{what}",
             zyr_proto::random::alphanumeric_string(8)
         ));
-        let log = Log::open(&folder.join("service.log")).expect("un journal");
+        let log = Log::open(&folder.join("service.log")).expect("a journal");
         let remembered = crate::preferences::Remembered::at(folder.join("preferences.conf"));
         let machine = Machine {
             hosting: crate::machine::Hosting::new(),
@@ -1698,7 +1686,7 @@ mod tests {
 
     #[test]
     fn trust_turned_off_leaves_only_what_was_written_down() {
-        let (machine, folder) = machine("sans-confiance");
+        let (machine, folder) = machine("untrusting");
         assert!(machine.remembered.trust_local_network());
         machine.remembered.set_trust_local_network(false).unwrap();
 
@@ -1741,7 +1729,7 @@ mod tests {
             with_its_code(&hresult)
         );
         // A refusal the system did not number carries no number.
-        assert_eq!(with_its_code(&io::Error::other("refusé")), "refusé");
+        assert_eq!(with_its_code(&io::Error::other("refused")), "refused");
     }
 
     /// An engine standing in for the real one: it joins the link it is
@@ -2041,7 +2029,7 @@ mod tests {
         .expect("the refusal waited out the engine's patience")
         .unwrap_err()
         .to_string();
-        assert!(refusal.contains("s'est arrêté"), "{refusal}");
+        assert!(refusal.contains("stopped before"), "{refusal}");
         tokio::time::timeout(Duration::from_secs(10), served.session)
             .await
             .expect("the session never ended")

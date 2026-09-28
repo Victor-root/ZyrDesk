@@ -243,9 +243,9 @@ mod tests {
     #[test]
     fn the_question_is_the_one_a_resolver_expects() {
         let asked = question(0x1234);
-        assert_eq!(&asked[..2], &[0x12, 0x34], "le numéro de la question");
-        assert_eq!(&asked[2..4], &[0x01, 0x00], "la récursion est demandée");
-        assert_eq!(&asked[4..6], &[0x00, 0x01], "une seule question");
+        assert_eq!(&asked[..2], &[0x12, 0x34], "the question's number");
+        assert_eq!(&asked[2..4], &[0x01, 0x00], "recursion is asked for");
+        assert_eq!(&asked[4..6], &[0x00, 0x01], "a single question");
         // The name, label by label, then "an address, on the
         // Internet".
         assert_eq!(
@@ -260,10 +260,10 @@ mod tests {
         // it is one. Without the flag, our own question would come back
         // to us and count as an answer.
         let mut said = question(0x1234);
-        assert!(!answers(&said, 0x1234), "la question n'est pas sa réponse");
+        assert!(!answers(&said, 0x1234), "the question is not its answer");
         said[2] |= 0x80;
         assert!(answers(&said, 0x1234));
-        assert!(!answers(&said, 0x1235), "une autre question");
-        assert!(!answers(&said[..8], 0x1234), "trop court pour être lu");
+        assert!(!answers(&said, 0x1235), "another question");
+        assert!(!answers(&said[..8], 0x1234), "too short to be read");
     }
 }

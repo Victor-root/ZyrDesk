@@ -63,7 +63,7 @@ impl Drop for Held {
         self.incoming
             .entries
             .lock()
-            .expect("ordinateurs connectés")
+            .expect("connected computers")
             .retain(|entry| entry.connection.stable_id() != self.id);
     }
 }
@@ -75,7 +75,7 @@ impl Incoming {
         let id = connection.stable_id();
         self.entries
             .lock()
-            .expect("ordinateurs connectés")
+            .expect("connected computers")
             .push(Entry {
                 peer,
                 address,
@@ -93,7 +93,7 @@ impl Incoming {
         let now = Instant::now();
         self.entries
             .lock()
-            .expect("ordinateurs connectés")
+            .expect("connected computers")
             .iter()
             .map(|entry| Watching {
                 peer: entry.peer,
@@ -110,7 +110,7 @@ impl Incoming {
     /// by the guard [`Held`] returned when it arrived, the moment its
     /// session actually ends, which this triggers but does not wait for.
     pub fn kick(&self, peer: Fingerprint) -> bool {
-        let entries = self.entries.lock().expect("ordinateurs connectés");
+        let entries = self.entries.lock().expect("connected computers");
         let mut found = false;
         for entry in entries.iter().filter(|entry| entry.peer == peer) {
             entry.connection.close();

@@ -122,7 +122,7 @@ impl Remembered {
     }
 
     pub fn read(&self) -> Preferences {
-        *self.now.lock().expect("réglages")
+        *self.now.lock().expect("settings")
     }
 
     /// Whether this computer is meant to be reachable at all.
@@ -174,7 +174,7 @@ impl Remembered {
     /// Writes the decision down before honouring it: a computer that
     /// obeyed but forgot would let itself be reached again tomorrow.
     fn change(&self, how: impl FnOnce(&mut Preferences)) -> io::Result<()> {
-        let mut now = self.now.lock().expect("réglages");
+        let mut now = self.now.lock().expect("settings");
         let mut asked = *now;
         how(&mut asked);
         onto_disk(&self.path, asked)?;
@@ -207,56 +207,56 @@ fn onto_disk(path: &Path, preferences: Preferences) -> io::Result<()> {
 fn rendered(preferences: Preferences) -> String {
     let preferred = preferences.preferred;
     format!(
-        "# Réglages du service ZyrDesk.\n\
-         # Ce fichier est écrit par le produit et peut se corriger à la main.\n\
+        "# Settings of the ZyrDesk service.\n\
+         # This file is written by the product and can be corrected by hand.\n\
          \n\
-         # Cet ordinateur accepte d'être contrôlé à distance.\n\
+         # This computer accepts being controlled remotely.\n\
          {REMOTE_ACCESS} = {}\n\
          \n\
-         # Les ZyrDesk du réseau local peuvent joindre celui-ci sans\n\
-         # autorisation à recopier. Vaut pour le réseau local seul.\n\
+         # The ZyrDesk on the local network may reach this one with no\n\
+         # authorisation to copy across. Holds for the local network only.\n\
          {TRUST_LOCAL_NETWORK} = {}\n\
          \n\
-         # Ce à quoi ressemble une session ouverte depuis cet ordinateur.\n\
-         # Taille demandée : screen, ou LARGEURxHAUTEUR.\n\
+         # What a session opened from this computer looks like.\n\
+         # Size asked for: screen, or WIDTHxHEIGHT.\n\
          {ASKED} = {}\n\
-         # Débit en kilobits par seconde.\n\
+         # Bitrate in kilobits per second.\n\
          {BITRATE} = {}\n\
-         # Codec : auto, H.264, HEVC ou AV1.\n\
+         # Codec: auto, H.264, HEVC or AV1.\n\
          {CODEC} = {}\n\
-         # Affichage : fullscreen ou windowed.\n\
+         # Display: fullscreen or windowed.\n\
          {DISPLAY} = {}\n\
-         # Souris du bureau plutôt que souris de jeu.\n\
+         # Desktop mouse rather than game mouse.\n\
          {ABSOLUTE_MOUSE} = {}\n\
-         # Statistiques affichées par-dessus l'image.\n\
+         # Statistics shown over the picture.\n\
          {STATS_OVERLAY} = {}\n\
-         # Couper les enceintes de l'ordinateur d'en face pendant la\n\
-         # session : son de la session inchangé, pièce d'en face muette.\n\
+         # Mute the far computer's speakers during the session: the\n\
+         # session's sound unchanged, the far room silent.\n\
          {MUTE_FAR_SPEAKERS} = {}\n\
-         # Alt+Tab, Échap et la touche Windows partent dans la session\n\
-         # plutôt que d'agir sur cet ordinateur. Se rebascule en cours de\n\
-         # session depuis le menu du bouton flottant.\n\
+         # Alt+Tab, Escape and the Windows key go into the session rather\n\
+         # than acting on this computer. Can be switched back during the\n\
+         # session from the floating button's menu.\n\
          {SYSTEM_KEYS} = {}\n\
-         # Demander à l'ordinateur d'en face de réenvoyer son écran à\n\
-         # pleine cadence même quand rien ne bouge : pointeur plus fluide\n\
-         # là-bas, mais une image complète encodée soixante fois par\n\
-         # seconde pour rien.\n\
+         # Ask the far computer to send its screen again at full rate\n\
+         # even when nothing moves: a smoother pointer over there, but a\n\
+         # whole picture encoded sixty times a second for nothing.\n\
          {STEADY_FAR_RATE} = {}\n\
-         # Les deux ordinateurs partagent un seul presse-papiers le temps\n\
-         # de la session : ce qui est copié sur l'un se colle sur l'autre,\n\
-         # texte comme image. Rien n'en passe par le moteur.\n\
+         # The two computers share a single clipboard for the length of\n\
+         # the session: what is copied on one is pasted on the other,\n\
+         # text and pictures alike. None of it goes through the engine.\n\
          {SHARED_CLIPBOARD} = {}\n\
          \n\
-         # Essais réseau, à changer sur les DEUX ordinateurs, depuis la\n\
-         # fenêtre (Réglages). Changés ici à la main, ils ne sont relus\n\
-         # qu'au démarrage du service.\n\
-         # Marquer les paquets du tunnel du bit ECN, comme QUIC le fait\n\
-         # partout. Certains équipements traitent les paquets marqués à\n\
-         # part : à comparer avec no si les sessions se coupent.\n\
+         # Network trials, to be changed on BOTH computers, from the\n\
+         # window (Settings). Changed here by hand, they are only read\n\
+         # again when the service starts.\n\
+         # Mark the tunnel's packets with the ECN bit, as QUIC does\n\
+         # everywhere. Some equipment treats marked packets differently:\n\
+         # compare with no if sessions drop.\n\
          {ECN} = {}\n\
-         # Écouter sur le port 47000 du produit. Avec no, le port change à\n\
-         # chaque démarrage : la session par un compte le trouve, une\n\
-         # session en réseau local ou un renvoi de port sur la box non.\n\
+         # Listen on the product's port 47000. With no, the port changes\n\
+         # at every start: a session through an account finds it, a\n\
+         # session on the local network or a port forwarded on the box\n\
+         # does not.\n\
          {FIXED_PORT} = {}\n",
         yes_no(preferences.remote_access),
         yes_no(preferences.trust_local_network),
@@ -399,7 +399,7 @@ mod tests {
     fn saving_one_setting_does_not_wipe_the_other() {
         // The two live in the same file: a write that knew only one
         // of them would silently erase the other.
-        let path = temporary_file("ensemble");
+        let path = temporary_file("together");
         let remembered = Remembered::at(path.clone());
 
         remembered.set_preferred(chosen().preferred).unwrap();
@@ -418,7 +418,7 @@ mod tests {
 
     #[test]
     fn what_is_kept_is_what_the_next_start_picks_up() {
-        let path = temporary_file("relance");
+        let path = temporary_file("restart");
         let remembered = Remembered::at(path.clone());
         remembered.set_preferred(chosen().preferred).unwrap();
         remembered
@@ -447,11 +447,11 @@ mod tests {
         // network and look exactly like a network fault.
         for text in [
             "",
-            "n'importe quoi",
+            "any old thing",
             "remote_access",
-            "remote_access = peut-être",
+            "remote_access = maybe",
         ] {
-            assert!(parsed(text).remote_access, "sur « {text} »");
+            assert!(parsed(text).remote_access, "on « {text} »");
         }
     }
 
@@ -462,7 +462,7 @@ mod tests {
             "remote_access=non",
             "  remote_access = 0  ",
         ] {
-            assert!(!parsed(text).remote_access, "sur « {text} »");
+            assert!(!parsed(text).remote_access, "on « {text} »");
         }
     }
 
@@ -470,7 +470,7 @@ mod tests {
     fn one_unreadable_line_does_not_cost_the_others() {
         // A file written by a more recent ZyrDesk, or edited the
         // wrong way, must not reset everything else to zero.
-        let text = "quality = ultra\ncodec = HEVC\nun-verbe-inconnu = 3\nstats_overlay = yes\n";
+        let text = "quality = ultra\ncodec = HEVC\nan-unknown-word = 3\nstats_overlay = yes\n";
         let read = parsed(text).preferred;
         assert_eq!(read.asked, Asked::default());
         assert_eq!(read.bitrate_kbps, Preferred::default().bitrate_kbps);
@@ -496,7 +496,7 @@ mod tests {
     fn the_network_switches_are_on_unless_a_plain_no_turns_them_off() {
         // These are comparison switches: the product behaves like QUIC
         // everywhere as long as nobody has written no.
-        let remembered = Remembered::at(temporary_file("essais"));
+        let remembered = Remembered::at(temporary_file("trials"));
         assert_eq!(
             remembered.wire(),
             Wire {
@@ -516,7 +516,7 @@ mod tests {
             }
         );
 
-        let mangled = parsed("ecn = peut-être\nfixed_port = 47000\n");
+        let mangled = parsed("ecn = maybe\nfixed_port = 47000\n");
         assert!(mangled.ecn);
         assert!(mangled.fixed_port);
 
@@ -539,7 +539,7 @@ mod tests {
         // on screen to say why.
         for wrong in [
             "asked = screen\nbitrate = 0",
-            "asked = screen\nbitrate = beaucoup",
+            "asked = screen\nbitrate = plenty",
         ] {
             let read = parsed(wrong).preferred;
             assert_eq!(

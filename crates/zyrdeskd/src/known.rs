@@ -95,9 +95,9 @@ pub fn remove(path: &Path, fingerprint: Fingerprint) -> io::Result<bool> {
 
 fn write(path: &Path, computers: &[Known]) -> io::Result<()> {
     let mut text = String::from(
-        "# Ordinateurs ajoutés à la main, pour les réseaux qui ne portent\n\
-         # pas les annonces. Une ligne par ordinateur :\n\
-         #   empreinte adresse nom\n",
+        "# Computers added by hand, for the networks that do not carry\n\
+         # announcements. One line per computer:\n\
+         #   fingerprint address name\n",
     );
     for known in computers {
         // One computer per line, whatever its name was pasted with: a
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn a_computer_written_down_comes_back_whole() {
-        let path = somewhere("aller-retour");
+        let path = somewhere("round-trip");
         assert!(read(&path).unwrap().is_empty());
 
         let computer = Known {
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn a_computer_can_be_taken_off_and_saying_so_twice_is_not_an_error() {
-        let path = somewhere("oubli");
+        let path = somewhere("forgotten");
         add(
             &path,
             Known {
@@ -206,9 +206,9 @@ mod tests {
         // This file is corrected by hand: one botched line must not
         // make the home screen disappear.
         let text = format!(
-            "# un commentaire\n\
+            "# a comment\n\
              \n\
-             pas-une-empreinte 192.168.1.1 Machin\n\
+             not-a-fingerprint 192.168.1.1 Machin\n\
              {} 192.168.1.20 PC de Victor\n\
              {}\n\
              {} 192.168.1.30\n",
@@ -216,7 +216,7 @@ mod tests {
             fingerprint(2),
             fingerprint(3)
         );
-        let path = somewhere("lignes");
+        let path = somewhere("lines");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, text).unwrap();
 

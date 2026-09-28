@@ -57,17 +57,17 @@ impl Hosting {
 
     /// The tunnel stands: this computer can be reached.
     pub fn open(&self) {
-        *self.0.lock().expect("état de l'accès distant") = None;
+        *self.0.lock().expect("remote access state") = None;
     }
 
     /// It cannot, for this reason.
     pub fn held_by(&self, holdup: Holdup) {
-        *self.0.lock().expect("état de l'accès distant") = Some(holdup);
+        *self.0.lock().expect("remote access state") = Some(holdup);
     }
 
     /// What is in the way, or nothing at all.
     pub fn standing(&self) -> Option<Holdup> {
-        *self.0.lock().expect("état de l'accès distant")
+        *self.0.lock().expect("remote access state")
     }
 }
 
@@ -93,16 +93,16 @@ pub struct Door {
 
 impl Door {
     pub fn opened(&self, junction: Junction) {
-        *self.junction.lock().expect("porte") = Some(junction);
+        *self.junction.lock().expect("door") = Some(junction);
     }
 
     pub fn closed(&self) {
-        *self.junction.lock().expect("porte") = None;
+        *self.junction.lock().expect("door") = None;
     }
 
     /// The junction of the open door, or nothing while it is closed.
     pub fn junction(&self) -> Option<Junction> {
-        self.junction.lock().expect("porte").clone()
+        self.junction.lock().expect("door").clone()
     }
 
     /// What the tunnel and its branches of relay are being asked to
@@ -141,22 +141,22 @@ impl Machine {
         let mut journal = Journal::of_this_computer();
         journal.says(
             "Service",
-            &format!("{}, dialecte {PROTOCOL}", zyr_proto::BUILD),
+            &format!("{}, dialect {PROTOCOL}", zyr_proto::BUILD),
         );
-        journal.says("Empreinte", &fingerprint.to_string());
-        journal.says("Accès distant", &self.remote_access());
+        journal.says("Fingerprint", &fingerprint.to_string());
+        journal.says("Remote access", &self.remote_access());
         journal.says("Tunnel", &self.tunnel_line());
         journal.says(
-            "Réseau local",
+            "Local network",
             if self.remembered.trust_local_network() {
-                "ordinateurs de confiance"
+                "trusted computers"
             } else {
-                "aucune confiance accordée"
+                "no trust granted"
             },
         );
-        journal.says("Compte", &self.account_line());
-        journal.says("Sessions ouvertes", &self.ways.count().to_string());
-        journal.says("Ordinateurs vus", &self.computers_seen(log));
+        journal.says("Account", &self.account_line());
+        journal.says("Open sessions", &self.ways.count().to_string());
+        journal.says("Computers seen", &self.computers_seen(log));
         journal.sifted(sift)
     }
 
@@ -177,17 +177,17 @@ impl Machine {
     /// matters.
     fn tunnel_line(&self) -> String {
         let Some(junction) = self.door.junction() else {
-            return "fermé, cet ordinateur n'écoute nulle part".to_string();
+            return "closed, this computer listens nowhere".to_string();
         };
         let Ok(at) = junction.local_address() else {
-            return "ouvert, mais le système ne dit pas sur quel port".to_string();
+            return "open, but the system does not say on which port".to_string();
         };
         if at.port() == TUNNEL_PORT {
             return format!("port {TUNNEL_PORT}");
         }
         format!(
-            "port {}, choisi par Windows : « Écouter sur le port {TUNNEL_PORT} » est coupé dans \
-             les réglages, donc seule une session par le compte peut aboutir ici",
+            "port {}, chosen by Windows: « Listen on port {TUNNEL_PORT} » is off in the \
+             settings, so only a session through the account can get through here",
             at.port()
         )
     }
@@ -213,17 +213,16 @@ impl Machine {
     /// home screen uses.
     fn remote_access(&self) -> String {
         if !self.remembered.remote_access() {
-            return "désactivé".to_string();
+            return "off".to_string();
         }
         match self.hosting.standing() {
-            None => "activé, prêt à être contrôlé".to_string(),
-            Some(Holdup::Starting) => "activé, démarrage en cours".to_string(),
+            None => "on, ready to be controlled".to_string(),
+            Some(Holdup::Starting) => "on, starting".to_string(),
             Some(Holdup::EngineMissing) => {
-                "activé, mais FFmpeg manque dans vendor/ffmpeg : aucune image ne peut être faite"
-                    .to_string()
+                "on, but FFmpeg is missing from vendor/ffmpeg: no picture can be made".to_string()
             }
-            Some(Holdup::Unseen) => "activé, mais ZyrDesk n'est pas ouvert à l'écran de cet \
-                                     ordinateur : personne ici ne verrait une prise en main"
+            Some(Holdup::Unseen) => "on, but ZyrDesk is not open on this computer's screen: \
+                                     nobody here would see it being taken over"
                 .to_string(),
         }
     }
@@ -236,7 +235,7 @@ impl Machine {
     fn computers_seen(&self, log: &Log) -> String {
         let seen = self.on_screen(log);
         if seen.is_empty() {
-            return "aucun".to_string();
+            return "none".to_string();
         }
         seen.iter()
             .map(|peer| format!("{} ({})", peer.name, peer.host))
@@ -462,19 +461,19 @@ mod tests {
 
     #[test]
     fn what_stands_in_the_way_is_named_rather_than_left_to_be_guessed() {
-        let (machine, _, folder) = machine("acces");
+        let (machine, _, folder) = machine("access");
 
         // An engine that cannot run and a door that is opening look too
         // much alike for a journal to settle for "not ready".
-        assert!(machine.remote_access().contains("démarrage"));
+        assert!(machine.remote_access().contains("starting"));
         machine.hosting.held_by(Holdup::EngineMissing);
         assert!(machine.remote_access().contains("FFmpeg"));
         machine.hosting.open();
-        assert!(machine.remote_access().contains("prêt"));
+        assert!(machine.remote_access().contains("ready"));
 
         // And access turned off on purpose is not a fault.
         machine.remembered.set_remote_access(false).unwrap();
-        assert_eq!(machine.remote_access(), "désactivé");
+        assert_eq!(machine.remote_access(), "off");
 
         std::fs::remove_dir_all(&folder).unwrap();
     }
@@ -491,13 +490,13 @@ mod tests {
         // What the window cannot read by itself, and which is half of
         // what one opens a journal to find out.
         assert!(text.contains(&fingerprint.to_string()), "{text}");
-        assert!(text.contains(&format!("dialecte {PROTOCOL}")), "{text}");
-        assert!(text.contains("Accès distant"), "{text}");
+        assert!(text.contains(&format!("dialect {PROTOCOL}")), "{text}");
+        assert!(text.contains("Remote access"), "{text}");
         // With no neighbour, the line says so rather than staying
         // empty: an empty list and a missing list do not read the
         // same. The account likewise.
-        assert!(text.contains("Ordinateurs vus  : aucun"), "{text}");
-        assert!(text.contains("Compte"), "{text}");
+        assert!(text.contains("Computers seen   : none"), "{text}");
+        assert!(text.contains("Account"), "{text}");
         assert_eq!(machine.account_line(), "none");
 
         std::fs::remove_dir_all(&folder).unwrap();
@@ -509,7 +508,7 @@ mod tests {
 
         // Door closed: nothing is listening, and that is something
         // other than a port nothing is known about.
-        assert!(machine.tunnel_line().contains("n'écoute nulle part"));
+        assert!(machine.tunnel_line().contains("listens nowhere"));
 
         // Open on a port the system chose, that is, with the switch
         // turned off: the line names the switch, because from over there
@@ -534,10 +533,10 @@ mod tests {
         machine.door.opened(junction);
 
         let line = machine.tunnel_line();
-        assert_ne!(port, TUNNEL_PORT, "le système a rendu le port du produit");
+        assert_ne!(port, TUNNEL_PORT, "the system picked the product's port");
         assert!(line.contains(&format!("port {port}")), "{line}");
         assert!(
-            line.contains(&format!("Écouter sur le port {TUNNEL_PORT}")),
+            line.contains(&format!("Listen on port {TUNNEL_PORT}")),
             "{line}"
         );
 

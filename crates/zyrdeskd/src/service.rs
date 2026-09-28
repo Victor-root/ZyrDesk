@@ -38,8 +38,7 @@ pub const NAME: &str = "ZyrDesk";
 /// Name shown in the services console.
 const DISPLAY_NAME: &str = "ZyrDesk";
 
-const DESCRIPTION: &str =
-    "Rend cet ordinateur accessible à distance, y compris avant l'ouverture de session.";
+const DESCRIPTION: &str = "Makes this computer reachable remotely, even before anyone signs in.";
 
 /// Argument Windows uses to start this program as a service.
 ///
@@ -476,7 +475,7 @@ fn say_how_the_networks_are_classed(log: &Log) {
     let log = log.clone();
     std::thread::spawn(move || {
         let said = asked_of_windows(
-            "Get-NetConnectionProfile | ForEach-Object { $_.InterfaceAlias + ' : ' + $_.NetworkCategory }",
+            "Get-NetConnectionProfile | ForEach-Object { $_.InterfaceAlias + ': ' + $_.NetworkCategory }",
         )
         .unwrap_or_default();
         let classed: Vec<&str> = said

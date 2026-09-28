@@ -243,7 +243,7 @@ impl Account {
         door: Door,
     ) {
         let inner = &self.0;
-        *inner.started.lock().expect("compte") = Some(Started {
+        *inner.started.lock().expect("account") = Some(Started {
             runtime: runtime.clone(),
             identity,
             hosting,
@@ -263,7 +263,7 @@ impl Account {
     /// Opens the channel of that link, and follows it.
     fn open(&self, link: Link) {
         let inner = &self.0;
-        let started = inner.started.lock().expect("compte");
+        let started = inner.started.lock().expect("account");
         let Some(started) = started.as_ref() else {
             return;
         };
@@ -274,7 +274,7 @@ impl Account {
         // Held closed while the channel is opened and its follower
         // started: the follower reads what is held, and must not find
         // nothing there for the first thing the server says.
-        let mut held = inner.held.lock().expect("lien de compte");
+        let mut held = inner.held.lock().expect("account link");
         let (live, events) = Live::open(
             link.clone(),
             started.identity.clone(),
@@ -295,7 +295,7 @@ impl Account {
 
     /// The link, as it stands, or nothing.
     pub fn standing(&self) -> Option<zyr_control::Account> {
-        let held = self.0.held.lock().expect("lien de compte");
+        let held = self.0.held.lock().expect("account link");
         let held = held.as_ref()?;
         let snapshot = held.live.snapshot();
         Some(zyr_control::Account {
@@ -314,13 +314,13 @@ impl Account {
     /// What the server has said of the account, or nothing without a
     /// link.
     pub fn snapshot(&self) -> Option<Snapshot> {
-        let held = self.0.held.lock().expect("lien de compte");
+        let held = self.0.held.lock().expect("account link");
         held.as_ref().map(|held| held.live.snapshot())
     }
 
     /// The devices of the account, this computer marked among them.
     pub fn devices(&self) -> Vec<zyr_control::Device> {
-        let held = self.0.held.lock().expect("lien de compte");
+        let held = self.0.held.lock().expect("account link");
         let Some(held) = held.as_ref() else {
             return Vec::new();
         };
@@ -352,7 +352,7 @@ impl Account {
     /// back when it stops carrying. Without a meeting to be had, those
     /// addresses are the only road, and they are the road it takes.
     pub fn met_through_the_server(&self, peer: Fingerprint) -> Option<String> {
-        let held = self.0.held.lock().expect("lien de compte");
+        let held = self.0.held.lock().expect("account link");
         let snapshot = held.as_ref()?.live.snapshot();
         if !snapshot.connected {
             return None;
@@ -367,7 +367,7 @@ impl Account {
 
     /// The computers a ticket let in, and still lets in.
     pub fn admitted(&self) -> Vec<Fingerprint> {
-        let mut admitted = self.0.admitted.lock().expect("admis par ticket");
+        let mut admitted = self.0.admitted.lock().expect("admitted by ticket");
         let moment = now();
         // Read with the same tolerance the ticket was: two honest clocks
         // may differ, and the door must not close before the ticket does.
@@ -383,11 +383,11 @@ impl Account {
     /// Attaches this computer to an account, and keeps the link.
     pub async fn attach(&self, asked: zyr_control::Attach) -> Result<(), Attaching> {
         let inner = &self.0;
-        if inner.held.lock().expect("lien de compte").is_some() {
+        if inner.held.lock().expect("account link").is_some() {
             return Err(Attaching::Refused(Fact::new("account.already_attached")));
         }
         let identity = {
-            let started = inner.started.lock().expect("compte");
+            let started = inner.started.lock().expect("account");
             started.as_ref().map(|started| started.identity.clone())
         };
         let Some(identity) = identity else {
@@ -446,7 +446,7 @@ impl Account {
     pub async fn detach(&self) -> Result<(), Fact> {
         let inner = &self.0;
         let (server, pin, token, device) = {
-            let held = inner.held.lock().expect("lien de compte");
+            let held = inner.held.lock().expect("account link");
             let held = held.as_ref().ok_or_else(not_attached)?;
             (
                 held.link.server.clone(),
@@ -507,7 +507,7 @@ impl Account {
 
     /// The server's door, with this device's token and identifier.
     fn door(&self) -> Result<(Rest, String, String), Fact> {
-        let held = self.0.held.lock().expect("lien de compte");
+        let held = self.0.held.lock().expect("account link");
         let held = held.as_ref().ok_or_else(not_attached)?;
         let trust = held.link.pin.map_or(Trust::PublicOnly, Trust::Pinned);
         let rest = Rest::new(&held.link.server, trust).map_err(|e| e.fact())?;
@@ -523,7 +523,7 @@ impl Account {
     pub async fn rendezvous(&self, device: &str) -> Result<Rendezvous, Fact> {
         let inner = &self.0;
         let (snapshot, me, server) = {
-            let held = inner.held.lock().expect("lien de compte");
+            let held = inner.held.lock().expect("account link");
             let held = held.as_ref().ok_or_else(not_attached)?;
             (
                 held.live.snapshot(),
@@ -559,10 +559,10 @@ impl Account {
         inner
             .asked
             .lock()
-            .expect("sessions demandées")
+            .expect("sessions asked for")
             .insert(device.to_string(), matched);
         {
-            let held = inner.held.lock().expect("lien de compte");
+            let held = inner.held.lock().expect("account link");
             if let Some(held) = held.as_ref() {
                 held.live.say(FromDevice::SessionOpen {
                     to: device.to_string(),
@@ -587,7 +587,7 @@ impl Account {
                 inner
                     .asked
                     .lock()
-                    .expect("sessions demandées")
+                    .expect("sessions asked for")
                     .remove(device);
                 return Err(Fact::new("account.meeting_silent").with("name", &target.name));
             }
@@ -619,7 +619,7 @@ impl Account {
         if candidates.is_empty() {
             return;
         }
-        let held = self.0.held.lock().expect("lien de compte");
+        let held = self.0.held.lock().expect("account link");
         if let Some(held) = held.as_ref() {
             held.live.say(FromDevice::SessionCandidates {
                 session: session.to_string(),
@@ -634,7 +634,7 @@ impl Account {
         self.0
             .roads
             .lock()
-            .expect("voies du compte")
+            .expect("account's ways")
             .push((way, session));
     }
 
@@ -644,14 +644,14 @@ impl Account {
         inner
             .roads
             .lock()
-            .expect("voies du compte")
+            .expect("account's ways")
             .retain(|(_, road)| road != session);
         inner
             .expecting
             .lock()
-            .expect("candidats attendus")
+            .expect("expected candidates")
             .remove(session);
-        let held = inner.held.lock().expect("lien de compte");
+        let held = inner.held.lock().expect("account link");
         if let Some(held) = held.as_ref() {
             held.live.say(FromDevice::SessionEnd {
                 session: session.to_string(),
@@ -673,7 +673,7 @@ impl Account {
                 let hosted = inner
                     .hosted
                     .lock()
-                    .expect("sessions accueillies")
+                    .expect("hosted sessions")
                     .get(&session)
                     .copied();
                 match hosted {
@@ -683,7 +683,7 @@ impl Account {
                         }
                     }
                     None => {
-                        let expecting = inner.expecting.lock().expect("candidats attendus");
+                        let expecting = inner.expecting.lock().expect("expected candidates");
                         if let Some(waiting) = expecting.get(&session) {
                             let _ = waiting.send(candidates);
                         }
@@ -694,12 +694,12 @@ impl Account {
                 inner
                     .expecting
                     .lock()
-                    .expect("candidats attendus")
+                    .expect("expected candidates")
                     .remove(&session);
                 let hosted = inner
                     .hosted
                     .lock()
-                    .expect("sessions accueillies")
+                    .expect("hosted sessions")
                     .remove(&session);
                 if let Some(card) = hosted
                     && let Some(junction) = self.junction()
@@ -709,15 +709,14 @@ impl Account {
                 inner
                     .roads
                     .lock()
-                    .expect("voies du compte")
+                    .expect("account's ways")
                     .retain(|(_, road)| *road != session);
                 inner
                     .log
                     .write(&format!("the server says session {session} is over"));
             }
             Event::SessionRefused { to, code } => {
-                if let Some(waiting) = inner.asked.lock().expect("sessions demandées").remove(&to)
-                {
+                if let Some(waiting) = inner.asked.lock().expect("sessions asked for").remove(&to) {
                     let _ = waiting.send(Err(code));
                 }
                 inner.log.write(&format!(
@@ -725,7 +724,7 @@ impl Account {
                 ));
             }
             Event::TokenRenewed(token) => {
-                let mut held = inner.held.lock().expect("lien de compte");
+                let mut held = inner.held.lock().expect("account link");
                 if let Some(held) = held.as_mut() {
                     held.link.token = token;
                     inner.log.write(&match held.link.write(&inner.path) {
@@ -763,7 +762,7 @@ impl Account {
     fn matched(&self, start: Start) {
         let inner = &self.0;
         let started = {
-            let started = inner.started.lock().expect("compte");
+            let started = inner.started.lock().expect("account");
             started.as_ref().map(|started| {
                 (
                     started.identity.clone(),
@@ -777,7 +776,7 @@ impl Account {
             return;
         };
         let me = identity.fingerprint();
-        let held = inner.held.lock().expect("lien de compte");
+        let held = inner.held.lock().expect("account link");
         let Some(held) = held.as_ref() else {
             return;
         };
@@ -819,7 +818,7 @@ impl Account {
                 inner
                     .hosted
                     .lock()
-                    .expect("sessions accueillies")
+                    .expect("hosted sessions")
                     .insert(start.session.clone(), card);
                 held.live.say(FromDevice::SessionCandidates {
                     session: start.session.clone(),
@@ -879,12 +878,12 @@ impl Account {
                 inner
                     .expecting
                     .lock()
-                    .expect("candidats attendus")
+                    .expect("expected candidates")
                     .insert(start.session.clone(), naming);
                 match inner
                     .asked
                     .lock()
-                    .expect("sessions demandées")
+                    .expect("sessions asked for")
                     .remove(&start.peer.device)
                 {
                     Some(waiting) => {
@@ -908,13 +907,13 @@ impl Account {
 
     /// The junction of the door, while the door is open.
     fn junction(&self) -> Option<zyr_transport::Junction> {
-        let started = self.0.started.lock().expect("compte");
+        let started = self.0.started.lock().expect("account");
         started.as_ref().and_then(|started| started.door.junction())
     }
 
     /// Lets that computer in until then, and wakes the door.
     pub(crate) fn admit(&self, device: Fingerprint, until: u64) {
-        let mut admitted = self.0.admitted.lock().expect("admis par ticket");
+        let mut admitted = self.0.admitted.lock().expect("admitted by ticket");
         admitted.retain(|(known, _)| *known != device);
         admitted.push((device, until));
         self.0.changed.notify_one();
@@ -924,11 +923,11 @@ impl Account {
     /// meeting opened.
     fn every_second(&self, told: &mut Option<Access>) {
         let inner = &self.0;
-        let started = inner.started.lock().expect("compte");
+        let started = inner.started.lock().expect("account");
         let Some(started) = started.as_ref() else {
             return;
         };
-        let held = inner.held.lock().expect("lien de compte");
+        let held = inner.held.lock().expect("account link");
         let Some(held) = held.as_ref() else {
             return;
         };
@@ -941,7 +940,7 @@ impl Account {
             ));
         }
         let over: Vec<String> = {
-            let mut roads = inner.roads.lock().expect("voies du compte");
+            let mut roads = inner.roads.lock().expect("account's ways");
             let (open, closed): (Vec<_>, Vec<_>) = roads
                 .drain(..)
                 .partition(|(way, _)| started.ways.still_open(*way));
@@ -961,14 +960,14 @@ impl Account {
     /// Drops the link and everything that waited on it.
     fn let_go(&self) {
         let inner = &self.0;
-        let gone = inner.held.lock().expect("lien de compte").take();
+        let gone = inner.held.lock().expect("account link").take();
         drop(gone);
-        inner.admitted.lock().expect("admis par ticket").clear();
+        inner.admitted.lock().expect("admitted by ticket").clear();
         inner.changed.notify_one();
-        inner.asked.lock().expect("sessions demandées").clear();
-        inner.expecting.lock().expect("candidats attendus").clear();
-        inner.hosted.lock().expect("sessions accueillies").clear();
-        inner.roads.lock().expect("voies du compte").clear();
+        inner.asked.lock().expect("sessions asked for").clear();
+        inner.expecting.lock().expect("expected candidates").clear();
+        inner.hosted.lock().expect("hosted sessions").clear();
+        inner.roads.lock().expect("account's ways").clear();
     }
 }
 
@@ -1249,7 +1248,7 @@ mod tests {
     #[test]
     fn what_the_server_is_told_follows_the_switch_and_the_engine() {
         let folder = std::env::temp_dir().join(format!(
-            "zyrdeskd-account-{}-acces",
+            "zyrdeskd-account-{}-access",
             zyr_proto::random::alphanumeric_string(8)
         ));
         let hosting = Hosting::new();
@@ -1271,7 +1270,7 @@ mod tests {
     #[test]
     fn a_ticket_lets_a_computer_in_for_as_long_as_it_lives() {
         let folder = std::env::temp_dir().join(format!(
-            "zyrdeskd-account-{}-admis",
+            "zyrdeskd-account-{}-admitted",
             zyr_proto::random::alphanumeric_string(8)
         ));
         let log = Log::open(&folder.join("service.log")).unwrap();
@@ -1303,7 +1302,7 @@ mod tests {
     impl Server {
         async fn start() -> Self {
             let folder = std::env::temp_dir().join(format!(
-                "zyrdeskd-account-{}-serveur",
+                "zyrdeskd-account-{}-server",
                 zyr_proto::random::alphanumeric_string(8)
             ));
             std::fs::create_dir_all(&folder).unwrap();
@@ -1316,7 +1315,7 @@ mod tests {
             let fingerprint = public_key_fingerprint(generated.cert.der()).unwrap();
             let config = Config::parse(&format!(
                 r#"
-name = "Essai"
+name = "Test"
 data_dir = '{}'
 
 [api]
@@ -1422,7 +1421,7 @@ login_attempts_per_minute = 1000
                 .attach(Attach {
                     server: server.address(),
                     username: "victor".to_string(),
-                    password: "douze caractères".to_string(),
+                    password: "twelve characters".to_string(),
                     register: register.then(zyr_control::Registering::default),
                     name: name.to_string(),
                     pin: Some(server.fingerprint),
@@ -1437,7 +1436,7 @@ login_attempts_per_minute = 1000
             while !what(&self.account) {
                 assert!(
                     tokio::time::Instant::now() < deadline,
-                    "{why} : {:?}",
+                    "{why}: {:?}",
                     self.account.standing()
                 );
                 tokio::time::sleep(Duration::from_millis(50)).await;
@@ -1455,7 +1454,7 @@ login_attempts_per_minute = 1000
                 }
                 assert!(
                     tokio::time::Instant::now() < deadline,
-                    "le journal ne dit jamais « {said} » :\n{written}"
+                    "the journal never says « {said} »:\n{written}"
                 );
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
@@ -1481,7 +1480,7 @@ login_attempts_per_minute = 1000
             .attach(Attach {
                 server: server.address(),
                 username: "victor".to_string(),
-                password: "douze caractères".to_string(),
+                password: "twelve characters".to_string(),
                 register: Some(zyr_control::Registering::default()),
                 name: "PC".to_string(),
                 pin: None,
@@ -1502,7 +1501,7 @@ login_attempts_per_minute = 1000
                 .unwrap()
                 .is_some()
         );
-        pc.until("le PC n'est jamais relié", |account| {
+        pc.until("the PC is never connected", |account| {
             account.standing().is_some_and(|it| it.connected)
         })
         .await;
@@ -1518,10 +1517,10 @@ login_attempts_per_minute = 1000
         // The PC accepts remote access; the server learns it at the
         // next turn, and the laptop sees it ready as it arrives.
         pc.hosting.open();
-        let laptop = Computer::new("portable");
+        let laptop = Computer::new("laptop");
         laptop.attach(&server, "Portable", false).await;
         laptop
-            .until("le portable ne voit jamais le PC prêt", |account| {
+            .until("the laptop never sees the PC ready", |account| {
                 account.devices().iter().any(|device| {
                     device.name == "PC de Victor" && device.online && device.access == Access::Ready
                 })
@@ -1567,12 +1566,12 @@ login_attempts_per_minute = 1000
                 .running
                 .app
                 .udp_port
-                .expect("le serveur d'essai a un miroir"),
+                .expect("the test server has a mirror"),
         );
         assert_eq!(met.mirror, Some(mirror));
         let named = tokio::time::timeout(PATIENCE, met.candidates.recv())
             .await
-            .expect("le PC n'a jamais dit où il répond")
+            .expect("the PC never said where it answers")
             .unwrap();
         // On the port of its door, which is the product's in
         // ordinary use and the one the system gave in this test.
@@ -1580,24 +1579,24 @@ login_attempts_per_minute = 1000
         assert_eq!(
             named,
             where_this_computer_answers(port),
-            "le PC dit où il répond, c'est-à-dire cette machine"
+            "the PC says where it answers, which is this machine"
         );
         let seen = tokio::time::timeout(PATIENCE, met.candidates.recv())
             .await
-            .expect("le miroir n'a rien dit au PC")
+            .expect("the mirror told the PC nothing")
             .unwrap();
         assert_eq!(
             seen,
             seen_from_outside(pc.junction.local_address().unwrap(), port)
         );
-        pc.until("le PC n'a jamais admis le portable", |account| {
+        pc.until("the PC never admitted the laptop", |account| {
             account.admitted() == vec![laptop.identity.fingerprint()]
         })
         .await;
         // And it opens its branch of relay in parallel, with nothing
         // waiting on it: the server gave it its pass with the ticket,
         // and the relay took it.
-        assert!(met.relay.is_some(), "le portable n'a pas eu de relais");
+        assert!(met.relay.is_some(), "the laptop got no relay");
         pc.until_it_says("took the pass").await;
         assert_eq!(server.running.sessions_relayed(), 1);
         laptop.account.ended(&met.session);
@@ -1614,13 +1613,13 @@ login_attempts_per_minute = 1000
         };
         tokio::time::timeout(PATIENCE, freed)
             .await
-            .expect("la branche du PC tient sa place sur le relais après la session");
+            .expect("the PC's branch keeps its place on the relay after the session");
 
         // A device that is not ready is refused right here, with the
         // reason, without bothering the server.
         pc.hosting.held_by(Holdup::EngineMissing);
         laptop
-            .until("le portable ne voit jamais le PC sans moteur", |account| {
+            .until("the laptop never sees the PC with no engine", |account| {
                 account
                     .devices()
                     .iter()
@@ -1645,7 +1644,7 @@ login_attempts_per_minute = 1000
             .rename(&pc_device, "PC du salon")
             .await
             .unwrap();
-        pc.until("le PC n'apprend jamais son nouveau nom", |account| {
+        pc.until("the PC never learns its new name", |account| {
             account
                 .devices()
                 .iter()
@@ -1657,7 +1656,7 @@ login_attempts_per_minute = 1000
         let laptop_device = laptop.account.standing().unwrap().device;
         pc.account.revoke(&laptop_device).await.unwrap();
         laptop
-            .until("le portable garde son lien", |account| {
+            .until("the laptop keeps its link", |account| {
                 account.standing().is_none()
             })
             .await;

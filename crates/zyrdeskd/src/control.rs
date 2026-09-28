@@ -401,7 +401,7 @@ fn save_the_far_reach_log(text: &str, answering: &Answering) {
     let path = paths::reach_distant_log();
     if let Err(e) = std::fs::write(&path, text) {
         answering.log.write(&format!(
-            "ce qu'un ordinateur distant atteint n'a pas pu être écrit dans {} : {e}",
+            "what a far computer reaches could not be written to {}: {e}",
             path.display()
         ));
     }
@@ -805,7 +805,7 @@ mod tests {
 
             let answer = caller.ask(&Request::Standing).await.unwrap();
             let Answer::Standing(standing) = answer else {
-                panic!("attendu un état, reçu {answer}");
+                panic!("expected a state, got {answer}");
             };
             assert_eq!(standing.protocol, PROTOCOL);
             assert_eq!(standing.fingerprint, bench.fingerprint);
@@ -819,14 +819,14 @@ mod tests {
             // run reads like a door that is opening, forever.
             bench.hosting.held_by(Holdup::EngineMissing);
             let Ok(Answer::Standing(standing)) = caller.ask(&Request::Standing).await else {
-                panic!("attendu un état");
+                panic!("expected a state");
             };
             assert_eq!(standing.holdup, Holdup::EngineMissing);
 
             bench.hosting.open();
             let answer = caller.ask(&Request::Standing).await.unwrap();
             let Answer::Standing(standing) = answer else {
-                panic!("attendu un état, reçu {answer}");
+                panic!("expected a state, got {answer}");
             };
             assert!(standing.hosting);
         });
@@ -844,7 +844,7 @@ mod tests {
             let mut caller = bench.caller().await;
             for request in [Request::Peers, Request::Sessions, Request::Watching] {
                 let found = caller.ask_for_a_list(&request).await.unwrap();
-                assert!(found.is_empty(), "sur « {request} » : {found:?}");
+                assert!(found.is_empty(), "on « {request} »: {found:?}");
             }
 
             // And the channel is still usable afterwards: the ending was
@@ -871,14 +871,14 @@ mod tests {
             assert!(matches!(answer, Answer::Done), "{answer}");
 
             let Ok(Answer::Standing(standing)) = caller.ask(&Request::Standing).await else {
-                panic!("attendu un état");
+                panic!("expected a state");
             };
             assert!(!standing.wanted);
 
             let answer = caller.ask(&Request::SetHosting { on: true }).await.unwrap();
             assert!(matches!(answer, Answer::Done), "{answer}");
             let Ok(Answer::Standing(standing)) = caller.ask(&Request::Standing).await else {
-                panic!("attendu un état");
+                panic!("expected a state");
             };
             assert!(standing.wanted);
         });
@@ -895,7 +895,7 @@ mod tests {
             let mut caller = bench.caller().await;
 
             let Ok(Answer::Settings(before)) = caller.ask(&Request::Settings).await else {
-                panic!("attendu des réglages");
+                panic!("expected settings");
             };
             assert_eq!(before, Preferred::default());
 
@@ -911,14 +911,14 @@ mod tests {
             assert!(matches!(answer, Answer::Done), "{answer}");
 
             let Ok(Answer::Settings(after)) = caller.ask(&Request::Settings).await else {
-                panic!("attendu des réglages");
+                panic!("expected settings");
             };
             assert_eq!(after, wanted);
 
             // And remote access, which shares the same file, was not
             // carried off along the way.
             let Ok(Answer::Standing(standing)) = caller.ask(&Request::Standing).await else {
-                panic!("attendu un état");
+                panic!("expected a state");
             };
             assert!(standing.wanted);
         });
@@ -955,7 +955,7 @@ mod tests {
                 .await
                 .unwrap();
             let Answer::Refused(reason) = answer else {
-                panic!("attendu un refus, reçu {answer}");
+                panic!("expected a refusal, got {answer}");
             };
             assert_eq!(reason.code(), "account.not_attached", "{reason}");
 
@@ -974,7 +974,7 @@ mod tests {
                 .await
                 .unwrap();
             let Answer::Refused(reason) = answer else {
-                panic!("attendu un refus, reçu {answer}");
+                panic!("expected a refusal, got {answer}");
             };
             assert_eq!(reason.code(), "reach.not_on_this_network", "{reason}");
         });
@@ -1014,7 +1014,7 @@ mod tests {
                 .unwrap();
             // Saying yes here would leave the caller believing its
             // session is watched when nothing watches it.
-            assert!(matches!(answer, Answer::Refused(_)), "reçu {answer}");
+            assert!(matches!(answer, Answer::Refused(_)), "got {answer}");
         });
     }
 
@@ -1030,7 +1030,7 @@ mod tests {
                     .ask(&Request::Release { way: WayId(7) })
                     .await
                     .unwrap();
-                assert!(matches!(answer, Answer::Done), "reçu {answer}");
+                assert!(matches!(answer, Answer::Done), "got {answer}");
             }
         });
     }
@@ -1047,7 +1047,7 @@ mod tests {
             let mut raw = zyr_control::pipe::call(&bench.channel).await.unwrap();
             raw.say("teleport way=1").await.unwrap();
             let answer = raw.hear().await.unwrap().unwrap();
-            assert!(answer.starts_with("no "), "reçu « {answer} »");
+            assert!(answer.starts_with("no "), "got « {answer} »");
 
             // And the desk is still there for everyone else.
             assert!(matches!(
