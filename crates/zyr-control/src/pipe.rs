@@ -76,7 +76,7 @@ where
         if !line.ends_with('\n') {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "message trop long",
+                "message too long",
             ));
         }
         Ok(Some(line.trim_end().to_string()))
@@ -242,16 +242,16 @@ mod tests {
         let listening = tokio::spawn(async move {
             let mut heard = door.accept().await.unwrap();
             let message = heard.hear().await.unwrap().unwrap();
-            heard.say(&format!("écho {message}")).await.unwrap();
+            heard.say(&format!("echo {message}")).await.unwrap();
             // Nothing more is said: the caller sees the channel close.
             assert_eq!(heard.hear().await.unwrap(), None);
         });
 
         let mut speaking = call(&channel).await.unwrap();
-        speaking.say("bonjour").await.unwrap();
+        speaking.say("hello").await.unwrap();
         assert_eq!(
             speaking.hear().await.unwrap(),
-            Some("écho bonjour".to_string())
+            Some("echo hello".to_string())
         );
         drop(speaking);
         listening.await.unwrap();
@@ -295,7 +295,7 @@ mod tests {
         for turn in 0..CALLERS {
             let channel = channel.clone();
             callers.spawn(async move {
-                let mut speaking = call(&channel).await.expect("porte occupée");
+                let mut speaking = call(&channel).await.expect("the door lets the caller in");
                 speaking.say(&turn.to_string()).await.unwrap();
                 assert_eq!(speaking.hear().await.unwrap(), Some(turn.to_string()));
             });
@@ -320,8 +320,8 @@ mod tests {
 
         for turn in 0..3 {
             let mut speaking = call(&channel).await.unwrap();
-            speaking.say(&format!("tour {turn}")).await.unwrap();
-            assert_eq!(speaking.hear().await.unwrap(), Some(format!("tour {turn}")));
+            speaking.say(&format!("turn {turn}")).await.unwrap();
+            assert_eq!(speaking.hear().await.unwrap(), Some(format!("turn {turn}")));
         }
         listening.await.unwrap();
     }

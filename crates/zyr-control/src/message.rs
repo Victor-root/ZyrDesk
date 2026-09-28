@@ -1303,7 +1303,7 @@ mod tests {
             // A sift carries spaces and quotation marks, like anything
             // typed by hand.
             Request::Journal {
-                sift: "tag:clipboard -\"deux mots\"".to_string(),
+                sift: "tag:clipboard -\"two words\"".to_string(),
             },
             Request::FarPointer { way: WayId(7) },
             Request::FarScreens { way: WayId(7) },
@@ -1351,7 +1351,7 @@ mod tests {
             Request::Attach(Attach {
                 server: "zyr.exemple.fr:8443".to_string(),
                 username: "victor".to_string(),
-                password: "douze caractères au moins".to_string(),
+                password: "at least twelve characters".to_string(),
                 register: None,
                 name: String::new(),
                 pin: None,
@@ -1359,7 +1359,7 @@ mod tests {
             Request::Attach(Attach {
                 server: "https://192.168.1.40".to_string(),
                 username: "victor".to_string(),
-                password: "un autre".to_string(),
+                password: "another one".to_string(),
                 register: Some(Registering {
                     email: Some("victor@exemple.fr".to_string()),
                     invitation: Some("AB12-CD34".to_string()),
@@ -1370,7 +1370,7 @@ mod tests {
             Request::Attach(Attach {
                 server: "zyr.exemple.fr".to_string(),
                 username: "victor".to_string(),
-                password: "un autre".to_string(),
+                password: "another one".to_string(),
                 register: Some(Registering::default()),
                 name: "PC".to_string(),
                 pin: None,
@@ -1379,7 +1379,7 @@ mod tests {
             Request::Devices,
             Request::RenameDevice {
                 device: "d1".to_string(),
-                name: "PC du salon".to_string(),
+                name: "Living room PC".to_string(),
             },
             Request::RevokeDevice {
                 device: "d1".to_string(),
@@ -1441,7 +1441,7 @@ mod tests {
             }),
             Answer::Reached(Reached {
                 way: WayId(4),
-                link: "/tmp/mon dossier/zyrdesk-link-8fKq2Lr0/link".to_string(),
+                link: "/tmp/my folder/zyrdesk-link-8fKq2Lr0/link".to_string(),
             }),
             Answer::Peer(Peer {
                 // A computer name contains spaces far more often
@@ -1455,7 +1455,7 @@ mod tests {
                 account: None,
             }),
             Answer::Peer(Peer {
-                name: "PC fixe".to_string(),
+                name: "Desktop PC".to_string(),
                 fingerprint: fingerprint(),
                 host: "192.168.1.20".to_string(),
                 port: 47000,
@@ -1483,7 +1483,7 @@ mod tests {
             // network: a single card, with the address from the network
             // and the word of the account.
             Answer::Peer(Peer {
-                name: "PC de l'atelier".to_string(),
+                name: "Workshop PC".to_string(),
                 fingerprint: fingerprint(),
                 host: "192.168.1.30".to_string(),
                 port: 47000,
@@ -1493,7 +1493,7 @@ mod tests {
                     device: "d9".to_string(),
                     online: false,
                     access: Access::EngineMissing,
-                    shared_by: Some("un ami".to_string()),
+                    shared_by: Some("a friend".to_string()),
                 }),
             }),
             Answer::Session(Session {
@@ -1529,8 +1529,8 @@ mod tests {
             // carries: line breaks and Windows paths, whose backslashes
             // must not read back as line breaks.
             Answer::Journal(
-                "ZyrDesk 0.1.0\nJournaux         : C:\\ProgramData\\ZyrDesk\\logs\n\n\
-                 --- Le service (service.log) ---\nune ligne\nune autre"
+                "ZyrDesk 0.1.0\nLogs             : C:\\ProgramData\\ZyrDesk\\logs\n\n\
+                 --- The service (service.log) ---\na line\nanother one"
                     .to_string(),
             ),
             // One line per screen, folded to travel the way the
@@ -1550,7 +1550,7 @@ mod tests {
             Answer::Account(None),
             Answer::Account(Some(Account {
                 server: "https://zyr.exemple.fr:443".to_string(),
-                name: "Maison".to_string(),
+                name: "Home".to_string(),
                 username: "victor".to_string(),
                 device: "d1".to_string(),
                 connected: true,
@@ -1595,7 +1595,7 @@ mod tests {
     fn every_request_survives_the_round_trip() {
         for request in every_request() {
             let line = request.to_string();
-            assert_eq!(Request::parse(&line), Ok(request), "sur « {line} »");
+            assert_eq!(Request::parse(&line), Ok(request), "on « {line} »");
         }
     }
 
@@ -1603,7 +1603,7 @@ mod tests {
     fn every_answer_survives_the_round_trip() {
         for answer in every_answer() {
             let line = answer.to_string();
-            assert_eq!(Answer::parse(&line), Ok(answer), "sur « {line} »");
+            assert_eq!(Answer::parse(&line), Ok(answer), "on « {line} »");
         }
     }
 
@@ -1678,7 +1678,7 @@ mod tests {
             fingerprint()
         );
         let Ok(Answer::Standing(standing)) = Answer::parse(&line) else {
-            panic!("« {line} » n'est pas relu comme un état");
+            panic!("« {line} » is not read back as a standing");
         };
         assert_eq!(standing.protocol, 6);
         assert!(standing.build.is_empty());
@@ -1700,14 +1700,14 @@ mod tests {
             fingerprint()
         );
         let Ok(Answer::Peer(read)) = Answer::parse(&line) else {
-            panic!("« {line} » n'est pas relu comme un ordinateur");
+            panic!("« {line} » is not read back as a computer");
         };
         assert_eq!(read.account, None);
 
         // And an access state this half has never heard of reads as
         // starting up, which is true for as long as it takes to update
         // it.
-        assert_eq!(access_read("un-etat-inedit"), Access::Starting);
+        assert_eq!(access_read("some-unheard-of-state"), Access::Starting);
         for access in [
             Access::Off,
             Access::Ready,
@@ -1724,7 +1724,7 @@ mod tests {
         // An older half of the product must not show a made-up holdup:
         // it shows "starting", which is true for as long as it takes to
         // update it.
-        assert_eq!(Holdup::read("un-empechement-inedit"), Holdup::Starting);
+        assert_eq!(Holdup::read("some-unheard-of-holdup"), Holdup::Starting);
         assert_eq!(Holdup::read(""), Holdup::Starting);
         for holdup in [Holdup::Starting, Holdup::EngineMissing, Holdup::Unseen] {
             assert_eq!(Holdup::read(holdup.spelled()), holdup);
@@ -1736,7 +1736,7 @@ mod tests {
         // A half of the product older than the other loses the
         // setting it does not know, not the conversation.
         let Ok(Answer::Settings(read)) = Answer::parse("settings asked=2560x1440") else {
-            panic!("« settings asked=2560x1440 » n'est pas relu comme des réglages");
+            panic!("« settings asked=2560x1440 » is not read back as settings");
         };
         assert_eq!(read.asked, zyr_proto::session::Asked::Fixed(2560, 1440));
         assert_eq!(read.bitrate_kbps, Preferred::default().bitrate_kbps);
@@ -1745,9 +1745,9 @@ mod tests {
 
         // And a value nobody understands is worth no more than a
         // missing one: the default, and the session opens all the same.
-        let Ok(Answer::Settings(read)) = Answer::parse("settings asked=ultra bitrate=beaucoup")
+        let Ok(Answer::Settings(read)) = Answer::parse("settings asked=ultra bitrate=plenty")
         else {
-            panic!("« settings asked=ultra » n'est pas relu comme des réglages");
+            panic!("« settings asked=ultra » is not read back as settings");
         };
         assert_eq!(read.asked, Preferred::default().asked);
         assert_eq!(read.bitrate_kbps, Preferred::default().bitrate_kbps);
@@ -1761,8 +1761,8 @@ mod tests {
         for name in [
             "PC de Victor",
             "  PC  ",
-            r"un nom\avec une barre",
-            "ordinateur",
+            r"a name\with a backslash",
+            "computer",
         ] {
             let sent = Answer::Peer(Peer {
                 name: name.to_string(),
@@ -1775,9 +1775,9 @@ mod tests {
             })
             .to_string();
             let Ok(Answer::Peer(read)) = Answer::parse(&sent) else {
-                panic!("« {sent} » n'est pas relu comme un ordinateur");
+                panic!("« {sent} » is not read back as a computer");
             };
-            assert_eq!(read.name, name, "sur « {sent} »");
+            assert_eq!(read.name, name, "on « {sent} »");
 
             let sent = Answer::Session(Session {
                 way: WayId(1),
@@ -1792,9 +1792,9 @@ mod tests {
             })
             .to_string();
             let Ok(Answer::Session(read)) = Answer::parse(&sent) else {
-                panic!("« {sent} » n'est pas relu comme une session");
+                panic!("« {sent} » is not read back as a session");
             };
-            assert_eq!(read.towards, name, "sur « {sent} »");
+            assert_eq!(read.towards, name, "on « {sent} »");
         }
     }
 
