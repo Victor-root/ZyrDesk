@@ -72,20 +72,20 @@ pub fn run(action: Action) -> ExitCode {
         Action::Status => status(),
         Action::Attach(args) => attach(args),
         Action::Detach => done_or_not(
-            "détachement",
+            "detaching",
             &Request::Detach,
-            "Cet ordinateur est détaché de son compte.",
+            "This computer is detached from its account.",
         ),
         Action::Devices => devices(),
         Action::Rename { device, name } => done_or_not(
-            "renommage",
+            "renaming",
             &Request::RenameDevice { device, name },
-            "Appareil renommé.",
+            "Device renamed.",
         ),
         Action::Revoke { device } => done_or_not(
-            "révocation",
+            "revoking",
             &Request::RevokeDevice { device },
-            "Appareil révoqué : il ne parle plus au nom du compte.",
+            "Device revoked: it no longer speaks for the account.",
         ),
     }
 }
@@ -93,16 +93,16 @@ pub fn run(action: Action) -> ExitCode {
 fn status() -> ExitCode {
     let account = match ask(&Request::Account) {
         Ok(Answer::Account(account)) => account,
-        Ok(other) => return failure("état du compte", unexpected(other)),
-        Err(e) => return failure("état du compte", e),
+        Ok(other) => return failure("account status", unexpected(other)),
+        Err(e) => return failure("account status", e),
     };
     let Some(account) = account else {
-        println!("Aucun compte : cet ordinateur ne connaît aucun serveur.");
-        println!("  Pour l'y rattacher : zyr-cli account attach <serveur> --user <nom>");
+        println!("No account: this computer knows no server.");
+        println!("  To attach it to one: zyr-cli account attach <server> --user <name>");
         return ExitCode::SUCCESS;
     };
     println!(
-        "Compte : {} sur {}{}",
+        "Account: {} on {}{}",
         account.username,
         if account.name.is_empty() {
             account.server.clone()
@@ -115,12 +115,12 @@ fn status() -> ExitCode {
             format!(" ({})", account.server)
         }
     );
-    println!("  Cet ordinateur : appareil {}", account.device);
+    println!("  This computer: device {}", account.device);
     if account.connected {
-        println!("  Canal vivant : relié");
+        println!("  Live channel: connected");
     } else {
         println!(
-            "  Canal vivant : injoignable{}",
+            "  Live channel: unreachable{}",
             account.trouble.map_or_else(String::new, |why| format!(
                 "\n    {}",
                 zyr_i18n::fact(&why).replace('\n', "\n    ")
@@ -133,7 +133,7 @@ fn status() -> ExitCode {
 fn attach(args: AttachArgs) -> ExitCode {
     let password = match password(args.password_stdin) {
         Ok(password) => password,
-        Err(e) => return failure("lecture du mot de passe", e),
+        Err(e) => return failure("reading the password", e),
     };
     let request = Request::Attach(Attach {
         server: args.server.clone(),
@@ -148,24 +148,22 @@ fn attach(args: AttachArgs) -> ExitCode {
     });
     match ask(&request) {
         Ok(Answer::Done) => {
-            println!("Cet ordinateur est rattaché au compte.");
-            println!("  Ce qu'il en sait : zyr-cli account status");
+            println!("This computer is attached to the account.");
+            println!("  What it knows of it: zyr-cli account status");
             ExitCode::SUCCESS
         }
         // Neither done nor refused: the person is asked to compare, and
         // to come back with the key pinned if it is the right one.
         Ok(Answer::Unpinned { presented }) => {
-            println!("Ce serveur présente un certificat que personne ne garantit.");
-            println!("  Empreinte de sa clé : {presented}");
-            println!(
-                "  Si c'est bien celle que l'installation du serveur a affichée, relancez avec :"
-            );
+            println!("This server presents a certificate nobody vouches for.");
+            println!("  Fingerprint of its key: {presented}");
+            println!("  If it is indeed the one the server's installation showed, run again with:");
             println!("    --trust {presented}");
             ExitCode::FAILURE
         }
-        Ok(Answer::Refused(reason)) => failure("rattachement au compte", zyr_i18n::fact(&reason)),
-        Ok(other) => failure("rattachement au compte", unexpected(other)),
-        Err(e) => failure("rattachement au compte", e),
+        Ok(Answer::Refused(reason)) => failure("attaching to the account", zyr_i18n::fact(&reason)),
+        Ok(other) => failure("attaching to the account", unexpected(other)),
+        Err(e) => failure("attaching to the account", e),
     }
 }
 
@@ -175,7 +173,7 @@ fn attach(args: AttachArgs) -> ExitCode {
 /// prompt would be a library for one line.
 fn password(from_stdin: bool) -> Result<String, String> {
     if !from_stdin {
-        print!("Mot de passe : ");
+        print!("Password: ");
         io::stdout().flush().map_err(|e| e.to_string())?;
     }
     let mut line = String::new();
@@ -185,7 +183,7 @@ fn password(from_stdin: bool) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     let password = line.trim_end_matches(['\r', '\n']).to_string();
     if password.is_empty() {
-        return Err("aucun mot de passe".to_string());
+        return Err("no password".to_string());
     }
     Ok(password)
 }
@@ -199,14 +197,14 @@ fn devices() -> ExitCode {
                 _ => None,
             })
             .collect::<Vec<_>>(),
-        Err(e) => return failure("appareils du compte", e),
+        Err(e) => return failure("the account's devices", e),
     };
     if devices.is_empty() {
-        println!("Aucun appareil : cet ordinateur n'est rattaché à aucun compte, ou le serveur");
-        println!("  n'a pas encore répondu. Lancez « zyr-cli account status ».");
+        println!("No device: this computer is attached to no account, or the server");
+        println!("  has not answered yet. Run « zyr-cli account status ».");
         return ExitCode::SUCCESS;
     }
-    println!("Appareils du compte :\n");
+    println!("Devices of the account:\n");
     let widest = devices
         .iter()
         .map(|device| device.name.chars().count())
@@ -219,7 +217,7 @@ fn devices() -> ExitCode {
             device.name,
             presence(device.online, device.access, device.last_seen),
             if device.this {
-                "  (cet ordinateur)"
+                "  (this computer)"
             } else {
                 ""
             },
@@ -232,24 +230,24 @@ fn devices() -> ExitCode {
 /// Where a device stands, in one phrase.
 fn presence(online: bool, access: zyr_broker::rest::Access, last_seen: Option<u64>) -> String {
     if online {
-        return format!("en ligne, {}", zyr_i18n::fact(&access.fact()));
+        return format!("online, {}", zyr_i18n::fact(&access.fact()));
     }
     match last_seen {
         Some(seen) => format!(
-            "hors ligne, vu {}",
+            "offline, seen {}",
             ago(zyr_broker::now().saturating_sub(seen))
         ),
-        None => "hors ligne".to_string(),
+        None => "offline".to_string(),
     }
 }
 
 /// How long ago, in words.
 fn ago(seconds: u64) -> String {
     match seconds {
-        0..60 => "il y a moins d'une minute".to_string(),
-        60..3600 => format!("il y a {} min", seconds / 60),
-        3600..86_400 => format!("il y a {} h", seconds / 3600),
-        _ => format!("il y a {} j", seconds / 86_400),
+        0..60 => "less than a minute ago".to_string(),
+        60..3600 => format!("{} min ago", seconds / 60),
+        3600..86_400 => format!("{} h ago", seconds / 3600),
+        _ => format!("{} d ago", seconds / 86_400),
     }
 }
 
@@ -309,9 +307,9 @@ mod tests {
 
     #[test]
     fn how_long_ago_reads_in_words() {
-        assert_eq!(ago(12), "il y a moins d'une minute");
-        assert_eq!(ago(200), "il y a 3 min");
-        assert_eq!(ago(7_300), "il y a 2 h");
-        assert_eq!(ago(200_000), "il y a 2 j");
+        assert_eq!(ago(12), "less than a minute ago");
+        assert_eq!(ago(200), "3 min ago");
+        assert_eq!(ago(7_300), "2 h ago");
+        assert_eq!(ago(200_000), "2 d ago");
     }
 }

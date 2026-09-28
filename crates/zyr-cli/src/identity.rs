@@ -16,9 +16,9 @@ pub fn run() -> ExitCode {
     match Identity::load_or_create(&folder) {
         Ok(identity) => {
             println!("{}", identity.fingerprint());
-            println!("\n  Conservée dans {}", folder.display());
+            println!("\n  Kept in {}", folder.display());
             ExitCode::SUCCESS
         }
-        Err(e) => failure("identité de cette machine", e),
+        Err(e) => failure("this machine's identity", e),
     }
 }

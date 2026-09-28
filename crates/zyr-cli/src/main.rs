@@ -56,7 +56,7 @@ fn main() -> std::process::ExitCode {
 
 /// Reports a failure the same way everywhere, on the error stream.
 pub fn failure(context: &str, error: impl std::fmt::Display) -> std::process::ExitCode {
-    eprintln!("Échec : {context}");
+    eprintln!("Failure: {context}");
     eprintln!("  {error}");
     std::process::ExitCode::FAILURE
 }

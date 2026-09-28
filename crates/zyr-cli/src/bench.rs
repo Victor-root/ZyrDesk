@@ -45,46 +45,46 @@ struct Bench;
 
 impl Answers for Bench {
     fn secure_attention(&self) -> Result<(), String> {
-        Err("le banc de mesure ne presse aucune touche".to_string())
+        Err("the bench presses no key".to_string())
     }
 
     fn hush_the_speakers(&self, _quiet: bool) -> Result<(), String> {
-        Err("le banc de mesure n'a pas d'enceintes".to_string())
+        Err("the bench has no speakers".to_string())
     }
 
     fn lock_the_screen(&self) -> Result<(), String> {
-        Err("le banc de mesure n'a pas d'écran à verrouiller".to_string())
+        Err("the bench has no screen to lock".to_string())
     }
 
     fn screen_for_a_session(
         &self,
         _wanted: Option<zyr_proto::session::WantedScreen>,
     ) -> Result<Option<(u32, u32)>, String> {
-        Err("le banc de mesure n'a pas d'écran virtuel".to_string())
+        Err("the bench has no virtual screen".to_string())
     }
 
     fn journal(&self, _sift: &str) -> Result<String, String> {
-        Err("le banc de mesure ne tient pas de journal".to_string())
+        Err("the bench keeps no journal".to_string())
     }
 
     fn reach_log(&self) -> Result<String, String> {
-        Err("le banc de mesure ne mesure pas ce qu'il atteint".to_string())
+        Err("the bench does not measure what it reaches".to_string())
     }
 
     fn empty_the_journal(&self) -> Result<(), String> {
-        Err("le banc de mesure ne tient pas de journal".to_string())
+        Err("the bench keeps no journal".to_string())
     }
 
     fn pointer(&self) -> Result<zyr_proto::session::Pointer, String> {
-        Err("le banc de mesure n'a pas de curseur".to_string())
+        Err("the bench has no pointer".to_string())
     }
 
     fn screens(&self) -> Result<String, String> {
-        Err("le banc de mesure ne filme aucun écran".to_string())
+        Err("the bench films no screen".to_string())
     }
 
     fn film_this_screen(&self, _id: Option<String>) -> Result<(), String> {
-        Err("le banc de mesure ne filme aucun écran".to_string())
+        Err("the bench films no screen".to_string())
     }
 
     fn clipboard(
@@ -92,7 +92,7 @@ impl Answers for Bench {
         _pushing: Option<zyr_proto::clipboard::Clip>,
         _seen: Option<zyr_proto::clipboard::Stamp>,
     ) -> Result<Option<zyr_proto::clipboard::Clip>, String> {
-        Err("le banc de mesure n'a pas de presse-papiers".to_string())
+        Err("the bench has no clipboard".to_string())
     }
 
     fn pieces(
@@ -100,7 +100,7 @@ impl Answers for Bench {
         _asking: Option<Wanted>,
         _giving: Option<Given>,
     ) -> Result<(Option<Given>, Option<Wanted>), String> {
-        Err("le banc de mesure ne copie aucun fichier".to_string())
+        Err("the bench copies no file".to_string())
     }
 }
 /// Rhythm at which the host bench watches for the traffic to start.
@@ -158,7 +158,7 @@ fn allowed_rate() -> impl clap::builder::TypedValueParser<Value = u64> {
 pub fn run(action: Action) -> ExitCode {
     let runtime = match tokio::runtime::Runtime::new() {
         Ok(runtime) => runtime,
-        Err(e) => return failure("démarrage du banc", e),
+        Err(e) => return failure("starting the bench", e),
     };
 
     let outcome = match action {
@@ -168,7 +168,7 @@ pub fn run(action: Action) -> ExitCode {
 
     match outcome {
         Ok(()) => ExitCode::SUCCESS,
-        Err(e) => failure("le banc n'a pas pu aller au bout", e),
+        Err(e) => failure("the bench could not see it through", e),
     }
 }
 
@@ -198,22 +198,22 @@ async fn hold_the_bench(args: HostArgs) -> Result<(), Box<dyn Error>> {
         SocketAddr::new(EVERY_INTERFACE, TUNNEL_PORT),
     )?;
 
-    println!("Banc en attente sur le port {TUNNEL_PORT}.");
-    println!("  Empreinte de cet ordinateur : {}", identity.fingerprint());
-    println!("  Débit servi : {} Mb/s", args.rate);
-    println!("\nCtrl+C pour arrêter.\n");
+    println!("Bench waiting on port {TUNNEL_PORT}.");
+    println!("  This computer's fingerprint: {}", identity.fingerprint());
+    println!("  Rate served: {} Mb/s", args.rate);
+    println!("\nCtrl+C to stop.\n");
 
     loop {
         let connection = match endpoint.accept().await {
             Ok(connection) => connection,
             // A refused device must not close the bench.
             Err(e) => {
-                println!("Connexion écartée : {e}");
+                println!("Connection turned away: {e}");
                 continue;
             }
         };
 
-        println!("Mesure en cours...");
+        println!("Measuring...");
         let media = media.clone();
         // Each measurement gets its own task: the bench has to stay ready
         // to accept the next one, or the connection after it times out
@@ -225,15 +225,15 @@ async fn hold_the_bench(args: HostArgs) -> Result<(), Box<dyn Error>> {
                     let (without, with) = serve_and_measure(&mut tunnel).await;
                     // The return trip is only visible from here: the
                     // other bench knows only what it sent itself.
-                    println!("  {}", breakdown(&tunnel, &observed, "au retour"));
+                    println!("  {}", breakdown(&tunnel, &observed, "on the way back"));
                     report_computation(args.rate, without, with);
                 }
-                Err(e) => println!("Tunnel impossible : {e}"),
+                Err(e) => println!("Tunnel not established: {e}"),
             }
             // The tunnel is sized for whatever comes next, as the service
             // does once a session has gone.
             media.serving_nobody();
-            println!("Mesure terminée.\n");
+            println!("Measurement over.\n");
         });
     }
 }
@@ -270,8 +270,8 @@ async fn serve(
 async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
     let identity = Identity::load_or_create(&paths::identity_dir())?;
 
-    println!("Empreinte de cet ordinateur : {}", identity.fingerprint());
-    println!("Connexion à {}...", args.address);
+    println!("This computer's fingerprint: {}", identity.fingerprint());
+    println!("Connecting to {}...", args.address);
 
     // The direct reference is never degraded: it has to stay the same
     // trip for both measurements, or the comparison says nothing.
@@ -296,7 +296,7 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
     let size = connection
         .guaranteed_usable_datagram()
         .and_then(datagram_budget)
-        .ok_or("le chemin n'accepte aucun datagramme")?;
+        .ok_or("the path accepts no datagram")?;
 
     let cadence = Cadence {
         size,
@@ -306,14 +306,14 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
     };
 
     println!(
-        "\n{} paquets de {} octets par seconde, pendant {} s, deux fois.",
+        "\n{} packets of {} bytes per second, for {} s, twice.",
         cadence.packets_per_frame() as u64 * cadence.frames_per_second as u64,
         cadence.size,
         args.duration
     );
     if args.loss > 0 {
         println!(
-            "Perte provoquée sous le tunnel : {:.1} % des paquets émis.",
+            "Loss provoked underneath the tunnel: {:.1} % of the packets sent.",
             args.loss as f64 / 10.0
         );
     }
@@ -321,7 +321,7 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
     // The processor is read on each of the two bursts: the gap between
     // them is what the tunnel costs in computation, the probe itself
     // already consuming something.
-    println!("\nMesure directe...");
+    println!("\nDirect measurement...");
     let direct_computation = Stopwatch::start();
     let direct = probe::probe(
         Road::Bare {
@@ -333,7 +333,7 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
     .await?;
     let direct_load = direct_computation.and_then(|s| s.load());
 
-    println!("Mesure à travers le tunnel...");
+    println!("Measurement through the tunnel...");
     let (tunnel, player) = open_the_session(&connection, serving).await?;
     let tunnel_computation = Stopwatch::start();
     let through_tunnel = probe::probe(Road::Tunnel(player), cadence).await?;
@@ -375,80 +375,80 @@ fn report(
     connection: &Connection,
     tunnel: &Tunnel,
 ) {
-    println!("\n--- Sans tunnel (référence) ---");
+    println!("\n--- Without the tunnel (reference) ---");
     detail(direct);
 
-    println!("\n--- À travers le tunnel ---");
+    println!("\n--- Through the tunnel ---");
     detail(through_tunnel);
-    println!("  taille de paquet   {size} octets");
+    println!("  packet size        {size} bytes");
     println!(
-        "  aller-retour vu par le transport   {}",
+        "  round trip seen by the transport   {}",
         milliseconds(connection.round_trip())
     );
 
     println!(
-        "  ce que ce banc voit   {}",
-        breakdown(tunnel, connection, "à l'aller")
+        "  what this bench sees   {}",
+        breakdown(tunnel, connection, "on the way out")
     );
-    println!("                        le retour est compté par l'autre banc");
+    println!("                         the way back is counted by the other bench");
 
     let reading = tunnel.reading();
     if reading.too_large > 0 {
         println!(
-            "  {} paquets trop gros pour le chemin : il s'est rétréci sous \
-             ce qu'il promettait",
+            "  {} packets too large for the path: it shrank below \
+             what it promised",
             reading.too_large
         );
     }
     if reading.crowded > 0 {
         println!(
-            "  {} paquets jetés faute de place dans la file d'envoi : le chemin \
-             ne prend pas les paquets au rythme où le moteur les fait",
+            "  {} packets dropped for lack of room in the send queue: the path \
+             does not take the packets at the pace the engine makes them",
             reading.crowded
         );
     }
     if reading.crowded_here > 0 {
         println!(
-            "  {} paquets jetés ici faute de place vers le lecteur : il ne les \
-             prenait pas assez vite",
+            "  {} packets dropped here for lack of room towards the player: it was \
+             not taking them fast enough",
             reading.crowded_here
         );
     }
     if reading.unreadable > 0 {
-        println!("  {} datagrammes illisibles", reading.unreadable);
+        println!("  {} unreadable datagrams", reading.unreadable);
     }
     if reading.no_recipient > 0 {
         println!(
-            "  {} datagrammes arrivés sur un canal muet côté local",
+            "  {} datagrams arrived on a silent channel on the local side",
             reading.no_recipient
         );
     }
     if reading.refused > 0 {
         println!(
-            "  {} paquets refusés par le système, sans conséquence sur la session",
+            "  {} packets refused by the system, with no consequence for the session",
             reading.refused
         );
     }
 
-    println!("\n--- Ce que coûte le tunnel ---");
+    println!("\n--- What the tunnel costs ---");
     println!(
-        "  médiane            {}",
+        "  median             {}",
         gap(direct.median, through_tunnel.median)
     );
     println!(
-        "  centile 95         {}",
+        "  95th percentile    {}",
         gap(direct.percentile_95, through_tunnel.percentile_95)
     );
     println!(
-        "  centile 99         {}",
+        "  99th percentile    {}",
         gap(direct.percentile_99, through_tunnel.percentile_99)
     );
     println!(
-        "  perte              {:+.2} point(s)",
+        "  loss               {:+.2} point(s)",
         through_tunnel.loss() - direct.loss()
     );
     println!(
-        "  débit tenu         {:.1} Mb/s contre {:.1} Mb/s",
+        "  rate held          {:.1} Mb/s against {:.1} Mb/s",
         through_tunnel.rate(),
         direct.rate()
     );
@@ -473,7 +473,7 @@ async fn serve_and_measure(tunnel: &mut Tunnel) -> (Option<f64>, Option<f64>) {
         tokio::select! {
             outcome = tunnel.wait() => {
                 if let Err(e) = outcome {
-                    println!("Fin de la mesure : {e}");
+                    println!("End of the measurement: {e}");
                 }
                 return (load_without, with_tunnel.and_then(|s| s.load()));
             }
@@ -496,24 +496,24 @@ async fn serve_and_measure(tunnel: &mut Tunnel) -> (Option<f64>, Option<f64>) {
 /// assuming the computation follows the number of packets handled.
 fn report_computation(rate_mbps: u64, direct: Option<f64>, tunnel: Option<f64>) {
     let (Some(direct), Some(tunnel)) = (direct, tunnel) else {
-        println!("\n  Charge processeur : non mesurable sur cette plateforme.");
+        println!("\n  Processor load: not measurable on this platform.");
         return;
     };
 
     let cost = tunnel - direct;
-    println!("\n--- Processeur de ce banc ---");
-    println!("  sans tunnel        {direct:.1} % d'un coeur");
-    println!("  avec tunnel        {tunnel:.1} % d'un coeur");
+    println!("\n--- This bench's processor ---");
+    println!("  without tunnel     {direct:.1} % of a core");
+    println!("  with tunnel        {tunnel:.1} % of a core");
     println!(
-        "  coût du tunnel     {cost:+.1} point(s) pour {} Mb/s traversés",
+        "  tunnel cost        {cost:+.1} point(s) for {} Mb/s going through",
         rate_mbps * 2
     );
     println!(
-        "  soit               {:.1} point(s) pour une session à {rate_mbps} Mb/s, \
-         qui n'en fait qu'un sens",
+        "  that is            {:.1} point(s) for a session at {rate_mbps} Mb/s, \
+         which only goes one way",
         cost / 2.0
     );
-    println!("  machine à {} coeurs", cpu::cores());
+    println!("  machine with {} cores", cpu::cores());
 }
 
 /// Where what is missing comes from, seen by one bench alone.
@@ -527,26 +527,26 @@ fn breakdown(tunnel: &Tunnel, connection: &Connection, way: &str) -> String {
         .to_tunnel
         .saturating_sub(connection.datagrams_sent());
     format!(
-        "{dropped} datagramme(s) jeté(s) faute de place, {} paquet(s) perdu(s) {way}",
+        "{dropped} datagram(s) dropped for lack of room, {} packet(s) lost {way}",
         connection.packets_lost()
     )
 }
 
 fn detail(outcome: &Outcome) {
     println!(
-        "  aller-retour       médiane {}   c95 {}   c99 {}   pire {}",
+        "  round trip         median {}   p95 {}   p99 {}   worst {}",
         milliseconds(outcome.median),
         milliseconds(outcome.percentile_95),
         milliseconds(outcome.percentile_99),
         milliseconds(outcome.worst)
     );
     println!(
-        "  perte              {} sur {} ({:.2} %)",
+        "  loss               {} of {} ({:.2} %)",
         outcome.lost(),
         outcome.sent,
         outcome.loss()
     );
-    println!("  débit tenu         {:.1} Mb/s", outcome.rate());
+    println!("  rate held          {:.1} Mb/s", outcome.rate());
 }
 
 #[cfg(test)]
