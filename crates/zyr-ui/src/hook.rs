@@ -66,7 +66,7 @@ impl Held {
             DispatchMessageW, GetMessageW, PM_NOREMOVE, PeekMessageW,
         };
 
-        let mut held = self.worker.lock().expect("fil d'un crochet du système");
+        let mut held = self.worker.lock().expect("system hook's thread");
         if held.is_some() {
             return None;
         }
@@ -139,7 +139,7 @@ impl Held {
     pub fn let_go(&self) -> bool {
         use windows_sys::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_QUIT};
 
-        let mut held = self.worker.lock().expect("fil d'un crochet du système");
+        let mut held = self.worker.lock().expect("system hook's thread");
         let Some(worker) = held.take() else {
             return false;
         };

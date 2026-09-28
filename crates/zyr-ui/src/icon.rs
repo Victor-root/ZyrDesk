@@ -74,7 +74,7 @@ pub fn on_the_window() {
         let icon = unsafe { LoadImageW(ours, IDI_APPLICATION, IMAGE_ICON, side, side, 0) };
         if icon.is_null() {
             note(&format!(
-                "icône de la fenêtre : Windows n'a pas rendu le dessin en {side} px"
+                "window icon: Windows did not render the drawing at {side} px"
             ));
             continue;
         }
@@ -82,7 +82,7 @@ pub fn on_the_window() {
         unsafe { SendMessageW(home, WM_SETICON, which as WPARAM, icon as LPARAM) };
     }
     note(&format!(
-        "icône de la fenêtre posée en {} et {} px (écran à {} %)",
+        "window icon set at {} and {} px (screen at {} %)",
         sides[0].1,
         sides[1].1,
         dpi * 100 / 96

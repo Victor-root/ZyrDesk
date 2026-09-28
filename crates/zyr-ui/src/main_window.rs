@@ -78,7 +78,7 @@ const PLACE: usize = 1;
 static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
 
 pub(crate) fn program() -> Option<App> {
-    PROGRAM.lock().expect("programme de la fenêtre").clone()
+    PROGRAM.lock().expect("window's program").clone()
 }
 
 /// The window, or zero as long as it is not open.
@@ -133,7 +133,7 @@ pub fn open(app: &App) -> Result<(), String> {
     if handle() != 0 {
         return Ok(());
     }
-    *PROGRAM.lock().expect("programme de la fenêtre") = Some(app.clone());
+    *PROGRAM.lock().expect("window's program") = Some(app.clone());
 
     let class_name = crate::win32::wide(CLASS_NAME);
     let title = crate::win32::wide(CLASS_NAME);
@@ -195,11 +195,11 @@ pub fn open(app: &App) -> Result<(), String> {
         )
     };
     if hwnd.is_null() {
-        return Err("la fenêtre de ZyrDesk n'a pas pu s'ouvrir".to_string());
+        return Err("ZyrDesk's window could not open".to_string());
     }
     HANDLE.store(hwnd as isize, Ordering::Relaxed);
     note(&format!(
-        "fenêtre ouverte par ZyrDesk, {width}x{height} px à {} %",
+        "window opened by ZyrDesk, {width}x{height} px at {} %",
         dpi * 100 / 96
     ));
     Ok(())
@@ -207,7 +207,7 @@ pub fn open(app: &App) -> Result<(), String> {
 
 #[cfg(not(windows))]
 pub fn open(_app: &App) -> Result<(), String> {
-    Err("ZyrDesk n'ouvre de fenêtre que sous Windows".to_string())
+    Err("ZyrDesk only opens a window on Windows".to_string())
 }
 
 /// A page length in real pixels, on a screen of this
@@ -407,11 +407,11 @@ fn say_whether_it_goes_down_or_up(what: usize) {
         return;
     }
     note(&format!(
-        "fenêtre {} ; le premier plan est {}",
+        "window {}; the front is {}",
         if minimized {
-            "rangée dans la barre des tâches"
+            "put down in the taskbar"
         } else {
-            "ressortie de la barre des tâches"
+            "brought back from the taskbar"
         },
         crate::picture::the_front_in_words()
     ));
@@ -700,7 +700,7 @@ pub fn take_the_screen(whole: bool) {
     if hwnd.is_null() || FULL_SCREEN.swap(whole, Ordering::Relaxed) == whole {
         return;
     }
-    let mut before = BEFORE_FULL_SCREEN.lock().expect("place de la fenêtre");
+    let mut before = BEFORE_FULL_SCREEN.lock().expect("window's place");
     if whole {
         let mut place: WINDOWPLACEMENT = unsafe { std::mem::zeroed() };
         place.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;

@@ -24,10 +24,10 @@
 //! their name: the key engraved A in France is the key engraved Q
 //! elsewhere, and the far computer reads it with its own layout.
 //!
-//! The mouse has two ways. On a desktop (« Bureau ») the pointer is where
+//! The mouse has two ways. On a desktop (« Desktop ») the pointer is where
 //! the hand puts it: its place over the picture is sent, and this
 //! computer draws its own pointer in the shape the far one has, with no
-//! round trip behind the hand. In a game (« Jeu ») what counts is
+//! round trip behind the hand. In a game (« Game ») what counts is
 //! movement: it is read straight from the mouse, the pointer here is
 //! hidden and shut in the middle of the picture, and the far computer
 //! draws its own into the picture.
@@ -375,7 +375,7 @@ fn build() -> Result<isize, Fact> {
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);
     LAST_PLACE.store(u32::MAX, Ordering::Relaxed);
     note(&format!(
-        "fenêtre de l'image prête, {}x{} px",
+        "picture's window ready, {}x{} px",
         inside.right, inside.bottom
     ));
     Ok(window as isize)
@@ -462,7 +462,7 @@ fn tear_down(window: isize) {
             SetFocus(home);
         }
     }
-    note("fenêtre de l'image fermée");
+    note("picture's window closed");
 }
 
 #[cfg(not(windows))]
@@ -616,16 +616,16 @@ fn listen_to_the_mouse(yes: bool) {
         // SAFETY: no argument; the error of the call just above.
         let code = unsafe { GetLastError() };
         note(&format!(
-            "souris de jeu {} refusée par Windows (RegisterRawInputDevices, erreur {code})",
-            if yes { "demandée" } else { "rendue" }
+            "game mouse {} refused by Windows (RegisterRawInputDevices, error {code})",
+            if yes { "asked for" } else { "given back" }
         ));
         return;
     }
     LISTENING.store(yes, Ordering::Relaxed);
     note(if yes {
-        "souris lue sur l'appareil, pour un jeu"
+        "mouse read from the device, for a game"
     } else {
-        "souris rendue au bureau"
+        "mouse given back to the desktop"
     });
 }
 
@@ -720,7 +720,7 @@ unsafe extern "system" fn answer(
                 if !held_before(with)
                     && let Some(app) = crate::main_window::program()
                 {
-                    note("Alt+F4 sur l'image, le clavier étant partagé : la session se termine");
+                    note("Alt+F4 on the picture, the keyboard being shared: the session ends");
                     crate::session::end_it(&app);
                 }
                 return 0;

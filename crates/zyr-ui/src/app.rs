@@ -94,20 +94,20 @@ fn post(work: Work) -> Result<(), String> {
 
     let mailbox = MAILBOX.load(Ordering::Relaxed) as HWND;
     if mailbox.is_null() {
-        return Err("le fil principal n'a pas encore de boîte aux lettres".to_string());
+        return Err("the main thread has no mailbox yet".to_string());
     }
-    TO_DO.lock().expect("travail du fil principal").push(work);
+    TO_DO.lock().expect("main thread's work").push(work);
     // SAFETY: a window of ours, to which we post a message that
     // is ours alone.
     if unsafe { PostMessageW(mailbox, WORK_WAITING, 0, 0) } == 0 {
-        return Err("le fil principal ne prend plus de courrier".to_string());
+        return Err("the main thread takes no more mail".to_string());
     }
     Ok(())
 }
 
 #[cfg(not(windows))]
 fn post(_work: Work) -> Result<(), String> {
-    Err("il n'y a pas de fil de fenêtres hors de Windows".to_string())
+    Err("there is no window thread outside Windows".to_string())
 }
 
 /// Opens the mailbox. To be done on the main thread, before everything
@@ -119,7 +119,7 @@ pub fn open_the_mailbox() -> Result<(), String> {
         CreateWindowExW, HWND_MESSAGE, RegisterClassW, WNDCLASSW,
     };
 
-    let class_name = crate::win32::wide("ZyrDeskCourrier");
+    let class_name = crate::win32::wide("ZyrDeskMailbox");
     // SAFETY: a class declared once and a window built on it, on the
     // thread that will pump its messages. It shows nothing: a window
     // whose parent is this one is never drawn.
@@ -154,7 +154,7 @@ pub fn open_the_mailbox() -> Result<(), String> {
         )
     };
     if mailbox.is_null() {
-        return Err("le fil principal n'a pas pu ouvrir de boîte aux lettres".to_string());
+        return Err("the main thread could not open a mailbox".to_string());
     }
     MAILBOX.store(mailbox as isize, Ordering::Relaxed);
     Ok(())
@@ -162,7 +162,7 @@ pub fn open_the_mailbox() -> Result<(), String> {
 
 #[cfg(not(windows))]
 pub fn open_the_mailbox() -> Result<(), String> {
-    Err("il n'y a pas de fil de fenêtres hors de Windows".to_string())
+    Err("there is no window thread outside Windows".to_string())
 }
 
 /// SAFETY: called by the system on the thread that made this window,
@@ -181,7 +181,7 @@ unsafe extern "system" fn receives(
             // Taken out of the lock before being done: a job that
             // carried another one would take again a lock that is
             // still held, and the main thread would stop for good.
-            let works = std::mem::take(&mut *TO_DO.lock().expect("travail du fil principal"));
+            let works = std::mem::take(&mut *TO_DO.lock().expect("main thread's work"));
             for work in works {
                 work();
             }
@@ -327,9 +327,7 @@ pub fn count_in_real_pixels() {}
 static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
 
 fn runtime() -> &'static tokio::runtime::Runtime {
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Runtime::new().expect("le moteur des tâches n'a pas pu démarrer")
-    })
+    RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().expect("the task runtime starts"))
 }
 
 /// Starts a task, which will live its own life.

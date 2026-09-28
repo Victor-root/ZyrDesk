@@ -135,7 +135,7 @@ fn main() {
 
     let app = app::App::new();
     if let Err(e) = app::open_the_mailbox() {
-        journal::note(&format!("ZyrDesk ne démarre pas : {e}"));
+        journal::note(&format!("ZyrDesk does not start: {e}"));
         return;
     }
     // What the person chose to look at, read again before the window
@@ -143,7 +143,7 @@ fn main() {
     // length of a beat, would be seen.
     theme::what_was_chosen();
     if let Err(e) = main_window::open(&app) {
-        journal::note(&format!("ZyrDesk ne démarre pas : {e}"));
+        journal::note(&format!("ZyrDesk does not start: {e}"));
         return;
     }
     theme::on_the_window();
@@ -156,7 +156,7 @@ fn main() {
     // The icon beside the clock: from here on, something on screen says
     // this program is running, whatever becomes of the window.
     if let Err(e) = tray::raise() {
-        journal::note(&format!("pas d'icône dans la zone de notification : {e}"));
+        journal::note(&format!("no icon in the notification area: {e}"));
     }
     // Nothing of this product runs while nobody is using it, so opening
     // it is what puts the service back on its feet.

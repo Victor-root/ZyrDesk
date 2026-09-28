@@ -59,12 +59,12 @@ pub fn wake_the_service() {
         if Service::join().await.is_ok() {
             return;
         }
-        note("service muet, démarrage demandé");
+        note("service silent, start asked for");
         let outcome = crate::app::spawn_blocking(started).await;
         note(&match outcome {
-            Ok(Ok(())) => "service demandé au démarrage".to_string(),
-            Ok(Err(e)) => format!("service non démarré : {e}"),
-            Err(e) => format!("service non démarré : {e}"),
+            Ok(Ok(())) => "service asked to start".to_string(),
+            Ok(Err(e)) => format!("service not started: {e}"),
+            Err(e) => format!("service not started: {e}"),
         });
     });
 }
@@ -101,6 +101,6 @@ fn started() -> std::io::Result<()> {
 #[cfg(not(windows))]
 fn started() -> std::io::Result<()> {
     Err(std::io::Error::other(
-        "le service ZyrDesk n'existe que sous Windows",
+        "the ZyrDesk service only exists on Windows",
     ))
 }

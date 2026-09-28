@@ -352,24 +352,24 @@ pub fn tell_what_is_asked_for(
     let (wide, high) = (settings.width, settings.height);
     let seen = match screen {
         Some(measured) => format!(
-            "écran de cet ordinateur : {}x{} pixels réels à {} Hz, agrandissement {} %",
+            "this computer's screen: {}x{} real pixels at {} Hz, magnified {} %",
             measured.wide, measured.high, measured.refresh, measured.scale
         ),
-        None => "écran de cet ordinateur : pas mesurable, taille courante supposée".to_string(),
+        None => "this computer's screen: not measurable, the usual size assumed".to_string(),
     };
     let why = match screen {
         Some(measured) if (measured.wide, measured.high) == (wide, high) => {
-            "l'écran est demandé entier, un pixel envoyé pour un pixel affiché".to_string()
+            "the whole screen is asked for, one pixel sent for one pixel shown".to_string()
         }
         Some(measured) => format!(
-            "taille choisie à la main ({asked}) : {:.2} fois moins large et {:.2} fois moins haut que l'écran, donc autant de détail en moins et l'image est étirée à l'arrivée",
+            "size chosen by hand ({asked}): {:.2} times narrower and {:.2} times lower than the screen, so that much less detail, and the picture is stretched on arrival",
             f64::from(measured.wide) / f64::from(wide),
             f64::from(measured.high) / f64::from(high),
         ),
-        None => format!("taille demandée : {asked}"),
+        None => format!("size asked for: {asked}"),
     };
     note(&format!(
-        "{seen} ; image demandée au loin en {wide}x{high} à {} images/s et {} Mb/s en {}, {why}",
+        "{seen}; picture asked of the far computer at {wide}x{high}, {} frames/s and {} Mb/s in {}, {why}",
         settings.fps,
         settings.bitrate_kbps / 1000,
         settings.codec,
@@ -431,11 +431,11 @@ fn round_the_window(home: windows_sys::Win32::Foundation::HWND, may: bool) {
         corners
     };
     note(&format!(
-        "coins de la fenêtre : {} demandés, le compositeur a répondu {answer:#x}",
+        "window corners: {} asked for, the compositor answered {answer:#x}",
         match (may, whole) {
-            (_, true) => "droits, sans bordure, la fenêtre couvrant l'écran",
-            (true, false) => "arrondis",
-            (false, false) => "au choix du système",
+            (_, true) => "square, without a border, the window covering the screen",
+            (true, false) => "rounded",
+            (false, false) => "as the system chooses",
         }
     ));
 }
@@ -530,13 +530,13 @@ fn tell_the_frame(home: windows_sys::Win32::Foundation::HWND) {
     // "nowhere". Printed as it comes, it reads like a measurement and is
     // not one.
     if !crate::main_window::on_screen() {
-        note("cadre de la fenêtre : elle est rangée dans la barre des tâches");
+        note("window frame: it is put down in the taskbar");
         return;
     }
     let screen = about.rcMonitor;
     note(&format!(
-        "cadre de la fenêtre : écran {}x{} en ({}, {}), fenêtre {}x{} en ({}, {}), intérieur {}x{} ; \
-         il reste {} px de cadre en largeur et {} px en hauteur",
+        "window frame: screen {}x{} at ({}, {}), window {}x{} at ({}, {}), inside {}x{}; \
+         {} px of frame left across and {} px down",
         screen.right - screen.left,
         screen.bottom - screen.top,
         screen.left,
@@ -573,15 +573,15 @@ pub(crate) fn the_front_in_words() -> String {
     unsafe { GetWindowThreadProcessId(front, &mut owner) };
     // SAFETY: no argument.
     if !front.is_null() && owner == unsafe { GetCurrentProcessId() } {
-        "à ZyrDesk".to_string()
+        "ZyrDesk's".to_string()
     } else {
-        format!("ailleurs : {}", describe(front))
+        format!("elsewhere: {}", describe(front))
     }
 }
 
 #[cfg(not(windows))]
 pub(crate) fn the_front_in_words() -> String {
-    "hors de Windows, où il n'y a pas de session".to_string()
+    "outside Windows, where there is no session".to_string()
 }
 
 /// Names that window: its program and its title.
@@ -594,7 +594,7 @@ fn describe(window: windows_sys::Win32::Foundation::HWND) -> String {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowTextW, GetWindowThreadProcessId};
 
     if window.is_null() {
-        return "aucune fenêtre au premier plan".to_string();
+        return "no window in front".to_string();
     }
     let mut pid = 0u32;
     // SAFETY: the window is the caller's, and the slot is ours.
@@ -632,10 +632,10 @@ fn describe(window: windows_sys::Win32::Foundation::HWND) -> String {
     };
 
     match (exe.is_empty(), title.is_empty()) {
-        (false, false) => format!("processus {pid} ({exe}), titre « {title} »"),
-        (false, true) => format!("processus {pid} ({exe})"),
-        (true, false) => format!("processus {pid}, titre « {title} »"),
-        (true, true) => format!("processus {pid}"),
+        (false, false) => format!("process {pid} ({exe}), title « {title} »"),
+        (false, true) => format!("process {pid} ({exe})"),
+        (true, false) => format!("process {pid}, title « {title} »"),
+        (true, true) => format!("process {pid}"),
     }
 }
 
@@ -1114,7 +1114,7 @@ pub(crate) fn shut_the_pointer_in(cage: Cage) {
         }
         // SAFETY: nought gives the pointer the whole desk back.
         unsafe { ClipCursor(std::ptr::null()) };
-        note("pointeur rendu au bureau");
+        note("pointer given back to the desktop");
         return;
     };
     let mut now = RECT {
@@ -1136,15 +1136,15 @@ pub(crate) fn shut_the_pointer_in(cage: Cage) {
         // at all: a cage nobody can see is refused exactly as silently as
         // it is granted.
         if !CAGE_REFUSED.swap(true, Ordering::Relaxed) {
-            note("pointeur non enfermé dans l'image : Windows a refusé la cage");
+            note("pointer not shut in the picture: Windows refused the cage");
         }
         return;
     }
     CAGE_REFUSED.store(false, Ordering::Relaxed);
     if SHUT_IN.swap(cage.number(), Ordering::Relaxed) != cage.number() {
         note(match cage {
-            Cage::Point => "pointeur tenu au milieu de l'image, la souris étant celle d'un jeu",
-            _ => "pointeur tenu dans l'image, qui est tout l'écran",
+            Cage::Point => "pointer held in the middle of the picture, the mouse being a game's",
+            _ => "pointer held in the picture, which is the whole screen",
         });
     }
 }
@@ -1204,19 +1204,19 @@ mod tests {
         let room = (107, 107);
         for shape in [(1920, 1080), (1080, 1920), (2560, 1080), (1024, 1024)] {
             let (wide, high) = the_least_picture(Some(room), shape);
-            assert!(wide >= room.0, "largeur {wide} sur {shape:?}");
-            assert!(high >= room.1, "hauteur {high} sur {shape:?}");
+            assert!(wide >= room.0, "width {wide} on {shape:?}");
+            assert!(high >= room.1, "height {high} on {shape:?}");
             // A vertical edge pulled: the width holds, the height
             // follows.
             assert!(
                 across(wide, shape.0, shape.1) >= room.1,
-                "hauteur suivie sur {shape:?}"
+                "height followed on {shape:?}"
             );
             // A horizontal edge pulled: the other way
             // round.
             assert!(
                 across(high, shape.1, shape.0) >= room.0,
-                "largeur suivie sur {shape:?}"
+                "width followed on {shape:?}"
             );
         }
     }
@@ -1331,7 +1331,7 @@ mod tests {
         for pair in widths.windows(2) {
             assert!(
                 pair[1] >= pair[0],
-                "la fenêtre a reculé : {:?} dans {widths:?}",
+                "the window went back: {:?} in {widths:?}",
                 pair
             );
         }
@@ -1354,12 +1354,12 @@ mod tests {
             let (_, _, cx, cy) = drag(wanted, least);
             assert!(
                 cx - 16 >= 107,
-                "largeur au sol : {} sur {wanted:?}",
+                "width at the floor: {} on {wanted:?}",
                 cx - 16
             );
             assert!(
                 cy - 42 >= 107,
-                "hauteur au sol : {} sur {wanted:?}",
+                "height at the floor: {} on {wanted:?}",
                 cy - 42
             );
         }
@@ -1375,7 +1375,7 @@ mod tests {
             let carried = (elsewhere.0, elsewhere.1, 976, 582);
             assert!(
                 !the_size_moves(NOW, carried),
-                "déplacement pris pour un redimensionnement : {carried:?}"
+                "a move taken for a resize: {carried:?}"
             );
         }
         // And a real resize is still recognised, even by one pixel.

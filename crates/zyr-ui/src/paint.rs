@@ -977,7 +977,7 @@ impl Canvas {
             // with nothing to say that it is incomplete. It happened
             // once, to the menu's crossed-out eye, whose outline is the
             // only Bézier curve in the product.
-            note(&format!("dessin : chemin non lu, « {said} »"));
+            note(&format!("drawing: path not read, « {said} »"));
         }
         self.paths.borrow_mut().push((said, made.clone()));
         made

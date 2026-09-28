@@ -217,9 +217,9 @@ pub fn switch(immersive: bool) {
         give_them_back();
     }
     note(if immersive {
-        "clavier immersif : les touches du système vont à la session"
+        "immersive keyboard: the system's keys go to the session"
     } else {
-        "clavier partagé : les touches du système restent à cet ordinateur"
+        "shared keyboard: the system's keys stay with this computer"
     });
 }
 
@@ -246,10 +246,10 @@ pub fn take_them() {
         return;
     }
     match HOOK.hold(put, take_back) {
-        Some(true) => note("touches du système prises pour la session"),
+        Some(true) => note("system's keys taken for the session"),
         Some(false) => note(&format!(
-            "touches du système non prises : Windows a refusé le crochet du clavier \
-             (SetWindowsHookExW, erreur {})",
+            "system's keys not taken: Windows refused the keyboard hook \
+             (SetWindowsHookExW, error {})",
             REFUSED_WITH.load(Ordering::Relaxed)
         )),
         None => {}
@@ -263,7 +263,7 @@ pub fn take_them() {}
 #[cfg(windows)]
 pub fn give_them_back() {
     if HOOK.let_go() {
-        note("touches du système rendues à cet ordinateur");
+        note("system's keys given back to this computer");
     }
     HELD.store(0, Ordering::Relaxed);
     TAKEN.store(0, Ordering::Relaxed);

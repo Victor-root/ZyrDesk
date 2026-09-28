@@ -39,7 +39,7 @@ const FRAME: std::time::Duration = std::time::Duration::from_millis(16);
 ///
 /// Asking again for a window that already beats does nothing.
 pub fn beat(window: HWND, message: u32) {
-    let mut moving = MOVING.lock().expect("rythme");
+    let mut moving = MOVING.lock().expect("beat");
     let this_one = window as isize;
     if moving.iter().any(|(w, _)| *w == this_one) {
         return;
@@ -52,10 +52,7 @@ pub fn beat(window: HWND, message: u32) {
 /// Stops the beat of this window. Nothing if it was not beating.
 pub fn stop(window: HWND) {
     let this_one = window as isize;
-    MOVING
-        .lock()
-        .expect("rythme")
-        .retain(|(w, _)| *w != this_one);
+    MOVING.lock().expect("beat").retain(|(w, _)| *w != this_one);
 }
 
 /// The thread that waits for the compositor, started at the first thing
@@ -64,9 +61,9 @@ fn start() {
     static THREAD: OnceLock<()> = OnceLock::new();
     THREAD.get_or_init(|| {
         std::thread::Builder::new()
-            .name("rythme".to_string())
+            .name("beat".to_string())
             .spawn(run)
-            .expect("fil du rythme");
+            .expect("the beat's thread starts");
     });
 }
 
@@ -76,9 +73,9 @@ fn run() {
 
     loop {
         let beating = {
-            let mut moving = MOVING.lock().expect("rythme");
+            let mut moving = MOVING.lock().expect("beat");
             while moving.is_empty() {
-                moving = WAKE.wait(moving).expect("rythme");
+                moving = WAKE.wait(moving).expect("beat");
             }
             moving.clone()
         };

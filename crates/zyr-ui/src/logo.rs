@@ -230,11 +230,11 @@ pub fn raise(app: &App, side: u32, upward: bool, mirrored: bool, anchor: (i32, i
         return;
     }
     let owner = crate::main_window::handle();
-    *PROGRAM.lock().expect("programme du logo") = Some(app.clone());
+    *PROGRAM.lock().expect("logo's program") = Some(app.clone());
     ITS_BOX.store(box_of(side), Ordering::Relaxed);
     UPWARD.store(upward, Ordering::Relaxed);
     MIRRORED.store(mirrored, Ordering::Relaxed);
-    *GROWTH.lock().expect("croissance du logo") = Growth {
+    *GROWTH.lock().expect("logo's growth") = Growth {
         from: STANDING,
         to: STANDING,
         since: None,
@@ -335,7 +335,7 @@ pub fn lower(app: &App) {
     UNDER.store(false, Ordering::Relaxed);
     TAKEN.store(false, Ordering::Relaxed);
     MOVING.store(false, Ordering::Relaxed);
-    *PROGRAM.lock().expect("programme du logo") = None;
+    *PROGRAM.lock().expect("logo's program") = None;
     let _ = app.run_on_main_thread(move || {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow;
@@ -387,7 +387,7 @@ pub fn lay(anchor: (i32, i32), upward: bool, mirrored: bool) {
     let upward_change = UPWARD.swap(upward, Ordering::Relaxed) != upward;
     let mirrored_change = MIRRORED.swap(mirrored, Ordering::Relaxed) != mirrored;
     if (upward_change || mirrored_change)
-        && let Some(app) = PROGRAM.lock().expect("programme du logo").clone()
+        && let Some(app) = PROGRAM.lock().expect("logo's program").clone()
     {
         // Asked again of the thread that owns the window: it is the one
         // holding the canvas, and this runs on the one that follows the
@@ -492,7 +492,7 @@ fn build(owner: isize, anchor: (i32, i32)) {
         )
     };
     if window.is_null() {
-        note("bouton flottant : la fenêtre du logo n'a pas pu s'ouvrir");
+        note("floating button: the logo's window could not open");
         return;
     }
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);
@@ -500,7 +500,7 @@ fn build(owner: isize, anchor: (i32, i32)) {
     // SAFETY: a window of ours, shown without taking the front.
     unsafe { ShowWindow(window, SW_SHOWNOACTIVATE) };
     note(&format!(
-        "bouton flottant : logo dessiné par ZyrDesk ; fenêtre de {side} px, dessin de {:.0} au repos et {side} sous la main",
+        "floating button: logo drawn by ZyrDesk; window of {side} px, drawing of {:.0} at rest and {side} under the hand",
         side as f32 * STANDING
     ));
 }
@@ -521,7 +521,7 @@ fn wanted() -> f32 {
 fn head_for(window: windows_sys::Win32::Foundation::HWND) {
     let aim = wanted();
     {
-        let mut growth = GROWTH.lock().expect("croissance du logo");
+        let mut growth = GROWTH.lock().expect("logo's growth");
         if (growth.to - aim).abs() < f32::EPSILON {
             return;
         }
@@ -550,7 +550,7 @@ fn drawn(growth: &Growth) -> f32 {
 
 /// Whether the growth has arrived, so its clock can be put away.
 fn arrived() -> bool {
-    let mut growth = GROWTH.lock().expect("croissance du logo");
+    let mut growth = GROWTH.lock().expect("logo's growth");
     let done = growth.since.is_none_or(|since| since.elapsed() >= GROWS_IN);
     if done {
         growth.from = growth.to;
@@ -672,7 +672,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     if side <= 0 {
         return;
     }
-    let part = drawn(&GROWTH.lock().expect("croissance du logo"));
+    let part = drawn(&GROWTH.lock().expect("logo's growth"));
     let wide = side as f32 * part;
     // The drawing hangs by the right edge, and by the top or the bottom
     // depending on which way the menu opens, so growing and shrinking
@@ -830,7 +830,7 @@ fn under_the_hand(window: windows_sys::Win32::Foundation::HWND) -> bool {
 /// only answer that is always true. What is left here is saying that the
 /// logo is held, so it draws itself held.
 fn taken(window: windows_sys::Win32::Foundation::HWND) {
-    if PROGRAM.lock().expect("programme du logo").is_none() {
+    if PROGRAM.lock().expect("logo's program").is_none() {
         return;
     }
     if TAKEN.swap(true, Ordering::Relaxed) {
