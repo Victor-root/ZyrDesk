@@ -111,7 +111,7 @@ pub struct SessionSettings {
     /// with relative motion.
     pub absolute_mouse: bool,
     pub stats_overlay: bool,
-    /// Whether Alt+Tab, Échap and the Windows key go to the session
+    /// Whether Alt+Tab, Escape and the Windows key go to the session
     /// rather than to this computer.
     ///
     /// Only where the session starts: it is a switch, and the menu throws
@@ -598,7 +598,7 @@ pub struct Preferred {
     /// is reached is a computer whoever sits in front of it would call
     /// broken.
     pub mute_far_speakers: bool,
-    /// Whether Alt+Tab, Échap and the Windows key belong to the session
+    /// Whether Alt+Tab, Escape and the Windows key belong to the session
     /// or to the computer that is watching it.
     ///
     /// Windows keeps those for itself and hands them to nobody, so a

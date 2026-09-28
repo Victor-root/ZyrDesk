@@ -117,7 +117,7 @@ pub enum Request {
         /// two apart when a session goes quiet.
         only_here: bool,
     },
-    /// Asks the far computer to press Ctrl+Alt+Suppr on itself.
+    /// Asks the far computer to press Ctrl+Alt+Del on itself.
     ///
     /// Through the way and never through the engines. Windows keeps that
     /// combination for itself at both ends: the computer watching never
@@ -131,7 +131,7 @@ pub enum Request {
     /// that combination where no program can reach it, at both ends of a
     /// session, and it keeps the raising of a lock screen for programs
     /// sitting at the desk being locked. So the ask goes round the same
-    /// way Ctrl+Alt+Suppr does, and the far ZyrDesk does it from the one
+    /// way Ctrl+Alt+Del does, and the far ZyrDesk does it from the one
     /// place its own Windows will take it from.
     LockScreen { way: WayId },
     /// Asks the far computer to silence its own speakers for the length
