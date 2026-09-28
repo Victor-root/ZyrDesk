@@ -28,12 +28,12 @@ pub enum WireError {
 impl fmt::Display for WireError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            WireError::Truncated => write!(f, "message tronqué"),
-            WireError::TooLong => write!(f, "message trop long"),
-            WireError::Version(version) => write!(f, "version de format inconnue : {version}"),
-            WireError::Kind(kind) => write!(f, "type de message inconnu : {kind}"),
-            WireError::Invalid(field) => write!(f, "valeur impossible pour « {field} »"),
-            WireError::Framing => write!(f, "flux de contrôle désynchronisé"),
+            WireError::Truncated => write!(f, "truncated message"),
+            WireError::TooLong => write!(f, "message too long"),
+            WireError::Version(version) => write!(f, "unknown format version: {version}"),
+            WireError::Kind(kind) => write!(f, "unknown kind of message: {kind}"),
+            WireError::Invalid(field) => write!(f, "impossible value for « {field} »"),
+            WireError::Framing => write!(f, "control stream out of sync"),
         }
     }
 }
@@ -163,9 +163,9 @@ mod tests {
     #[test]
     fn a_text_makes_the_round_trip_and_bad_utf8_is_refused() {
         let mut out = Vec::new();
-        put_text(&mut out, "Écran principal");
+        put_text(&mut out, "Main screen");
         let mut reader = Reader::new(&out);
-        assert_eq!(reader.text("name").unwrap(), "Écran principal");
+        assert_eq!(reader.text("name").unwrap(), "Main screen");
         reader.finish().unwrap();
 
         let bad = [2, 0, 0xc3, 0x28];

@@ -59,11 +59,11 @@ pub enum PacketizeError {
 impl fmt::Display for PacketizeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PacketizeError::Empty => write!(f, "image vide"),
+            PacketizeError::Empty => write!(f, "empty frame"),
             PacketizeError::TooLarge { size, most } => {
-                write!(f, "image trop grosse : {size} octets pour {most} au plus")
+                write!(f, "frame too large: {size} bytes for {most} at most")
             }
-            PacketizeError::Correction(e) => write!(f, "correction d'erreurs impossible : {e}"),
+            PacketizeError::Correction(e) => write!(f, "error correction impossible: {e}"),
         }
     }
 }

@@ -653,7 +653,7 @@ mod tests {
             },
             ToPlayer::Notice {
                 kind: NoticeKind::DisplayChanged,
-                fact: Fact::new("engine.display_changed").with("screen", "Écran 2"),
+                fact: Fact::new("engine.display_changed").with("screen", "Screen 2"),
             },
             ToPlayer::Notice {
                 kind: NoticeKind::NoEncoder,

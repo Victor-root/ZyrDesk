@@ -293,7 +293,7 @@ mod tests {
                 main: false,
                 width: 1920,
                 height: 1080,
-                name: "Écran virtuel".to_owned(),
+                name: "Virtual screen".to_owned(),
             },
         ]
     }
