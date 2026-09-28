@@ -655,7 +655,7 @@ fn build(owner: isize, anchor: (i32, i32)) {
     if !crate::floating::still_to_be_made(&ITS_WINDOW) {
         return;
     }
-    let name = wide("ZyrDeskVoyants");
+    let name = crate::win32::wide("ZyrDeskVoyants");
     let (wide_px, high) = its_size();
     let (left, top) = window_corner(anchor);
     // SAFETY: a class registered once and a window built on it, on the
@@ -844,12 +844,6 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         }
         canvas.lay_on(window as isize, place.left, place.top);
     });
-}
-
-/// A word the way Windows reads them, ending in a nought.
-#[cfg(windows)]
-fn wide(text: &str) -> Vec<u16> {
-    text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 #[cfg(test)]

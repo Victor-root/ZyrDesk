@@ -38,7 +38,6 @@
 //! which is a great many and none of them ours.
 
 use std::ffi::{OsStr, c_void};
-use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
 use windows_sys::Win32::Security::Cryptography::{
@@ -52,6 +51,7 @@ use windows_sys::Win32::Security::Cryptography::{
     X509_ASN_ENCODING,
 };
 
+use crate::text::wide;
 use crate::{Done, Trouble};
 
 /// Windows' own name for the list of publishers a machine expects.
@@ -335,8 +335,4 @@ impl Store {
         }
         Ok(Self(store))
     }
-}
-
-fn wide(text: &OsStr) -> Vec<u16> {
-    text.encode_wide().chain(std::iter::once(0)).collect()
 }

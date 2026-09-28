@@ -22,7 +22,7 @@ use std::ffi::{OsStr, OsString, c_void};
 use std::fmt;
 use std::io;
 use std::marker::PhantomData;
-use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::os::windows::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -60,6 +60,7 @@ use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
 
 use crate::gateway::{Launched, Launcher, with_its_code};
+use crate::text::wide;
 
 /// Value Windows returns when no session is attached to the screen.
 const NO_SESSION: u32 = 0xFFFF_FFFF;
@@ -1363,11 +1364,6 @@ fn inheritable_file(
         )));
     }
     Ok(Handle(file))
-}
-
-/// Zero-terminated string, the way Windows expects them.
-fn wide(text: impl AsRef<OsStr>) -> Vec<u16> {
-    text.as_ref().encode_wide().chain(Some(0)).collect()
 }
 
 /// Full command line, quotes included.

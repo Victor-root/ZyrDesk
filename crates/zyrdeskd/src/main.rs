@@ -31,6 +31,8 @@ mod attention;
 mod service;
 #[cfg(windows)]
 mod session;
+#[cfg(windows)]
+mod text;
 
 use std::process::ExitCode;
 

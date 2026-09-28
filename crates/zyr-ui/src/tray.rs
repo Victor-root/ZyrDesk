@@ -79,7 +79,7 @@ pub fn raise() -> Result<(), String> {
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return Ok(());
     }
-    let class_name: Vec<u16> = "ZyrDeskIcone".encode_utf16().chain(Some(0)).collect();
+    let class_name = crate::win32::wide("ZyrDeskIcone");
     // SAFETY: a class declared once and a window built on it, on the
     // thread that will pump its messages. It shows nothing: it is what
     // the system asks for to carry an icon.
@@ -304,8 +304,8 @@ fn pop_up_the_menu(window: windows_sys::Win32::Foundation::HWND) {
         SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
     };
 
-    let open_label: Vec<u16> = "Ouvrir ZyrDesk".encode_utf16().chain(Some(0)).collect();
-    let quit_label: Vec<u16> = "Quitter".encode_utf16().chain(Some(0)).collect();
+    let open_label = crate::win32::wide("Ouvrir ZyrDesk");
+    let quit_label = crate::win32::wide("Quitter");
     let mut cursor = POINT { x: 0, y: 0 };
     // SAFETY: a menu made here and unmade here, and the position of the
     // pointer read into a block of ours. The foreground is given to this

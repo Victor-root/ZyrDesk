@@ -51,9 +51,9 @@ fn written(command: &str) -> Result<(), String> {
         HKEY_CURRENT_USER, KEY_SET_VALUE, REG_SZ, RegCloseKey, RegOpenKeyExW, RegSetValueExW,
     };
 
-    let path = wide(WHERE);
-    let name = wide(ENTRY);
-    let value = wide(command);
+    let path = crate::win32::wide(WHERE);
+    let name = crate::win32::wide(ENTRY);
+    let value = crate::win32::wide(command);
 
     // SAFETY: every pointer below is to a buffer that outlives the call,
     // and the key is closed on both ways out.
@@ -87,8 +87,8 @@ fn erased() -> Result<(), String> {
         HKEY_CURRENT_USER, KEY_SET_VALUE, RegCloseKey, RegDeleteValueW, RegOpenKeyExW,
     };
 
-    let path = wide(WHERE);
-    let name = wide(ENTRY);
+    let path = crate::win32::wide(WHERE);
+    let name = crate::win32::wide(ENTRY);
 
     // SAFETY: as above.
     unsafe {
@@ -105,15 +105,4 @@ fn erased() -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-/// Text as Windows wants it: sixteen bits a character, ending on a zero.
-#[cfg(windows)]
-fn wide(text: &str) -> Vec<u16> {
-    use std::os::windows::ffi::OsStrExt;
-
-    std::ffi::OsStr::new(text)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect()
 }

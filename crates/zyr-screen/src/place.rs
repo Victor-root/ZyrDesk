@@ -37,6 +37,7 @@ use windows_sys::Win32::System::Registry::{
 use windows_sys::core::GUID;
 
 use crate::driver::{Driver, Guid};
+use crate::text::{read_wide, wide};
 use crate::{Done, Trouble};
 
 /// What every call in this file answers with when it has no answer.
@@ -624,17 +625,6 @@ fn guid(from: Guid) -> GUID {
         data3: from.c,
         data4: from.d,
     }
-}
-
-/// A string in the shape every call here takes one: sixteen bits a
-/// letter, ending in a zero.
-fn wide(text: &OsStr) -> Vec<u16> {
-    text.encode_wide().chain(std::iter::once(0)).collect()
-}
-
-fn read_wide(from: &[u16]) -> String {
-    let end = from.iter().position(|&c| c == 0).unwrap_or(from.len());
-    String::from_utf16_lossy(&from[..end])
 }
 
 /// Reads a list of strings written end to end, the way Windows writes

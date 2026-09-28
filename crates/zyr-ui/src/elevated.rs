@@ -64,9 +64,9 @@ impl Drop for Com {
 pub fn run(program: &Path, arguments: &str) -> Result<(), String> {
     let _com = Com::entered();
 
-    let verb = wide("runas");
+    let verb = crate::win32::wide("runas");
     let file: Vec<u16> = program.as_os_str().encode_wide().chain(Some(0)).collect();
-    let words = wide(arguments);
+    let words = crate::win32::wide(arguments);
 
     let mut about: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
     about.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
@@ -126,8 +126,4 @@ fn waited(running: HANDLE) -> Result<(), String> {
         "la mise en service a échoué (code {code}).\n  \
          Le journal en dit plus."
     ))
-}
-
-fn wide(text: &str) -> Vec<u16> {
-    text.encode_utf16().chain(Some(0)).collect()
 }

@@ -33,6 +33,7 @@ use crate::icons;
 use crate::paint::{Align, Canvas, Icon, Pen, Rect};
 use crate::settings::{Offered, SessionMenu};
 use crate::shortcuts::Doing;
+use crate::win32::pointer_in;
 use zyr_player::Measures;
 
 /// What this module files its journal lines under.
@@ -2356,10 +2357,10 @@ unsafe extern "system" fn answer(
                 // SAFETY: a window of ours, and the request is ours.
                 unsafe { TrackMouseEvent(&mut tracking) };
             }
-            if pushes(window, point(with)) {
+            if pushes(window, pointer_in(with)) {
                 return 0;
             }
-            hovers(window, under(point(with)));
+            hovers(window, under(pointer_in(with)));
             0
         }
         WM_MOUSELEAVE => {
@@ -2383,13 +2384,13 @@ unsafe extern "system" fn answer(
             1
         }
         WM_LBUTTONDOWN => {
-            let target = under(point(with));
+            let target = under(pointer_in(with));
             *PRESSED.lock().expect("appui du menu") = target;
             // A slider is taken and pushed: the gesture starts here and
             // only ends on release, where only the notch it arrives at is
             // written.
             if matches!(target, Some(Target::Bar(_))) {
-                pushes(window, point(with));
+                pushes(window, pointer_in(with));
             }
             0
         }
@@ -2402,7 +2403,7 @@ unsafe extern "system" fn answer(
                 released(window, rank);
                 return 0;
             }
-            if let Some(target) = under(point(with))
+            if let Some(target) = under(pointer_in(with))
                 && Some(target) == pressed
             {
                 acts(target);
@@ -2412,15 +2413,6 @@ unsafe extern "system" fn answer(
         // SAFETY: the system's answer to everything not answered here.
         _ => unsafe { DefWindowProcW(window, message, holding, with) },
     }
-}
-
-/// Where the mouse is in the window, as the system writes it in a
-/// message: two signed numbers in the two halves of a single one.
-fn point(with: windows_sys::Win32::Foundation::LPARAM) -> (i32, i32) {
-    (
-        i32::from((with & 0xFFFF) as i16),
-        i32::from(((with >> 16) & 0xFFFF) as i16),
-    )
 }
 
 /// What is under the pointer, asked of the system.

@@ -40,6 +40,8 @@ use std::io;
 
 use zyr_proto::log::Log;
 
+use crate::text::wide;
+
 /// What this module's lines are filed under.
 const TAG: &str = "attention";
 
@@ -232,13 +234,4 @@ fn set_the_policy(to: Option<u32>) -> Result<(), u32> {
     // SAFETY: a key this function opened, closed exactly once.
     unsafe { RegCloseKey(open) };
     if code != 0 { Err(code) } else { Ok(()) }
-}
-
-/// Zero-terminated string, the way Windows expects them.
-fn wide(text: &str) -> Vec<u16> {
-    use std::os::windows::ffi::OsStrExt;
-    std::ffi::OsStr::new(text)
-        .encode_wide()
-        .chain(Some(0))
-        .collect()
 }

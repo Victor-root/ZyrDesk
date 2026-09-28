@@ -39,6 +39,7 @@ use crate::session::Ongoing;
 use crate::settings::Settings;
 use crate::shortcuts::{Combination, Doing, Held};
 use crate::theme::Choice;
+use crate::win32::wide;
 
 /// What this module's lines are filed under.
 const TAG: &str = "home";
@@ -1105,15 +1106,8 @@ const SIFT_PAUSE_MS: u32 = 300;
 
 /// Where the mouse is, in real pixels from the canvas's corner.
 fn where_is(with: windows_sys::Win32::Foundation::LPARAM) -> (f32, f32) {
-    let x = (with & 0xFFFF) as i16;
-    let y = ((with >> 16) & 0xFFFF) as i16;
-    (f32::from(x), f32::from(y))
-}
-
-/// A word in the characters Windows counts in, ended by the zero it
-/// looks for.
-fn wide(text: &str) -> Vec<u16> {
-    text.encode_utf16().chain(Some(0)).collect()
+    let (x, y) = crate::win32::pointer_in(with);
+    (x as f32, y as f32)
 }
 
 /// Draws the home window and pours it into the window.

@@ -102,6 +102,10 @@ mod video;
 #[cfg(windows)]
 mod elevated;
 
+// What every window of this program says to Windows the same way.
+#[cfg(windows)]
+mod win32;
+
 // A hook of the system lives on a thread of its own, which only Windows
 // has to offer.
 #[cfg(windows)]

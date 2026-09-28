@@ -307,7 +307,7 @@ fn build() -> Result<isize, String> {
     };
     // SAFETY: our own window, whose rectangle is read into ours.
     unsafe { GetClientRect(outer, &mut inside) };
-    let class_name: Vec<u16> = "ZyrDeskImage".encode_utf16().chain(Some(0)).collect();
+    let class_name = crate::win32::wide("ZyrDeskImage");
     // SAFETY: a class declared once and a window built on it, on the
     // thread that pumps the main window's messages. A class declared
     // twice is refused with no other effect, which is every session after
@@ -878,11 +878,7 @@ fn pointer_at(with: isize) {
     let Some(player) = crate::session::player() else {
         return;
     };
-    // Signed: a pointer held by a drag reads negative left of the window.
-    let point = (
-        (with & 0xFFFF) as u16 as i16 as i32,
-        ((with >> 16) & 0xFFFF) as u16 as i16 as i32,
-    );
+    let point = crate::win32::pointer_in(with);
     let picture = player.picture_rect().unwrap_or_else(|| {
         let mut inside = RECT {
             left: 0,

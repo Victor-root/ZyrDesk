@@ -100,7 +100,7 @@ const SHOW_YOURSELF: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
 pub fn show_the_one_running() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW};
 
-    let class_name: Vec<u16> = CLASS_NAME.encode_utf16().chain(Some(0)).collect();
+    let class_name = crate::win32::wide(CLASS_NAME);
     // SAFETY: a name that outlives the call, and a message that belongs
     // to us alone, posted to a window of our own class.
     unsafe {
@@ -135,8 +135,8 @@ pub fn open(app: &App) -> Result<(), String> {
     }
     *PROGRAM.lock().expect("programme de la fenêtre") = Some(app.clone());
 
-    let class_name = wide(CLASS_NAME);
-    let title = wide(CLASS_NAME);
+    let class_name = crate::win32::wide(CLASS_NAME);
+    let title = crate::win32::wide(CLASS_NAME);
     // SAFETY: no argument beyond what is asked for.
     let dpi = unsafe { GetDpiForSystem() };
     let (width, height) = (
@@ -214,12 +214,6 @@ pub fn open(_app: &App) -> Result<(), String> {
 /// magnification.
 fn scaled(page: i32, dpi: i32) -> i32 {
     page * dpi / 96
-}
-
-/// A word in the characters Windows counts, ended by the zero it looks
-/// for.
-fn wide(text: &str) -> Vec<u16> {
-    text.encode_utf16().chain(Some(0)).collect()
 }
 
 /* ---- What the window answers ---------------------------------------- */
