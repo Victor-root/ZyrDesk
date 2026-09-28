@@ -3,7 +3,7 @@
 //! It was the product's last page. What replaces it fits in an ordinary
 //! window, framed by Windows, whose inside is a canvas: the same drawing
 //! as the logo and the session menu, the same palette read from the same
-//! style sheet, the same icons.
+//! design system, the same icons.
 //!
 //! **It decides nothing.** It asks the service, through the core, and
 //! draws what comes back. The vocabulary follows the product's:
@@ -684,7 +684,7 @@ const SETTINGS: &[Element] = &[
     }),
 ];
 
-/* ---- What the stylesheet says, in page pixels ------------------------- */
+/* ---- The measures of the page, in page pixels ------------------------- */
 
 mod layout {
     /// The width beyond which the page stops spreading, and what
@@ -2116,8 +2116,8 @@ impl Painter<'_> {
             .any(|watching| watching.fingerprint == peer.fingerprint);
         let target = Target::Peer(rank);
         let hovered = !busy && self.under_the_hand(&target);
-        // Pressed under the finger: one pixel down, which is what the
-        // style sheet did and all that says a click has been taken.
+        // Pressed under the finger: one pixel down, all that says a
+        // click has been taken.
         let at = if self.is_pressed(&target) {
             at.shifted(0.0, self.px(1.0))
         } else {
@@ -4422,8 +4422,8 @@ fn place_the_fields() {
 
     let fields = *FIELDS.lock().expect("accueil");
     let places = *PLACES.lock().expect("accueil");
-    // The text breathes inside its frame as the style sheet asks:
-    // the real field is set inside it, never on its outline.
+    // The text breathes inside its frame: the real field is set
+    // inside it, never on its outline.
     let inside = design::SPACE_3 * scale();
     for (edit, place) in fields.iter().zip(places.iter()) {
         if *edit == 0 {

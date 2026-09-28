@@ -263,8 +263,8 @@ pub const UNKNOWN_SCREEN: (u32, u32) = (1920, 1080);
 
 /// The resolutions offered, in the order they are offered in.
 ///
-/// Here and not in the window: a second copy of this list written in
-/// JavaScript would drift from this one the day a size is added. The two
+/// Written once, here: a second copy would drift from this one the day
+/// a size is added. The two
 /// that name a computer rather than a number come first, because they are
 /// the answer nearly everybody wants and the numbers below are the
 /// exception.

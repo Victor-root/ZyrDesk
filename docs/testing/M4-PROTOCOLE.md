@@ -6,6 +6,8 @@ Vocabulaire : **PC hôte** = celui qu'on contrôle. **PC client** = celui depuis
 
 Ce protocole remplace celui des versions précédentes, qui passait par `zyr-cli` et `zyrdeskd` à chaque étape. La ligne de commande existe toujours, mais c'est devenu un outil de diagnostic et non le chemin du produit.
 
+> **Depuis le jalon MZ ([D222](../DECISIONS.md)), les moteurs dont parle ce protocole n'existent plus.** Sunshine, Moonlight, l'appairage par code et les processus `zyrdesk-host-engine` et `zyrdesk-session` ont quitté le produit : les essais qui les concernent ne s'appliquent plus, et tout ce qui touche au moteur se vérifie avec [MZ-PROTOCOLE.md](MZ-PROTOCOLE.md). Le reste (la fenêtre, le service, le compte, l'écran virtuel, le presse-papiers) garde sa valeur.
+
 ---
 
 ## Où on en est
@@ -2346,7 +2348,7 @@ Quand quelque chose ne marche pas, la première question est toujours la même :
 >
 > Pendant une session, sur les deux PC : ouvrir le gestionnaire des tâches, regarder la barre des tâches, la zone de notification et les titres de fenêtres.
 >
-> Attendu : aucun nom, aucun logo, aucune fenêtre appartenant à Sunshine, Moonlight ou GameStream. Les processus s'appellent `ZyrDesk`, `zyrdeskd`, `zyrdesk-host-engine`, `zyrdesk-session`.
+> Attendu : aucun nom, aucun logo, aucune fenêtre appartenant à Sunshine, Moonlight ou GameStream. Les processus s'appellent `ZyrDesk` et `zyrdeskd` (le moteur hôte est `zyrdeskd` relancé pour la session).
 
 > **R26 (l'icône est nette)**
 >

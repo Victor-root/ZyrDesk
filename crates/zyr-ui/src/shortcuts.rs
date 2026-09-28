@@ -426,7 +426,7 @@ fn spelled(combination: &Combination) -> String {
 /// What is engraved on that key, on the keyboard plugged in.
 ///
 /// Failing an answer, the place is written as it is: unreadable but
-/// never wrong, which is what the page already does.
+/// never wrong.
 #[cfg(windows)]
 fn engraved_key(key: &str) -> String {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{

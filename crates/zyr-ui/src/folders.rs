@@ -85,8 +85,8 @@ mod tests {
 
     #[test]
     fn only_the_folders_the_product_owns_can_be_named() {
-        // A path coming from the page and handed to the system
-        // as it is would open anything at all.
+        // A name taken as a path and handed to the system as it is
+        // would open anything at all.
         for named in ["logs", "ffmpeg"] {
             assert!(Which::read(named).is_ok(), "{named}");
         }

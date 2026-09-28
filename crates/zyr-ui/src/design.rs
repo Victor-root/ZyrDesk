@@ -54,8 +54,8 @@ impl Colour {
 
     /// This one mixed with that one, in this proportion.
     ///
-    /// What the stylesheet writes as `color-mix(in srgb, ... 8%,
-    /// ...)`: the tint of a role washed over a background, where
+    /// What CSS writes as `color-mix(in srgb, ... 8%, ...)`: the tint
+    /// of a role washed over a background, where
     /// laying down a second solid colour would give one more colour to
     /// maintain.
     pub fn mixed_with(self, background: Colour, part: f32) -> Colour {
@@ -70,8 +70,8 @@ impl Colour {
 
     /// The same, laid on as a veil.
     ///
-    /// What the stylesheet writes as `color-mix(in srgb, ... 12%,
-    /// transparent)`: the tint of a role used as a background, where
+    /// What CSS writes as `color-mix(in srgb, ... 12%, transparent)`:
+    /// the tint of a role used as a background, where
     /// repainting with a second colour would give one more colour to
     /// maintain.
     pub fn faded(self, part: f32) -> Colour {

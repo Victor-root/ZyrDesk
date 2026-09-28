@@ -11,8 +11,8 @@
 //! this screen. Size, rate and codec are the three numbers somebody
 //! changes while looking at the picture they change, and walking back to
 //! a settings screen to try one is walking away from the only thing that
-//! says whether it worked. The lists themselves stay in `zyr-proto`: a
-//! second copy written in JavaScript would drift from them.
+//! says whether it worked. The lists themselves are written once, in
+//! `zyr-proto`.
 
 // What a session offers and what is chosen in it can only be read in the
 // menu of the floating button, which only exists on Windows, like the

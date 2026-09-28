@@ -33,7 +33,7 @@ La fenêtre de ZyrDesk (`ZyrDesk.exe`) n'y est pas encore : elle arrive avec le 
 5. Désinstaller depuis Applications installées, répondre « Oui » à la suppression des données.
 6. Vérifier l'absence de résidu : le dossier d'installation a disparu, la clé de registre `HKLM\Software\ZyrDesk` n'existe plus, et « ZyrDesk » a disparu de la console des services.
 
-Le produit range tout ce qu'il écrit (réglages, journaux, appairages) dans un sous-dossier `data` de son dossier d'installation. La désinstallation propose de le supprimer.
+Le produit range tout ce qu'il écrit (réglages, journaux, identité de l'appareil, ordinateurs connus) dans un sous-dossier `data` de son dossier d'installation. La désinstallation propose de le supprimer.
 
 Désinstallation silencieuse : `"C:\Program Files\ZyrDesk\Uninstall.exe" /S` (conserve les données).
 
@@ -49,6 +49,5 @@ Les binaires ne sont pas signés : Windows SmartScreen affiche un avertissement 
 
 | Jalon | Ajout |
 |---|---|
-| M3 | `zyrdeskd.exe`, enregistrement du service Windows, règle de pare-feu UDP entrante, arrêt et nettoyage à la désinstallation |
 | M4 | `ZyrDesk.exe` (interface), raccourcis menu Démarrer |
 | M9 | Installation optionnelle et consentie du pilote d'écran virtuel tiers |

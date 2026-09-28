@@ -7,10 +7,10 @@
 //! clear.
 //!
 //! Everything that decides how it looks comes from the design system,
-//! read from the stylesheet at build time. Nothing is hard-coded here:
+//! read from `design.css` at build time. Nothing is hard-coded here:
 //! this file says where things go, never what colour they are.
 //!
-//! Lengths are written in page pixels, as in the stylesheet, and `scale`
+//! Lengths are written in page pixels, as in the design system, and `scale`
 //! turns them into real pixels at drawing time. It is the same split as
 //! everywhere else, and it is what lets a measurement be read here and
 //! found again over there.
@@ -46,9 +46,8 @@ fn note(what: &str) {
 /// A line of the card.
 ///
 /// The card is described first and drawn afterwards: measuring its width
-/// needs all of its lines known before a single one is laid down, and a
-/// card as wide as its longest line is what the stylesheet has always
-/// asked for.
+/// needs all of its lines known before a single one is laid down, and the
+/// card is as wide as its longest line.
 enum Line {
     /// What the session costs: four numbers and a sentence.
     Measures,
@@ -56,7 +55,7 @@ enum Line {
     Separator,
     /// What the menu has just refused to do, and why.
     Refusal,
-    /// A line that is clicked, as the page calls them.
+    /// A line that is clicked.
     Entry(Entry),
     /// A line that carries a choice between two sides.
     Toggle(Toggle),
@@ -171,11 +170,6 @@ enum Setting {
 }
 
 /// What the card holds, in order.
-///
-/// The same lines as the page, in the same order, with the same words,
-/// the same icons and the same actions. What is still missing is said in
-/// the journal on opening rather than replaced by an empty space that
-/// would look like a fault.
 const LINES: [Line; 21] = [
     Line::Measures,
     // Just under the readings, so at the top of what is read: what has
@@ -289,7 +283,7 @@ const LINES: [Line; 21] = [
     }),
 ];
 
-/// What the stylesheet says about a line, in page pixels.
+/// The measures of a line, in page pixels.
 mod layout {
     /// The height a line never goes below.
     pub const LINE: f32 = 38.0;
@@ -308,8 +302,8 @@ mod layout {
     pub const BETWEEN_READINGS: f32 = 16.0;
     pub const UNDER_THE_LABEL: f32 = 2.0;
     /// The height of a switch: its caption, what surrounds it above
-    /// and below, and its border. The page gets it from the browser's
-    /// line height, which does not exist here: so it is stated.
+    /// and below, and its border. Stated, since nothing here lays a line
+    /// of text out by itself.
     pub const TOGGLE: f32 = 24.0;
     /// The room a slider takes, its thumb included.
     pub const SLIDER: f32 = 18.0;
@@ -393,8 +387,7 @@ const KEEP_FOR: std::time::Duration = std::time::Duration::from_secs(3);
 const REFRESH: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// How much a colour tints the background when it serves as a hover:
-/// what the stylesheet writes as `color-mix(in srgb, ... 12%,
-/// transparent)`.
+/// twelve per cent of it, over what is behind.
 const VEIL: f32 = 0.12;
 
 /// The card's window, and what it knows about itself.
@@ -567,7 +560,6 @@ static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
 /// Read and not set in stone: they are chosen in the settings. Read once,
 /// because the card takes the width of its longest line and that width is
 /// its window's, which does not change size from one session to the next.
-/// It is the moment the page chooses too.
 static KEYS: Mutex<Vec<(Doing, Option<String>)>> = Mutex::new(Vec::new());
 
 // This window's canvas, held by the thread that owns it: a drawing
@@ -1174,10 +1166,9 @@ pub fn lay(
     }
     let overflow_px = shadow_overflow(scale).round() as i32;
     let card_height = height - overflow_px * 2;
-    // Stuck to the same edge as the logo, and separated from it by the
-    // space the stylesheet puts between the two: its right edge as a
-    // rule, its left edge when the first has no room, which the button
-    // has already decided.
+    // Stuck to the same edge as the logo, and separated from it by one
+    // step of the design system: its right edge as a rule, its left edge
+    // when the first has no room, which the button has already decided.
     let between = (design::SPACE_2 * scale).round() as i32;
     // The corner `SetWindowPos` receives further down takes yet one more
     // overflow, for a reason that stands higher up in this function: laid
@@ -1328,9 +1319,8 @@ fn build(owner: isize) {
 
 /// What the card takes up, in real pixels.
 ///
-/// As wide as its longest line, which the stylesheet has always asked
-/// for and which no number written by hand could hold to: a label made
-/// longer would cut off its shortcut.
+/// As wide as its longest line, which no number written by hand could
+/// hold to: a label made longer would cut off its shortcut.
 fn size(canvas: &Canvas) -> (i32, i32) {
     let scale = scale();
     let overflow_px = shadow_overflow(scale);
@@ -1350,8 +1340,8 @@ fn size(canvas: &Canvas) -> (i32, i32) {
 
 /// How wide the card is: its longest line.
 ///
-/// What the stylesheet has always asked for and no number written by
-/// hand could hold to: a label made longer would cut off its shortcut.
+/// What no number written by hand could hold to: a label made longer
+/// would cut off its shortcut.
 /// Measured over **all** of its lines, including the ones not showing
 /// right now: a card that shrinks when a line goes away is a card that
 /// changes width under the hand.
@@ -2173,9 +2163,9 @@ impl Painter<'_> {
 
     /// The stroke between two groups, centred in the room it takes.
     ///
-    /// Brought in by one step on each side, as the stylesheet asks: a
-    /// stroke that runs from one edge to the other cuts the card in
-    /// two instead of separating two groups of lines.
+    /// Brought in by one step on each side: a stroke that runs from one
+    /// edge to the other cuts the card in two instead of separating two
+    /// groups of lines.
     fn separator(&self, at: Rect) {
         let edge = design::SPACE_2 * self.scale;
         self.canvas.fill(
@@ -2474,9 +2464,9 @@ fn acts(target: Target) {
         (Target::Line(_), Some(Line::Entry(entry))) => {
             say_the_click(entry.label);
             let does = entry.does;
-            // Closed before it goes off, as the page does: what follows
-            // takes the time it takes, and a card left open on top would
-            // be a tablecloth laid over the picture.
+            // Closed before it goes off: what follows takes the time it
+            // takes, and a card left open on top would be a tablecloth
+            // laid over the picture.
             show(false);
             crate::app::spawn(async move {
                 let refusal = match does {

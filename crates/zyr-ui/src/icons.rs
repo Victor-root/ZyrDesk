@@ -8,9 +8,9 @@
 //! the home window share some, and an icon drawn in two places is
 //! heading for the day one of the two changes.
 //!
-//! All on a grid of twenty-four with a stroke of one point eight, which
-//! is what the stylesheet asked of every one of them without exception.
-//! The ones with a different grid say so.
+//! All on a grid of twenty-four with a stroke of one point eight, every
+//! one of them without exception. The ones with a different grid say
+//! so.
 
 use crate::paint::{Icon, Stroke};
 

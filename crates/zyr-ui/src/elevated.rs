@@ -5,9 +5,9 @@
 //! the only way to raise one from a program is to hand the shell a verb.
 //!
 //! What runs elevated is our own program, beside this one, with a word
-//! after it that is written here. Nothing arriving from a page ever gets
-//! that far: an elevation is not a place for a value somebody else
-//! chose.
+//! after it that is written here. Nothing handed to this program from
+//! outside ever gets that far: an elevation is not a place for a value
+//! somebody else chose.
 
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;

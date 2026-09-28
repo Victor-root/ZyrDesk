@@ -127,8 +127,10 @@ mod drawing {
 /// in: at rest, under a hand, and held.
 ///
 /// The same three to the hundredth. They are what Victor's button does
-/// and he has said so twice; what changed is who draws them.
-const AT_REST: f32 = 44.0;
+/// and he has said so twice; what changed is who draws them. The size at
+/// rest is the button's own, which everything about where it hangs is
+/// worked out from.
+const AT_REST: f32 = crate::floating::BUTTON as f32;
 const UNDER_A_HAND: f32 = 46.64;
 const HELD: f32 = 42.68;
 
@@ -447,8 +449,8 @@ fn build(owner: isize, anchor: (i32, i32)) {
     }
     let side = ITS_BOX.load(Ordering::Relaxed) as i32;
     // Born where it belongs rather than at the corner of the screen: a
-    // window is shown where it was made, and the page only asks for it to
-    // be placed again on its next frame.
+    // window is shown where it was made, and would stay there until it is
+    // next laid.
     let top = if UPWARD.load(Ordering::Relaxed) {
         anchor.1 - side
     } else {
@@ -532,8 +534,8 @@ fn head_for(window: windows_sys::Win32::Foundation::HWND) {
 
 /// What fraction of its full size the logo is drawn at right now.
 ///
-/// Fast at first and slow at the end, which is the curve the page used
-/// and the one a size change wants: what the eye follows is the start.
+/// Fast at first and slow at the end, the curve a size change wants:
+/// what the eye follows is the start.
 fn drawn(growth: &Growth) -> f32 {
     let Some(since) = growth.since else {
         return growth.to;

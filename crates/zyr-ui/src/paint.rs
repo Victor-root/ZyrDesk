@@ -77,15 +77,15 @@ fn note(what: &str) {
 /// The font family, the system's own, in the order the renderer looks
 /// for it.
 ///
-/// The same as the stylesheet's, to the letter: two families for one
-/// product make two products. Windows 11 has the first, Windows 10 the
-/// second, and DirectWrite works down the list on its own.
+/// One family for the whole product: two families for one product make
+/// two products. Windows 11 has the first, Windows 10 the second, and
+/// DirectWrite works down the list on its own.
 const FAMILY: &str = "Segoe UI Variable Text";
 const FAMILY_BEFORE: &str = "Segoe UI";
 
 /// The fixed-width family, and the one that came before it, in the same
-/// order and for the same reason: what the stylesheet asks for wherever
-/// characters must line up under one another.
+/// order and for the same reason: for wherever characters must line up
+/// under one another.
 const MONO: &str = "Cascadia Mono";
 const MONO_BEFORE: &str = "Consolas";
 
@@ -146,17 +146,16 @@ pub struct Pen {
     pub size: f32,
     pub bold: bool,
     pub align: Align,
-    /// Fixed width: what the stylesheet asks for in a fingerprint, a
-    /// journal, a code and a key combination, where each character must
-    /// take up the same room as its neighbour.
+    /// Fixed width: for a fingerprint, a journal, a code and a key
+    /// combination, where each character must take up the same room as
+    /// its neighbour.
     pub mono: bool,
     pub overflow: Overflow,
     /// What is added between two characters, in real pixels.
     ///
-    /// What the stylesheet calls `letter-spacing`: a section label in
-    /// capitals and a pairing code read badly when packed tight, and it is
-    /// the only place where the space between letters is a choice of the
-    /// design.
+    /// What CSS calls `letter-spacing`: a section label in capitals and a
+    /// fingerprint read badly when packed tight, and they are the only
+    /// places where the space between letters is a choice of the design.
     pub spacing: f32,
 }
 
@@ -175,7 +174,7 @@ impl Pen {
     }
 
     /// The same, with the characters spread apart by that many times
-    /// their size: the stylesheet writes it in `em`.
+    /// their size, which CSS writes in `em`.
     pub fn spaced(self, part: f32) -> Self {
         Pen {
             spacing: self.size * part,
@@ -612,9 +611,9 @@ impl Canvas {
 
     /// The outline of a rounded rectangle, dashed.
     ///
-    /// What the stylesheet writes as `border-style: dashed`, and which
-    /// says one thing only in the whole product: this is waiting to be
-    /// filled. A full card is edged with a solid line.
+    /// What CSS writes as `border-style: dashed`, and which says one thing
+    /// only in the whole product: this is waiting to be filled. A full card
+    /// is edged with a solid line.
     pub fn stroke_dashed(&self, rect: Rect, radius: f32, thickness: f32, colour: Colour) {
         // SAFETY: as above, with the dashed style made at the same
         // time as the other one.

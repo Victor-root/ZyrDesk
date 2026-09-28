@@ -82,14 +82,14 @@ fn margin() -> i32 {
     MARGIN
 }
 
-/// Size of the button alone, in page pixels, as the page draws it.
+/// Size of the button alone at rest, in page pixels: the logo at rest,
+/// which `logo.rs` draws from this same number.
 ///
-/// The same number as the logo's in `button.css`, and it has to stay the
-/// same number: everything about where the button hangs is worked out
-/// from it, and nothing ever corrects it afterwards. Left behind once
-/// when the logo was made smaller, it hung the button ten real pixels off
-/// its corner for the whole of every session.
-const BUTTON: f64 = 44.0;
+/// Everything about where the button hangs is worked out from it, and
+/// nothing ever corrects it afterwards. When the logo carried a number of
+/// its own, it was once made smaller without this one, and the button
+/// hung ten real pixels off its corner for the whole of every session.
+pub const BUTTON: f64 = 44.0;
 
 /// How far the mouse has to travel, while holding the button, before it
 /// is a drag and no longer a click.
@@ -256,19 +256,12 @@ static TO_THE_RIGHT: AtomicBool = AtomicBool::new(false);
 /// The logo alone, in real pixels, which is not the size of the window
 /// holding it.
 ///
-/// The window is as large as the menu from the moment it opens and stays
-/// that size for the whole session, so that clicking the button never
-/// resizes it: a window that changes size makes the page inside it lay
-/// itself out again, and for the frame that takes, the logo is not drawn
-/// anywhere. That was the flash. Everything the window shows is cut out
-/// of it, so the part of it nobody is using shows nothing and catches no
-/// click.
-///
-/// But the button is the logo, not the window it is carried in: where it
-/// hangs, how far it may be dragged, and how small the picture may be
-/// taken down to are all about the logo. Hence this, beside the window.
-/// The logo sits in the window's top right corner, so the two share that
-/// corner and nothing else.
+/// The logo's window is as large as the logo at its largest, under a
+/// hand, and never changes size: the logo grows and shrinks inside it,
+/// hanging by the corner the window hangs by. But the button is the logo
+/// at rest, not the window it is carried in: where it hangs, how far it
+/// may be dragged, and how small the picture may be taken down to are
+/// all about the logo. Hence this, beside the window.
 static ITS_LOGO: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 
 /// Set while the person has hidden the button from its own menu.
@@ -666,9 +659,8 @@ pub fn hide(app: &App) -> Result<(), String> {
 /// pixels wide, the mouse leaves it on the first movement, and where the
 /// system says the cursor is is the only answer that is always true.
 ///
-/// Nothing is asked of the page while this runs, and the menu is left
-/// open if it was: a window that changes size under the mouse gets away
-/// from it.
+/// The menu is left open if it was: a window that changes size under the
+/// mouse gets away from it.
 pub async fn grabbed() -> bool {
     // The picture is read once, less the figures' banner along its top:
     // it does not move while the button is being dragged over it.
@@ -1142,8 +1134,7 @@ fn menu_height() -> i32 {
 /// Lays the two windows of the button, and shows them or puts them away.
 ///
 /// One anchor for both: that is what keeps them from disagreeing on
-/// where the button is, and there is nothing left between what is wanted
-/// and what is drawn, the page that ran a frame behind being gone.
+/// where the button is.
 #[cfg(windows)]
 fn put_the_button(picture: (i32, i32, i32, i32), anchor: (i32, i32)) {
     let opens = Opens::from_number(OPENS.load(Ordering::Relaxed));
