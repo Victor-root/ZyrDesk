@@ -36,7 +36,7 @@ impl std::str::FromStr for Codec {
             "h264" => Ok(Codec::H264),
             "hevc" | "h265" => Ok(Codec::Hevc),
             "av1" => Ok(Codec::Av1),
-            _ => Err(format!("codec inconnu : {text}")),
+            _ => Err(format!("unknown codec: {text}")),
         }
     }
 }
@@ -89,7 +89,7 @@ impl std::str::FromStr for DisplayMode {
         match text.to_ascii_lowercase().as_str() {
             "fullscreen" | "plein-ecran" => Ok(DisplayMode::Fullscreen),
             "windowed" | "fenetre" => Ok(DisplayMode::Windowed),
-            _ => Err(format!("mode d'affichage inconnu : {text}")),
+            _ => Err(format!("unknown display mode: {text}")),
         }
     }
 }
@@ -431,12 +431,16 @@ impl std::str::FromStr for FarScreen {
         let size = words.next().unwrap_or_default().trim();
         let name = words.next().unwrap_or_default().trim();
         if id.is_empty() {
-            return Err(format!("écran sans identifiant : {text}"));
+            return Err(format!("screen without an identifier: {text}"));
         }
         let main = match which {
             "main" => true,
             "other" => false,
-            other => return Err(format!("« {other} » ne dit pas si c'est l'écran principal")),
+            other => {
+                return Err(format!(
+                    "« {other} » does not say whether it is the main screen"
+                ));
+            }
         };
         let (wide, high) = parse_resolution(size).map_err(|e| e.to_string())?;
         Ok(FarScreen {
@@ -507,14 +511,14 @@ impl std::str::FromStr for WantedScreen {
     type Err = String;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let (size, magnification) = text.split_once('@').ok_or_else(|| {
-            format!("écran attendu sous la forme LARGEURxHAUTEUR@AGRANDISSEMENT : {text}")
-        })?;
+        let (size, magnification) = text
+            .split_once('@')
+            .ok_or_else(|| format!("screen expected as WIDTHxHEIGHT@MAGNIFICATION: {text}"))?;
         let (wide, high) = parse_resolution(size).map_err(|e| e.to_string())?;
         let scale = magnification
             .trim()
             .parse()
-            .map_err(|_| format!("agrandissement attendu en pour cent : {magnification}"))?;
+            .map_err(|_| format!("magnification expected in percent: {magnification}"))?;
         Ok(WantedScreen { wide, high, scale })
     }
 }
@@ -686,11 +690,7 @@ pub struct InvalidResolution(pub String);
 
 impl fmt::Display for InvalidResolution {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "résolution attendue sous la forme LARGEURxHAUTEUR : {}",
-            self.0
-        )
+        write!(f, "resolution expected as WIDTHxHEIGHT: {}", self.0)
     }
 }
 
@@ -854,7 +854,7 @@ mod tests {
         words.sort_unstable();
         let how_many = words.len();
         words.dedup();
-        assert_eq!(words.len(), how_many, "deux formes partagent un mot");
+        assert_eq!(words.len(), how_many, "two shapes share a word");
         for shape in Pointer::ALL {
             assert!(!shape.word().is_empty());
             assert_eq!(shape.word().parse::<Pointer>().unwrap(), shape);
@@ -868,7 +868,7 @@ mod tests {
         // has never heard of. Refusing it the whole line would take
         // the pointer away over a word.
         assert_eq!("".parse::<Pointer>().unwrap(), Pointer::Arrow);
-        assert_eq!("licorne".parse::<Pointer>().unwrap(), Pointer::Arrow);
+        assert_eq!("unicorn".parse::<Pointer>().unwrap(), Pointer::Arrow);
         // And case decides nothing.
         assert_eq!("TEXT".parse::<Pointer>().unwrap(), Pointer::Text);
     }
@@ -1007,10 +1007,11 @@ mod tests {
     fn a_screen_line_this_version_cannot_read_costs_that_screen_and_not_the_list() {
         // A version over there that described a screen differently must
         // not empty the menu: that screen is lost, not the others.
-        let mixed = "{aaa} main 1920x1080 Un écran\nn'importe quoi\n{bbb} other 1280x720 Un autre";
+        let mixed =
+            "{aaa} main 1920x1080 A screen\nanything at all\n{bbb} other 1280x720 Another one";
         let read = far_screens_read(mixed);
         assert_eq!(read.len(), 2);
-        assert_eq!(read[0].name, "Un écran");
+        assert_eq!(read[0].name, "A screen");
         assert!(!read[1].main);
         // And nothing at all reads as nothing at all.
         assert!(far_screens_read("").is_empty());
@@ -1041,7 +1042,7 @@ mod tests {
         // from a cut-off message.
         assert!("1920x1200".parse::<WantedScreen>().is_err());
         assert!("1920x1200@".parse::<WantedScreen>().is_err());
-        assert!("1920x1200@beaucoup".parse::<WantedScreen>().is_err());
+        assert!("1920x1200@plenty".parse::<WantedScreen>().is_err());
     }
 
     #[test]
@@ -1067,7 +1068,7 @@ mod tests {
         assert_eq!("screen".parse::<Asked>().unwrap(), Asked::Client);
         assert_eq!("SCREEN".parse::<Asked>().unwrap(), Asked::Client);
         assert_eq!("host".parse::<Asked>().unwrap(), Asked::Host);
-        assert!("n'importe quoi".parse::<Asked>().is_err());
+        assert!("anything at all".parse::<Asked>().is_err());
     }
 
     #[test]
@@ -1077,7 +1078,13 @@ mod tests {
         assert_eq!(RATES_OFFERED.first(), Some(&(RATE_LOWEST_MBPS * 1_000)));
         assert_eq!(RATES_OFFERED.last(), Some(&(RATE_HIGHEST_MBPS * 1_000)));
         for pair in RATES_OFFERED.windows(2) {
-            assert_eq!(pair[1] - pair[0], 1_000, "entre {} et {}", pair[0], pair[1]);
+            assert_eq!(
+                pair[1] - pair[0],
+                1_000,
+                "between {} and {}",
+                pair[0],
+                pair[1]
+            );
         }
         // And the default rate stays a notch of the list: a written
         // setting that was not in it would be refused at the first

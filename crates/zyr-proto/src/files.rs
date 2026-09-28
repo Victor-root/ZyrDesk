@@ -83,14 +83,14 @@ mod tests {
 
     #[test]
     fn the_file_is_replaced_and_nothing_is_left_beside_it() {
-        let folder = fresh_folder("remplace");
-        let path = folder.join("choix.conf");
+        let folder = fresh_folder("replace");
+        let path = folder.join("choice.conf");
 
-        replace(&path, "avant").unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), "avant");
+        replace(&path, "before").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "before");
 
-        replace(&path, "après").unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), "après");
+        replace(&path, "after").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "after");
 
         // The file being written does not survive the replacement: a
         // leftover would pile up with every write.
@@ -102,10 +102,10 @@ mod tests {
 
     #[test]
     fn the_folder_is_created_on_the_way() {
-        let folder = fresh_folder("dossier");
-        let path = folder.join("plus").join("loin.conf");
-        replace(&path, "écrit").unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), "écrit");
+        let folder = fresh_folder("folder");
+        let path = folder.join("further").join("away.conf");
+        replace(&path, "written").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "written");
         fs::remove_dir_all(&folder).unwrap();
     }
 }

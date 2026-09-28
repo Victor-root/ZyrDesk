@@ -24,7 +24,7 @@
 //!
 //! - `tag:clipboard` is the long way of writing `clipboard`, and means
 //!   exactly the same thing.
-//! - `"deux mots"` or `message:refusé` looks inside the line rather than
+//! - `"two words"` or `message:refused` looks inside the line rather than
 //!   at its name. Quotes are what tells one from the other: quoted is
 //!   text to find, bare is a name.
 //! - a word carrying a colon, like `192.168.1.5:47000`, is an address, a
@@ -296,7 +296,7 @@ mod tests {
         // as long as nothing has been asked of it.
         let sift = Sifting::of("   ");
         assert!(sift.takes_everything());
-        assert!(sift.keeps(&a_line("clipboard", "peu importe"), "service"));
+        assert!(sift.keeps(&a_line("clipboard", "whatever"), "service"));
     }
 
     #[test]
@@ -308,14 +308,11 @@ mod tests {
             let sift = Sifting::of(said);
             assert!(!sift.takes_everything(), "{said}");
             assert!(
-                sift.keeps(
-                    &a_line("clipboard", "ce que tient cet ordinateur"),
-                    "service"
-                ),
+                sift.keeps(&a_line("clipboard", "what this computer holds"), "service"),
                 "{said}"
             );
             assert!(
-                !sift.keeps(&a_line("ways", "voie 1 ouverte"), "service"),
+                !sift.keeps(&a_line("ways", "way 1 open"), "service"),
                 "{said}"
             );
         }
@@ -327,12 +324,9 @@ mod tests {
         // keep anything, which is the opposite of what someone typing
         // two of them wants.
         let sift = Sifting::of("clipboard files");
-        assert!(sift.keeps(
-            &a_line("clipboard", "ce que tient cet ordinateur"),
-            "service"
-        ));
-        assert!(sift.keeps(&a_line("files", "1 fichier de 4,7 Go arrive"), "service"));
-        assert!(!sift.keeps(&a_line("way", "voie 1 ouverte"), "service"));
+        assert!(sift.keeps(&a_line("clipboard", "what this computer holds"), "service"));
+        assert!(sift.keeps(&a_line("files", "1 file of 4.7 GB coming in"), "service"));
+        assert!(!sift.keeps(&a_line("way", "way 1 open"), "service"));
     }
 
     #[test]
@@ -341,16 +335,16 @@ mod tests {
         // else makes "and": that is what makes "the subject, without
         // the known noise" possible in two words.
         let sift = Sifting::of("clipboard files -level:debug");
-        assert!(sift.keeps(&a_line("files", "1 fichier arrive"), "service"));
-        assert!(!sift.keeps(&a_debug_line("files", "morceau 12 demandé"), "service"));
-        assert!(!sift.keeps(&a_line("way", "voie 1 ouverte"), "service"));
+        assert!(sift.keeps(&a_line("files", "1 file coming in"), "service"));
+        assert!(!sift.keeps(&a_debug_line("files", "piece 12 asked for"), "service"));
+        assert!(!sift.keeps(&a_line("way", "way 1 open"), "service"));
     }
 
     #[test]
     fn case_does_not_matter() {
         // Nobody remembers the case of a tag they read once.
         let sift = Sifting::of("TAG:ClipBoard");
-        assert!(sift.keeps(&a_line("clipboard", "quoi que ce soit"), "service"));
+        assert!(sift.keeps(&a_line("clipboard", "anything at all"), "service"));
     }
 
     #[test]
@@ -364,7 +358,7 @@ mod tests {
         assert!(!sift.keeps(console, "service.log"));
         // And a tagged line stays in its file: the two names go
         // together rather than one in place of the other.
-        let ours = a_line("clipboard", "ce que tient cet ordinateur");
+        let ours = a_line("clipboard", "what this computer holds");
         assert!(sift.keeps(&ours, "engine-console.log"));
         assert!(Sifting::of("tag:clipboard").keeps(&ours, "service.log"));
     }
@@ -377,8 +371,8 @@ mod tests {
             Sifting::of("\"DataObject\""),
             Sifting::of("message:DataObject"),
         ] {
-            assert!(sift.keeps(&a_line("clipboard", "il tient DataObject"), "service"));
-            assert!(!sift.keeps(&a_line("clipboard", "il tient du texte"), "service"));
+            assert!(sift.keeps(&a_line("clipboard", "it holds DataObject"), "service"));
+            assert!(!sift.keeps(&a_line("clipboard", "it holds text"), "service"));
         }
     }
 
@@ -387,16 +381,16 @@ mod tests {
         // This is what makes a pair like this one useful: the name for
         // the subject, the minus for the known noise.
         let sift = Sifting::of("clipboard -\"DataObject\"");
-        assert!(sift.keeps(&a_line("clipboard", "15997 octets de texte"), "service"));
-        assert!(!sift.keeps(&a_line("clipboard", "il tient DataObject"), "service"));
-        assert!(!sift.keeps(&a_line("ways", "15997 octets de texte"), "service"));
+        assert!(sift.keeps(&a_line("clipboard", "15997 bytes of text"), "service"));
+        assert!(!sift.keeps(&a_line("clipboard", "it holds DataObject"), "service"));
+        assert!(!sift.keeps(&a_line("ways", "15997 bytes of text"), "service"));
     }
 
     #[test]
     fn what_is_in_quotes_is_a_single_thing() {
-        let sift = Sifting::of("\"deux mots\"");
-        assert!(sift.keeps(&a_line("ways", "voici deux mots ici"), "service"));
-        assert!(!sift.keeps(&a_line("ways", "deux, puis mots"), "service"));
+        let sift = Sifting::of("\"two words\"");
+        assert!(sift.keeps(&a_line("ways", "there are two words here"), "service"));
+        assert!(!sift.keeps(&a_line("ways", "two, then words"), "service"));
     }
 
     #[test]
@@ -404,24 +398,24 @@ mod tests {
         // This product writes addresses and times everywhere: reading
         // them as an unknown key would never give anything back.
         let sift = Sifting::of("192.168.1.5:57577");
-        assert!(sift.keeps(&a_line("ways", "card 192.168.1.5:57577 sondée"), "service"));
+        assert!(sift.keeps(&a_line("ways", "card 192.168.1.5:57577 probed"), "service"));
     }
 
     #[test]
     fn the_tag_is_read_where_the_journal_writes_it() {
         // And nowhere else: a bracket in the message is a bracket in
         // the message.
-        let written = a_line("clipboard", "[pas une étiquette] la suite");
+        let written = a_line("clipboard", "[not a tag] the rest");
         assert_eq!(about(&written), Some(("info", "clipboard")));
-        assert_eq!(about("[hevc @ 0x55d4c1a2e340] rien de décodé"), None);
+        assert_eq!(about("[hevc @ 0x55d4c1a2e340] nothing decoded"), None);
     }
 
     #[test]
     fn a_voice_is_asked_for_by_its_name_or_its_letter() {
         // What is only there for a hunt drowns everything else: it
         // must be possible to keep only that, or everything but that.
-        let debug = a_debug_line("way", "pas un paquet depuis 1098 ms");
-        let info = a_line("way", "voie 1 ouverte vers PC-SAV");
+        let debug = a_debug_line("way", "not a packet for 1098 ms");
+        let info = a_line("way", "way 1 open towards PC-SAV");
 
         assert!(Sifting::of("level:debug").keeps(&debug, "service.log"));
         assert!(!Sifting::of("level:debug").keeps(&info, "service.log"));
@@ -455,12 +449,12 @@ mod tests {
         // for, and nothing sifts any more. Written for real and read
         // back, rather than copied out from memory here.
         let folder = std::env::temp_dir().join(format!(
-            "zyrdesk-tamis-{}",
+            "zyrdesk-sift-{}",
             crate::random::alphanumeric_string(8)
         ));
         let path = folder.join("service.log");
         let log = crate::log::Log::open(&path).unwrap();
-        log.about("clipboard").write("ce que tient cet ordinateur");
+        log.about("clipboard").write("what this computer holds");
 
         let written = std::fs::read_to_string(&path).unwrap();
         let line = written.lines().next().unwrap();

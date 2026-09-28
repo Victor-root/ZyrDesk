@@ -15,7 +15,7 @@ fn main() {
     let build = match (commit, date) {
         (Some(commit), Some(date)) => format!("{commit} {date}"),
         (Some(commit), None) => commit,
-        _ => "inconnu".to_string(),
+        _ => "unknown".to_string(),
     };
     println!("cargo::rustc-env=ZYR_BUILD={build}");
 

@@ -39,7 +39,7 @@ pub struct InvalidFingerprint;
 
 impl std::fmt::Display for InvalidFingerprint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "une empreinte s'écrit avec 64 caractères hexadécimaux")
+        write!(f, "a fingerprint is written as 64 hexadecimal characters")
     }
 }
 

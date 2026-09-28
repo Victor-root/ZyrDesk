@@ -217,7 +217,7 @@ fn trimmed(file: &mut File) -> io::Result<()> {
     file.set_len(0)?;
     file.seek(SeekFrom::Start(0))?;
     // Said out loud, so the cut is never taken for a loss.
-    file.write_all("(le début de ce journal a été retiré)\n".as_bytes())?;
+    file.write_all("(the beginning of this journal was removed)\n".as_bytes())?;
     file.write_all(&end[from..])
 }
 
@@ -348,24 +348,24 @@ mod tests {
         // This is what makes it possible to ask for six lines out of
         // four thousand: the tag is on the line, and a tagged copy
         // writes into the same file and in the same order.
-        let path = fresh_path("etiquettes");
+        let path = fresh_path("tags");
         let log = Log::open(&path).unwrap();
         let clipboard = log.about("clipboard");
 
-        log.write("sans étiquette particulière");
-        clipboard.write("ce que tient cet ordinateur");
-        log.write("et la suite");
+        log.write("under no particular tag");
+        clipboard.write("what this computer holds");
+        log.write("and what follows");
 
         let contents = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = contents.lines().collect();
-        assert_eq!(lines.len(), 3, "un seul fichier pour les deux copies");
+        assert_eq!(lines.len(), 3, "one file for both copies");
         assert!(
             lines[0].contains(&format!("[{OTHERWISE}] ")),
             "{}",
             lines[0]
         );
         assert!(lines[1].contains("[clipboard] "), "{}", lines[1]);
-        assert!(lines[1].ends_with("ce que tient cet ordinateur"));
+        assert!(lines[1].ends_with("what this computer holds"));
         assert!(
             lines[2].contains(&format!("[{OTHERWISE}] ")),
             "{}",
@@ -382,11 +382,11 @@ mod tests {
         // the moment when one is read against the other, and it is the
         // sift that separates them afterwards, by the letter each line
         // carries.
-        let path = fresh_path("voix");
+        let path = fresh_path("voices");
         let log = Log::open(&path).unwrap();
 
-        log.write("ce que le produit a fait");
-        log.debug(|| "ce que seule une chasse veut".to_string());
+        log.write("what the product did");
+        log.debug(|| "what only a hunt wants".to_string());
 
         let contents = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = contents.lines().collect();
@@ -399,28 +399,32 @@ mod tests {
 
     #[test]
     fn a_log_grown_past_reason_is_cut_back_to_its_end() {
-        let path = fresh_path("taille");
+        let path = fresh_path("size");
         let log = Log::open(&path).unwrap();
 
         // Grown past the limit through the file directly: getting
         // there line by line would take up most of the test.
         {
             let mut file = log.file.lock().unwrap();
-            let line = format!("{} du remplissage sans intérêt\n", now());
+            let line = format!("{} filler of no interest\n", now());
             let times = (AT_MOST / line.len() as u64) + 2;
             for _ in 0..times {
                 file.write_all(line.as_bytes()).unwrap();
             }
         }
 
-        log.write("la ligne qui compte");
+        log.write("the line that counts");
 
         let contents = std::fs::read_to_string(&path).unwrap();
         assert!(contents.len() as u64 <= KEPT + 256, "{}", contents.len());
         // The end is there, the beginning is gone, and the cut is
         // announced.
-        assert!(contents.ends_with("la ligne qui compte\n"));
-        assert!(contents.starts_with("(le début"), "{}", &contents[..60]);
+        assert!(contents.ends_with("the line that counts\n"));
+        assert!(
+            contents.starts_with("(the beginning"),
+            "{}",
+            &contents[..60]
+        );
         // And never half a line at the top: the cut falls on a
         // boundary.
         let second = contents.lines().nth(1).unwrap();

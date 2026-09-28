@@ -37,7 +37,7 @@ use crate::sifting::Sifting;
 /// about, and read back by the box above the button to offer them. One
 /// word, defined here, so that what writes it and what reads it cannot
 /// drift apart.
-pub const NAMES_HEADING: &str = "Étiquettes";
+pub const NAMES_HEADING: &str = "Tags";
 
 /// The names a gathered page says can be asked for.
 ///
@@ -79,10 +79,10 @@ const KEPT_WHEN_ASKED: usize = 500;
 /// says, which is where a crash leaves its last words. The player writes
 /// into the journal of the program it plays in.
 const FILES: [(&str, &str); 4] = [
-    ("service.log", "Le service"),
-    ("engine.log", "Le moteur hôte"),
-    ("engine-console.log", "La console du moteur hôte"),
-    ("interface.log", "La fenêtre"),
+    ("service.log", "The service"),
+    ("engine.log", "The host engine"),
+    ("engine-console.log", "The host engine's console"),
+    ("interface.log", "The window"),
 ];
 
 /// The files emptied with the others and never gathered.
@@ -96,11 +96,8 @@ const FILES: [(&str, &str); 4] = [
 /// a clean slate, and would otherwise read stale minutes against a
 /// session that has not even started yet.
 const ALSO_EMPTIED: [(&str, &str); 2] = [
-    ("reach.log", "Ce que cet ordinateur atteint"),
-    (
-        "reach-distant.log",
-        "Ce qu'un ordinateur distant atteignait",
-    ),
+    ("reach.log", "What this computer reaches"),
+    ("reach-distant.log", "What a far computer reached"),
 ];
 
 /// A journal being written.
@@ -115,8 +112,8 @@ impl Journal {
         let mut text = String::new();
         let _ = writeln!(text, "{}", crate::version_line());
         let mut journal = Self(text);
-        journal.says("Ordinateur", &crate::machine::name());
-        journal.says("Adresses", &own_addresses());
+        journal.says("Computer", &crate::machine::name());
+        journal.says("Addresses", &own_addresses());
         journal
     }
 
@@ -133,12 +130,12 @@ impl Journal {
     /// anything: only the end of each file reaches a page, and six lines
     /// about the clipboard are almost never among the last of a session.
     pub fn sifted(mut self, sift: &Sifting) -> String {
-        self.says("Journaux", &paths::logs_dir().display().to_string());
+        self.says("Logs", &paths::logs_dir().display().to_string());
         // Said in the heading, because a page of six lines that does not
         // say what it was sifted through reads as a product with nothing
         // to say rather than as an answer to a question.
         if !sift.takes_everything() {
-            self.says("Tri", sift.said());
+            self.says("Sift", sift.said());
         }
 
         // The files are read before the heading is closed, so that it can
@@ -185,7 +182,7 @@ pub fn emptied() -> Vec<String> {
     let mut refused = Vec::new();
     for (file, what) in FILES.iter().chain(ALSO_EMPTIED.iter()) {
         if let Err(e) = empty(&paths::logs_dir().join(file)) {
-            refused.push(format!("{what} ({file}) : {e}"));
+            refused.push(format!("{what} ({file}): {e}"));
         }
     }
     refused
@@ -213,7 +210,7 @@ fn empty(path: &Path) -> std::io::Result<()> {
 fn own_addresses() -> String {
     let answering = crate::machine::addresses();
     if answering.is_empty() {
-        return "aucune".to_string();
+        return "none".to_string();
     }
     answering
         .iter()
@@ -269,9 +266,9 @@ fn last_lines(path: &Path, within: &str, sift: &Sifting, named: &mut BTreeSet<St
         // than leaving an empty gap. Anything else is worth its reason:
         // an existing file that cannot be read is not « nothing ».
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return "(rien d'écrit pour l'instant)".to_string();
+            return "(nothing written yet)".to_string();
         }
-        Err(e) => return format!("(illisible : {e})"),
+        Err(e) => return format!("(unreadable: {e})"),
     };
 
     // Read as it comes, accents or not: what a console wrote in another
@@ -319,7 +316,7 @@ fn last_lines(path: &Path, within: &str, sift: &Sifting, named: &mut BTreeSet<St
     let from = answered.len().saturating_sub(kept);
     let mut kept = answered[from..].join("\n");
     if from > 0 || skipped > 0 {
-        kept.insert_str(0, "(le début n'est pas montré)\n");
+        kept.insert_str(0, "(the beginning is not shown)\n");
     }
     kept
 }
@@ -330,18 +327,18 @@ fn last_lines(path: &Path, within: &str, sift: &Sifting, named: &mut BTreeSet<St
 /// A file whose lines carry no name answers to its own, and to that
 /// alone. Asking for "panicked" therefore leaves out the engine's
 /// console entirely, including the lines that say it, and the page used
-/// to say "rien ici ne répond au tri": that reads like a file that said
+/// to say "nothing here answers the sift": that reads like a file that said
 /// nothing, when it had said everything. An evening's hunt went into it.
 /// The sentence now names the word to add.
 fn nothing_here(sift: &Sifting, stem: &str, its_own: &BTreeSet<String>) -> String {
     let nameless = its_own.len() == 1 && its_own.contains(stem);
     if sift.asks_for_a_name() && nameless {
         return format!(
-            "(rien ici ne répond au tri ; les lignes de ce fichier ne portent pas de nom et \
-             répondent au sien : ajoutez « {stem} » au tri pour les lire)"
+            "(nothing here answers the sift; the lines of this file carry no name and answer to \
+             its own: add « {stem} » to the sift to read them)"
         );
     }
-    "(rien ici ne répond au tri)".to_string()
+    "(nothing here answers the sift)".to_string()
 }
 
 #[cfg(test)]
@@ -370,7 +367,7 @@ mod tests {
     #[test]
     fn a_file_that_does_not_exist_is_said_rather_than_left_blank() {
         let nowhere = Path::new("/nowhere/zyrdesk/none.log");
-        assert!(read(nowhere, "none", &everything()).contains("rien d'écrit"));
+        assert!(read(nowhere, "none", &everything()).contains("nothing written"));
     }
 
     #[test]
@@ -378,49 +375,49 @@ mod tests {
         let folder = a_folder_of_its_own("long");
         let path = folder.join("long.log");
 
-        let written: Vec<String> = (0..KEPT + 40).map(|line| format!("ligne {line}")).collect();
+        let written: Vec<String> = (0..KEPT + 40).map(|line| format!("line {line}")).collect();
         std::fs::write(&path, written.join("\n")).unwrap();
 
-        let kept = read(&path, "essai", &everything());
+        let kept = read(&path, "test", &everything());
         // The end, which is where the fault is, and never the
         // beginning.
-        assert!(kept.ends_with(&format!("ligne {}", KEPT + 39)), "{kept}");
-        assert!(!kept.contains("ligne 0\n"), "{kept}");
+        assert!(kept.ends_with(&format!("line {}", KEPT + 39)), "{kept}");
+        assert!(!kept.contains("line 0\n"), "{kept}");
         // And what was left out is announced: a journal cut short in
         // silence reads like a complete one.
-        assert!(kept.starts_with("(le début n'est pas montré)"), "{kept}");
+        assert!(kept.starts_with("(the beginning is not shown)"), "{kept}");
 
         std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]
     fn a_huge_file_costs_only_its_end() {
-        let folder = a_folder_of_its_own("enorme");
-        let path = folder.join("enorme.log");
+        let folder = a_folder_of_its_own("huge");
+        let path = folder.join("huge.log");
 
         // Well beyond what the reading allows itself: if it read
         // everything, this test would show on the stopwatch and in the
         // memory.
         let mut written = String::new();
         for line in 0..40_000 {
-            written.push_str(&format!("ligne {line} avec un peu de matière autour\n"));
+            written.push_str(&format!("line {line} with a little padding around it\n"));
         }
         std::fs::write(&path, &written).unwrap();
 
-        let kept = read(&path, "essai", &everything());
+        let kept = read(&path, "test", &everything());
         assert!(
-            kept.ends_with("ligne 39999 avec un peu de matière autour"),
-            "fin : {}",
+            kept.ends_with("line 39999 with a little padding around it"),
+            "end: {}",
             &kept[kept.len().saturating_sub(80)..]
         );
         assert!(
-            kept.starts_with("(le début n'est pas montré)"),
+            kept.starts_with("(the beginning is not shown)"),
             "{}",
             &kept[..60]
         );
         // Never half a line at the top after the cut.
         let second = kept.lines().nth(1).unwrap();
-        assert!(second.starts_with("ligne "), "{second}");
+        assert!(second.starts_with("line "), "{second}");
 
         std::fs::remove_dir_all(&folder).unwrap();
     }
@@ -429,10 +426,10 @@ mod tests {
     fn a_nameless_file_says_which_word_to_add_to_the_sift() {
         // The exact fault: asking for "panicked" leaves out the
         // engine's console entirely, because its lines carry no name
-        // and answer to its own. The page used to say "rien ici ne
-        // répond au tri", which reads like a file that said nothing
+        // and answer to its own. The page used to say "nothing here
+        // answers the sift", which reads like a file that said nothing
         // when it had said everything.
-        let folder = a_folder_of_its_own("sans-nom");
+        let folder = a_folder_of_its_own("nameless");
 
         // A console: no line has a tag.
         let console = folder.join("engine-console.log");
@@ -443,16 +440,16 @@ mod tests {
         .unwrap();
         let shown = read(&console, "engine-console.log", &Sifting::of("panicked"));
         assert!(
-            shown.contains("ajoutez « engine-console » au tri"),
+            shown.contains("add « engine-console » to the sift"),
             "{shown}"
         );
 
         // A file whose lines carry names says nothing of the kind:
         // adding its own name to it would change nothing.
         let service = folder.join("service.log");
-        std::fs::write(&service, "2026-09-15 18:30:18 I [way] voie 1 ouverte\n").unwrap();
+        std::fs::write(&service, "2026-09-15 18:30:18 I [way] way 1 open\n").unwrap();
         let shown = read(&service, "service.log", &Sifting::of("panicked"));
-        assert_eq!(shown, "(rien ici ne répond au tri)", "{shown}");
+        assert_eq!(shown, "(nothing here answers the sift)", "{shown}");
 
         // And the sift that does name the file gives it
         // back.
@@ -472,26 +469,26 @@ mod tests {
         // twenty lines of a file reach a page, and six lines about
         // the clipboard are almost never among the last hundred and
         // twenty of a session.
-        let folder = a_folder_of_its_own("tri");
+        let folder = a_folder_of_its_own("sift");
         let path = folder.join("service.log");
 
         let mut written = String::new();
-        written.push_str("2026-09-11 18:55:03 I [clipboard] ce que tient cet ordinateur\n");
+        written.push_str("2026-09-11 18:55:03 I [clipboard] what this computer holds\n");
         for line in 0..KEPT + 40 {
-            let _ = writeln!(written, "2026-09-11 18:55:04 I [ways] voie {line} ouverte");
+            let _ = writeln!(written, "2026-09-11 18:55:04 I [ways] way {line} open");
         }
         std::fs::write(&path, &written).unwrap();
 
         // Without a sift, the line at the beginning is out
         // of reach.
         let unsifted = read(&path, "service", &everything());
-        assert!(!unsifted.contains("ce que tient"), "{unsifted}");
+        assert!(!unsifted.contains("what this computer holds"), "{unsifted}");
 
         // With one, it is the only one left.
         let sifted = read(&path, "service", &Sifting::of("tag:clipboard"));
         assert_eq!(
             sifted,
-            "2026-09-11 18:55:03 I [clipboard] ce que tient cet ordinateur"
+            "2026-09-11 18:55:03 I [clipboard] what this computer holds"
         );
 
         std::fs::remove_dir_all(&folder).unwrap();
@@ -502,11 +499,11 @@ mod tests {
         // The sift box cannot guess it: half the time the page comes
         // from another computer, and a name offered that no line carries
         // is a dead end offered.
-        let folder = a_folder_of_its_own("noms");
+        let folder = a_folder_of_its_own("names");
         let path = folder.join("service.log");
         let mut written = String::new();
-        let _ = writeln!(written, "2026-09-11 18:55:03 I [clipboard] ce qu'il tient");
-        let _ = writeln!(written, "2026-09-11 18:55:04 I [way] voie 1 ouverte");
+        let _ = writeln!(written, "2026-09-11 18:55:03 I [clipboard] what it holds");
+        let _ = writeln!(written, "2026-09-11 18:55:04 I [way] way 1 open");
         std::fs::write(&path, &written).unwrap();
 
         let mut named = BTreeSet::new();
@@ -542,7 +539,7 @@ mod tests {
         assert_eq!(names_in(&journal.0), ["clipboard", "files", "way"]);
         // A page from an older half of the product carries none: the box
         // then offers nothing and everything is typed, as before.
-        assert!(names_in("Ordinateur       : PC-SAV").is_empty());
+        assert!(names_in("Computer         : PC-SAV").is_empty());
 
         std::fs::remove_dir_all(&folder).unwrap();
     }
@@ -551,12 +548,12 @@ mod tests {
     fn a_sift_that_gives_nothing_says_so_rather_than_leaving_a_blank() {
         // A blank reads like an empty file, and the question becomes
         // "does it work?" instead of "there was nothing".
-        let folder = a_folder_of_its_own("tri-vide");
+        let folder = a_folder_of_its_own("empty-sift");
         let path = folder.join("service.log");
-        std::fs::write(&path, "2026-09-11 18:55:04 I [ways] voie 1 ouverte\n").unwrap();
+        std::fs::write(&path, "2026-09-11 18:55:04 I [ways] way 1 open\n").unwrap();
 
         let sifted = read(&path, "service", &Sifting::of("tag:clipboard"));
-        assert!(sifted.contains("rien ici ne répond au tri"), "{sifted}");
+        assert!(sifted.contains("nothing here answers the sift"), "{sifted}");
 
         std::fs::remove_dir_all(&folder).unwrap();
     }
@@ -566,14 +563,14 @@ mod tests {
         // Otherwise it reads as a product with nothing to say rather
         // than as the answer to a question.
         let text = Journal::of_this_computer().sifted(&Sifting::of("tag:clipboard"));
-        assert!(text.contains("Tri "), "{}", &text[..400]);
+        assert!(text.contains("Sift "), "{}", &text[..400]);
         assert!(text.contains("tag:clipboard"), "{}", &text[..400]);
         // And a page that was not sifted does not carry the
         // line at all.
         assert!(
             !Journal::of_this_computer()
                 .sifted(&Sifting::everything())
-                .contains("\nTri ")
+                .contains("\nSift ")
         );
     }
 
@@ -581,9 +578,9 @@ mod tests {
     fn an_unreadable_file_says_so_rather_than_nothing() {
         // A folder cannot be read like a file: that is the portable
         // way of getting a refusal that is not "missing".
-        let folder = a_folder_of_its_own("illisible");
-        let refused = read(&folder, "essai", &everything());
-        assert!(refused.starts_with("(illisible"), "{refused}");
+        let folder = a_folder_of_its_own("unreadable");
+        let refused = read(&folder, "test", &everything());
+        assert!(refused.starts_with("(unreadable"), "{refused}");
         std::fs::remove_dir_all(&folder).unwrap();
     }
 
@@ -593,15 +590,15 @@ mod tests {
         // a column measured in bytes would think itself crooked where
         // it is perfectly straight.
         let mut journal = Journal(String::new());
-        journal.says("Service", "en marche");
-        journal.says("Accès distant", "activé");
+        journal.says("Service", "running");
+        journal.says("Round trip (µs)", "740");
         let columns: Vec<usize> = journal
             .0
             .lines()
             .map(|line| {
                 line.chars()
                     .position(|c| c == ':')
-                    .expect("un séparateur par ligne")
+                    .expect("a separator on every line")
             })
             .collect();
         assert_eq!(columns[0], columns[1], "{}", journal.0);
@@ -615,7 +612,7 @@ mod tests {
         let text = Journal::of_this_computer().sifted(&Sifting::everything());
         let mut lines = text.lines();
         assert_eq!(lines.next().unwrap(), crate::version_line());
-        assert!(lines.next().unwrap().starts_with("Ordinateur"), "{text}");
+        assert!(lines.next().unwrap().starts_with("Computer"), "{text}");
         // And the four files are there, named, even the ones this
         // computer has never written.
         for (file, what) in FILES {
@@ -636,10 +633,10 @@ mod tests {
         assert!(also.contains(&"reach-distant.log"));
         assert!(
             !gathered.contains(&"reach.log"),
-            "le relevé noierait la copie qu'on relit"
+            "the readings would drown the copy that is read back"
         );
         for file in &also {
-            assert!(!gathered.contains(file), "{file} serait vidé deux fois");
+            assert!(!gathered.contains(file), "{file} would be emptied twice");
         }
     }
 
@@ -647,11 +644,11 @@ mod tests {
     fn a_file_that_was_never_written_is_already_empty() {
         // Emptying the journal of a computer that has never hosted must
         // not complain about the file the host engine never opened.
-        let folder = a_folder_of_its_own("vidage");
-        assert!(empty(&folder.join("jamais.log")).is_ok());
+        let folder = a_folder_of_its_own("emptying");
+        assert!(empty(&folder.join("never.log")).is_ok());
 
-        let path = folder.join("plein.log");
-        std::fs::write(&path, "trois semaines de lignes\n").unwrap();
+        let path = folder.join("full.log");
+        std::fs::write(&path, "three weeks of lines\n").unwrap();
         assert!(empty(&path).is_ok());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
 

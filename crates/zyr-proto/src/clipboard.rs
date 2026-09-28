@@ -138,7 +138,7 @@ pub struct Unreadable;
 
 impl fmt::Display for Unreadable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ce n'est pas ce qu'un presse-papiers porte")
+        f.write_str("this is not what a clipboard carries")
     }
 }
 
@@ -273,8 +273,8 @@ impl Clip {
 /// One file of a listing: where it goes, and how heavy it is.
 ///
 /// The path is relative and never the one it had on the machine it was
-/// copied from: `D:\\Photos\\2026\\lac.jpg` copied with its folder
-/// travels as `2026/lac.jpg`, and the other computer decides for itself
+/// copied from: `D:\\Photos\\2026\\lake.jpg` copied with its folder
+/// travels as `2026/lake.jpg`, and the other computer decides for itself
 /// where that lands. An absolute path would name a disk that may not
 /// exist over there, and a path climbing out of its folder would name a
 /// place nobody asked for.
@@ -447,7 +447,7 @@ impl HowFar {
 /// 1024: a product that says a file is smaller than the Explorer says it
 /// is has an argument with the Explorer that it cannot win.
 pub fn weighed(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["o", "ko", "Mo", "Go", "To"];
+    const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
     let mut left = bytes as f64;
     let mut unit = 0;
     while left >= 1000.0 && unit + 1 < UNITS.len() {
@@ -455,7 +455,7 @@ pub fn weighed(bytes: u64) -> String {
         unit += 1;
     }
     if unit == 0 {
-        return format!("{bytes} o");
+        return format!("{bytes} B");
     }
     format!("{left:.1} {}", UNITS[unit])
 }
@@ -517,8 +517,11 @@ mod tests {
         // turn would send the clipboard back to the other computer for
         // nothing, and what arrives would go straight back to where it
         // came from.
-        assert_eq!(Clip::text("bonjour").stamp(), Clip::text("bonjour").stamp());
-        assert_ne!(Clip::text("bonjour").stamp(), Clip::text("bonsoir").stamp());
+        assert_eq!(Clip::text("hello").stamp(), Clip::text("hello").stamp());
+        assert_ne!(
+            Clip::text("hello").stamp(),
+            Clip::text("good evening").stamp()
+        );
     }
 
     #[test]
@@ -536,7 +539,7 @@ mod tests {
     #[test]
     fn a_clip_makes_the_round_trip_through_the_tunnel() {
         for clip in [
-            Clip::text("deux mots"),
+            Clip::text("two words"),
             Clip::text(""),
             Clip::picture(vec![
                 0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00,
@@ -549,7 +552,7 @@ mod tests {
 
     #[test]
     fn a_stamp_is_written_and_read_back() {
-        let stamp = Clip::text("bonjour").stamp();
+        let stamp = Clip::text("hello").stamp();
         assert_eq!(stamp.to_string().parse::<Stamp>().unwrap(), stamp);
         assert_eq!(stamp.to_string().len(), 64);
     }
@@ -571,11 +574,10 @@ mod tests {
     fn what_does_not_say_what_it_carries_is_refused() {
         assert!(Head::at_the_head("").is_err());
         assert!(Head::at_the_head("picture").is_err());
-        assert!(Head::at_the_head("son 00").is_err());
+        assert!(Head::at_the_head("sound 00").is_err());
         assert!(Clip::from_the_wire("text").is_err());
         assert!(
-            Clip::from_the_wire(&format!("text {} pas-du-base64!", Clip::text("").stamp()))
-                .is_err()
+            Clip::from_the_wire(&format!("text {} not-base64!", Clip::text("").stamp())).is_err()
         );
     }
 
@@ -592,9 +594,9 @@ mod tests {
     #[test]
     fn a_file_list_makes_the_round_trip() {
         let listing = Listing::of(vec![
-            listed("lac.jpg", 2_400_000),
-            listed("2026/été au bord de l'eau.png", 940),
-            listed("un dossier/un fichier avec des espaces.txt", 0),
+            listed("lake.jpg", 2_400_000),
+            listed("2026/café by the water's edge.png", 940),
+            listed("a folder/a file with spaces.txt", 0),
         ]);
         let clip = Clip::files(&listing);
         assert_eq!(clip.kind(), Kind::Files);
@@ -609,15 +611,15 @@ mod tests {
         // a few hundred bytes, and nothing moves as long as nobody
         // pastes.
         let listing = Listing::of(vec![
-            listed("gros.iso", 80_000_000_000),
-            listed("encore.iso", 20_000_000_000),
+            listed("big.iso", 80_000_000_000),
+            listed("another.iso", 20_000_000_000),
         ]);
         assert_eq!(listing.whole(), 100_000_000_000);
         assert!(Clip::files(&listing).bytes().len() < 100);
-        assert_eq!(listing.in_words(), "2 files, 100.0 Go");
+        assert_eq!(listing.in_words(), "2 files, 100.0 GB");
         assert_eq!(
-            Listing::of(vec![listed("seul.txt", 3)]).in_words(),
-            "1 file, 3 o"
+            Listing::of(vec![listed("single.txt", 3)]).in_words(),
+            "1 file, 3 B"
         );
     }
 
@@ -626,17 +628,17 @@ mod tests {
         // It is the far machine that hands over these names, and a name
         // is something one chooses: without this, pasting a folder
         // could write anywhere on this disk.
-        assert!(Listed::new("../ailleurs.txt", 1).is_none());
-        assert!(Listed::new("dossier/../../ailleurs.txt", 1).is_none());
-        assert!(Listed::new("/racine.txt", 1).is_none());
-        assert!(Listed::new("C:/Windows/System32/rien.dll", 1).is_none());
+        assert!(Listed::new("../elsewhere.txt", 1).is_none());
+        assert!(Listed::new("folder/../../elsewhere.txt", 1).is_none());
+        assert!(Listed::new("/root.txt", 1).is_none());
+        assert!(Listed::new("C:/Windows/System32/nothing.dll", 1).is_none());
         assert!(Listed::new("", 1).is_none());
-        assert!(Listed::new("dossier//vide.txt", 1).is_none());
+        assert!(Listed::new("folder//empty.txt", 1).is_none());
         // And a whole list falls with a single one of its lines: half a
         // folder pasted as if it were the whole is worse than nothing at
         // all.
-        assert!(Listing::read("3 ../ailleurs.txt").is_err());
-        assert!(Listing::read("pas-un-nombre fichier.txt").is_err());
+        assert!(Listing::read("3 ../elsewhere.txt").is_err());
+        assert!(Listing::read("not-a-number file.txt").is_err());
         assert!(Listing::read("3").is_err());
     }
 
@@ -644,24 +646,24 @@ mod tests {
     fn a_path_arrives_with_its_slashes_one_way_only() {
         // Windows writes its paths with the other slash, and the
         // two computers must name the same file the same way.
-        let file = listed(r"2026\lac.jpg", 12);
-        assert_eq!(file.path(), "2026/lac.jpg");
-        assert_eq!(file.name(), "lac.jpg");
+        let file = listed(r"2026\lake.jpg", 12);
+        assert_eq!(file.path(), "2026/lake.jpg");
+        assert_eq!(file.name(), "lake.jpg");
     }
 
     #[test]
     fn a_weight_reads_in_the_unit_where_it_means_something() {
-        assert_eq!(weighed(0), "0 o");
-        assert_eq!(weighed(999), "999 o");
-        assert_eq!(weighed(1_000), "1.0 ko");
-        assert_eq!(weighed(94_000), "94.0 ko");
-        assert_eq!(weighed(1_500_000), "1.5 Mo");
-        assert_eq!(weighed(4_700_000_000), "4.7 Go");
+        assert_eq!(weighed(0), "0 B");
+        assert_eq!(weighed(999), "999 B");
+        assert_eq!(weighed(1_000), "1.0 kB");
+        assert_eq!(weighed(94_000), "94.0 kB");
+        assert_eq!(weighed(1_500_000), "1.5 MB");
+        assert_eq!(weighed(4_700_000_000), "4.7 GB");
     }
 
     #[test]
     fn a_text_reads_back_as_text_and_a_picture_does_not() {
-        assert_eq!(Clip::text("bonjour").said(), Some("bonjour"));
+        assert_eq!(Clip::text("hello").said(), Some("hello"));
         assert_eq!(Clip::picture(vec![0xff, 0xfe]).said(), None);
     }
 }
