@@ -24,12 +24,13 @@ use zyr_account::Snapshot;
 use zyr_broker::rest::DeviceInfo;
 use zyr_control::{Holdup, OfAccount, PROTOCOL};
 use zyr_lan::Found;
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::journal::Journal;
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
 use zyr_proto::sifting::Sifting;
-use zyr_transport::{Fingerprint, Junction, Media};
+use zyr_transport::{Junction, Media};
 
 use crate::account::{self, Account};
 use crate::incoming::Incoming;

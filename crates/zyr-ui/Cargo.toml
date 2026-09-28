@@ -32,7 +32,6 @@ zyr-control.workspace = true
 zyr-player.workspace = true
 zyr-session.workspace = true
 zyr-sound.workspace = true
-zyr-transport.workspace = true
 zyr-broker.workspace = true
 tokio = { version = "1.53.1", features = [
     "rt",

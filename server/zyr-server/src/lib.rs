@@ -29,7 +29,7 @@ use axum_server::Handle;
 use axum_server::tls_rustls::RustlsConfig;
 use tokio::task::JoinHandle;
 use zyr_broker::ServerKey;
-use zyr_transport::Fingerprint;
+use zyr_proto::fingerprint::Fingerprint;
 
 use crate::config::Config;
 use crate::keys::Tls;

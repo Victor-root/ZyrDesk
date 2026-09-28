@@ -21,8 +21,9 @@ use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, RootCertStore, SignatureScheme};
+use zyr_proto::fingerprint::Fingerprint;
 
-use crate::identity::{Fingerprint, public_key_fingerprint};
+use crate::identity::public_key_fingerprint;
 
 /// What the device holds of the server, besides the public roots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

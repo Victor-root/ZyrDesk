@@ -29,10 +29,11 @@ use std::time::Duration;
 
 use quinn::udp::{RecvMeta, Transmit};
 use quinn::{AsyncUdpSocket, UdpPoller};
+use zyr_proto::fingerprint::Fingerprint;
 
 use crate::congestion::{Media, Sending};
 use crate::endpoint::{Bytes, Connection, EndpointError, GUARANTEED_MTU, TunnelEndpoint};
-use crate::identity::{Fingerprint, Identity};
+use crate::identity::Identity;
 use crate::junction::bind_socket;
 use crate::marking::Marking;
 use crate::probe;

@@ -3076,7 +3076,6 @@ dependencies = [
  "serde",
  "serde_json",
  "zyr-proto",
- "zyr-transport",
 ]
 
 [[package]]
@@ -3127,7 +3126,6 @@ dependencies = [
  "zyr-broker",
  "zyr-link",
  "zyr-proto",
- "zyr-transport",
 ]
 
 [[package]]
@@ -3149,7 +3147,6 @@ version = "0.1.0"
 dependencies = [
  "mdns-sd",
  "zyr-proto",
- "zyr-transport",
 ]
 
 [[package]]
@@ -3240,7 +3237,6 @@ dependencies = [
  "zyr-media",
  "zyr-proto",
  "zyr-sound",
- "zyr-transport",
 ]
 
 [[package]]
@@ -3261,7 +3257,6 @@ dependencies = [
  "ring",
  "rustls",
  "rustls-webpki",
- "sha2",
  "socket2",
  "tokio",
  "webpki-roots 1.0.9",
@@ -3296,7 +3291,6 @@ dependencies = [
  "zyr-proto",
  "zyr-session",
  "zyr-sound",
- "zyr-transport",
 ]
 
 [[package]]

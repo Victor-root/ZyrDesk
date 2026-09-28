@@ -23,71 +23,7 @@ use rustls::crypto::WebPkiSupportedAlgorithms;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
 use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
 use rustls::{DigitallySignedStruct, DistinguishedName, SignatureScheme};
-use sha2::{Digest, Sha256};
-
-/// Fingerprint of a certificate, the only identity the tunnel cares for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Fingerprint([u8; 32]);
-
-impl Fingerprint {
-    pub fn of_certificate(certificate: &CertificateDer<'_>) -> Self {
-        Self(Sha256::digest(certificate.as_ref()).into())
-    }
-
-    /// The fingerprint as its bytes, for whoever needs a stable number
-    /// derived from it rather than its spelling.
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
-
-/// A fingerprint read back from its bytes, as a datagram carries it.
-impl From<[u8; 32]> for Fingerprint {
-    fn from(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-}
-
-/// Text that is not a fingerprint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidFingerprint;
-
-impl std::fmt::Display for InvalidFingerprint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "une empreinte s'écrit avec 64 caractères hexadécimaux")
-    }
-}
-
-impl std::error::Error for InvalidFingerprint {}
-
-/// Reads a fingerprint back, exactly as it is displayed.
-impl std::str::FromStr for Fingerprint {
-    type Err = InvalidFingerprint;
-
-    fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let text = text.trim();
-        if text.len() != 64 {
-            return Err(InvalidFingerprint);
-        }
-        let mut bytes = [0u8; 32];
-        let (pairs, _) = text.as_bytes().as_chunks::<2>();
-        for (slot, pair) in bytes.iter_mut().zip(pairs) {
-            let pair = std::str::from_utf8(pair).map_err(|_| InvalidFingerprint)?;
-            *slot = u8::from_str_radix(pair, 16).map_err(|_| InvalidFingerprint)?;
-        }
-        Ok(Self(bytes))
-    }
-}
-
-/// Shown in hexadecimal, the way a fingerprint is shown everywhere else.
-impl std::fmt::Display for Fingerprint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for byte in &self.0 {
-            write!(f, "{byte:02x}")?;
-        }
-        Ok(())
-    }
-}
+use zyr_proto::fingerprint::Fingerprint;
 
 #[derive(Debug)]
 pub enum IdentityError {
@@ -156,7 +92,7 @@ impl Identity {
         let certificate = CertificateDer::from(generated.cert);
         let key = PrivateKeyDer::try_from(generated.signing_key.serialize_der())
             .map_err(|e| IdentityError::Generation(e.to_string()))?;
-        let fingerprint = Fingerprint::of_certificate(&certificate);
+        let fingerprint = Fingerprint::of(&certificate);
         Ok(Self {
             certificate,
             key,
@@ -196,7 +132,7 @@ impl Identity {
         let certificate_der = read(certificate)?;
         let key_der = read(key)?;
         let certificate = CertificateDer::from(certificate_der);
-        let fingerprint = Fingerprint::of_certificate(&certificate);
+        let fingerprint = Fingerprint::of(&certificate);
         Ok(Self {
             certificate,
             key: PrivateKeyDer::try_from(key_der)
@@ -264,7 +200,7 @@ impl Identity {
 /// is a fixed walk down the certificate's structure and nothing more.
 pub fn public_key_fingerprint(certificate: &CertificateDer<'_>) -> Option<Fingerprint> {
     let key = der::subject_public_key_info(certificate.as_ref())?;
-    Some(Fingerprint(Sha256::digest(key).into()))
+    Some(Fingerprint::of(key))
 }
 
 /// Just enough DER to find the public key of a certificate.
@@ -384,7 +320,7 @@ impl PinnedPeer {
     }
 
     fn check_fingerprint(&self, presented: &CertificateDer<'_>) -> Result<(), rustls::Error> {
-        let obtained = Fingerprint::of_certificate(presented);
+        let obtained = Fingerprint::of(presented);
         if self.allowed.contains(&obtained) {
             Ok(())
         } else {
@@ -539,16 +475,12 @@ mod tests {
     }
 
     #[test]
-    fn the_fingerprint_is_stable_and_readable() {
+    fn an_identity_is_known_by_its_certificate_s_fingerprint() {
         let identity = Identity::generate().unwrap();
-        let fingerprint = identity.fingerprint();
         assert_eq!(
-            fingerprint,
-            Fingerprint::of_certificate(identity.certificate())
+            identity.fingerprint(),
+            Fingerprint::of(identity.certificate())
         );
-        let text = fingerprint.to_string();
-        assert_eq!(text.len(), 64);
-        assert!(text.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]
@@ -596,7 +528,7 @@ mod tests {
             .unwrap();
         let of_first = public_key_fingerprint(first.der()).unwrap();
         assert_eq!(public_key_fingerprint(second.der()).unwrap(), of_first);
-        assert_ne!(Fingerprint::of_certificate(first.der()), of_first);
+        assert_ne!(Fingerprint::of(first.der()), of_first);
 
         let other = Identity::generate().unwrap();
         assert_ne!(
@@ -663,28 +595,6 @@ mod tests {
         assert!(pinned.check_fingerprint(anyone.certificate()).is_err());
     }
 
-    #[test]
-    fn a_displayed_fingerprint_reads_back() {
-        let identity = Identity::generate().unwrap();
-        let fingerprint = identity.fingerprint();
-        assert_eq!(
-            fingerprint.to_string().parse::<Fingerprint>().unwrap(),
-            fingerprint
-        );
-        // Copied out of a terminal, it often drags whitespace along.
-        assert_eq!(
-            format!("  {fingerprint}\n").parse::<Fingerprint>().unwrap(),
-            fingerprint
-        );
-    }
-
-    #[test]
-    fn text_that_is_not_a_fingerprint_is_refused() {
-        for text in ["", "abc", &"z".repeat(64), &"ab".repeat(31)] {
-            assert!(text.parse::<Fingerprint>().is_err(), "{text}");
-        }
-    }
-
     /// Clean working folder, one per test.
     fn fresh_folder(name: &str) -> PathBuf {
         let folder = std::env::temp_dir().join(format!("zyrdesk-{}-{name}", std::process::id()));
@@ -715,7 +625,7 @@ mod tests {
             Err(IdentityError::Incomplete(_))
         ));
         assert_eq!(
-            Fingerprint::of_certificate(&CertificateDer::from(
+            Fingerprint::of(&CertificateDer::from(
                 std::fs::read(folder.join(CERTIFICATE_FILE)).unwrap()
             )),
             original.fingerprint()

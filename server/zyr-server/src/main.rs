@@ -312,7 +312,7 @@ fn refused(fault: zyr_server::store::Fault) -> String {
 }
 
 /// Eight groups of eight, which is how a person compares two of them.
-fn grouped(fingerprint: &zyr_transport::Fingerprint) -> String {
+fn grouped(fingerprint: &zyr_proto::fingerprint::Fingerprint) -> String {
     let text = fingerprint.to_string();
     text.as_bytes()
         .chunks(8)

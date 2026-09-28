@@ -30,14 +30,13 @@ use zyr_control::{Reached, Session, WayId};
 use zyr_link::{Access, LinkListener};
 use zyr_media::service::ToPlayer;
 use zyr_proto::clipboard::Clip;
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
 use zyr_transport::junction::{Aloud, Say};
-use zyr_transport::{
-    Connection, Fingerprint, Identity, Junction, Media, MediaProfile, Sending, TunnelEndpoint,
-};
+use zyr_transport::{Connection, Identity, Junction, Media, MediaProfile, Sending, TunnelEndpoint};
 use zyr_tunnel::{Presence, ServiceEnd, Tunnel, aside, nudge, service_channel};
 
 use crate::account::{self, Rendezvous};

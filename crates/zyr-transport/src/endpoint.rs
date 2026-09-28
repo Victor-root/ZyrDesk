@@ -12,9 +12,10 @@ use std::time::Duration;
 use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
 use quinn::{AsyncUdpSocket, ClientConfig, Endpoint, ServerConfig, TransportConfig};
 use rustls::pki_types::CertificateDer;
+use zyr_proto::fingerprint::Fingerprint;
 
 use crate::congestion::{Media, MediaController, Sending};
-use crate::identity::{AllowedPeers, AnyPeer, Fingerprint, Identity, PinnedPeer};
+use crate::identity::{AllowedPeers, AnyPeer, Identity, PinnedPeer};
 use crate::junction::Junction;
 use crate::marking::Marking;
 use crate::path::{DegradedPath, Path};
@@ -631,7 +632,7 @@ impl Connection {
     pub fn peer_fingerprint(&self) -> Option<Fingerprint> {
         let presented = self.inner.peer_identity()?;
         let chain = presented.downcast::<Vec<CertificateDer<'static>>>().ok()?;
-        Some(Fingerprint::of_certificate(chain.first()?))
+        Some(Fingerprint::of(chain.first()?))
     }
 
     /// Payload one datagram can carry on the current path.

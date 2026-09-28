@@ -21,8 +21,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use mdns_sd::{DaemonEvent, ServiceDaemon, ServiceEvent, ServiceInfo};
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::net::TUNNEL_PORT;
-use zyr_transport::Fingerprint;
 
 mod calling;
 

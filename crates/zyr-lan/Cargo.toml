@@ -8,5 +8,4 @@ repository.workspace = true
 
 [dependencies]
 zyr-proto.workspace = true
-zyr-transport.workspace = true
 mdns-sd = "0.21.4"

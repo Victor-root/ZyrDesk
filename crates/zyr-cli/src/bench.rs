@@ -19,9 +19,10 @@ use std::time::Duration;
 
 use clap::{Args, Subcommand};
 use zyr_link::{Access, Link, LinkListener};
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::paths;
 use zyr_transport::{
-    Connection, Fingerprint, Identity, Media, MediaProfile, Path, TunnelEndpoint, datagram_budget,
+    Connection, Identity, Media, MediaProfile, Path, TunnelEndpoint, datagram_budget,
 };
 use zyr_tunnel::aside::{self, Given, Wanted};
 use zyr_tunnel::{Answers, Tunnel, service_channel};

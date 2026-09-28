@@ -17,7 +17,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use zyr_transport::Fingerprint;
+use zyr_proto::fingerprint::Fingerprint;
 
 use crate::signing::{Forged, ServerPublicKey, Signed};
 
@@ -306,13 +306,9 @@ impl Verifier {
 mod tests {
     use super::*;
     use crate::signing::ServerKey;
-    use zyr_transport::Identity;
 
     fn two() -> (Fingerprint, Fingerprint) {
-        (
-            Identity::generate().unwrap().fingerprint(),
-            Identity::generate().unwrap().fingerprint(),
-        )
+        (Fingerprint::of(b"client"), Fingerprint::of(b"host"))
     }
 
     #[test]
@@ -344,7 +340,7 @@ mod tests {
         // off in the name of another.
         let key = ServerKey::generate();
         let (client, host) = two();
-        let stranger = Identity::generate().unwrap().fingerprint();
+        let stranger = Fingerprint::of(b"stranger");
         let signed = key
             .seal(&Ticket::new("s1", client, host, Grant::Owner, 1_000))
             .unwrap();

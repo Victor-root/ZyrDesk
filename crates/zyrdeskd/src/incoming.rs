@@ -23,7 +23,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use zyr_control::Watching;
-use zyr_transport::{Connection, Fingerprint};
+use zyr_proto::fingerprint::Fingerprint;
+use zyr_transport::Connection;
 
 /// One computer connected to this one right now.
 struct Entry {

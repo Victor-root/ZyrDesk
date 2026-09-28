@@ -20,7 +20,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use zyr_transport::Fingerprint;
+use zyr_proto::fingerprint::Fingerprint;
 
 /// A computer somebody wrote down.
 #[derive(Debug, Clone, PartialEq, Eq)]

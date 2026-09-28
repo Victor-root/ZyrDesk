@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use clap::{Args as ClapArgs, Subcommand};
 use zyr_control::{Answer, Attach, Registering, Request, Service};
-use zyr_transport::Fingerprint;
+use zyr_proto::fingerprint::Fingerprint;
 
 use crate::failure;
 

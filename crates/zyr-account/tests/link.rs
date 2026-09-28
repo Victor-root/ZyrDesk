@@ -11,9 +11,10 @@ use zyr_broker::live::FromDevice;
 use zyr_broker::rest::{Access, Registration};
 use zyr_broker::ticket::Grant;
 use zyr_broker::{Code, Verifier, now};
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_server::config::Config;
+use zyr_transport::Identity;
 use zyr_transport::identity::public_key_fingerprint;
-use zyr_transport::{Fingerprint, Identity};
 
 /// Past this, something that should have happened has not.
 const PATIENCE: Duration = Duration::from_secs(5);

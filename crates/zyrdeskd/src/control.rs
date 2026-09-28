@@ -17,11 +17,12 @@ use tokio::runtime::Handle;
 use tokio::task::{JoinHandle, JoinSet};
 use zyr_control::pipe::Heard;
 use zyr_control::{Answer, Door, PROTOCOL, Reached, Request, Standing};
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
 use zyr_proto::sifting::Sifting;
-use zyr_transport::{Fingerprint, authorized};
+use zyr_transport::authorized;
 
 use crate::account::{self, Attaching};
 use crate::known;
@@ -434,9 +435,14 @@ async fn one(request: Request, answering: &Answering) -> Answer {
         Request::Reach {
             host,
             peer,
-            media,
+            bitrate_kbps,
+            fps,
             only_here,
         } => {
+            let media = zyr_transport::MediaProfile {
+                bits_per_second: u64::from(bitrate_kbps) * 1000,
+                frames_per_second: fps,
+            };
             // Asked once more before giving up: a road that missed this
             // second's worth of probes is common enough, and the account
             // a meeting goes through costs nothing next to the person who
@@ -961,7 +967,8 @@ mod tests {
                 .ask(&Request::Reach {
                     host: "account:d2".to_string(),
                     peer: bench.fingerprint,
-                    media: zyr_transport::MediaProfile::default(),
+                    bitrate_kbps: 20_000,
+                    fps: 60,
                     only_here: false,
                 })
                 .await
@@ -979,7 +986,8 @@ mod tests {
                 .ask(&Request::Reach {
                     host: "account:d2".to_string(),
                     peer: bench.fingerprint,
-                    media: zyr_transport::MediaProfile::default(),
+                    bitrate_kbps: 20_000,
+                    fps: 60,
                     only_here: true,
                 })
                 .await

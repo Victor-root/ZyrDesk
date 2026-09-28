@@ -16,10 +16,10 @@ use std::time::{Duration, Instant};
 
 use clap::Args as ClapArgs;
 use zyr_player::{Ending, Event, Measures, Player, Surface};
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::log::Log;
 use zyr_proto::session::{Codec, Preferred, SessionSettings, parse_resolution};
 use zyr_session::{Step, Wanted};
-use zyr_transport::Fingerprint;
 
 use crate::failure;
 

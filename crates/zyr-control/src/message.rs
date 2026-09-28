@@ -15,8 +15,8 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use zyr_broker::rest::Access;
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::session::{Preferred, WantedScreen};
-use zyr_transport::{Fingerprint, MediaProfile};
 
 /// Version of this dialect.
 ///
@@ -97,7 +97,10 @@ pub enum Request {
     Reach {
         host: String,
         peer: Fingerprint,
-        media: MediaProfile,
+        /// The rate the session asks for, in kilobits per second, and
+        /// its frames per second: what the tunnel is sized to carry.
+        bitrate_kbps: u32,
+        fps: u32,
         /// Whether the way may only be opened where this computer
         /// stands: at the addresses this local network announced, with
         /// nothing asked of any server.
@@ -317,10 +320,8 @@ impl Request {
             "reach" => Ok(Request::Reach {
                 host: unpacked(fields.text("host")?),
                 peer: fields.parsed("peer")?,
-                media: MediaProfile {
-                    bits_per_second: u64::from(fields.parsed::<u32>("bitrate")?) * 1000,
-                    frames_per_second: fields.parsed("fps")?,
-                },
+                bitrate_kbps: fields.parsed("bitrate")?,
+                fps: fields.parsed("fps")?,
                 // Absent from an older half of the product, which knew
                 // only the one way of reaching a computer: the one this
                 // says no to.
@@ -442,14 +443,13 @@ impl fmt::Display for Request {
             Request::Reach {
                 host,
                 peer,
-                media,
+                bitrate_kbps,
+                fps,
                 only_here,
             } => write!(
                 f,
-                "reach host={} peer={peer} bitrate={} fps={} here={}",
+                "reach host={} peer={peer} bitrate={bitrate_kbps} fps={fps} here={}",
                 packed(host),
-                media.bits_per_second / 1000,
-                media.frames_per_second,
                 said(*only_here)
             ),
             Request::SecureAttention { way } => write!(f, "sas way={way}"),
@@ -1222,10 +1222,8 @@ mod tests {
             Request::Reach {
                 host: "192.168.1.20".to_string(),
                 peer: fingerprint(),
-                media: MediaProfile {
-                    bits_per_second: 20_000_000,
-                    frames_per_second: 60,
-                },
+                bitrate_kbps: 20_000,
+                fps: 60,
                 only_here: false,
             },
             Request::Reach {
@@ -1233,10 +1231,8 @@ mod tests {
                 // other than this network.
                 host: "192.168.1.20".to_string(),
                 peer: fingerprint(),
-                media: MediaProfile {
-                    bits_per_second: 20_000_000,
-                    frames_per_second: 60,
-                },
+                bitrate_kbps: 20_000,
+                fps: 60,
                 only_here: true,
             },
             Request::Reach {
@@ -1244,10 +1240,8 @@ mod tests {
                 // crosses the same field as the other texts.
                 host: "pc de victor.local".to_string(),
                 peer: fingerprint(),
-                media: MediaProfile {
-                    bits_per_second: 20_000_000,
-                    frames_per_second: 60,
-                },
+                bitrate_kbps: 20_000,
+                fps: 60,
                 only_here: false,
             },
             Request::Hold {

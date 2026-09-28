@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 use zyr_broker::Code;
 use zyr_broker::rest::{Permission, Registration};
 use zyr_broker::ticket::Grant;
-use zyr_transport::Fingerprint;
+use zyr_proto::fingerprint::Fingerprint;
 
 /// How long a token for the gestures of the account lives.
 pub const ACCOUNT_TOKEN_LIFE: u64 = 60 * 60;
@@ -677,7 +677,7 @@ impl Store {
         name: &str,
         now: u64,
     ) -> Result<(Device, Token), Fault> {
-        let fingerprint = Fingerprint::of_certificate(&rustls_certificate(certificate)).to_string();
+        let fingerprint = Fingerprint::of(certificate).to_string();
         self.within(|conn| {
             let alive = conn
                 .query_row(
@@ -1230,10 +1230,6 @@ fn migrate(conn: &mut Connection) -> Result<(), Fault> {
         tx.commit()?;
     }
     Ok(())
-}
-
-fn rustls_certificate(der: &[u8]) -> rustls::pki_types::CertificateDer<'_> {
-    rustls::pki_types::CertificateDer::from(der)
 }
 
 fn issue_token(

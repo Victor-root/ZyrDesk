@@ -40,6 +40,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinHandle, JoinSet};
 use zyr_link::{Access, Link, LinkListener};
 use zyr_media::service::{ToEngine, ToService};
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
@@ -47,8 +48,8 @@ use zyr_proto::session::WantedScreen;
 use zyr_proto::sifting::Sifting;
 use zyr_transport::junction::{Aloud, Say};
 use zyr_transport::{
-    AllowedPeers, Bytes, Connection, EndpointError, Fingerprint, Identity, Junction, Knocking,
-    Media, TunnelEndpoint, authorized, is_card,
+    AllowedPeers, Bytes, Connection, EndpointError, Identity, Junction, Knocking, Media,
+    TunnelEndpoint, authorized, is_card,
 };
 use zyr_tunnel::{Answers, ServiceSide, Tunnel, aside, nudge, service_channel};
 

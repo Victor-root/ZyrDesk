@@ -3,7 +3,7 @@
 //! eye names the same machine as the window does.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use zyr_transport::Fingerprint;
+use zyr_proto::fingerprint::Fingerprint;
 
 pub fn serialize<S: Serializer>(
     fingerprint: &Fingerprint,
@@ -20,7 +20,7 @@ pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Fingerp
 #[cfg(test)]
 mod tests {
     use serde::{Deserialize, Serialize};
-    use zyr_transport::{Fingerprint, Identity};
+    use zyr_proto::fingerprint::Fingerprint;
 
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
     struct Carrying {
@@ -30,7 +30,7 @@ mod tests {
 
     #[test]
     fn a_fingerprint_travels_as_its_usual_spelling() {
-        let who = Identity::generate().unwrap().fingerprint();
+        let who = Fingerprint::of(b"a device");
         let text = serde_json::to_string(&Carrying { who }).unwrap();
         assert!(text.contains(&format!("\"who\":\"{who}\"")), "{text}");
         let back: Carrying = serde_json::from_str(&text).unwrap();

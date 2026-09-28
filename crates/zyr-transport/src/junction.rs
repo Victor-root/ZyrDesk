@@ -38,9 +38,10 @@ use quinn::udp::{EcnCodepoint, RecvMeta, Transmit};
 use quinn::{AsyncUdpSocket, UdpPoller};
 use ring::rand::SecureRandom;
 use tokio::sync::{Notify, oneshot};
+use zyr_proto::fingerprint::Fingerprint;
 
 use crate::endpoint::Bytes;
-use crate::identity::{Fingerprint, Identity};
+use crate::identity::Identity;
 use crate::marking::Marking;
 use crate::probe::{self, Echo, Heard, Nonce, Probe};
 use crate::relay::Branch;

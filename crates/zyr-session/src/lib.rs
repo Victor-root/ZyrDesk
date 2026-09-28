@@ -25,9 +25,9 @@ use zyr_codec::Ffmpeg;
 use zyr_control::{Answer, CHANNEL, Request, Service, WayId};
 use zyr_media::codec::CodecChoice;
 use zyr_media::control::Wanted as PlayerWants;
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::paths;
 use zyr_proto::session::{Codec, SessionSettings, WantedScreen};
-use zyr_transport::{Fingerprint, MediaProfile};
 
 /// What is being asked for.
 pub struct Wanted {
@@ -458,10 +458,8 @@ impl Driving {
         let request = Request::Reach {
             host: wanted.host.clone(),
             peer: wanted.peer,
-            media: MediaProfile {
-                bits_per_second: u64::from(wanted.settings.bitrate_kbps) * 1000,
-                frames_per_second: wanted.settings.fps,
-            },
+            bitrate_kbps: wanted.settings.bitrate_kbps,
+            fps: wanted.settings.fps,
             only_here: wanted.only_here,
         };
         let reached = match answered(&runtime, &mut service, &request, still_wanted)? {
@@ -763,10 +761,8 @@ mod tests {
                 Request::Reach {
                     host: wanted.host.clone(),
                     peer: wanted.peer,
-                    media: MediaProfile {
-                        bits_per_second: 20_000_000,
-                        frames_per_second: 60,
-                    },
+                    bitrate_kbps: 20_000,
+                    fps: 60,
                     only_here: false,
                 },
                 Request::FilmFarScreen {

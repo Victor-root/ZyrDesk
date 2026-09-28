@@ -13,7 +13,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use crate::identity::Fingerprint;
+use zyr_proto::fingerprint::Fingerprint;
 
 /// Reads the authorised devices. A missing file simply means none.
 pub fn read(path: &Path) -> io::Result<Vec<Fingerprint>> {

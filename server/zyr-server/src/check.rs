@@ -16,7 +16,7 @@ use std::time::Duration;
 use rustls::pki_types::ServerName;
 use zyr_broker::PROTOCOL;
 use zyr_broker::rest::{ServerInfo, paths};
-use zyr_transport::Fingerprint;
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_transport::probe::{self, Heard};
 use zyr_transport::trust::{Trust, client_config};
 

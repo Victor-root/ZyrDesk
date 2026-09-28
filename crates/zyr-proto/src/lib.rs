@@ -2,6 +2,7 @@
 
 pub mod clipboard;
 pub mod files;
+pub mod fingerprint;
 pub mod journal;
 pub mod log;
 pub mod machine;

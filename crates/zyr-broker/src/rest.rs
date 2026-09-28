@@ -6,7 +6,7 @@
 //! server chose.
 
 use serde::{Deserialize, Serialize};
-use zyr_transport::Fingerprint;
+use zyr_proto::fingerprint::Fingerprint;
 
 use crate::code::Code;
 use crate::signing::ServerPublicKey;
@@ -254,14 +254,13 @@ pub struct Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zyr_transport::Identity;
 
     #[test]
     fn a_device_reads_back_and_leaves_out_what_it_has_not() {
         let device = DeviceInfo {
             id: "d1".into(),
             name: "PC de Victor".into(),
-            fingerprint: Identity::generate().unwrap().fingerprint(),
+            fingerprint: Fingerprint::of(b"d1"),
             online: true,
             access: Access::Ready,
             last_seen: None,

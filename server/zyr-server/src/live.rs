@@ -20,7 +20,8 @@ use zyr_broker::proof::{Purpose, challenge_message};
 use zyr_broker::rest::{Access, DeviceInfo, ShareInfo};
 use zyr_broker::ticket::{Grant, Pass, Ticket};
 use zyr_broker::{Code, PROTOCOL, ServerKey, now};
-use zyr_transport::{Fingerprint, signed_by};
+use zyr_proto::fingerprint::Fingerprint;
+use zyr_transport::signed_by;
 
 use crate::api::{self, Refusal, blocking, contact_info, device_info, share_info};
 use crate::relay::Offer;

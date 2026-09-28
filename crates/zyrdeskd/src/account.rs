@@ -43,9 +43,10 @@ use zyr_broker::rest::Access;
 use zyr_broker::ticket::CLOCK_SKEW;
 use zyr_broker::{Refusal, Verifier, now};
 use zyr_control::{Holdup, WayId};
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
-use zyr_transport::{Branch, Fingerprint, Identity, Junction, Marking, Media, Sending, Wanted};
+use zyr_transport::{Branch, Identity, Junction, Marking, Media, Sending, Wanted};
 
 use crate::machine::{Door, Hosting};
 use crate::preferences::Remembered;

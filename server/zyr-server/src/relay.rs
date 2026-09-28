@@ -29,10 +29,9 @@ use tokio::task::JoinHandle;
 use zyr_broker::signing::{ServerPublicKey, Signed};
 use zyr_broker::ticket::Pass;
 use zyr_broker::{Verifier, now};
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_transport::relay::{Doorway, PASS_PATIENCE, Presenting};
-use zyr_transport::{
-    Bytes, Connection, EndpointError, Fingerprint, Identity, Knocking, TunnelEndpoint,
-};
+use zyr_transport::{Bytes, Connection, EndpointError, Identity, Knocking, TunnelEndpoint};
 
 use crate::config;
 use crate::journal;

@@ -21,7 +21,7 @@ pub use endpoint::{
     Bytes, Carrying, Connection, DatagramError, EndpointError, Knocking, RecvStream, SendStream,
     Traffic, TunnelEndpoint,
 };
-pub use identity::{AllowedPeers, Fingerprint, Identity, signed_by};
+pub use identity::{AllowedPeers, Identity, signed_by};
 pub use junction::{Junction, Road, card_of, is_card};
 pub use marking::Marking;
 pub use mtu::datagram_budget;

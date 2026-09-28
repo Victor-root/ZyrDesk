@@ -14,7 +14,7 @@ use std::sync::Arc;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use zyr_broker::ServerKey;
-use zyr_transport::Fingerprint;
+use zyr_proto::fingerprint::Fingerprint;
 
 /// The signing key's file, inside the keys folder.
 const SIGNING_KEY_FILE: &str = "signing.key";

@@ -23,8 +23,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::net::TUNNEL_PORT;
-use zyr_transport::Fingerprint;
 
 use crate::{Found, Peer};
 

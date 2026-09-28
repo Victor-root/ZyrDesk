@@ -18,8 +18,9 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use rustls::pki_types::CertificateDer;
+use zyr_proto::fingerprint::Fingerprint;
 
-use crate::identity::{Fingerprint, Identity, IdentityError, signed_by};
+use crate::identity::{Identity, IdentityError, signed_by};
 
 /// The first bytes of every datagram of ours.
 ///
@@ -110,7 +111,7 @@ impl<T> Sealed<T> {
     /// every byte before it.
     pub fn opened_by(&self, expected: Fingerprint) -> Option<&T> {
         let certificate = CertificateDer::from(self.certificate.as_slice());
-        if Fingerprint::of_certificate(&certificate) != expected {
+        if Fingerprint::of(&certificate) != expected {
             return None;
         }
         signed_by(&certificate, &self.signed, &self.signature).then_some(&self.inner)

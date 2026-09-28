@@ -9,7 +9,7 @@ use std::io;
 use std::path::Path;
 
 use zyr_broker::ServerPublicKey;
-use zyr_transport::Fingerprint;
+use zyr_proto::fingerprint::Fingerprint;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Link {

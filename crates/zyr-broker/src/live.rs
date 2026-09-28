@@ -9,7 +9,7 @@
 use std::net::SocketAddr;
 
 use serde::{Deserialize, Serialize};
-use zyr_transport::Fingerprint;
+use zyr_proto::fingerprint::Fingerprint;
 
 use crate::code::Code;
 use crate::rest::{Access, ContactInfo, DeviceInfo, ServerInfo, ShareInfo};
@@ -151,13 +151,12 @@ mod tests {
     use super::*;
     use crate::rest::{ContactStatus, Registration};
     use crate::signing::ServerKey;
-    use zyr_transport::Identity;
 
     fn device(id: &str) -> DeviceInfo {
         DeviceInfo {
             id: id.into(),
             name: format!("PC {id}"),
-            fingerprint: Identity::generate().unwrap().fingerprint(),
+            fingerprint: Fingerprint::of(id.as_bytes()),
             online: false,
             access: Access::Off,
             last_seen: Some(42),
@@ -167,7 +166,7 @@ mod tests {
     #[test]
     fn every_message_reads_back_as_itself() {
         let key = ServerKey::generate();
-        let fingerprint = Identity::generate().unwrap().fingerprint();
+        let fingerprint = Fingerprint::of(b"d1");
         let signed = key.seal(&"quelque chose").unwrap();
         let from_device = [
             FromDevice::Hello {
@@ -321,7 +320,7 @@ mod tests {
             ticket: key.seal(&"t").unwrap(),
             peer: Peer {
                 device: "d2".into(),
-                fingerprint: Identity::generate().unwrap().fingerprint(),
+                fingerprint: Fingerprint::of(b"d2"),
                 name: "PC".into(),
                 account: "victor".into(),
             },
