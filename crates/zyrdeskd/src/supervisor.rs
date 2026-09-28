@@ -33,8 +33,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use zyr_codec::Ffmpeg;
 use zyr_control::Holdup;
+use zyr_host::Ffmpeg;
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 

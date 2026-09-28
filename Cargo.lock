@@ -3088,7 +3088,6 @@ dependencies = [
  "windows-sys 0.61.2",
  "winresource",
  "zyr-broker",
- "zyr-codec",
  "zyr-control",
  "zyr-host",
  "zyr-link",
@@ -3232,9 +3231,8 @@ name = "zyr-session"
 version = "0.1.0"
 dependencies = [
  "tokio",
- "zyr-codec",
  "zyr-control",
- "zyr-media",
+ "zyr-player",
  "zyr-proto",
  "zyr-sound",
 ]
@@ -3285,7 +3283,6 @@ dependencies = [
  "windows-sys 0.61.2",
  "zyr-broker",
  "zyr-clipboard",
- "zyr-codec",
  "zyr-control",
  "zyr-player",
  "zyr-proto",
@@ -3306,7 +3303,6 @@ dependencies = [
  "zyr-account",
  "zyr-broker",
  "zyr-clipboard",
- "zyr-codec",
  "zyr-control",
  "zyr-host",
  "zyr-lan",

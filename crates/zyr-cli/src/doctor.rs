@@ -4,7 +4,7 @@ use std::fmt;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use zyr_codec::Ffmpeg;
+use zyr_player::Ffmpeg;
 use zyr_proto::paths;
 
 enum Status {

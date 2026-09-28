@@ -8,8 +8,8 @@ repository.workspace = true
 
 [dependencies]
 zyr-proto.workspace = true
-zyr-codec.workspace = true
-zyr-media.workspace = true
 zyr-control.workspace = true
+# The player's own words for what it wants, and the FFmpeg it loads.
+zyr-player.workspace = true
 zyr-sound.workspace = true
 tokio = { version = "1.53.1", features = ["rt", "net", "time"] }

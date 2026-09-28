@@ -50,7 +50,7 @@ impl Which {
 /// encode: without it this computer can neither be controlled nor
 /// control another.
 pub fn ffmpeg_here() -> bool {
-    zyr_codec::Ffmpeg::missing_from(&paths::ffmpeg_dir()).is_empty()
+    zyr_player::Ffmpeg::missing_from(&paths::ffmpeg_dir()).is_empty()
 }
 
 /// Where the product writes what it has to say.

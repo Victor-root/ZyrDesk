@@ -56,13 +56,15 @@ mod end_to_end;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use zyr_codec::Ffmpeg;
 use zyr_proto::log::Log;
 
 pub use parts::{
     Aimed, Captured, Drawing, Feed, InjectError, Injected, Injector, MakeInjector, MakeScreen,
     Screen, ScreenError, Sound, SoundBlock, SoundCapture, SoundError,
 };
+/// FFmpeg as the engine loads it: whoever starts the engine, or wants to
+/// know whether it could, takes it from here and never from the codecs.
+pub use zyr_codec::Ffmpeg;
 
 /// What the host engine's lines are filed under.
 const TAG: &str = "engine";

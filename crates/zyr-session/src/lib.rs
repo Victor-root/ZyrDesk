@@ -21,10 +21,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use zyr_codec::Ffmpeg;
 use zyr_control::{Answer, CHANNEL, Request, Service, WayId};
-use zyr_media::codec::CodecChoice;
-use zyr_media::control::Wanted as PlayerWants;
+use zyr_player::{CodecChoice, Ffmpeg, Wanted as PlayerWants};
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::paths;
 use zyr_proto::session::{Codec, SessionSettings, WantedScreen};

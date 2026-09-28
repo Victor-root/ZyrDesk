@@ -42,11 +42,14 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use bytes::Bytes;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
-use zyr_codec::{CodecError, Ffmpeg};
+use zyr_codec::CodecError;
 use zyr_proto::log::Log;
 
 pub use present::Rect;
 pub use tallies::{LinkTallies, PictureTallies, SoundTallies, Tallies};
+/// FFmpeg as the player loads it: whoever starts a player, or wants to
+/// know whether it could, takes it from here and never from the codecs.
+pub use zyr_codec::Ffmpeg;
 pub use zyr_media::codec::{CodecChoice, CodecSet, VideoCodec};
 pub use zyr_media::control::Wanted;
 pub use zyr_media::input::{Button, InputEvent};
