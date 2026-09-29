@@ -32,8 +32,8 @@ use zyr_proto::log::Log;
 use zyr_proto::paths;
 use zyr_proto::sifting::Sifting;
 
-use crate::desk::fingerprint_of;
-use crate::service;
+use crate::shell::desk::fingerprint_of;
+use crate::shell::service;
 
 /// This computer's journal, ready to be copied out.
 ///

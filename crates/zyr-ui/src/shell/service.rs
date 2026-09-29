@@ -16,7 +16,7 @@ const TAG: &str = "service";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// Asks one thing, and waits for the one answer.
@@ -53,14 +53,14 @@ pub async fn list<T>(
 /// is not answering yet, and a window that stayed grey until Windows had
 /// finished would look broken.
 pub fn wake_the_service() {
-    crate::app::spawn(async {
+    crate::shell::app::spawn(async {
         // Already standing: opening the window a second time must not
         // shake a service that is holding a session.
         if Service::join().await.is_ok() {
             return;
         }
         note("service silent, start asked for");
-        let outcome = crate::app::spawn_blocking(zyr_launch::start_the_service).await;
+        let outcome = crate::shell::app::spawn_blocking(zyr_launch::start_the_service).await;
         note(&match outcome {
             Ok(Ok(())) => "service asked to start".to_string(),
             Ok(Err(e)) => format!("service not started: {e}"),

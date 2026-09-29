@@ -57,7 +57,7 @@ Il en faut deux, et l'une sans l'autre ne sert à rien.
 1. **Le client demande la bonne taille.** Une qualité n'est plus une
    taille absolue mais un plafond ; la taille demandée est celle de
    l'écran sur lequel l'image va être posée, mesurée en pixels réels
-   (`crates/zyr-proto/src/session.rs`, `crates/zyr-ui/src/picture.rs`).
+   (`crates/zyr-proto/src/session.rs`, `crates/zyr-ui/src/session/picture.rs`).
 2. **L'hôte sait la fournir.** Windows permet à un pilote de déclarer un
    écran vers lequel aucun câble ne va. Le bureau est alors réellement
    dessiné à cette taille, et le moteur le capture réellement

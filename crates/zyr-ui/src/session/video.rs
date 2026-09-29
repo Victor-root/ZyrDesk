@@ -41,14 +41,14 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 use zyr_player::{Button, InputEvent};
 use zyr_proto::fact::Fact;
 
-use crate::app::App;
+use crate::shell::app::App;
 
 /// What this module files its journal lines under.
 const TAG: &str = "video";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// The window, as the system knows it, or nought.
@@ -262,7 +262,7 @@ pub fn show(app: &App) {
     let shown = app.clone();
     let _ = app.run_on_main_thread(move || {
         bring_it_up();
-        crate::floating::keep_up_with_the_picture(&shown);
+        crate::session::floating::keep_up_with_the_picture(&shown);
     });
 }
 
@@ -298,7 +298,7 @@ fn build() -> Result<isize, Fact> {
         CreateWindowExW, GetClientRect, RegisterClassW, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS,
     };
 
-    let outer = crate::main_window::handle() as HWND;
+    let outer = crate::shell::main_window::handle() as HWND;
     if outer.is_null() {
         return Err(Fact::new("window.gone"));
     }
@@ -400,7 +400,7 @@ fn bring_it_up() {
     if window.is_null() {
         return;
     }
-    let (width, height) = crate::main_window::inside();
+    let (width, height) = crate::shell::main_window::inside();
     // A window down in the taskbar has no inside: the picture keeps its
     // size until the window comes back up, which resizes it.
     let sized = if width == 0 || height == 0 {
@@ -425,7 +425,7 @@ fn bring_it_up() {
     if in_a_game() {
         listen_to_the_mouse(true);
     }
-    crate::system_keys::take_them();
+    crate::session::system_keys::take_them();
     // The keyboard, when the person is still in this program. Handed to
     // a window of a program in the background, the focus would pull that
     // program's window forward, and a person reading something else while
@@ -434,7 +434,7 @@ fn bring_it_up() {
     //
     // SAFETY: no argument, and a window of this thread given the focus.
     unsafe {
-        if GetActiveWindow() == crate::main_window::handle() as HWND {
+        if GetActiveWindow() == crate::shell::main_window::handle() as HWND {
             SetFocus(window);
         }
     }
@@ -455,7 +455,7 @@ fn tear_down(window: isize) {
     unsafe { DestroyWindow(window as HWND) };
     // The keyboard goes back to the home canvas, through the main window,
     // which hands it on: the window that had it is gone.
-    let home = crate::main_window::handle() as HWND;
+    let home = crate::shell::main_window::handle() as HWND;
     // SAFETY: our own window, given the focus on its own thread.
     unsafe {
         if !home.is_null() && GetActiveWindow() == home {
@@ -679,9 +679,9 @@ unsafe extern "system" fn answer(
         // keys is laid again, newest of the chain, see `system_keys`, and
         // the pointer goes back where the session keeps it.
         WM_SETFOCUS => {
-            crate::system_keys::lay_again();
-            if let Some(app) = crate::main_window::program() {
-                crate::floating::keep_up_with_the_picture(&app);
+            crate::session::system_keys::lay_again();
+            if let Some(app) = crate::shell::main_window::program() {
+                crate::session::floating::keep_up_with_the_picture(&app);
             }
             0
         }
@@ -692,8 +692,8 @@ unsafe extern "system" fn answer(
             if let Some(player) = crate::session::player() {
                 player.release_everything();
             }
-            crate::system_keys::forget_what_was_taken();
-            crate::picture::shut_the_pointer_in(crate::picture::Cage::Free);
+            crate::session::system_keys::forget_what_was_taken();
+            crate::session::picture::shut_the_pointer_in(crate::session::picture::Cage::Free);
             // SAFETY: no argument; the mouse is only let go if ours.
             unsafe {
                 if GetCapture() == window {
@@ -715,10 +715,10 @@ unsafe extern "system" fn answer(
             if message == WM_SYSKEYDOWN
                 && holding == usize::from(VK_F4)
                 && with_alt(with)
-                && !crate::system_keys::immersive()
+                && !crate::session::system_keys::immersive()
             {
                 if !held_before(with)
-                    && let Some(app) = crate::main_window::program()
+                    && let Some(app) = crate::shell::main_window::program()
                 {
                     note("Alt+F4 on the picture, the keyboard being shared: the session ends");
                     crate::session::end_it(&app);
@@ -848,7 +848,7 @@ fn key(named: usize, with: isize, down: bool) {
     // The Windows keys are this computer's while the keyboard is shared:
     // the Start menu opens here, and must not open over there as well.
     if (named == usize::from(VK_LWIN) || named == usize::from(VK_RWIN))
-        && !crate::system_keys::immersive()
+        && !crate::session::system_keys::immersive()
     {
         return;
     }
@@ -879,7 +879,7 @@ fn pointer_at(with: isize) {
     let Some(player) = crate::session::player() else {
         return;
     };
-    let point = crate::win32::pointer_in(with);
+    let point = crate::shell::win32::pointer_in(with);
     let picture = player.picture_rect().unwrap_or_else(|| {
         let mut inside = RECT {
             left: 0,
@@ -968,7 +968,7 @@ fn put_on_the_pointer() {
     let shape = if in_a_game() {
         None
     } else {
-        match crate::pointer::the_far_shape() {
+        match crate::session::pointer::the_far_shape() {
             Pointer::Arrow => Some(IDC_ARROW),
             Pointer::Text => Some(IDC_IBEAM),
             Pointer::Hand => Some(IDC_HAND),

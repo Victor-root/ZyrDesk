@@ -9,7 +9,7 @@
 //! holds here, and this file is written to it:
 //!
 //! - the hook lives on a thread that only reads its messages
-//!   (`crate::hook`), and decides from what it already holds, with no
+//!   (`crate::session::hook`), and decides from what it already holds, with no
 //!   lock, no journal line and no wait: every key of the computer waits
 //!   for its answer;
 //! - it is laid again every time the picture gets the keyboard back,
@@ -38,7 +38,7 @@ const TAG: &str = "keyboard";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// The switch: whether the system's keys go to the session.
@@ -225,7 +225,7 @@ pub fn switch(immersive: bool) {
 
 /// The hook, on its thread, for as long as the keys are taken.
 #[cfg(windows)]
-static HOOK: crate::hook::Held = crate::hook::Held::new();
+static HOOK: crate::session::hook::Held = crate::session::hook::Held::new();
 
 /// Why the system last refused the hook, as it said it.
 #[cfg(windows)]
@@ -242,7 +242,7 @@ thread_local! {
 /// Takes the keys, when the switch says so and a picture is on screen.
 #[cfg(windows)]
 pub fn take_them() {
-    if !immersive() || !crate::video::shown() {
+    if !immersive() || !crate::session::video::shown() {
         return;
     }
     match HOOK.hold(put, take_back) {
@@ -385,7 +385,7 @@ unsafe extern "system" fn heard(
 fn the_picture_has_the_keyboard() -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GUITHREADINFO, GetGUIThreadInfo};
 
-    let picture = crate::video::its_window();
+    let picture = crate::session::video::its_window();
     if picture == 0 {
         return false;
     }
@@ -412,9 +412,9 @@ fn hand_it_over(
     };
     // An on-screen keyboard can type the Windows key by its name alone.
     let said = (key.scanCode as u8, key.flags & LLKHF_EXTENDED != 0);
-    let Some((scancode, extended)) =
-        crate::video::placed(said, || crate::video::the_layouts_place(key.vkCode))
-    else {
+    let Some((scancode, extended)) = crate::session::video::placed(said, || {
+        crate::session::video::the_layouts_place(key.vkCode)
+    }) else {
         return false;
     };
     PLAYER.with_borrow(|player| {

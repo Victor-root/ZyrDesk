@@ -30,13 +30,21 @@
 // and tested everywhere all the same.
 #![cfg_attr(not(windows), allow(dead_code))]
 
+// The floating button's logo, drawn by this program: it only exists
+// on Windows, like the window that carries it.
+#[cfg(windows)]
+pub mod logo;
+// The floating button's menu, drawn by this program.
+#[cfg(windows)]
+pub mod menu;
+
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
 use std::time::Duration;
 
 use zyr_proto::fact::Fact;
 
-use crate::app::App;
 use crate::session::none_under_way;
+use crate::shell::app::App;
 
 // What the button did goes into the same journal as everything else: it
 // has nowhere else to say it, standing behind the picture, and a menu
@@ -48,7 +56,7 @@ const TAG: &str = "floating";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// How often the session is looked for.
@@ -71,7 +79,7 @@ fn margin() -> i32 {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 
-    let button = crate::logo::its_window() as HWND;
+    let button = crate::session::floating::logo::its_window() as HWND;
     if button.is_null() {
         return MARGIN;
     }
@@ -323,7 +331,7 @@ fn opens_rightwards(picture: (i32, i32, i32, i32), anchor: (i32, i32), width: i3
 /// its whole window that sits beside the button, never its card alone.
 #[cfg(windows)]
 fn menu_width(opens: Opens) -> i32 {
-    crate::menu::width(opens, logo().0)
+    crate::session::floating::menu::width(opens, logo().0)
 }
 
 #[cfg(not(windows))]
@@ -426,7 +434,7 @@ pub fn a_session_is_up(_app: &App) -> bool {
 /// round once a second for everything that can change without anybody
 /// saying so, a window coming back from the taskbar first of all.
 pub fn watch(app: App) {
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         loop {
             tokio::time::sleep(LOOK).await;
             keep_up_with_the_picture(&app);
@@ -437,11 +445,11 @@ pub fn watch(app: App) {
 /// Puts the button up over the picture and keeps what goes with it
 /// running, or takes it all down when there is no picture.
 pub fn keep_up_with_the_picture(app: &App) {
-    let Some(picture) = crate::video::where_it_is() else {
+    let Some(picture) = crate::session::video::where_it_is() else {
         // The pointer first: without a picture there is nothing left to
         // shut it in, and a cage left behind by a session holds the
         // whole desktop.
-        crate::picture::shut_the_pointer_in(crate::picture::Cage::Free);
+        crate::session::picture::shut_the_pointer_in(crate::session::picture::Cage::Free);
         lower(app);
         return;
     };
@@ -449,29 +457,29 @@ pub fn keep_up_with_the_picture(app: &App) {
     // The pointer of this computer stays inside the picture as long as
     // the mouse is a game's, or the picture is the whole screen; see
     // `picture::Cage`.
-    crate::picture::shut_the_pointer_in(crate::picture::Cage::for_the(
-        crate::video::in_a_game(),
-        crate::main_window::holds_the_screen(),
+    crate::session::picture::shut_the_pointer_in(crate::session::picture::Cage::for_the(
+        crate::session::video::in_a_game(),
+        crate::shell::main_window::holds_the_screen(),
         the_menu_is_open(),
-        crate::main_window::in_front(),
+        crate::shell::main_window::in_front(),
     ));
     // And the shape this pointer takes, which comes from the far
     // computer and is asked for far more often than this watch goes
     // round: it has its own loop, started again here when the previous
     // one has stopped.
-    crate::pointer::follow(app);
+    crate::session::pointer::follow(app);
     // And the health of the session, read again far more often than this
     // watch goes round: what it lights up must show within a third of a
     // second.
-    crate::badges::watch(app);
+    crate::session::badges::watch(app);
     // And its figures, when they are asked for.
     if the_figures_are_shown(app) {
-        crate::statistics::watch(app);
+        crate::session::statistics::watch(app);
     }
     // And what arrives of the files being pasted, read again at the same
     // rhythm and for the same reason: a bar that moves once a second does
     // not look as if it is moving.
-    crate::transfer::watch(app);
+    crate::session::transfer::watch(app);
 }
 
 /// Takes a new session's player as the one the button belongs to, and
@@ -511,7 +519,7 @@ fn put_the_button_up(app: &App, picture: (i32, i32, i32, i32)) {
     // Minimised counts as not on screen and has to be asked for
     // separately: a window down in the taskbar still calls itself
     // visible.
-    if !crate::main_window::on_screen() {
+    if !crate::shell::main_window::on_screen() {
         return;
     }
     app.floating().up.store(true, Ordering::Relaxed);
@@ -529,19 +537,29 @@ fn put_the_button_up(app: &App, picture: (i32, i32, i32, i32)) {
         let anchor = hung_from(under, nudge(), (size, size), margin());
         let opens = Opens::from_number(OPENS.load(Ordering::Relaxed));
         let room_right = TO_THE_RIGHT.load(Ordering::Relaxed);
-        crate::logo::raise(app, size as u32, opens == Opens::Up, room_right, anchor);
+        crate::session::floating::logo::raise(
+            app,
+            size as u32,
+            opens == Opens::Up,
+            room_right,
+            anchor,
+        );
         // The card measures itself on what its lines ask for, so it needs
         // to know how much a page pixel counts for here and which theme
         // the window wears.
         //
         // The theme is asked of the product and not of the window: it is
         // the same answer for every screen, and only one to keep.
-        crate::menu::raise(app, crate::main_window::scale(), crate::theme::light());
+        crate::session::floating::menu::raise(
+            app,
+            crate::shell::main_window::scale(),
+            crate::shell::theme::light(),
+        );
     }
     // And the two badges, in the opposite corner. What opens here is the
     // window that will carry them: it stays put away as long as there is
     // nothing to say, which is most of a session.
-    crate::badges::raise(app, the_other_corner(under));
+    crate::session::badges::raise(app, the_other_corner(under));
     lay_the_button(picture);
 }
 
@@ -556,7 +574,7 @@ fn put_the_button_up(app: &App, picture: (i32, i32, i32, i32)) {
 /// gone.
 #[cfg(windows)]
 pub fn still_to_be_made(its_window: &std::sync::atomic::AtomicIsize) -> bool {
-    its_window.load(Ordering::Relaxed) == 0 && crate::video::shown()
+    its_window.load(Ordering::Relaxed) == 0 && crate::session::video::shown()
 }
 
 /// The top left corner of the picture, at the same margin as the button.
@@ -571,7 +589,7 @@ fn the_other_corner(picture: (i32, i32, i32, i32)) -> (i32, i32) {
 /// What the figures' banner leaves of the picture: where the button and
 /// the badges hang, under it, so that it never covers them.
 fn under_the_figures(picture: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
-    below_a_banner(picture, crate::statistics::strip(), logo().1)
+    below_a_banner(picture, crate::session::statistics::strip(), logo().1)
 }
 
 /// That picture, less a banner that tall along its top.
@@ -593,7 +611,7 @@ fn below_a_banner(picture: (i32, i32, i32, i32), banner: i32, button: i32) -> (i
 /// hundred and seventy-five per cent the same button is forty-four of one
 /// and seventy-seven of the other.
 fn button_size() -> u32 {
-    (BUTTON * f64::from(crate::main_window::scale())).ceil() as u32
+    (BUTTON * f64::from(crate::shell::main_window::scale())).ceil() as u32
 }
 
 /// Takes the button down.
@@ -604,11 +622,11 @@ fn button_size() -> u32 {
 /// comes round once a second.
 pub fn lower(app: &App) {
     if app.floating().up.swap(false, Ordering::Relaxed) {
-        crate::badges::lower(app);
+        crate::session::badges::lower(app);
         #[cfg(windows)]
         {
-            crate::menu::lower(app);
-            crate::logo::lower(app);
+            crate::session::floating::menu::lower(app);
+            crate::session::floating::logo::lower(app);
         }
     }
 }
@@ -625,8 +643,8 @@ pub fn hide(app: &App) -> Result<(), Fact> {
     HIDDEN.store(true, Ordering::Relaxed);
     #[cfg(windows)]
     {
-        crate::menu::show(false);
-        crate::logo::shown(app, false);
+        crate::session::floating::menu::show(false);
+        crate::session::floating::logo::shown(app, false);
     }
     Ok(())
 }
@@ -646,7 +664,7 @@ pub async fn grabbed() -> bool {
     // it does not move while the button is being dragged over it.
     let (Some(start), Some(picture)) = (
         cursor_now(),
-        crate::video::where_it_is().map(under_the_figures),
+        crate::session::video::where_it_is().map(under_the_figures),
     ) else {
         return true;
     };
@@ -695,7 +713,7 @@ pub async fn grabbed() -> bool {
 /// where it becomes one, then that it is over.
 #[cfg(windows)]
 fn moving(yes: bool) {
-    crate::logo::moving(yes);
+    crate::session::floating::logo::moving(yes);
 }
 
 #[cfg(not(windows))]
@@ -793,8 +811,8 @@ pub fn show_the_menu(app: &App) -> Result<(), Fact> {
     // the pointer back or showing a button that is shown would be undoing
     // what the person did between the two presses.
     #[cfg(windows)]
-    if crate::menu::is_open() {
-        crate::menu::show(false);
+    if crate::session::floating::menu::is_open() {
+        crate::session::floating::menu::show(false);
         return Ok(());
     }
     // The session first, when it was put away: the button hangs on the
@@ -802,7 +820,7 @@ pub fn show_the_menu(app: &App) -> Result<(), Fact> {
     // the taskbar, is a button floating over somebody else's work. The
     // shortcut asks to do something with the session, so the session
     // comes back.
-    if !crate::main_window::on_screen() {
+    if !crate::shell::main_window::on_screen() {
         crate::show_home(app);
     }
     // Asked for by name, which takes back the choice of hiding it.
@@ -813,19 +831,21 @@ pub fn show_the_menu(app: &App) -> Result<(), Fact> {
     // is opened here rather than at the next turn of the watch: a menu
     // that takes a second to become usable reads as a menu that does not
     // work. The mouse mode itself is left exactly where it is.
-    crate::picture::shut_the_pointer_in(crate::picture::Cage::Free);
+    crate::session::picture::shut_the_pointer_in(crate::session::picture::Cage::Free);
     #[cfg(windows)]
     {
-        crate::logo::shown(app, true);
+        crate::session::floating::logo::shown(app, true);
         // And the pointer is put on the button, the cage having just been
         // opened. A game hides the pointer over the picture and only over
         // it, so one freed in the middle of the picture has to cross it
         // unseen to reach this button: aiming blind, on the one thing a
         // session cannot be left without.
-        if crate::video::in_a_game() {
-            crate::picture::put_the_pointer_on(crate::logo::its_window());
+        if crate::session::video::in_a_game() {
+            crate::session::picture::put_the_pointer_on(
+                crate::session::floating::logo::its_window(),
+            );
         }
-        crate::menu::show(true);
+        crate::session::floating::menu::show(true);
     }
     Ok(())
 }
@@ -882,7 +902,7 @@ async fn share_the_clipboard(app: &App) -> Result<(), Fact> {
     let state = app.floating();
     let shared = !state.clipboard.load(Ordering::Relaxed);
     state.clipboard.store(shared, Ordering::Relaxed);
-    crate::settings::remember_shared_clipboard(shared).await;
+    crate::shell::settings::remember_shared_clipboard(shared).await;
     Ok(())
 }
 
@@ -917,8 +937,8 @@ fn change_the_mouse(app: &App) -> Result<(), Fact> {
     if !a_session_is_up(app) {
         return Err(none_under_way());
     }
-    let game = !crate::video::in_a_game();
-    crate::video::play_a_game(app, game);
+    let game = !crate::session::video::in_a_game();
+    crate::session::video::play_a_game(app, game);
     crate::session::ask_the_player(|settings, _| settings.absolute_mouse = !game);
     note(if game {
         "game mouse: the movement goes to the session, the far computer draws its pointer"
@@ -931,9 +951,9 @@ fn change_the_mouse(app: &App) -> Result<(), Fact> {
 /// Gives the system's keys to the session, or back to this computer, and
 /// remembers where they were left: that is where the next session opens.
 async fn change_the_keyboard() -> Result<(), Fact> {
-    let theirs = !crate::system_keys::immersive();
-    crate::system_keys::switch(theirs);
-    crate::settings::remember_system_keys(theirs).await;
+    let theirs = !crate::session::system_keys::immersive();
+    crate::session::system_keys::switch(theirs);
+    crate::shell::settings::remember_system_keys(theirs).await;
     Ok(())
 }
 
@@ -971,7 +991,7 @@ pub async fn ask(app: &App, act: Act) -> Result<(), Fact> {
             if !a_session_is_up(app) {
                 return Err(none_under_way());
             }
-            crate::picture::toggle_the_screen(app)
+            crate::session::picture::toggle_the_screen(app)
         }
         Act::Stats => show_the_figures(app),
         Act::MouseMode => change_the_mouse(app),
@@ -992,7 +1012,7 @@ pub async fn ask(app: &App, act: Act) -> Result<(), Fact> {
 fn the_menu_is_open() -> bool {
     #[cfg(windows)]
     {
-        crate::menu::is_open()
+        crate::session::floating::menu::is_open()
     }
     #[cfg(not(windows))]
     {
@@ -1034,14 +1054,14 @@ pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
     // The badges and the figures follow the picture from here, and not
     // from a watch of their own: a picture being resized would carry each
     // of them off at its own rhythm.
-    crate::badges::lay(the_other_corner(under));
-    crate::statistics::lay(picture);
+    crate::session::badges::lay(the_other_corner(under));
+    crate::session::statistics::lay(picture);
 }
 
 /// How tall the menu card is, which decides the direction it opens in.
 #[cfg(windows)]
 fn menu_height() -> i32 {
-    crate::menu::height()
+    crate::session::floating::menu::height()
 }
 
 #[cfg(not(windows))]
@@ -1062,8 +1082,14 @@ fn put_the_button(picture: (i32, i32, i32, i32), anchor: (i32, i32)) {
     // when the card is below. Its drawing, for its part, turns round
     // with the edge the card starts from, to face the menu rather than
     // turn its back on it.
-    crate::logo::lay(anchor, opens == Opens::Up, room_right);
-    crate::menu::lay(anchor, opens, room_right, crate::logo::box_side(), picture);
+    crate::session::floating::logo::lay(anchor, opens == Opens::Up, room_right);
+    crate::session::floating::menu::lay(
+        anchor,
+        opens,
+        room_right,
+        crate::session::floating::logo::box_side(),
+        picture,
+    );
 
     // The system brings an owned window back up with the one that owns
     // it, which is right for a button that is only down because the
@@ -1076,9 +1102,9 @@ fn put_the_button(picture: (i32, i32, i32, i32), anchor: (i32, i32)) {
             if up { "shown" } else { "taken away" }
         ));
     }
-    crate::logo::shown_now(up);
+    crate::session::floating::logo::shown_now(up);
     if !up {
-        crate::menu::show(false);
+        crate::session::floating::menu::show(false);
     }
 }
 
@@ -1101,7 +1127,7 @@ fn put_the_button(_picture: (i32, i32, i32, i32), _anchor: (i32, i32)) {}
 pub fn room_for_the_button() -> Option<(i32, i32)> {
     // The logo and not the menu card: a picture is not too small for a
     // button because a closed menu would not fit in it.
-    if crate::logo::its_window() == 0 {
+    if crate::session::floating::logo::its_window() == 0 {
         return None;
     }
     let (wide, high) = logo();

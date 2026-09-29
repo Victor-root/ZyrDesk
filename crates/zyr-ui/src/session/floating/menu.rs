@@ -25,12 +25,12 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use crate::app::App;
+use crate::shell::app::App;
 
-use crate::floating::{Act, Opens};
-use crate::settings::{Offered, SessionMenu};
-use crate::shortcuts::Doing;
-use crate::win32::pointer_in;
+use crate::session::floating::{Act, Opens};
+use crate::shell::settings::{Offered, SessionMenu};
+use crate::shell::shortcuts::Doing;
+use crate::shell::win32::pointer_in;
 use zyr_draw::design::{self, Colour, Palette};
 use zyr_draw::icons::{self, Icon};
 use zyr_draw::{Align, Canvas, Pen, Rect};
@@ -43,7 +43,7 @@ const TAG: &str = "floating";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// A line of the card.
@@ -614,7 +614,8 @@ impl ReadingsBar {
         let mut read_at = [None; 4];
         for (rank, reading) in READINGS.iter().enumerate() {
             if let Some(number) = (reading.read)(readings) {
-                figures[rank] = crate::statistics::written(number, reading.decimals, reading.unit);
+                figures[rank] =
+                    crate::session::statistics::written(number, reading.decimals, reading.unit);
                 read_at[rank] = Some(now);
                 continue;
             }
@@ -623,13 +624,13 @@ impl ReadingsBar {
                     figures[rank].clone_from(&before.figures[rank]);
                     read_at[rank] = Some(when);
                 }
-                _ => figures[rank] = crate::statistics::NOTHING.to_string(),
+                _ => figures[rank] = crate::session::statistics::NOTHING.to_string(),
             }
         }
         ReadingsBar {
             figures,
             read_at,
-            stream: crate::statistics::stream(readings),
+            stream: crate::session::statistics::stream(readings),
         }
     }
 
@@ -977,9 +978,9 @@ pub fn raise(app: &App, scale: f32, light: bool) {
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
     }
-    let owner = crate::main_window::handle();
+    let owner = crate::shell::main_window::handle();
     *PROGRAM.lock().expect("menu's program") = Some(app.clone());
-    *KEYS.lock().expect("menu's shortcuts") = crate::shortcuts::engraved();
+    *KEYS.lock().expect("menu's shortcuts") = crate::shell::shortcuts::engraved();
     // Four dashes before the first read, and not four blanks: the bar is
     // there from the first opening, and what it shows then is what the
     // product shows for a missing reading.
@@ -1010,11 +1011,11 @@ pub fn raise(app: &App, scale: f32, light: bool) {
 fn reread_the_session_menu(app: &App) {
     let app = app.clone();
     let round = SESSION_MENU_ROUND.fetch_add(1, Ordering::Relaxed) + 1;
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         while SESSION_MENU_ROUND.load(Ordering::Relaxed) == round
             && ITS_WINDOW.load(Ordering::Relaxed) != 0
         {
-            let read = crate::settings::session_menu(app.clone()).await;
+            let read = crate::shell::settings::session_menu(app.clone()).await;
             // Asked again until it has said, and no longer: every ask
             // costs a question to the far computer about its screens.
             let answered = read.beyond_it.is_some();
@@ -1260,7 +1261,7 @@ fn build(owner: isize) {
         0,
     ];
 
-    if !crate::floating::still_to_be_made(&ITS_WINDOW) {
+    if !crate::session::floating::still_to_be_made(&ITS_WINDOW) {
         return;
     }
     // The size is measured before the window exists: it depends on the
@@ -2474,10 +2475,12 @@ fn acts(target: Target) {
             // takes, and a card left open on top would be a tablecloth
             // laid over the picture.
             show(false);
-            crate::app::spawn(async move {
+            crate::shell::app::spawn(async move {
                 let refusal = match does {
-                    Does::Session(session_act) => crate::floating::ask(&app, session_act).await,
-                    Does::PutAway => crate::floating::hide(&app),
+                    Does::Session(session_act) => {
+                        crate::session::floating::ask(&app, session_act).await
+                    }
+                    Does::PutAway => crate::session::floating::hide(&app),
                 };
                 say_the_refusal(refusal);
             });
@@ -2504,8 +2507,8 @@ fn acts(target: Target) {
             // flipping, and opening it again for the next line would
             // make two gestures for one setting.
             let act = toggle.act;
-            crate::app::spawn(async move {
-                match crate::floating::ask(&app, act).await {
+            crate::shell::app::spawn(async move {
+                match crate::session::floating::ask(&app, act).await {
                     // Read again rather than assumed: it is the only
                     // way to show where things really stand.
                     Ok(()) => reread_the_toggles(&app),
@@ -2570,8 +2573,9 @@ fn choose(app: &App, setting: Setting, value: String) {
         setting.name()
     ));
     let app = app.clone();
-    crate::app::spawn(async move {
-        match crate::settings::choose_session(app.clone(), setting.name().to_string(), value).await
+    crate::shell::app::spawn(async move {
+        match crate::shell::settings::choose_session(app.clone(), setting.name().to_string(), value)
+            .await
         {
             Ok(choice) => {
                 if let Some(menu) = SESSION_MENU.lock().expect("menu's settings").as_mut() {
@@ -2685,14 +2689,17 @@ fn reread_the_toggles(app: &App) {
         cell.swap(value, Ordering::Relaxed) != value
     }
 
-    let mut change = set(&IN_GAME, crate::video::in_a_game());
-    change |= set(&IMMERSIVE, crate::system_keys::immersive());
-    change |= set(&SHARED, crate::floating::the_clipboard_is_shared(app));
-    change |= set(&HELD, crate::floating::the_badges_are_held_up(app));
+    let mut change = set(&IN_GAME, crate::session::video::in_a_game());
+    change |= set(&IMMERSIVE, crate::session::system_keys::immersive());
+    change |= set(
+        &SHARED,
+        crate::session::floating::the_clipboard_is_shared(app),
+    );
+    change |= set(&HELD, crate::session::floating::the_badges_are_held_up(app));
     // Without a session there is no player to ask, and the card does not
     // open without a session: the switch is then left as it is rather
     // than turned off.
-    if let Some(muted) = crate::floating::hushed() {
+    if let Some(muted) = crate::session::floating::hushed() {
         change |= set(&MUTED, muted);
     }
     if change {
@@ -2711,7 +2718,7 @@ fn follow_the_readings(app: &App, is_open: bool) {
         return;
     }
     let app = app.clone();
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         while ROUND.load(Ordering::Relaxed) == round {
             let said = crate::session::measures();
             let now = Instant::now();

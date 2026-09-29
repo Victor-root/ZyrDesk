@@ -92,7 +92,7 @@
 
 /* The light theme. Nothing here picks it with a media query: the program
    decides, before the first frame, between what the system asks for and
-   what the person chose (`src/theme.rs`). So only one light palette
+   what the person chose (`zyr-ui/src/shell/theme.rs`). So only one light palette
    exists, instead of one for the system and one for the choice, which
    would end up drifting apart. */
 :root[data-theme="light"] {

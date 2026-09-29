@@ -28,7 +28,7 @@ const TAG: &str = "icon";
 /// Writes a line under this module's tag.
 #[cfg(windows)]
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// Puts the right icon on the home window, at the sizes Windows is about
@@ -47,7 +47,7 @@ pub fn on_the_window() {
         SendMessageW, WM_SETICON,
     };
 
-    let home = crate::main_window::handle() as HWND;
+    let home = crate::shell::main_window::handle() as HWND;
     if home.is_null() {
         return;
     }

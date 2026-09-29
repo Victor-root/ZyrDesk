@@ -57,12 +57,12 @@ pub fn how_far() -> Option<f32> {
 /// Started again at every turn of the button's watch, like the badges:
 /// that one turns once a second, and what is watched moving forward is
 /// looked at five times as often.
-pub fn watch(app: &crate::app::App) {
+pub fn watch(app: &crate::shell::app::App) {
     if WATCHING.swap(true, Ordering::SeqCst) {
         return;
     }
     let app = app.clone();
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         keep_up(&app).await;
         // The session is going away: the bar goes with it, and the
         // button learns so before it disappears.
@@ -72,10 +72,10 @@ pub fn watch(app: &crate::app::App) {
 }
 
 /// The loop itself.
-async fn keep_up(app: &crate::app::App) {
+async fn keep_up(app: &crate::shell::app::App) {
     loop {
         tokio::time::sleep(LOOK_EVERY).await;
-        if !crate::floating::a_session_is_up(app) {
+        if !crate::session::floating::a_session_is_up(app) {
             return;
         }
         say(coming_in().await.map_or(NOTHING, |far| far.hundredths()));
@@ -86,7 +86,7 @@ async fn keep_up(app: &crate::app::App) {
 fn say(hundredths: u32) {
     if COMING.swap(hundredths, Ordering::Relaxed) != hundredths {
         #[cfg(windows)]
-        crate::logo::the_bar_moved();
+        crate::session::floating::logo::the_bar_moved();
     }
 }
 
@@ -98,7 +98,7 @@ fn say(hundredths: u32) {
 /// written down: it would be written five times a second, and a service
 /// that is not answering is already said on the home screen.
 async fn coming_in() -> Option<HowFar> {
-    match crate::service::ask(&Request::FilesComing).await {
+    match crate::shell::service::ask(&Request::FilesComing).await {
         Ok(Answer::Coming(far)) => far,
         _ => None,
     }

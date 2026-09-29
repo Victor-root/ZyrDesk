@@ -24,14 +24,14 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 
-use crate::app::App;
+use crate::shell::app::App;
 
 /// What this module files its journal lines under.
 const TAG: &str = "window";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// How wide and how tall the window is when it opens, and what it never
@@ -250,7 +250,7 @@ unsafe extern "system" fn answers(
         // there is the only thing that stops the product.
         WM_CLOSE => {
             if let Some(app) = program() {
-                if crate::floating::a_session_is_up(&app) || crate::session::opening() {
+                if crate::session::floating::a_session_is_up(&app) || crate::session::opening() {
                     // While a session is only opening there is sometimes
                     // nothing to end; the request then reaches only the
                     // journal, and the window stays. Putting it away let
@@ -308,7 +308,7 @@ unsafe extern "system" fn answers(
                     SWP_NOACTIVATE | SWP_NOZORDER,
                 )
             };
-            crate::icon::on_the_window();
+            crate::shell::icon::on_the_window();
             if let Some(app) = program() {
                 crate::home::measure_the_screen(&app);
             }
@@ -320,7 +320,7 @@ unsafe extern "system" fn answers(
         // its keyboard back.
         WM_SETFOCUS => {
             let inside = crate::home::its_canvas();
-            if !crate::video::take_the_keyboard() && inside != 0 {
+            if !crate::session::video::take_the_keyboard() && inside != 0 {
                 // SAFETY: a window of ours, on the thread that owns it.
                 unsafe { SetFocus(inside as windows_sys::Win32::Foundation::HWND) };
             }
@@ -352,7 +352,7 @@ static MINIMIZED: AtomicBool = AtomicBool::new(false);
 fn lay_out(width: i32, height: i32) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
 
-    crate::video::fit(width, height);
+    crate::session::video::fit(width, height);
     let inside = crate::home::its_canvas();
     if inside != 0 {
         // SAFETY: a window of ours, laid over the inside of the one
@@ -374,7 +374,7 @@ fn lay_out(width: i32, height: i32) {
     // being answered.
     if let Some(app) = program() {
         let held = app.clone();
-        let _ = app.run_on_main_thread(move || crate::picture::hold_the_shape(&held));
+        let _ = app.run_on_main_thread(move || crate::session::picture::hold_the_shape(&held));
     }
 }
 
@@ -413,7 +413,7 @@ fn say_whether_it_goes_down_or_up(what: usize) {
         } else {
             "brought back from the taskbar"
         },
-        crate::picture::the_front_in_words()
+        crate::session::picture::the_front_in_words()
     ));
 }
 

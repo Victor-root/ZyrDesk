@@ -34,14 +34,14 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 
 use zyr_draw::Rect;
 
-use crate::app::App;
+use crate::shell::app::App;
 
 /// What this module files its journal lines under.
 const TAG: &str = "floating";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// The three sizes the logo takes, in the page pixels they were written
@@ -51,7 +51,7 @@ fn note(what: &str) {
 /// and he has said so twice; what changed is who draws them. The size at
 /// rest is the button's own, which everything about where it hangs is
 /// worked out from.
-const AT_REST: f32 = crate::floating::BUTTON as f32;
+const AT_REST: f32 = crate::session::floating::BUTTON as f32;
 const UNDER_A_HAND: f32 = 46.64;
 const HELD: f32 = 42.68;
 
@@ -150,7 +150,7 @@ pub fn raise(app: &App, side: u32, upward: bool, mirrored: bool, anchor: (i32, i
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
     }
-    let owner = crate::main_window::handle();
+    let owner = crate::shell::main_window::handle();
     *PROGRAM.lock().expect("logo's program") = Some(app.clone());
     ITS_BOX.store(box_of(side), Ordering::Relaxed);
     UPWARD.store(upward, Ordering::Relaxed);
@@ -365,7 +365,7 @@ fn build(owner: isize, anchor: (i32, i32)) {
         0,
     ];
 
-    if !crate::floating::still_to_be_made(&ITS_WINDOW) {
+    if !crate::session::floating::still_to_be_made(&ITS_WINDOW) {
         return;
     }
     let side = ITS_BOX.load(Ordering::Relaxed) as i32;
@@ -523,7 +523,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         // pixels by twelve where the rim of the button offers only two,
         // and the mark stays the mark rather than becoming a drawing
         // flanked by a second one.
-        if let Some(part) = crate::transfer::how_far() {
+        if let Some(part) = crate::session::transfer::how_far() {
             zyr_draw::mark::fill_the_near_pane(canvas, rect, part, mirrored);
         }
         if !canvas.finish() {
@@ -667,14 +667,14 @@ fn taken(window: windows_sys::Win32::Foundation::HWND) {
     }
     head_for(window);
     let handle = window as isize;
-    crate::app::spawn(async move {
-        let plain = crate::floating::grabbed().await;
+    crate::shell::app::spawn(async move {
+        let plain = crate::session::floating::grabbed().await;
         TAKEN.store(false, Ordering::Relaxed);
         head_for(handle as windows_sys::Win32::Foundation::HWND);
         // A plain click opens and closes the menu; a drag does not, or
         // the button would open its menu every time it was put down.
         if plain {
-            crate::menu::show(!crate::menu::is_open());
+            crate::session::floating::menu::show(!crate::session::floating::menu::is_open());
         }
     });
 }

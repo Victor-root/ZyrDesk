@@ -34,20 +34,20 @@ use zyr_draw::{Align, Canvas, Pen, Rect};
 use zyr_proto::fact::Fact;
 use zyr_win32::wide;
 
-use crate::app::App;
+use crate::shell::app::App;
 
-use crate::desk::{Attached, Peer, Standing, Watcher};
 use crate::session::Ongoing;
-use crate::settings::Settings;
-use crate::shortcuts::{Combination, Doing, Held};
-use crate::theme::Choice;
+use crate::shell::desk::{Attached, Peer, Standing, Watcher};
+use crate::shell::settings::Settings;
+use crate::shell::shortcuts::{Combination, Doing, Held};
+use crate::shell::theme::Choice;
 
 /// What this module's lines are filed under.
 const TAG: &str = "home";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// What the service can change without anyone clicking: a session
@@ -507,7 +507,7 @@ impl Pick {
             Pick::Theme => {
                 return Choice::ALL
                     .iter()
-                    .position(|choice| *choice == crate::theme::chosen());
+                    .position(|choice| *choice == crate::shell::theme::chosen());
             }
             Pick::SignUp => return Some(usize::from(state.sign_up)),
             Pick::Codec => seen.settings.as_ref()?.codec.clone(),
@@ -793,7 +793,7 @@ fn scale() -> f32 {
 }
 
 fn palette() -> Palette {
-    design::palette(crate::theme::light())
+    design::palette(crate::shell::theme::light())
 }
 
 fn program() -> Option<App> {
@@ -812,14 +812,14 @@ fn program() -> Option<App> {
 /// thread that made it, and a window made elsewhere would never hear a
 /// mouse.
 pub fn raise(app: &App) {
-    let outer = crate::main_window::handle() as windows_sys::Win32::Foundation::HWND;
+    let outer = crate::shell::main_window::handle() as windows_sys::Win32::Foundation::HWND;
     if outer.is_null() {
         note("home: no window to draw in");
         return;
     }
     *PROGRAM.lock().expect("home's program") = Some(app.clone());
     SCALE.store(
-        (crate::main_window::scale() * 100.0).round() as u32,
+        (crate::shell::main_window::scale() * 100.0).round() as u32,
         Ordering::Relaxed,
     );
     build(outer);
@@ -840,7 +840,7 @@ pub fn its_canvas() -> isize {
 /// magnification changes: everything drawn follows from it, the font of
 /// the input fields included.
 pub fn measure_the_screen(app: &App) {
-    let wanted = (crate::main_window::scale() * 100.0).round() as u32;
+    let wanted = (crate::shell::main_window::scale() * 100.0).round() as u32;
     if SCALE.swap(wanted, Ordering::Relaxed) == wanted {
         return;
     }
@@ -1107,7 +1107,7 @@ const SIFT_PAUSE_MS: u32 = 300;
 
 /// Where the mouse is, in real pixels from the canvas's corner.
 fn where_is(with: windows_sys::Win32::Foundation::LPARAM) -> (f32, f32) {
-    let (x, y) = crate::win32::pointer_in(with);
+    let (x, y) = crate::shell::win32::pointer_in(with);
     (x as f32, y as f32)
 }
 
@@ -4022,7 +4022,7 @@ fn the_combination(
         return true;
     }
     let scan = ((with >> 16) & 0xFF) as u16;
-    let Some(place) = crate::shortcuts::placed(scan) else {
+    let Some(place) = crate::shell::shortcuts::placed(scan) else {
         return true;
     };
     // SAFETY: four questions to the system about this thread's
@@ -4051,12 +4051,12 @@ fn set_the_combination(app: &App, doing: Doing, combination: Option<Combination>
     let mut state = STATE.lock().expect("home");
     state.listening = None;
     state.trouble = None;
-    if let Err(refusal) = crate::shortcuts::bind(doing, combination) {
+    if let Err(refusal) = crate::shell::shortcuts::bind(doing, combination) {
         state.trouble = Some(zyr_i18n::fact(&refusal));
     }
     drop(state);
     if let Some(seen) = SEEN.lock().expect("home").as_mut() {
-        seen.shortcuts = crate::shortcuts::engraved();
+        seen.shortcuts = crate::shell::shortcuts::engraved();
     }
     redraw(app);
 }
@@ -4688,8 +4688,8 @@ fn remedy_it(app: &App, rank: usize) {
     match missing {
         Some(Remedy::StartTheService) => {
             let app = app.clone();
-            crate::app::spawn(async move {
-                if let Err(reason) = crate::desk::start_service().await {
+            crate::shell::app::spawn(async move {
+                if let Err(reason) = crate::shell::desk::start_service().await {
                     notice(&app, &zyr_i18n::fact(&reason), true);
                 }
                 reread(&app).await;
@@ -4702,7 +4702,7 @@ fn remedy_it(app: &App, rank: usize) {
 }
 
 fn open_a_folder(app: &App, which: &'static str) {
-    if let Err(reason) = crate::folders::open_folder(which.to_string()) {
+    if let Err(reason) = crate::shell::folders::open_folder(which.to_string()) {
         notice(app, &zyr_i18n::fact(&reason), true);
     }
 }
@@ -4724,13 +4724,13 @@ fn push(app: &App, button: Toggle) {
     redraw(app);
 
     let app = app.clone();
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         let target = match button {
-            Toggle::Access => crate::desk::set_hosting(wanted).await,
-            Toggle::Trust => crate::desk::set_trust(wanted).await,
-            Toggle::AtBoot => crate::desk::set_at_boot(wanted).await,
-            Toggle::Marking => crate::desk::set_ecn(wanted).await,
-            Toggle::FixedPort => crate::desk::set_fixed_port(wanted).await,
+            Toggle::Access => crate::shell::desk::set_hosting(wanted).await,
+            Toggle::Trust => crate::shell::desk::set_trust(wanted).await,
+            Toggle::AtBoot => crate::shell::desk::set_at_boot(wanted).await,
+            Toggle::Marking => crate::shell::desk::set_ecn(wanted).await,
+            Toggle::FixedPort => crate::shell::desk::set_fixed_port(wanted).await,
             Toggle::Sound | Toggle::Stats => {
                 write_the_settings(|chosen| {
                     if button == Toggle::Sound {
@@ -4759,7 +4759,7 @@ fn push(app: &App, button: Toggle) {
 fn pick(app: &App, target: Pick, rank: usize) {
     if target == Pick::Theme {
         if let Some(choice) = Choice::ALL.get(rank) {
-            crate::theme::choose(*choice);
+            crate::shell::theme::choose(*choice);
             redraw(app);
         }
         return;
@@ -4775,7 +4775,7 @@ fn pick(app: &App, target: Pick, rank: usize) {
         return;
     };
     let app = app.clone();
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         let done = write_the_settings(|chosen| match target {
             Pick::Codec => chosen.codec = value.parse().unwrap_or(chosen.codec),
             Pick::Display => chosen.display = value.parse().unwrap_or(chosen.display),
@@ -4795,10 +4795,12 @@ fn pick(app: &App, target: Pick, rank: usize) {
 ///
 /// The whole set goes to the service so that it never has to guess
 /// what stayed.
-async fn write_the_settings(change: impl FnOnce(&mut crate::settings::Chosen)) -> Result<(), Fact> {
-    let mut chosen = crate::settings::Chosen::of(crate::settings::preferred().await);
+async fn write_the_settings(
+    change: impl FnOnce(&mut crate::shell::settings::Chosen),
+) -> Result<(), Fact> {
+    let mut chosen = crate::shell::settings::Chosen::of(crate::shell::settings::preferred().await);
     change(&mut chosen);
-    crate::settings::choose(chosen).await
+    crate::shell::settings::choose(chosen).await
 }
 
 /* ---- Adding, forgetting, connecting -------------------------------------- */
@@ -4819,8 +4821,8 @@ fn connect(app: &App) {
     act(app, Target::Close);
 
     let app = app.clone();
-    crate::app::spawn(async move {
-        let written = crate::desk::authorize(
+    crate::shell::app::spawn(async move {
+        let written = crate::shell::desk::authorize(
             fingerprint.clone(),
             (!address.is_empty()).then(|| address.clone()),
             (!name.is_empty()).then(|| name.clone()),
@@ -4863,8 +4865,8 @@ fn connect(app: &App) {
 /// Forgets a computer written by hand, from both lists at once.
 fn forget(app: &App, fingerprint: String) {
     let app = app.clone();
-    crate::app::spawn(async move {
-        if let Err(reason) = crate::desk::forget(fingerprint).await {
+    crate::shell::app::spawn(async move {
+        if let Err(reason) = crate::shell::desk::forget(fingerprint).await {
             act(&app, Target::Close);
             notice(&app, &zyr_i18n::fact(&reason), true);
             return;
@@ -4877,8 +4879,8 @@ fn forget(app: &App, fingerprint: String) {
 /// Disconnects the computer controlling this one right now.
 fn disconnect(app: &App, fingerprint: String) {
     let app = app.clone();
-    crate::app::spawn(async move {
-        if let Err(reason) = crate::desk::kick(fingerprint).await {
+    crate::shell::app::spawn(async move {
+        if let Err(reason) = crate::shell::desk::kick(fingerprint).await {
             notice(&app, &zyr_i18n::fact(&reason), true);
             return;
         }
@@ -4932,7 +4934,7 @@ fn launch(app: &App, address: &str, fingerprint: &str, name: &str, local_only: b
     redraw(app);
 
     let (app, address, fingerprint) = (app.clone(), address.to_string(), fingerprint.to_string());
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         if let Err(reason) =
             crate::session::connect(app.clone(), address, fingerprint, local_only).await
         {
@@ -4996,8 +4998,8 @@ fn attach(app: &App, pinning: Option<String>) {
     redraw(app);
 
     let app = app.clone();
-    crate::app::spawn(async move {
-        let outcome = crate::desk::attach(request).await;
+    crate::shell::app::spawn(async move {
+        let outcome = crate::shell::desk::attach(request).await;
         // What the state keeps of the answer, written under its lock,
         // which is released before waiting for anything else.
         let attached = {
@@ -5049,8 +5051,8 @@ fn detach(app: &App) {
     redraw(app);
 
     let app = app.clone();
-    crate::app::spawn(async move {
-        if let Err(reason) = crate::desk::detach().await {
+    crate::shell::app::spawn(async move {
+        if let Err(reason) = crate::shell::desk::detach().await {
             say_the_trouble(&app, &zyr_i18n::fact(&reason));
         }
         reread(&app).await;
@@ -5103,8 +5105,8 @@ fn rename(app: &App) {
     redraw(app);
 
     let app = app.clone();
-    crate::app::spawn(async move {
-        if let Err(reason) = crate::desk::rename_device(device, new_name).await {
+    crate::shell::app::spawn(async move {
+        if let Err(reason) = crate::shell::desk::rename_device(device, new_name).await {
             say_the_trouble(&app, &zyr_i18n::fact(&reason));
         }
         reread(&app).await;
@@ -5135,8 +5137,8 @@ fn revoke(app: &App, rank: usize) {
     redraw(app);
 
     let app = app.clone();
-    crate::app::spawn(async move {
-        if let Err(reason) = crate::desk::revoke_device(device.id).await {
+    crate::shell::app::spawn(async move {
+        if let Err(reason) = crate::shell::desk::revoke_device(device.id).await {
             say_the_trouble(&app, &zyr_i18n::fact(&reason));
         }
         reread(&app).await;
@@ -5193,7 +5195,7 @@ pub fn coming_back(app: &App, attempt: u32) {
 /// read in what the service holds.
 pub fn put_the_opening_away(app: &App) {
     let app = app.clone();
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         reread(&app).await;
         STATE.lock().expect("home").opening = None;
         redraw(&app);
@@ -5283,10 +5285,10 @@ fn reread_the_journal(app: &App, after: After) {
         state.journal_of.clone()
     };
     let app = app.clone();
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         let text = match &from {
-            None => crate::journal::journal(&sift).await,
-            Some(peer) => crate::journal::far_journal(
+            None => crate::shell::journal::journal(&sift).await,
+            Some(peer) => crate::shell::journal::far_journal(
                 peer.address.clone(),
                 peer.fingerprint.clone(),
                 sift.clone(),
@@ -5394,14 +5396,17 @@ fn empty_the_journal(app: &App) {
     redraw(app);
 
     let app = app.clone();
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         // Emptied where it is written: this machine's right away, the far
         // one's by asking it.
         let done = match &from {
-            None => crate::journal::clear_journal(),
+            None => crate::shell::journal::clear_journal(),
             Some(peer) => {
-                crate::journal::clear_far_journal(peer.address.clone(), peer.fingerprint.clone())
-                    .await
+                crate::shell::journal::clear_far_journal(
+                    peer.address.clone(),
+                    peer.fingerprint.clone(),
+                )
+                .await
             }
         };
         if let Err(reason) = done {
@@ -5436,7 +5441,7 @@ fn copy(app: &App, text: &str, target: Target) {
     redraw(app);
 
     let app = app.clone();
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         tokio::time::sleep(COPIED_TIME).await;
         STATE.lock().expect("home").copied = None;
         redraw(&app);
@@ -5451,15 +5456,15 @@ fn copy(app: &App, text: &str, target: Target) {
 /// session can be opened from the other end. None of that goes through
 /// a click.
 fn watch(app: App) {
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         // What does not move for the whole life of the program: asked
         // for once.
         {
             let mut seen = SEEN.lock().expect("home");
             let new = seen.get_or_insert_with(Seen::default);
-            new.version = crate::desk::build();
-            new.folder = crate::folders::logs_folder();
-            new.shortcuts = crate::shortcuts::engraved();
+            new.version = crate::shell::desk::build();
+            new.folder = crate::shell::folders::logs_folder();
+            new.shortcuts = crate::shell::shortcuts::engraved();
         }
         loop {
             if reread(&app).await {
@@ -5477,18 +5482,18 @@ fn watch(app: App) {
 /// during a session, and repainting an identical frame every three
 /// seconds would be processor time taken from the session's picture.
 async fn reread(app: &App) -> bool {
-    let machine = crate::desk::standing().await;
-    let peers = crate::desk::peers().await;
+    let machine = crate::shell::desk::standing().await;
+    let peers = crate::shell::desk::peers().await;
     let sessions = crate::session::sessions().await;
-    let watching = crate::desk::watching().await;
-    let ffmpeg_here = crate::folders::ffmpeg_here();
-    let settings = crate::settings::settings(app.clone()).await;
+    let watching = crate::shell::desk::watching().await;
+    let ffmpeg_here = crate::shell::folders::ffmpeg_here();
+    let settings = crate::shell::settings::settings(app.clone()).await;
     // The account, and its devices when there is a link: without a link
     // there is nothing to ask, and without a service nothing to show.
-    let account = match crate::desk::account().await {
+    let account = match crate::shell::desk::account().await {
         Ok(link) => Some(AccountState {
             devices: if link.is_some() {
-                crate::desk::devices().await
+                crate::shell::desk::devices().await
             } else {
                 Vec::new()
             },
@@ -5532,11 +5537,11 @@ async fn reread(app: &App) -> bool {
 /// Rereads what the settings screen shows, and the three shortcuts.
 fn reread_the_settings(app: &App) {
     let app = app.clone();
-    crate::app::spawn(async move {
-        let settings = crate::settings::settings(app.clone()).await;
+    crate::shell::app::spawn(async move {
+        let settings = crate::shell::settings::settings(app.clone()).await;
         if let Some(seen) = SEEN.lock().expect("home").as_mut() {
             seen.settings = Some(settings);
-            seen.shortcuts = crate::shortcuts::engraved();
+            seen.shortcuts = crate::shell::shortcuts::engraved();
         }
         redraw(&app);
     });

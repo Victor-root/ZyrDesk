@@ -33,7 +33,7 @@ const TAG: &str = "statistics";
 /// Writes a line under this module's tag.
 #[cfg(windows)]
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// What a figure shows while it has nothing to say: a frame nobody
@@ -213,7 +213,7 @@ static WATCHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 /// The program, kept to ask the thread that draws for a new drawing from
 /// wherever the banner is laid.
 #[cfg(windows)]
-static PROGRAM: std::sync::Mutex<Option<crate::app::App>> = std::sync::Mutex::new(None);
+static PROGRAM: std::sync::Mutex<Option<crate::shell::app::App>> = std::sync::Mutex::new(None);
 
 /// What the banner says right now, kept for the drawing, which happens on
 /// the thread that owns the window.
@@ -356,7 +356,7 @@ fn size_of(picture: (i32, i32, i32, i32), measured: &Measured) -> (i32, i32) {
 /// yet at all.
 #[cfg(windows)]
 fn size_for(picture: (i32, i32, i32, i32)) -> Option<(i32, i32)> {
-    let scale = crate::main_window::scale();
+    let scale = crate::shell::main_window::scale();
     MEASURED
         .lock()
         .expect("figures' measures")
@@ -384,7 +384,7 @@ pub fn strip() -> i32 {
 /// Called at every turn of the floating button's watch: it does nothing
 /// while a loop is already running.
 #[cfg(windows)]
-pub fn watch(app: &crate::app::App) {
+pub fn watch(app: &crate::shell::app::App) {
     use std::sync::atomic::Ordering;
 
     if WATCHING.swap(true, Ordering::SeqCst) {
@@ -392,8 +392,9 @@ pub fn watch(app: &crate::app::App) {
     }
     raise(app);
     let app = app.clone();
-    crate::app::spawn(async move {
-        while crate::floating::a_session_is_up(&app) && crate::floating::the_figures_are_shown(&app)
+    crate::shell::app::spawn(async move {
+        while crate::session::floating::a_session_is_up(&app)
+            && crate::session::floating::the_figures_are_shown(&app)
         {
             let now = Some(banner(&crate::session::measures()));
             let changed = {
@@ -413,11 +414,11 @@ pub fn watch(app: &crate::app::App) {
 }
 
 #[cfg(not(windows))]
-pub fn watch(_app: &crate::app::App) {}
+pub fn watch(_app: &crate::shell::app::App) {}
 
 /// Opens the banner's window, hidden: it shows itself once drawn.
 #[cfg(windows)]
-fn raise(app: &crate::app::App) {
+fn raise(app: &crate::shell::app::App) {
     use std::sync::atomic::Ordering;
 
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
@@ -428,13 +429,13 @@ fn raise(app: &crate::app::App) {
     // banner to keep room for it.
     *MEASURED.lock().expect("figures' measures") = None;
     *PROGRAM.lock().expect("figures' program") = Some(app.clone());
-    let owner = crate::main_window::handle();
+    let owner = crate::shell::main_window::handle();
     let _ = app.run_on_main_thread(move || build(owner));
 }
 
 /// Puts it away, and the button and the badges back up where it stood.
 #[cfg(windows)]
-fn lower(app: &crate::app::App) {
+fn lower(app: &crate::shell::app::App) {
     use std::sync::atomic::Ordering;
 
     let window = ITS_WINDOW.swap(0, Ordering::Relaxed);
@@ -449,9 +450,9 @@ fn lower(app: &crate::app::App) {
         // SAFETY: a window of ours, destroyed on the thread that made it.
         unsafe { DestroyWindow(window as HWND) };
         if STRIP.swap(0, Ordering::Relaxed) != 0
-            && let Some(picture) = crate::video::where_it_is()
+            && let Some(picture) = crate::session::video::where_it_is()
         {
-            crate::floating::lay_the_button(picture);
+            crate::session::floating::lay_the_button(picture);
         }
     });
 }
@@ -523,7 +524,8 @@ fn build(owner: isize) {
     };
 
     // Asked for by a loop that has ended since, it is not made at all.
-    if !WATCHING.load(Ordering::SeqCst) || !crate::floating::still_to_be_made(&ITS_WINDOW) {
+    if !WATCHING.load(Ordering::SeqCst) || !crate::session::floating::still_to_be_made(&ITS_WINDOW)
+    {
         return;
     }
     let name = zyr_win32::wide("ZyrDeskStatistiques");
@@ -587,16 +589,16 @@ fn repaint() {
     let window = ITS_WINDOW.load(Ordering::Relaxed);
     // A window put down in the taskbar takes the banner down with it;
     // shown then, the banner would be the only thing left on the desktop.
-    if window == 0 || !crate::main_window::on_screen() {
+    if window == 0 || !crate::shell::main_window::on_screen() {
         return;
     }
     let (Some(banner), Some(picture)) = (
         SAID.lock().expect("figures said").clone(),
-        crate::video::where_it_is(),
+        crate::session::video::where_it_is(),
     ) else {
         return;
     };
-    let scale = crate::main_window::scale();
+    let scale = crate::shell::main_window::scale();
     let Some(high) = CANVAS.with_borrow_mut(|canvas| draw(canvas, window, &banner, picture, scale))
     else {
         return;
@@ -604,7 +606,7 @@ fn repaint() {
     // The button and the badges hang under it, so they follow it when it
     // shows and when it takes a line more or less.
     if STRIP.swap(high, Ordering::Relaxed) != high {
-        crate::floating::lay_the_button(picture);
+        crate::session::floating::lay_the_button(picture);
     }
 }
 

@@ -27,15 +27,15 @@ use zyr_proto::session::{
     Screen,
 };
 
-use crate::service;
 use crate::session::Changed;
+use crate::shell::service;
 
 /// What this module files its journal lines under.
 const TAG: &str = "settings";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// What the settings screen shows.
@@ -118,10 +118,10 @@ impl Chosen {
     }
 }
 
-pub async fn settings(app: crate::app::App) -> Settings {
+pub async fn settings(app: crate::shell::app::App) -> Settings {
     Settings::shown(
         preferred().await,
-        crate::picture::the_screen_of_this_computer(&app),
+        crate::session::picture::the_screen_of_this_computer(&app),
     )
 }
 
@@ -228,8 +228,8 @@ pub struct SessionMenu {
     pub now: SessionChoice,
 }
 
-pub async fn session_menu(app: crate::app::App) -> SessionMenu {
-    let screen = crate::picture::the_screen_of_this_computer(&app);
+pub async fn session_menu(app: crate::shell::app::App) -> SessionMenu {
+    let screen = crate::session::picture::the_screen_of_this_computer(&app);
     let preferred = preferred().await;
     SessionMenu {
         sizes: SIZES_OFFERED
@@ -328,7 +328,7 @@ fn offered(screen: &FarScreen) -> OfferedScreen {
 /// anywhere else is a window and a service that no longer agree, and
 /// quietly keeping it would hide that.
 pub async fn choose_session(
-    app: crate::app::App,
+    app: crate::shell::app::App,
     which: String,
     value: String,
 ) -> Result<SessionChoice, Fact> {
@@ -384,7 +384,7 @@ pub async fn choose_session(
             crate::session::watch_the_far_screen(id).await?;
             return Ok(SessionChoice::of(
                 preferred,
-                crate::picture::the_screen_of_this_computer(&app),
+                crate::session::picture::the_screen_of_this_computer(&app),
             ));
         }
         // Two words and not a list: it is a switch, and the two sides are
@@ -403,7 +403,7 @@ pub async fn choose_session(
     crate::session::take_where_it_stands(app.clone(), changed, preferred).await?;
     Ok(SessionChoice::of(
         preferred,
-        crate::picture::the_screen_of_this_computer(&app),
+        crate::session::picture::the_screen_of_this_computer(&app),
     ))
 }
 

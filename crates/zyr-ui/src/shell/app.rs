@@ -28,8 +28,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicIsize, Ordering};
 
-use crate::floating::Floating;
-use crate::tray::Shown;
+use crate::session::floating::Floating;
+use crate::shell::tray::Shown;
 
 /// The program, as every part of it holds it.
 ///
@@ -279,7 +279,7 @@ pub fn already_open() -> bool {
     }
     // SAFETY: a lock that this call has just handed back, closed once.
     unsafe { CloseHandle(lock) };
-    crate::main_window::show_the_one_running();
+    crate::shell::main_window::show_the_one_running();
     true
 }
 

@@ -28,14 +28,14 @@
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use crate::app::App;
+use crate::shell::app::App;
 
 /// What this module files its journal lines under.
 const TAG: &str = "theme";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// The three answers, spelled as the file spells them.
@@ -167,7 +167,7 @@ pub fn choose(choice: Choice) {
 /// program, which is the only one that knows both halves of the
 /// question.
 pub fn on_the_window() {
-    crate::main_window::dress_the_frame(light());
+    crate::shell::main_window::dress_the_frame(light());
 }
 
 /// Follows what Windows wants for as long as the program runs, and has

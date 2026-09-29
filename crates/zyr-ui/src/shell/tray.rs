@@ -23,14 +23,14 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicIsize, Ordering};
 
-use crate::app::App;
+use crate::shell::app::App;
 
 /// What this module's lines are filed under.
 const TAG: &str = "tray";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// What the menu answers when one of its lines is chosen.
@@ -171,10 +171,10 @@ const LOOK: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Keeps the icon saying the truth, for as long as the program runs.
 pub fn watch(app: App) {
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         loop {
-            let standing = crate::desk::standing().await;
-            let playing = crate::floating::a_session_is_up(&app);
+            let standing = crate::shell::desk::standing().await;
+            let playing = crate::session::floating::a_session_is_up(&app);
             says(&app, standing.hosting, playing);
             tokio::time::sleep(LOOK).await;
         }
@@ -341,7 +341,7 @@ fn pop_up_the_menu(window: windows_sys::Win32::Foundation::HWND) {
 }
 
 fn open() {
-    crate::main_window::show();
+    crate::shell::main_window::show();
 }
 
 /// Stops everything and leaves.
@@ -353,13 +353,13 @@ fn open() {
 /// every single time.
 fn quit() {
     note("quitting asked for from the notification area");
-    crate::app::spawn(async move {
-        match crate::desk::stop_service().await {
+    crate::shell::app::spawn(async move {
+        match crate::shell::desk::stop_service().await {
             Ok(()) => note("service stopped, quitting"),
             Err(reason) => note(&format!("service not stopped: {reason}")),
         }
         remove_the_icon();
-        crate::app::quit();
+        crate::shell::app::quit();
     });
 }
 

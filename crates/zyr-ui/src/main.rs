@@ -21,28 +21,15 @@
 // game away immediately.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod app;
-mod desk;
-mod floating;
-mod folders;
-mod icon;
-mod journal;
-
-// The floating button's logo, drawn by this program: it only exists
-// on Windows, like the window that carries it.
-#[cfg(windows)]
-mod logo;
-
-// The floating button's menu, drawn by this program.
-#[cfg(windows)]
-mod menu;
+// The program around the windows: the program itself, its main window,
+// the icon by the clock, the journal, the theme, what the person chose
+// and the keyboard shortcuts they set, and what every part asks of the
+// service.
+mod shell;
 
 // The home window, drawn by this program.
 #[cfg(windows)]
 mod home;
-
-// The window itself, opened by this program.
-mod main_window;
 
 /// Outside Windows there is no home window, and no session either: what
 /// a session says while it opens then falls into the void, like
@@ -51,7 +38,7 @@ mod main_window;
 mod home {
     use zyr_proto::fact::Fact;
 
-    use crate::app::App;
+    use crate::shell::app::App;
 
     pub fn step(_app: &App, _detail: &Fact) {}
     pub fn coming_back(_app: &App, _attempt: u32) {}
@@ -59,41 +46,14 @@ mod home {
     pub fn failed(_app: &App, _why: &Fact) {}
 }
 
-mod picture;
-mod pointer;
-mod service;
+// A session, as this program opens it, plays it and dresses its picture:
+// the floating button and its menu, the badges and the figures.
 mod session;
-mod settings;
-mod shortcuts;
-// The figures of a session, in the corner of its picture. What is
-// written compiles everywhere; the card is a window, so Windows'.
-mod statistics;
-// The keys Windows keeps for itself, taken for the session on request.
-// The decision compiles everywhere; the hook is Windows'.
-mod system_keys;
-mod theme;
-// What the floating button shows of the files arriving: the pane of the
-// mark fills like a loading bar. The reading compiles everywhere; the
-// drawing is the button's.
-mod transfer;
-mod tray;
-// The two badges of a session, in the corner of the picture opposite the
-// floating button. What decides compiles everywhere; the badges are a
-// window, so they belong to Windows.
-mod badges;
 
-// The picture of a session, in a window of ours. What a message means
-// compiles everywhere; the window is Windows'.
-mod video;
-
-// What every window of this program says to Windows the same way.
+use session::floating;
 #[cfg(windows)]
-mod win32;
-
-// A hook of the system lives on a thread of its own, which only Windows
-// has to offer.
-#[cfg(windows)]
-mod hook;
+use shell::win32;
+use shell::{app, icon, journal, main_window, service, shortcuts, theme, tray};
 
 fn main() {
     // Two ZyrDesk running at once would put two floating buttons on the
@@ -167,6 +127,6 @@ fn main() {
 /// The picture and the floating button come back with it without being
 /// told: both are windows the system knows this one owns, and it puts
 /// them back up when it puts this one back up.
-pub fn show_home(_app: &crate::app::App) {
+pub fn show_home(_app: &crate::shell::app::App) {
     main_window::show();
 }

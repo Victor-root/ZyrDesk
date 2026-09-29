@@ -26,14 +26,14 @@ use zyr_control::{Answer, Request, Service, WayId};
 use zyr_proto::fact::Fact;
 use zyr_proto::session::Pointer;
 
-use crate::app::App;
+use crate::shell::app::App;
 
 /// What this module's lines are filed under.
 const TAG: &str = "pointer";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// How many times a second the shape is asked for.
@@ -77,7 +77,7 @@ fn keep(shape: Pointer) {
         .position(|each| *each == shape)
         .unwrap_or(0) as u8;
     if SHAPE.swap(rank, Ordering::Relaxed) != rank {
-        crate::video::the_pointer_changed();
+        crate::session::video::the_pointer_changed();
     }
 }
 
@@ -93,7 +93,7 @@ pub fn follow(app: &App) {
         return;
     }
     let app = app.clone();
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         let seen = keep_it_in_step(&app).await;
         // The next session starts from the ordinary pointer, and not
         // from whatever this one was left pointing at.
@@ -110,7 +110,7 @@ async fn keep_it_in_step(app: &App) -> Seen {
     let mut refused = 0;
     loop {
         tokio::time::sleep(ASK_EVERY).await;
-        if !crate::floating::a_session_is_up(app) {
+        if !crate::session::floating::a_session_is_up(app) {
             seen.why = "the session is over";
             return seen;
         }
@@ -123,7 +123,7 @@ async fn keep_it_in_step(app: &App) -> Seen {
         // is hidden: asking for a shape nobody will show would be twenty
         // round trips a second for nothing. The loop stays alive, because
         // the person can come back to the desktop without closing.
-        if crate::video::in_a_game() {
+        if crate::session::video::in_a_game() {
             continue;
         }
         match asked(&mut talking, way).await {

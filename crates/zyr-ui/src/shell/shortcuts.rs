@@ -33,7 +33,7 @@ const TAG: &str = "keys";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// What a combination can be asked to do.
@@ -495,7 +495,7 @@ const AGAIN: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
 /// Registers what is in the file, and keeps doing it for as long as the
 /// program runs.
 #[cfg(windows)]
-pub fn listen(app: crate::app::App) {
+pub fn listen(app: crate::shell::app::App) {
     use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 
     std::thread::spawn(move || {
@@ -537,7 +537,7 @@ pub fn listen_again() {
 /// Holds every combination until told to look again, and says whether
 /// there is a reason to come back.
 #[cfg(windows)]
-fn hold_them(app: &crate::app::App) -> bool {
+fn hold_them(app: &crate::shell::app::App) -> bool {
     use std::ptr::null_mut;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         MAPVK_VSC_TO_VK, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN, MapVirtualKeyW,
@@ -620,19 +620,19 @@ fn hold_them(app: &crate::app::App) -> bool {
 }
 
 #[cfg(windows)]
-fn do_it(app: &crate::app::App, doing: Doing) {
+fn do_it(app: &crate::shell::app::App, doing: Doing) {
     match doing {
         Doing::Menu => {
-            if let Err(e) = crate::floating::show_the_menu(app) {
+            if let Err(e) = crate::session::floating::show_the_menu(app) {
                 note(&format!("menu shortcut did nothing: {e}"));
             }
         }
-        Doing::End => on_the_session(app, crate::floating::Act::End),
-        Doing::Fullscreen => on_the_session(app, crate::floating::Act::Fullscreen),
+        Doing::End => on_the_session(app, crate::session::floating::Act::End),
+        Doing::Fullscreen => on_the_session(app, crate::session::floating::Act::Fullscreen),
         // Not one of the things a session is asked for: it is asked of
         // the far computer, which changes screen where it stands.
         Doing::NextScreen => {
-            crate::app::spawn(async move {
+            crate::shell::app::spawn(async move {
                 if let Err(e) = crate::session::watch_the_next_far_screen().await {
                     note(&format!("screen shortcut did nothing: {e}"));
                 }
@@ -644,17 +644,17 @@ fn do_it(app: &crate::app::App, doing: Doing) {
 /// Asks the session for something, without holding the thread that owns
 /// the combinations: it has to be back waiting for the next one.
 #[cfg(windows)]
-fn on_the_session(app: &crate::app::App, act: crate::floating::Act) {
+fn on_the_session(app: &crate::shell::app::App, act: crate::session::floating::Act) {
     let app = app.clone();
-    crate::app::spawn(async move {
-        if let Err(e) = crate::floating::ask(&app, act).await {
+    crate::shell::app::spawn(async move {
+        if let Err(e) = crate::session::floating::ask(&app, act).await {
             note(&format!("shortcut did nothing: {e}"));
         }
     });
 }
 
 #[cfg(not(windows))]
-pub fn listen(_app: crate::app::App) {}
+pub fn listen(_app: crate::shell::app::App) {}
 
 #[cfg(not(windows))]
 pub fn listen_again() {}

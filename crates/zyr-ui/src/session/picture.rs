@@ -21,7 +21,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
 
-use crate::app::App;
+use crate::shell::app::App;
 use zyr_proto::fact::Fact;
 use zyr_proto::session::{DisplayMode, Screen};
 
@@ -30,7 +30,7 @@ const TAG: &str = "picture";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// The shape of the picture: the size the far computer's stream is made
@@ -126,14 +126,14 @@ pub fn let_go(app: &App) {
 ///
 /// The picture follows it, being its inside.
 pub fn take_the_screen(app: &App, whole: bool) -> Result<(), Fact> {
-    if crate::main_window::handle() == 0 {
+    if crate::shell::main_window::handle() == 0 {
         return Err(Fact::new("window.gone"));
     }
     // The window writes down what it is becoming before it moves, never
     // after: taking the screen is what makes the system ask which frame
     // it will have, and the answer depends on it.
-    let was = crate::main_window::holds_the_screen();
-    crate::main_window::take_the_screen(whole);
+    let was = crate::shell::main_window::holds_the_screen();
+    crate::shell::main_window::take_the_screen(whole);
     if was != whole {
         no_frame_on_the_whole_screen(app);
     }
@@ -161,7 +161,7 @@ pub fn take_the_screen_for_a_session(app: &App, whole: bool) -> Result<(), Fact>
     if whole {
         return Ok(());
     }
-    crate::main_window::maximize();
+    crate::shell::main_window::maximize();
     Ok(())
 }
 
@@ -172,14 +172,14 @@ pub fn take_the_screen_for_a_session(app: &App, whole: bool) -> Result<(), Fact>
 /// the end of a session. So this is the only one that writes anything
 /// down, and what it writes is what the next session opens as.
 pub fn toggle_the_screen(app: &App) -> Result<(), Fact> {
-    let whole = !crate::main_window::holds_the_screen();
+    let whole = !crate::shell::main_window::holds_the_screen();
     take_the_screen(app, whole)?;
 
     // Writing it down means asking the service, which is a round trip
     // over a pipe: the picture has already moved, and nothing waits for
     // this.
-    crate::app::spawn(async move {
-        crate::settings::remember_display(if whole {
+    crate::shell::app::spawn(async move {
+        crate::shell::settings::remember_display(if whole {
             DisplayMode::Fullscreen
         } else {
             DisplayMode::Windowed
@@ -218,15 +218,15 @@ pub fn hold_the_shape(_app: &App) {
     if wide <= 0 || high <= 0 {
         return;
     }
-    if crate::main_window::handle() == 0 {
+    if crate::shell::main_window::handle() == 0 {
         return;
     }
     // Covering the screen is a shape nobody chose and nobody drags, and
     // so is a window put against the edges of the screen by the system.
-    if crate::main_window::holds_the_screen() || crate::main_window::is_maximized() {
+    if crate::shell::main_window::holds_the_screen() || crate::shell::main_window::is_maximized() {
         return;
     }
-    let inside = crate::main_window::inside();
+    let inside = crate::shell::main_window::inside();
     let Ok(width) = i32::try_from(inside.0) else {
         return;
     };
@@ -234,7 +234,7 @@ pub fn hold_the_shape(_app: &App) {
     if wanted <= 0 || inside.1.abs_diff(wanted as u32) <= ROUNDING {
         return;
     }
-    crate::main_window::set_the_inside(inside.0, wanted as u32);
+    crate::shell::main_window::set_the_inside(inside.0, wanted as u32);
 }
 
 /* ---- What belongs to Windows ----------------------------------------- */
@@ -402,7 +402,7 @@ fn round_the_window(home: windows_sys::Win32::Foundation::HWND, may: bool) {
     // Kept, so that taking the screen or giving it back can ask again
     // without having to know whether a session is running.
     ROUNDS_WANTED.store(may, Ordering::Relaxed);
-    let whole = crate::main_window::holds_the_screen();
+    let whole = crate::shell::main_window::holds_the_screen();
     let how: i32 = match (may, whole) {
         (_, true) => DWMWCP_DONOTROUND,
         (true, false) => DWMWCP_ROUND,
@@ -529,7 +529,7 @@ fn tell_the_frame(home: windows_sys::Win32::Foundation::HWND) {
     // sitting at minus thirty-two thousand, which is how the system says
     // "nowhere". Printed as it comes, it reads like a measurement and is
     // not one.
-    if !crate::main_window::on_screen() {
+    if !crate::shell::main_window::on_screen() {
         note("window frame: it is put down in the taskbar");
         return;
     }
@@ -666,7 +666,7 @@ fn take_the_window_in_hand(app: &App) {
         // case the window took it before this handler was on it and the
         // system asked about the frame with nobody there to answer.
         // Asked again now, with the handler in place.
-        if crate::main_window::holds_the_screen() {
+        if crate::shell::main_window::holds_the_screen() {
             no_frame_on_the_whole_screen(&asked);
         }
         tell_the_frame(home);
@@ -757,7 +757,7 @@ unsafe extern "system" fn in_hand(
         // the far computer's picture sat a few pixels below where it
         // should. What the block already holds is the window itself, and
         // nought is « that rectangle stands ».
-        WM_NCCALCSIZE if wparam != 0 && crate::main_window::holds_the_screen() => 0,
+        WM_NCCALCSIZE if wparam != 0 && crate::shell::main_window::holds_the_screen() => 0,
         // Our window has just moved, been resized, shown or hidden: the
         // button and the badges go with the picture, here and now.
         WM_WINDOWPOSCHANGED => {
@@ -765,8 +765,8 @@ unsafe extern "system" fn in_hand(
             // system finishes moving this window, and its inside with it,
             // before the button is laid on what it has become.
             let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
-            if let Some(picture) = crate::video::where_it_is() {
-                crate::floating::lay_the_button(picture);
+            if let Some(picture) = crate::session::video::where_it_is() {
+                crate::session::floating::lay_the_button(picture);
             }
             answer
         }
@@ -846,7 +846,10 @@ fn the_drag_keeps_the_shape(
         asked,
         frame,
         (wide, high),
-        the_least_picture(crate::floating::room_for_the_button(), (wide, high)),
+        the_least_picture(
+            crate::session::floating::room_for_the_button(),
+            (wide, high),
+        ),
         held,
     );
     wanted.x = x;
@@ -988,7 +991,7 @@ fn the_least_picture(room: Option<(i32, i32)>, shape: (i32, i32)) -> (i32, i32) 
 /// Our own window, as the system knows it.
 #[cfg(windows)]
 fn home_window(_app: &App) -> Option<windows_sys::Win32::Foundation::HWND> {
-    let home = crate::main_window::handle() as windows_sys::Win32::Foundation::HWND;
+    let home = crate::shell::main_window::handle() as windows_sys::Win32::Foundation::HWND;
     (!home.is_null()).then_some(home)
 }
 
@@ -1067,7 +1070,8 @@ pub(crate) fn shut_the_pointer_in(cage: Cage) {
     // A window down in the taskbar still has a picture, placed far off
     // the desk: a cage there would hold the pointer against the edge of
     // the screen.
-    let picture = crate::video::where_it_is().filter(|_| crate::main_window::on_screen());
+    let picture =
+        crate::session::video::where_it_is().filter(|_| crate::shell::main_window::on_screen());
     let wanted = match (cage, picture) {
         (Cage::Free, _) | (_, None) => None,
         (Cage::Picture, Some((left, top, right, bottom))) => Some(RECT {

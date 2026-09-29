@@ -34,7 +34,7 @@ const TAG: &str = "badges";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// What a badge can say.
@@ -81,14 +81,14 @@ static WATCHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 /// pointer's shape: it does nothing while a loop is already running, and
 /// starts one again when the previous one has stopped.
 #[cfg(windows)]
-pub fn watch(app: &crate::app::App) {
+pub fn watch(app: &crate::shell::app::App) {
     use std::sync::atomic::Ordering;
 
     if WATCHING.swap(true, Ordering::SeqCst) {
         return;
     }
     let app = app.clone();
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         keep_up(&app).await;
         show(&app, Lit::default(), &Reads::default(), false);
         WATCHING.store(false, Ordering::SeqCst);
@@ -96,11 +96,11 @@ pub fn watch(app: &crate::app::App) {
 }
 
 #[cfg(not(windows))]
-pub fn watch(_app: &crate::app::App) {}
+pub fn watch(_app: &crate::shell::app::App) {}
 
 /// The loop itself.
 #[cfg(windows)]
-async fn keep_up(app: &crate::app::App) {
+async fn keep_up(app: &crate::shell::app::App) {
     use std::time::Instant;
 
     use zyr_session::health::{self, Steady};
@@ -109,10 +109,10 @@ async fn keep_up(app: &crate::app::App) {
     let mut was = Lit::default();
     loop {
         tokio::time::sleep(LOOK_EVERY).await;
-        if !crate::floating::a_session_is_up(app) {
+        if !crate::session::floating::a_session_is_up(app) {
             return;
         }
-        let held = crate::floating::the_badges_are_held_up(app);
+        let held = crate::session::floating::the_badges_are_held_up(app);
         let reads = health::read(&crate::session::measures());
         let now = Instant::now();
         let shown = steady.after(&reads, now);
@@ -268,7 +268,7 @@ thread_local! {
 /// What the window takes up, in real pixels on the screen it covers.
 #[cfg(windows)]
 fn its_size() -> (i32, i32) {
-    let scale = crate::main_window::scale();
+    let scale = crate::shell::main_window::scale();
     // Sized for the bubble from the start, and not enlarged when it
     // opens: resizing a layered window under a passing hand would show.
     // What is not drawn only costs the compositor, which only blends
@@ -284,23 +284,23 @@ fn its_size() -> (i32, i32) {
 /// the margin: that is where the first badge sits, and the window spills
 /// over around it by what the shadow asks for.
 #[cfg(windows)]
-pub fn raise(app: &crate::app::App, anchor: (i32, i32)) {
+pub fn raise(app: &crate::shell::app::App, anchor: (i32, i32)) {
     use std::sync::atomic::Ordering;
 
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
     }
-    let owner = crate::main_window::handle();
+    let owner = crate::shell::main_window::handle();
     LIT.store(0, Ordering::Relaxed);
     let _ = app.run_on_main_thread(move || build(owner, anchor));
 }
 
 #[cfg(not(windows))]
-pub fn raise(_app: &crate::app::App, _anchor: (i32, i32)) {}
+pub fn raise(_app: &crate::shell::app::App, _anchor: (i32, i32)) {}
 
 /// Puts them away with the session.
 #[cfg(windows)]
-pub fn lower(app: &crate::app::App) {
+pub fn lower(app: &crate::shell::app::App) {
     use std::sync::atomic::Ordering;
 
     let window = ITS_WINDOW.swap(0, Ordering::Relaxed);
@@ -319,7 +319,7 @@ pub fn lower(app: &crate::app::App) {
 }
 
 #[cfg(not(windows))]
-pub fn lower(_app: &crate::app::App) {}
+pub fn lower(_app: &crate::shell::app::App) {}
 
 /// Lays them in the top left corner of the picture.
 ///
@@ -363,7 +363,7 @@ pub fn lay(_anchor: (i32, i32)) {}
 /// The window's corner, for a first badge laid there.
 #[cfg(windows)]
 fn window_corner(anchor: (i32, i32)) -> (i32, i32) {
-    let room = (ROOM * crate::main_window::scale()).round() as i32;
+    let room = (ROOM * crate::shell::main_window::scale()).round() as i32;
     (anchor.0 - room, anchor.1 - room)
 }
 
@@ -374,7 +374,7 @@ fn window_corner(anchor: (i32, i32)) -> (i32, i32) {
 /// seen, but it is still a window the compositor blends into every frame
 /// of the session.
 #[cfg(windows)]
-fn show(app: &crate::app::App, shown: Lit, reads: &Reads, held: bool) {
+fn show(app: &crate::shell::app::App, shown: Lit, reads: &Reads, held: bool) {
     use std::sync::atomic::Ordering;
 
     let window = ITS_WINDOW.load(Ordering::Relaxed);
@@ -424,7 +424,7 @@ fn show(app: &crate::app::App, shown: Lit, reads: &Reads, held: bool) {
 }
 
 #[cfg(not(windows))]
-fn show(_app: &crate::app::App, _shown: Lit, _reads: &Reads, _held: bool) {}
+fn show(_app: &crate::shell::app::App, _shown: Lit, _reads: &Reads, _held: bool) {}
 
 /// Which of the two the hand is resting on, if either.
 ///
@@ -454,7 +454,7 @@ fn the_hand_over_them(window: isize) -> u8 {
     if unsafe { GetWindowRect(window as HWND, &mut place) } == 0 {
         return 0;
     }
-    let scale = crate::main_window::scale();
+    let scale = crate::shell::main_window::scale();
     let side = (BADGE * scale).round() as i32;
     let top = place.top + (ROOM * scale).round() as i32;
     if hand.y < top || hand.y >= top + side {
@@ -505,7 +505,7 @@ fn build(owner: isize, anchor: (i32, i32)) {
         WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
     };
 
-    if !crate::floating::still_to_be_made(&ITS_WINDOW) {
+    if !crate::session::floating::still_to_be_made(&ITS_WINDOW) {
         return;
     }
     let name = zyr_win32::wide("ZyrDeskVoyants");
@@ -590,7 +590,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     // what they say. Two badges always lit would show nothing of their
     // work.
     let held = lit & bit::HELD != 0;
-    let scale = crate::main_window::scale();
+    let scale = crate::shell::main_window::scale();
     let (wide_px, high) = its_size();
     CANVAS.with_borrow_mut(|canvas| {
         // Made again when the screen's magnification has changed: the

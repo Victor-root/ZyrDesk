@@ -15,14 +15,14 @@ use zyr_control::{Account, Answer, Attach, Device, Holdup, OfAccount, Request};
 use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 
-use crate::service;
+use crate::shell::service;
 
 /// What this module's lines are filed under.
 const TAG: &str = "desk";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// A ZyrDesk the home screen shows.

@@ -21,12 +21,38 @@
 // which only exists on Windows, like the session itself.
 #![cfg_attr(not(windows), allow(dead_code))]
 
+// The two badges of a session, in the corner of the picture opposite the
+// floating button. What lights them is decided by `zyr_session::health`;
+// the badges are a window, so they belong to Windows.
+pub mod badges;
+// The floating button, its logo and its menu.
+pub mod floating;
+// A hook of the system lives on a thread of its own, which only Windows
+// has to offer.
+#[cfg(windows)]
+pub mod hook;
+pub mod picture;
+pub mod pointer;
+// The figures of a session, in the corner of its picture. What is
+// written compiles everywhere; the card is a window, so Windows'.
+pub mod statistics;
+// The keys Windows keeps for itself, taken for the session on request.
+// The decision compiles everywhere; the hook is Windows'.
+pub mod system_keys;
+// What the floating button shows of the files arriving: the pane of the
+// mark fills like a loading bar. The reading compiles everywhere; the
+// drawing is the button's.
+pub mod transfer;
+// The picture of a session, in a window of ours. What a message means
+// compiles everywhere; the window is Windows'.
+pub mod video;
+
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::time::{Duration, Instant};
 
-use crate::app::App;
+use crate::shell::app::App;
 use zyr_control::{Answer, Request, WayId};
 use zyr_player::{Ending, Event, Measures, Player, Surface};
 use zyr_proto::fact::Fact;
@@ -34,16 +60,16 @@ use zyr_proto::log::Log;
 use zyr_proto::session::{FarScreen, Preferred, SessionSettings, WantedScreen};
 use zyr_session::{Opened, Stage, Step, Wanted};
 
-use crate::desk::fingerprint_of;
-use crate::floating::Floating;
-use crate::service;
+use crate::session::floating::Floating;
+use crate::shell::desk::fingerprint_of;
+use crate::shell::service;
 
 /// What this module files its journal lines under.
 const TAG: &str = "session";
 
 /// Writes a line under this module's tag.
 fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
+    crate::shell::journal::note_about(TAG, what);
 }
 
 /// A session already under way, as the service describes it.
@@ -312,7 +338,7 @@ pub fn ask_for_the_far_screen(id: Option<String>) {
 /// never stops.
 pub async fn watch_the_far_screen(id: Option<String>) -> Result<(), Fact> {
     let way = the_way().ok_or_else(none_under_way)?;
-    match crate::service::ask(&Request::FilmFarScreen {
+    match crate::shell::service::ask(&Request::FilmFarScreen {
         way,
         id: id.clone(),
     })
@@ -338,7 +364,7 @@ pub async fn watch_the_next_far_screen() -> Result<(), Fact> {
     // after somebody had opened the menu once would be a key that
     // sometimes does nothing.
     if the_far_screens().is_empty() {
-        crate::settings::the_far_computers_screens().await;
+        crate::shell::settings::the_far_computers_screens().await;
     }
     let screens = the_far_screens();
     let Some(next) = the_one_after(&screens, &the_far_screen_named()) else {
@@ -452,19 +478,20 @@ async fn become_that_size(app: &App, preferred: Preferred) -> Result<(), Fact> {
     // What that computer says it will be showing wins over what this end
     // guessed, exactly as at the opening. A refusal costs the sharpness of
     // the picture and nothing else, and the session goes on.
-    let (width, height) = match crate::service::ask(&Request::FarScreen { way, wanted }).await {
-        Ok(Answer::Showing {
-            size: Some((wide, high)),
-        }) => (wide, high),
-        Ok(Answer::Showing { size: None }) => (guessed.width, guessed.height),
-        Ok(other) => return Err(other.unexpected()),
-        Err(reason) => {
-            note(&format!(
-                "the far computer did not prepare its screen: {reason}"
-            ));
-            (guessed.width, guessed.height)
-        }
-    };
+    let (width, height) =
+        match crate::shell::service::ask(&Request::FarScreen { way, wanted }).await {
+            Ok(Answer::Showing {
+                size: Some((wide, high)),
+            }) => (wide, high),
+            Ok(Answer::Showing { size: None }) => (guessed.width, guessed.height),
+            Ok(other) => return Err(other.unexpected()),
+            Err(reason) => {
+                note(&format!(
+                    "the far computer did not prepare its screen: {reason}"
+                ));
+                (guessed.width, guessed.height)
+            }
+        };
     ask_the_player(|settings, _| {
         settings.width = width;
         settings.height = height;
@@ -488,7 +515,7 @@ pub async fn connect(
     // One at a time, held here and not merely on the screen. Taken
     // before anything moves, and given back by `finish`, which every
     // road out of `drive` ends at.
-    if crate::floating::a_session_is_up(&app) || OPENING.swap(true, Ordering::SeqCst) {
+    if crate::session::floating::a_session_is_up(&app) || OPENING.swap(true, Ordering::SeqCst) {
         return Err(Fact::new("window.session_already_open"));
     }
 
@@ -505,11 +532,11 @@ pub async fn connect(
     ask_for_the_far_screen(None);
     FAR_SCREENS.lock().expect("far screens").clear();
 
-    let preferred = crate::settings::preferred().await;
+    let preferred = crate::shell::settings::preferred().await;
     // The window takes the screen before anything else does, so the
     // opening is read on the same surface the picture will land on
     // rather than in a small window that grows under the eye.
-    let _ = crate::picture::take_the_screen_for_a_session(
+    let _ = crate::session::picture::take_the_screen_for_a_session(
         &app,
         preferred.display_mode == zyr_proto::session::DisplayMode::Fullscreen,
     );
@@ -549,9 +576,9 @@ pub async fn connect(
 /// screen is asked to draw. Measuring twice would let the two disagree
 /// about the screen they describe.
 fn what_to_ask_for(app: &App, preferred: Preferred) -> (SessionSettings, u32) {
-    let screen = crate::picture::the_screen_of_this_computer(app);
+    let screen = crate::session::picture::the_screen_of_this_computer(app);
     let settings = preferred.settings(screen);
-    crate::picture::tell_what_is_asked_for(screen, preferred.asked, &settings);
+    crate::session::picture::tell_what_is_asked_for(screen, preferred.asked, &settings);
     (settings, preferred.asked.magnification(screen))
 }
 
@@ -570,7 +597,7 @@ const CLOSING_SHOWS: Duration = Duration::from_secs(3);
 fn drive(app: &App, wanted: Wanted, preferred: Preferred) {
     // Without the window's journal the player has nowhere to write, and
     // no far computer is worth disturbing for a session that cannot play.
-    let Some(log) = crate::journal::the_log() else {
+    let Some(log) = crate::shell::journal::the_log() else {
         return finish(app, Some(Fact::new("window.no_journal")));
     };
     let mut stage = OnScreen {
@@ -615,8 +642,8 @@ impl Stage for OnScreen {
         // What is kept when the service cannot be asked is what the
         // picture was already showing, never the ordinary settings: the
         // person asked for nothing to change.
-        self.preferred =
-            crate::app::block_on(crate::settings::what_was_chosen()).unwrap_or(self.preferred);
+        self.preferred = crate::shell::app::block_on(crate::shell::settings::what_was_chosen())
+            .unwrap_or(self.preferred);
         (wanted.settings, wanted.far_magnification) = what_to_ask_for(&self.app, self.preferred);
         wanted.hush_the_far_speakers = self.preferred.mute_far_speakers;
         // And whether that computer is to grow a screen for this session
@@ -646,7 +673,7 @@ impl Showing {
             settings,
             way,
         } = opened;
-        let window = crate::video::open(app)?;
+        let window = crate::session::video::open(app)?;
         let (said, heard) = channel();
         let told = said.clone();
         let steady = preferred.steady_far_rate;
@@ -662,16 +689,16 @@ impl Showing {
         let player = match started {
             Ok(player) => player,
             Err(e) => {
-                crate::video::close(app);
+                crate::session::video::close(app);
                 return Err(e.fact());
             }
         };
         note(&format!("player plugged into {link}"));
         // The switches of this window start where the settings put them,
         // and the mouse where the session was opened with it.
-        crate::floating::adopt(app, preferred);
-        crate::system_keys::start_as(preferred.system_keys);
-        crate::video::play_a_game(app, !settings.absolute_mouse);
+        crate::session::floating::adopt(app, preferred);
+        crate::session::system_keys::start_as(preferred.system_keys);
+        crate::session::video::play_a_game(app, !settings.absolute_mouse);
         *PLAYING.lock().expect("played session") = Some(Playing {
             player: player.clone(),
             way: way.way(),
@@ -728,13 +755,13 @@ impl Showing {
                     height,
                 } => {
                     note(&format!("stream in {} {width}x{height}", codec.name()));
-                    crate::picture::takes_the_shape(app, (width, height));
+                    crate::session::picture::takes_the_shape(app, (width, height));
                 }
                 Event::FirstPicture => {
                     shown();
                     on_screen = true;
                     // The button goes up with it, on the window's thread.
-                    crate::video::show(app);
+                    crate::session::video::show(app);
                     crate::home::put_the_opening_away(app);
                     // From here on the way is a session the service names,
                     // and closes should this program go without a word.
@@ -757,11 +784,11 @@ impl Showing {
         };
         // The picture first, so that nothing hangs a button over it again
         // while the rest is put away.
-        crate::video::close(app);
+        crate::session::video::close(app);
         *PLAYING.lock().expect("played session") = None;
-        crate::system_keys::give_them_back();
-        crate::floating::lower(app);
-        crate::picture::shut_the_pointer_in(crate::picture::Cage::Free);
+        crate::session::system_keys::give_them_back();
+        crate::session::floating::lower(app);
+        crate::session::picture::shut_the_pointer_in(crate::session::picture::Cage::Free);
         drop(player);
         drop(way);
         ending
@@ -774,9 +801,11 @@ impl Showing {
 /// The same path the menu takes, and no second one.
 pub fn end_it(app: &App) {
     let asked = app.clone();
-    crate::app::spawn(async move {
+    crate::shell::app::spawn(async move {
         note("session ended by the window");
-        if let Err(reason) = crate::floating::ask(&asked, crate::floating::Act::End).await {
+        if let Err(reason) =
+            crate::session::floating::ask(&asked, crate::session::floating::Act::End).await
+        {
             note(&format!("the session could not be ended: {reason}"));
         }
     });
@@ -807,7 +836,7 @@ fn told(step: &Step) -> Option<Fact> {
 /// minimised » is the kind of report that cannot be chased without
 /// knowing which of the two sides it was already on.
 fn how_the_window_stands(when: &str) {
-    if crate::main_window::handle() == 0 {
+    if crate::shell::main_window::handle() == 0 {
         note(&format!("{when}: no home window any more"));
         return;
     }
@@ -816,8 +845,8 @@ fn how_the_window_stands(when: &str) {
     }
     note(&format!(
         "{when}: home on screen={} whole screen={}",
-        say(crate::main_window::on_screen()),
-        say(crate::main_window::holds_the_screen()),
+        say(crate::shell::main_window::on_screen()),
+        say(crate::shell::main_window::holds_the_screen()),
     ));
 }
 
@@ -830,10 +859,10 @@ fn finish(app: &App, trouble: Option<Fact>) {
     // round once a second, and until it does the button hangs over a
     // picture that has gone. Whoever drove the session knows it is over
     // the instant it is.
-    crate::picture::let_go(app);
-    crate::floating::lower(app);
+    crate::session::picture::let_go(app);
+    crate::session::floating::lower(app);
     // The screen goes back to the person: what took it was the session.
-    let _ = crate::picture::take_the_screen(app, false);
+    let _ = crate::session::picture::take_the_screen(app, false);
     // And so does the window. A session ends with something to say, an
     // error most of the time, and it is said on the home screen; behind
     // a taskbar button it is said to nobody. The window can be down
