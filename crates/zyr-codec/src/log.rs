@@ -184,6 +184,7 @@ mod tests {
 
     #[test]
     fn ffmpeg_complaints_and_refused_encoders_reach_the_product_log() {
+        let _alone = testing::probing();
         let path = std::env::temp_dir()
             .join(format!("zyr-codec-log-{}", std::process::id()))
             .join("engine.log");

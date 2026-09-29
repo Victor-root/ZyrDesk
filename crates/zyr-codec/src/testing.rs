@@ -1,13 +1,24 @@
 //! What the tests share: FFmpeg itself, loaded once.
 
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
 use crate::library::Ffmpeg;
 use crate::sys;
 
 /// Names the folder of a Linux build of FFmpeg for the tests.
 const DIR_VARIABLE: &str = "ZYR_FFMPEG_DIR";
+
+/// Held by each test that runs the probe, for as long as it runs.
+///
+/// Every Media Foundation encoder starts the platform when it opens and
+/// shuts it down when it closes, and the engine only ever does that from
+/// one thread. Two probes at once do it from two, and on Windows the pair
+/// has more than once never come back, taking the whole run with it.
+pub fn probing() -> MutexGuard<'static, ()> {
+    static ALONE: Mutex<()> = Mutex::new(());
+    ALONE.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// FFmpeg, from `ZYR_FFMPEG_DIR` or else `vendor/ffmpeg`.
 ///

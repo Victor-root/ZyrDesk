@@ -3864,6 +3864,21 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Rien encore : c'est le plan.
 
+## D243. Les essais qui rougissaient GitHub sans rien avoir cassé sont remis d'aplomb (2026-09-29, pendant MZ)
+
+> Poursuit [D240](#d240-github-vérifie-chaque-envoi-jusquau-bout-et-ce-dont-le-produit-est-fait-2026-09-29-pendant-mz) : des envois qui ne touchaient que la documentation sortaient en rouge.
+
+**Le constat.** Les journaux de sept passages sous Windows et de deux sous Linux donnent quatre causes distinctes. Toutes sont dans les essais, aucune dans le produit.
+
+- **Le codec sous Windows ne se terminait pas** (trois passages sur sept, jusqu'à la coupure de trente minutes). Les deux essais qui lancent la sonde des encodeurs, `pictures_in_memory_find_x264_for_h264` et `ffmpeg_complaints_and_refused_encoders_reach_the_product_log`, restaient sans fin quand ils tournaient en même temps. Chaque encodeur de Media Foundation démarre la plateforme à son ouverture et l'éteint à sa fermeture, et le moteur ne le fait jamais que depuis un seul fil. Ils tournent maintenant l'un après l'autre (`zyr_codec::testing::probing`). Ce blocage n'a pas pu être reproduit hors de GitHub : la mise en série est une mesure, et ce sont les passages qui suivent qui diront si elle suffit.
+- **Le faux relais de `zyr-transport`** répondait « pris » avant de retenir la connexion : un paquet envoyé dans l'intervalle n'allait nulle part, et l'essai attendait cinq secondes pour rien. Reproduit avec un retard, corrigé en retenant d'abord. Le vrai relais du serveur suit le même ordre sans conséquence : un paquet perdu là est un paquet perdu sur la route, et les sondes se répètent.
+- **Le faux moteur du lecteur** mourait d'un « tuyau cassé » en répondant à un ping envoyé juste avant le départ du lecteur, et l'essai lisait « déconnecté » au lieu de « fermé ». Une écriture qui échoue est maintenant la même fin qu'une lecture qui échoue.
+- **L'essai de perte de paquets** exigeait au moins trois images perdues sans reste, et le nombre dépendait de ce que les deux morceaux d'une image aient partagé ou non un paquet : avec des paquets de taille fixe, comme dans le produit, il échouait trois fois sur quatre. Il ne passait que par accident.
+
+**Ce qui est fait.** Le chemin dégradé du transport sait aussi perdre une suite de paquets d'affilée (`Lapses`), comme le fait une brève interférence : c'est la seule perte que la parité ne peut pas réparer, quelle que soit la façon dont les paquets sont composés. Elle est comptée en paquets, comme la perte, pour que la même exécution rejoue les mêmes accidents. L'essai en perd six de suite tous les deux cent quarante, en plus de la perte au hasard qui sert à la parité. Il passe désormais dans les deux façons de composer les paquets.
+
+**Ce qui se voit.** Rien dans le produit. `Path::Degraded` gagne un champ, que le banc de mesure laisse vide. Sur GitHub, les vérifications ne doivent plus rougir sur un envoi qui n'a rien cassé.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

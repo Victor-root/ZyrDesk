@@ -132,6 +132,7 @@ mod tests {
 
     #[test]
     fn pictures_in_memory_find_x264_for_h264() {
+        let _alone = testing::probing();
         let ff = testing::ffmpeg();
         // The Linux build has no hardware encoder: whatever the card, x264
         // is what is left, and only for H.264.
