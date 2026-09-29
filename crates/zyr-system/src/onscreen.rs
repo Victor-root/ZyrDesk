@@ -1,25 +1,24 @@
-//! Launching the engine in the session shown on screen.
+//! The session that holds the screen, and starting this program in it.
 //!
-//! This is what makes remote access possible before anyone opens a
-//! Windows session. A service runs in a session of its own, with no
-//! screen and no desktop: an engine started there would capture nothing.
-//! It has to go into the session attached to the physical screen, the
-//! one where the sign-in prompt appears.
+//! A service runs in a session of its own, with no screen and no
+//! desktop: a program started there captures nothing, reads no pointer
+//! and reaches no clipboard. What has to happen where the person is goes
+//! into the session attached to the physical screen, the one where the
+//! sign-in prompt appears, and it is this very program that goes there,
+//! started again with arguments naming what it is there for.
 //!
-//! The engine is this very program, started again with a reserved
-//! argument naming the link it is to serve a session on. The token used
-//! is the service's own, the system account's, simply attached to that
-//! session. Borrowing the logged-in user's token would feel more natural
-//! but would forbid capturing the secure desktop: elevation prompts and
-//! the sign-in screen would stay black.
-//!
-//! The process we start is born inside a job object set to kill it along
-//! with its parent. Without that, a service stopping abruptly would leave
-//! an orphan engine behind, invisible and impossible to take back in
-//! hand.
+//! Three ways, and the whole of what sets them apart is how long the
+//! program stays and what it answers. The engine of a session is started
+//! under the service's own token, the system account's, simply attached
+//! to that session: borrowing the signed-in person's would forbid
+//! capturing the secure desktop, and elevation prompts and the sign-in
+//! screen would stay black. It is born inside a job object set to kill
+//! it along with its parent, so that a service stopping abruptly leaves
+//! no orphan engine behind, invisible and impossible to take back in
+//! hand. An errand does one thing and answers with its exit code. A
+//! helper is left to read for a while and ends by itself.
 
 use std::ffi::{OsStr, OsString, c_void};
-use std::fmt;
 use std::io;
 use std::marker::PhantomData;
 use std::path::Path;
@@ -54,124 +53,18 @@ use windows_sys::Win32::System::Threading::{
     PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW,
     UpdateProcThreadAttribute, WaitForSingleObject,
 };
-use zyr_proto::paths;
-use zyr_proto::session::WantedScreen;
 use zyr_win32::{Handle, image_of, read_wide, refusal_of, wide};
 
-use crate::gateway::{Launched, Launcher};
+use crate::{Errand, Whose};
 
 /// Value Windows returns when no session is attached to the screen.
 const NO_SESSION: u32 = 0xFFFF_FFFF;
-
-/// What this module's lines are filed under.
-const TAG: &str = "desk";
 
 /// Desktop we aim at: the one carrying the interactive display.
 const DESKTOP: &str = "winsta0\\default";
 
 /// Device that swallows what is written to it, and gives nothing back.
 const NOTHING: &str = "NUL";
-
-/// Reserved argument that turns this program into the engine of one
-/// session, followed by the name of the link it serves it on.
-///
-/// An argument and not a command, like the one Windows starts the
-/// service with: nobody types it, and it names a moment rather than
-/// something a person can ask for.
-pub const SERVE_ARGUMENT: &str = "--serve-a-session";
-
-/// Where the engine's own console output goes, which is what it says
-/// before its journal is open, and what a crash leaves behind.
-const ENGINE_CONSOLE: &str = "engine-console.log";
-
-/// The same for the speakers of this computer; see
-/// `move_the_speakers`.
-///
-/// It carries which way they are to be moved, because both ways are the
-/// same errand and one name for it is one name to keep in step.
-pub const SPEAKERS_ARGUMENT: &str = "--set-the-speakers";
-pub const SPEAKERS_QUIET: &str = "quiet";
-pub const SPEAKERS_PLAYING: &str = "playing";
-
-/// What that errand answers with.
-///
-/// Three answers and not two, because whoever asked has to know whether
-/// it now owes the person their sound back. Muting speakers that were
-/// already muted owes nothing, and giving that sound back at the end of
-/// a session would be undoing something this product never did.
-pub const SPEAKERS_MOVED: u32 = 0;
-pub const SPEAKERS_REFUSED: u32 = 1;
-pub const SPEAKERS_ALREADY: u32 = 2;
-
-/// And the same for locking this computer's screen; see
-/// `lock_this_desktop`.
-///
-/// Windows will only take that order from a program on the interactive
-/// desktop, which a service is not, and there is no way round it: it is
-/// what makes a lock screen worth trusting.
-pub const LOCK_ARGUMENT: &str = "--lock-the-screen";
-
-/// And the same for this computer's desk; see `do_this_to_the_desk`.
-///
-/// Two names and not one, because they are two errands with nothing in
-/// common but the subject: one holds the desk for a session that is
-/// starting, the other gives it back when that session has gone. The
-/// first carries what the session wants, the second carries nothing at
-/// all, what to put back having been written down when it was taken.
-///
-/// Here for the reason all of these are here. Everything Windows says
-/// about the arrangement of screens is answered for the window station of
-/// whoever asks, and a service sits on one with no screens at all: asked
-/// from there, this computer has no screens, which is what it used to
-/// answer a session that asked what it was showing.
-pub const DESK_ARGUMENT: &str = "--hold-the-desk";
-pub const DESK_BACK_ARGUMENT: &str = "--give-the-desk-back";
-
-/// And a third, for the computer whose own screens cannot draw the size
-/// a session asked for: the desktop moves onto the screen this computer
-/// grew for itself, which the service has just woken at that size.
-///
-/// Its own errand and not part of the first, because the two happen
-/// either side of something only the service can do. Starting a display
-/// device is administrator work, so the service wakes the screen; putting
-/// a desktop on it is window station work, so the session on screen does
-/// that. One cannot wait for the other inside a single errand.
-pub const DESK_GROWN_ARGUMENT: &str = "--take-the-grown-screen";
-
-/// And a sixth, for the shape of this computer's pointer; see
-/// `crate::pointer`.
-///
-/// The same blindness once more, and the plainest case of it: a pointer
-/// belongs to a desktop, the desktop that owns the input belongs to the
-/// session on screen, and the service's window station carries no
-/// desktop at all. Asked from there, this computer has no pointer, which
-/// is exactly what it answered a session that asked for the shape of it.
-///
-/// This one differs from the five above in one way: it does not do a
-/// thing and come back, it reads for a while. It ends by itself after a
-/// short life so that nothing has to end it, and the service starts
-/// another for as long as somebody is asking.
-pub const POINTER_ARGUMENT: &str = "--follow-the-pointer";
-
-/// And a seventh, for this computer's clipboard; see
-/// `crate::clipboard`.
-///
-/// The same blindness again: a clipboard belongs to a window station, and
-/// the one a service sits on carries none at all. Asked from there, this
-/// computer's clipboard is a clipboard nobody has ever copied anything
-/// to, and anything written to it is written where nobody will paste.
-///
-/// Like the pointer above, it reads for a while rather than doing one
-/// thing, and ends by itself. Unlike it, it writes too: what was copied
-/// on the far computer is put on this one from here.
-pub const CLIPBOARD_ARGUMENT: &str = "--carry-the-clipboard";
-
-/// What the first of those carries when a session wants the desk noted
-/// and nothing moved, which is what « keep your own screen » asks for.
-///
-/// A word and not an absent argument: an errand that names what it wants
-/// and an errand that lost its argument on the way must not look alike.
-const NOTHING_WANTED: &str = "none";
 
 /// Time left to an errand: starting a program in another session, doing
 /// the one thing it went for and coming back. An errand that has not
@@ -188,18 +81,15 @@ pub fn session_on_screen() -> Option<u32> {
     (session != NO_SESSION).then_some(session)
 }
 
-/// The product's window, a program beside this one.
-const THE_WINDOW: &str = "ZyrDesk.exe";
-
-/// Whether ZyrDesk's window runs in that session.
+/// Whether that program runs in that session.
 ///
-/// It is what puts the icon beside the clock, from the moment it starts
-/// to the moment it ends, however it ends: running in the session on
-/// screen, it is in front of whoever sits at this computer. Known by its
-/// whole path, beside this program, and not by its name alone: another
-/// program that happens to be called the same shows nobody anything.
-pub fn shown_in(session: u32) -> io::Result<bool> {
-    let the_window = std::env::current_exe()?.with_file_name(THE_WINDOW);
+/// Known by its whole path and not by its name alone: another program
+/// that happens to be called the same is not the one being looked for.
+pub fn runs_in(session: u32, program: &Path) -> io::Result<bool> {
+    let name = program
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let mut listed: *mut WTS_PROCESS_INFOW = std::ptr::null_mut();
     let mut count = 0u32;
     // Safe: the list the system makes comes back through the two slots,
@@ -220,12 +110,8 @@ pub fn shown_in(session: u32) -> io::Result<bool> {
         .filter(|process| process.SessionId == session)
         // Safe: a name the list carries, ended by a nought, alive until
         // the list is freed.
-        .filter(|process| {
-            unsafe { wide_text(process.pProcessName) }.eq_ignore_ascii_case(THE_WINDOW)
-        })
-        .any(|process| {
-            image_of(process.ProcessId).is_some_and(|image| same_file(&image, &the_window))
-        });
+        .filter(|process| unsafe { wide_text(process.pProcessName) }.eq_ignore_ascii_case(&name))
+        .any(|process| image_of(process.ProcessId).is_some_and(|image| same_file(&image, program)));
     // Safe: the list the call made, freed once and not read after.
     unsafe { WTSFreeMemory(listed.cast()) };
     Ok(shown)
@@ -257,6 +143,24 @@ pub fn somebody_signed_in(session: u32) -> io::Result<bool> {
     Ok(signed_in)
 }
 
+/// Who this program runs as, as Windows names them.
+///
+/// Worth saying from a helper, because it decides what the helper is
+/// allowed to see: one under the wrong name reads a desk that looks empty
+/// and has no way at all of saying why.
+pub fn whoever_this_is() -> String {
+    use windows_sys::Win32::System::WindowsProgramming::GetUserNameW;
+
+    let mut spelled = [0u16; 256];
+    let mut room = spelled.len() as u32;
+    // SAFETY: a buffer of ours, whose length is handed over and written
+    // back as the length of what was put in it, the nought counted.
+    if unsafe { GetUserNameW(spelled.as_mut_ptr(), &mut room) } == 0 {
+        return "a name Windows would not give".to_string();
+    }
+    String::from_utf16_lossy(&spelled[..room.saturating_sub(1) as usize])
+}
+
 /// Whether two paths name the same file, as Windows reads them: with no
 /// regard to case.
 fn same_file(one: &Path, other: &Path) -> bool {
@@ -281,55 +185,15 @@ unsafe fn wide_text(text: *const u16) -> String {
     String::from_utf16_lossy(unsafe { std::slice::from_raw_parts(text, length) })
 }
 
-/// Starts the engine of each incoming session in the session attached
-/// to the screen.
-#[derive(Debug, Clone, Copy)]
-pub struct ServingInSession {
-    session: u32,
-}
-
-impl ServingInSession {
-    pub fn new(session: u32) -> Self {
-        Self { session }
-    }
-}
-
-impl Launcher for ServingInSession {
-    fn launch(&self, link: &str) -> io::Result<Box<dyn Launched>> {
-        let ourselves = std::env::current_exe()?;
-        let arguments = [SERVE_ARGUMENT.to_string(), link.to_string()];
-        let console = paths::logs_dir().join(ENGINE_CONSOLE);
-        let launch = Launch {
-            exe: &ourselves,
-            arguments: &arguments,
-            working_dir: ourselves.parent(),
-            log: &console,
-        };
-        Ok(Box::new(start_in_session(&launch, self.session)?))
-    }
-}
-
-/// The link this program was started to serve a session on, if that is
-/// what it was started for.
-pub fn the_link_to_serve() -> Option<String> {
-    the_link_named_in(std::env::args())
-}
-
-/// The same, over any list of arguments, so it can be read without
-/// starting a program to hold them.
-fn the_link_named_in(arguments: impl Iterator<Item = String>) -> Option<String> {
-    let mut after = arguments.skip_while(|a| a != SERVE_ARGUMENT);
-    after.next()?;
-    after.next().filter(|link| !link.is_empty())
-}
-
 /// A program to start in another session.
-struct Launch<'a> {
-    exe: &'a Path,
-    arguments: &'a [String],
-    working_dir: Option<&'a Path>,
+pub struct Launch<'a> {
+    pub exe: &'a Path,
+    pub arguments: &'a [String],
+    pub working_dir: Option<&'a Path>,
     /// Where what it writes on its console goes.
-    log: &'a Path,
+    pub console: &'a Path,
+    /// The line that marks, in that file, where this run begins.
+    pub starting: &'a str,
 }
 
 /// Environment block, given back to the system at the end.
@@ -361,19 +225,24 @@ pub struct SessionProcess {
 // makes the same promise for the children it starts.
 unsafe impl Send for SessionProcess {}
 
-impl Launched for SessionProcess {
-    fn process(&self) -> u32 {
+impl SessionProcess {
+    /// The process, as the system numbers it.
+    pub fn process(&self) -> u32 {
         self.identifier
     }
 
-    fn gone(&self) -> bool {
+    /// Whether it has gone already, asked without waiting.
+    pub fn gone(&self) -> bool {
         // Safe: the handle stays valid for as long as this structure, and
         // a wait of no time at all only looks. A wait that fails says
         // nothing about the process, which is then taken as still there.
         unsafe { WaitForSingleObject(self.process.0, 0) == WAIT_OBJECT_0 }
     }
 
-    fn let_go(self: Box<Self>, within: Duration) -> io::Result<Option<u32>> {
+    /// Waits at most that long for it to go by itself, and says with
+    /// which code. Nothing when it had to be taken, which letting go of it
+    /// does.
+    pub fn let_go(self, within: Duration) -> io::Result<Option<u32>> {
         // Safe: the handle stays valid for as long as this structure, and
         // the wait is bounded.
         let waited = unsafe {
@@ -508,14 +377,15 @@ impl Drop for Birth<'_> {
     }
 }
 
-/// Starts a program in the given session.
-fn start_in_session(launch: &Launch, session: u32) -> io::Result<SessionProcess> {
+/// Starts a program in the given session, in its job, its console going
+/// to the file its launch names.
+pub fn start_in_session(launch: &Launch, session: u32) -> io::Result<SessionProcess> {
     let token = service_token_for(session)?;
     let environment = environment_of(&token)?;
     let job = job_object()?;
 
     let nothing = inheritable_file(OsStr::new(NOTHING), GENERIC_READ, OPEN_EXISTING)?;
-    keep_what_the_engine_said(launch.log);
+    mark_where_this_run_begins(launch.console, launch.starting);
     // Append access and not plain write: every line the engine writes
     // then lands at the end of the file as it stands, wherever its own
     // cursor was. With plain write, emptying the journal from the window
@@ -528,7 +398,7 @@ fn start_in_session(launch: &Launch, session: u32) -> io::Result<SessionProcess>
     // computer serves is changed, and whenever it falls over. What it
     // said about a fault was therefore gone minutes later, which is
     // exactly when somebody comes looking for it.
-    let log = inheritable_file(launch.log.as_os_str(), FILE_APPEND_DATA, OPEN_ALWAYS)?;
+    let log = inheritable_file(launch.console.as_os_str(), FILE_APPEND_DATA, OPEN_ALWAYS)?;
     let inherited = [nothing.0, log.0];
     let mut birth = Birth::new(&inherited, &job.0)?;
 
@@ -593,207 +463,14 @@ fn startup_with(
     startup
 }
 
-/// Moves this computer's speakers, and says whether they really moved.
-///
-/// From the session that owns the screen, like everything else here, and
-/// for a reason of its own: which device the desktop plays to is a
-/// question whose answer depends on who is signed in. Asked from the
-/// service's own session, it would name a device nobody is listening to,
-/// and the room would go on playing.
-///
-/// `true` means they were doing the opposite a moment ago and are now
-/// doing what was asked, which is also « something is owed back ».
-pub fn set_the_speakers(quiet: bool) -> io::Result<bool> {
-    let session =
-        session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
-    let way = if quiet {
-        SPEAKERS_QUIET
-    } else {
-        SPEAKERS_PLAYING
-    };
-    let refused = "the speakers could not be reached from the session on screen";
-    match errand_code(
-        session,
-        &[SPEAKERS_ARGUMENT.to_string(), way.to_string()],
-        refused,
-    )? {
-        (SPEAKERS_MOVED, _) => Ok(true),
-        (SPEAKERS_ALREADY, _) => Ok(false),
-        _ => Err(io::Error::other(refused)),
-    }
-}
-
-/// Whether this program was started to move the speakers, and which way.
-pub fn asked_about_the_speakers() -> Option<bool> {
-    the_way_named_in(std::env::args())
-}
-
-/// The same, over any list of arguments, so it can be checked without
-/// starting a program to hold them.
-fn the_way_named_in(arguments: impl Iterator<Item = String>) -> Option<bool> {
-    let mut after = arguments.skip_while(|a| a != SPEAKERS_ARGUMENT);
-    after.next()?;
-    match after.next()?.as_str() {
-        SPEAKERS_QUIET => Some(true),
-        SPEAKERS_PLAYING => Some(false),
-        _ => None,
-    }
-}
-
-/// Moves them, from inside the session that owns the screen.
-///
-/// This is the whole of what this program does when started with
-/// `SPEAKERS_ARGUMENT`. What went wrong is written into the service's own
-/// journal from here rather than carried back in the exit code: there is
-/// more than one way for a computer to have no reachable sound, and a
-/// number would tell nobody which of them happened.
-#[cfg(windows)]
-pub fn move_the_speakers(quiet: bool) -> u32 {
-    let said = |what: String| {
-        if let Ok(log) = zyr_proto::log::Log::open(&crate::service::log_path()) {
-            log.about(TAG).write(&what);
-        }
-    };
-    let already = match zyr_sound::speakers_muted() {
-        Ok(muted) => muted,
-        Err(e) => {
-            said(format!("speakers not read: {e}"));
-            return SPEAKERS_REFUSED;
-        }
-    };
-    if already == quiet {
-        return SPEAKERS_ALREADY;
-    }
-    match zyr_sound::mute_speakers(quiet) {
-        Ok(()) => SPEAKERS_MOVED,
-        Err(e) => {
-            said(format!("speakers not moved: {e}"));
-            SPEAKERS_REFUSED
-        }
-    }
-}
-
-/// Locks this computer's screen, from the session that owns it.
-///
-/// The other half of Ctrl+Alt+Del, and the other way round. That one
-/// goes through the service's own process, because Windows takes it from
-/// a service and from nothing else; this one goes through a program on
-/// the interactive desktop, because Windows takes it from there and from
-/// nothing else. Both refusals protect the same thing: what a lock screen
-/// is worth depends on nobody being able to put one up, or take one
-/// down, from outside the desk it belongs to.
-pub fn lock_the_screen() -> io::Result<Errand> {
-    let session =
-        session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
-    errand(
-        session,
-        &[LOCK_ARGUMENT.to_string()],
-        "the screen could not be locked from the session that owns it",
-    )
-}
-
-/// Notes this computer's desk and puts its main screen where a session
-/// wants it, from the session that owns that screen.
-///
-/// Asked before the engine opens on it: what the engine captures is
-/// pixels, and both the size and the magnification decide how many of
-/// them a letter is made of. Changed afterwards they would land in the
-/// middle of a picture somebody is already watching, and everything on
-/// the desktop would jump.
-///
-/// Nothing asked for still runs, and is not a wasted errand: it is how
-/// the service learns what this computer is showing, which it cannot see
-/// for itself and used to answer « I cannot measure my own screen » to.
-///
-/// Never fails a session. What a session loses is a desk the size it
-/// asked for, which is a session slightly wrong and not a session
-/// missing, and the sentences saying why go into this computer's journal.
-pub fn hold_the_desk_for(wanted: Option<WantedScreen>) -> io::Result<Errand> {
-    let session =
-        session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
-    let asked = match wanted {
-        Some(screen) => screen.to_string(),
-        None => NOTHING_WANTED.to_string(),
-    };
-    errand(
-        session,
-        &[DESK_ARGUMENT.to_string(), asked],
-        "this computer's desk could not be set from the session that owns the screen",
-    )
-}
-
-/// Moves this computer's desktop onto the screen it grew for itself, at
-/// the size a session asked for, from the session that owns the screen.
-///
-/// Asked only after the service has woken that screen, and only where
-/// this computer's own screens refused the size: everywhere else the
-/// desktop stays where its owner left it.
-pub fn take_the_grown_screen(wanted: WantedScreen) -> io::Result<Errand> {
-    let session =
-        session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
-    errand(
-        session,
-        &[DESK_GROWN_ARGUMENT.to_string(), wanted.to_string()],
-        "this computer's desktop could not be moved onto the screen it grew for itself",
-    )
-}
-
-/// Whose a helper is, which decides what the desk lets it touch.
-#[derive(Clone, Copy)]
-enum Whose {
-    /// The service's own account, moved onto that session's screen. What
-    /// every errand here has always been: enough to read a desk, change a
-    /// screen, tap an engine on the shoulder.
-    TheService,
-    /// The person signed in at that screen.
-    ///
-    /// For the one helper that does not merely look at the desk but acts
-    /// on it in somebody's name. See [`start_carrying_the_clipboard`].
-    ThePerson,
-}
-
-/// Starts a helper in the session that owns the screen, to read the
-/// shape of this computer's pointer.
-pub fn start_reading_the_pointer() -> io::Result<()> {
-    start_a_helper(POINTER_ARGUMENT, Whose::TheService)
-}
-
-/// Whether this program was started to read the pointer.
-pub fn asked_to_follow_the_pointer() -> bool {
-    std::env::args().any(|argument| argument == POINTER_ARGUMENT)
-}
-
-/// Starts a helper in that same session, to read and write this
-/// computer's clipboard.
-///
-/// The one helper started as the person and not as the service, and it
-/// has to be. A clipboard is not simply a thing sitting on a window
-/// station: text and pictures do sit there as plain blocks anybody with
-/// the station can read, but files never do. What a program puts there
-/// for files is a promise, an object living inside it, and reading or
-/// paying that promise means one program calling into another. Windows
-/// refuses that across accounts and across levels: the service is the
-/// system, the Explorer is the person, and neither can reach into the
-/// other. Under the service's account the object came back hollow going
-/// one way, and what this computer offered was invisible going the other,
-/// which is precisely the two halves that never worked.
-pub fn start_carrying_the_clipboard() -> io::Result<()> {
-    start_a_helper(CLIPBOARD_ARGUMENT, Whose::ThePerson)
-}
-
-/// Whether this program was started to carry the clipboard.
-pub fn asked_to_carry_the_clipboard() -> bool {
-    std::env::args().any(|argument| argument == CLIPBOARD_ARGUMENT)
-}
-
 /// Starts this program again in the session that owns the screen, to do
-/// nothing but what that argument names.
+/// nothing but what those arguments name.
 ///
-/// Started and never waited for, which is what sets these apart from
-/// every other errand here: those do one thing and hand back an answer,
-/// these read for as long as they live and say what they read through
-/// files. Nothing here holds on to one either; each ends by itself.
-fn start_a_helper(argument: &str, whose: Whose) -> io::Result<()> {
+/// Started and never waited for, which is what sets a helper apart from
+/// an errand: an errand does one thing and hands back an answer, a helper
+/// reads for as long as it lives and says what it read by other means.
+/// Nothing here holds on to one either; each ends by itself.
+pub fn start_a_helper(arguments: &[String], whose: Whose) -> io::Result<()> {
     let session =
         session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
     let ourselves = std::env::current_exe()?;
@@ -803,7 +480,7 @@ fn start_a_helper(argument: &str, whose: Whose) -> io::Result<()> {
     };
     let environment = environment_of(&token)?;
 
-    let mut line = command_line(&ourselves, &[argument.to_string()]);
+    let mut line = command_line(&ourselves, arguments);
     let mut desktop: Vec<u16> = wide(DESKTOP);
 
     let mut startup: STARTUPINFOW = unsafe { std::mem::zeroed() };
@@ -838,137 +515,14 @@ fn start_a_helper(argument: &str, whose: Whose) -> io::Result<()> {
     Ok(())
 }
 
-/// Puts the desk back the way it was noted, from the session that owns
-/// the screen.
+/// Locks the screen, from inside the session that owns it.
 ///
-/// Asked when the last session goes, and asked again by the watch that
-/// holds the engine for as long as a desk stays noted: a session whose
-/// computer was closed, unplugged or crashed says nothing at all, and
-/// that is exactly the session after which somebody's screens would stay
-/// the way a stranger left them.
-pub fn give_the_desk_back() -> io::Result<Errand> {
-    let session =
-        session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
-    errand(
-        session,
-        &[DESK_BACK_ARGUMENT.to_string()],
-        "this computer's desk could not be put back from the session that owns the screen",
-    )
-}
-
-/// What this program was started to do to the desk, if that is what it
-/// was started for.
-pub fn the_desk_asked_for() -> Option<Desk> {
-    the_desk_named_in(std::env::args())
-}
-
-/// One errand about this computer's desk.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Desk {
-    /// Note it, and put the main screen where a session wants it. Nothing
-    /// wanted notes it and moves nothing.
-    Hold(Option<WantedScreen>),
-    /// Put it back the way it was noted.
-    Back,
-    /// Move the desktop onto the screen this computer grew for itself,
-    /// at that size, this computer's own screens having refused it.
-    Borrow(WantedScreen),
-}
-
-/// The same, over any list of arguments, so it can be read without
-/// starting a program to hold them.
-fn the_desk_named_in(arguments: impl Iterator<Item = String>) -> Option<Desk> {
-    let arguments: Vec<String> = arguments.collect();
-    if arguments.iter().any(|a| a == DESK_BACK_ARGUMENT) {
-        return Some(Desk::Back);
-    }
-    if let Some(asked) = after_the_word(&arguments, DESK_GROWN_ARGUMENT) {
-        return asked.parse().ok().map(Desk::Borrow);
-    }
-    let asked = after_the_word(&arguments, DESK_ARGUMENT)?;
-    if asked == NOTHING_WANTED {
-        return Some(Desk::Hold(None));
-    }
-    // A size that will not read is not nothing asked for: it is an errand
-    // that was meant to move a screen and cannot say where to. Answering
-    // « note the desk and move nothing » to it would leave the session
-    // watching a desk at the wrong size with nothing in any journal.
-    asked.parse().ok().map(|screen| Desk::Hold(Some(screen)))
-}
-
-/// What follows that word among those arguments, when it is there and
-/// something follows it.
-fn after_the_word(arguments: &[String], word: &str) -> Option<String> {
-    let at = arguments.iter().position(|argument| argument == word)?;
-    arguments.get(at + 1).cloned()
-}
-
-/// Does it, from inside the session that owns the screen.
-///
-/// This is the whole of what this program does when started with either
-/// desk argument. What happened is written into the service's own journal
-/// from here rather than carried back in an exit code: there is more than
-/// one way for a desk not to move, and a number would tell nobody which
-/// of them happened.
-#[cfg(windows)]
-pub fn do_this_to_the_desk(asked: Desk) {
-    let said = match asked {
-        Desk::Hold(wanted) => crate::screen::hold_the_desk_for(
-            wanted.map(|screen| (screen.wide, screen.high, screen.scale)),
-        ),
-        Desk::Back => crate::screen::give_the_desk_back(),
-        Desk::Borrow(screen) => {
-            crate::screen::take_the_grown_screen_for((screen.wide, screen.high, screen.scale))
-        }
-    };
-    if let Ok(log) = zyr_proto::log::Log::open(&crate::service::log_path()) {
-        let log = log.about(TAG);
-        for line in said {
-            log.write(&line);
-        }
-    }
-}
-
-/// How long an errand took, in its two halves.
-///
-/// Split, and not added together, because the two costs have nothing to
-/// do with each other and only one of them is ever worth working on.
-/// Getting a program running in another Windows session is Windows'
-/// price, paid every time and roughly the same; what the program then
-/// takes to answer is the errand itself. A single number cannot say
-/// which of the two a session is waiting on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Errand {
-    /// Time spent getting the program running over there.
-    pub started: Duration,
-    /// Time it then took to do what it went for and answer.
-    pub answered: Duration,
-}
-
-impl fmt::Display for Errand {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} ms starting a program in the session on screen, {} ms waiting for it",
-            self.started.as_millis(),
-            self.answered.as_millis()
-        )
-    }
-}
-
-/// Whether this program was started to lock the screen.
-pub fn asked_to_lock_the_screen() -> bool {
-    std::env::args().any(|a| a == LOCK_ARGUMENT)
-}
-
-/// Locks it, from inside the session that owns the screen.
-///
-/// This is the whole of what this program does when started with
-/// `LOCK_ARGUMENT`. Windows takes the order and returns before the screen
-/// has actually gone: what comes back says the order was accepted, and
-/// nothing more is worth waiting for, the person who asked being at the
-/// other end of a picture that will show them the lock screen.
-#[cfg(windows)]
+/// Only a program on the interactive desktop may ask for this, which a
+/// service is not, so it is what an errand does there. Windows takes the
+/// order and returns before the screen has actually gone: what comes
+/// back says the order was accepted, and nothing more is worth waiting
+/// for, the person who asked being at the other end of a picture that
+/// will show them the lock screen.
 pub fn lock_this_desktop() -> bool {
     use windows_sys::Win32::System::Shutdown::LockWorkStation;
 
@@ -1001,18 +555,14 @@ pub fn lock_this_desktop() -> bool {
 /// the machine is locking, and standing here longer would only delay a
 /// « done » that changes nothing. Short at the bottom because what is
 /// being measured is a fraction of a second.
-#[cfg(windows)]
 const CHANGING_HANDS: Duration = Duration::from_millis(1500);
-#[cfg(windows)]
 const ASKING_AGAIN: Duration = Duration::from_millis(10);
 
 /// The desktop nobody is locked out of, and the one a session runs on.
-#[cfg(windows)]
 const ORDINARY_DESKTOP: &str = "Default";
 
 /// Waits until the screen belongs to another desktop than the ordinary
 /// one, which is what locking really means.
-#[cfg(windows)]
 fn the_desktop_changed_hands() -> bool {
     let start = Instant::now();
     while start.elapsed() < CHANGING_HANDS {
@@ -1030,7 +580,6 @@ fn the_desktop_changed_hands() -> bool {
 ///
 /// `Default` while somebody works, `Winlogon` while the machine is
 /// locked or asking for a password.
-#[cfg(windows)]
 fn desktop_with_the_input() -> Option<String> {
     use windows_sys::Win32::System::StationsAndDesktops::{
         CloseDesktop, GetUserObjectInformationW, OpenInputDesktop, UOI_NAME,
@@ -1062,18 +611,19 @@ fn desktop_with_the_input() -> Option<String> {
     Some(read_wide(&name))
 }
 
-/// Runs this program in another Windows session, for one short errand.
+/// Runs this program in the session that owns the screen, for one short
+/// errand, and answers what it cost when it says it did what it went for.
 ///
 /// The service cannot reach into the session that owns the screen, and
 /// several things it has to do live there: moving the speakers the
 /// person in front of that session hears, locking the screen, holding
 /// the desk. They are the same shape, so they are the same code: this
-/// program started again with a reserved argument, as itself, on the
-/// interactive desktop, with the answer read back from its exit code.
+/// program started again with arguments naming the errand, as itself, on
+/// the interactive desktop, with the answer read back from its exit code.
 ///
 /// Detached, with no console of its own: nobody is there to read one.
-fn errand(session: u32, arguments: &[String], refused: &str) -> io::Result<Errand> {
-    match errand_code(session, arguments, refused)? {
+pub fn errand(arguments: &[String], refused: &str) -> io::Result<Errand> {
+    match errand_code(arguments, refused)? {
         (0, took) => Ok(took),
         _ => Err(io::Error::other(refused.to_string())),
     }
@@ -1084,7 +634,9 @@ fn errand(session: u32, arguments: &[String], refused: &str) -> io::Result<Erran
 /// The refusal covers an errand that never came back as well as one that
 /// came back saying no: whoever reads it can do nothing different about
 /// the two, and one message means one language to choose rather than two.
-fn errand_code(session: u32, arguments: &[String], refused: &str) -> io::Result<(u32, Errand)> {
+pub fn errand_code(arguments: &[String], refused: &str) -> io::Result<(u32, Errand)> {
+    let session =
+        session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
     let asked_at = Instant::now();
     let ourselves = std::env::current_exe()?;
     let token = service_token_for(session)?;
@@ -1261,21 +813,21 @@ fn job_object() -> io::Result<Handle> {
     Ok(job)
 }
 
-/// Keeps what the engine said before, and marks where its next run
+/// Keeps what the program said before, and marks where its next run
 /// begins.
 ///
 /// Written with the product's own journal writer and then let go of, a
-/// moment before the engine is handed the file: that writer never empties
-/// what it opens and cuts the file back from its top once it has grown
-/// past reason, which is the rule every other log of this product follows
-/// and the one this file was missing. The line it leaves is what tells
-/// one run of the engine from the one before it.
+/// moment before the program is handed the file: that writer never
+/// empties what it opens and cuts the file back from its top once it has
+/// grown past reason, which is the rule every other log of the product
+/// follows. The line it leaves is what tells one run from the one before
+/// it.
 ///
-/// A file that cannot be written to is not a reason to refuse to start an
-/// engine: the engine will make its own.
-fn keep_what_the_engine_said(log: &Path) {
-    if let Ok(kept) = zyr_proto::log::Log::open(log) {
-        kept.write("--- engine starting ---");
+/// A file that cannot be written to is not a reason to refuse to start a
+/// program: it will make its own.
+fn mark_where_this_run_begins(console: &Path, starting: &str) {
+    if let Ok(kept) = zyr_proto::log::Log::open(console) {
+        kept.write(starting);
     }
 }
 
@@ -1362,23 +914,6 @@ mod tests {
     }
 
     #[test]
-    fn the_link_to_serve_is_read_from_the_arguments() {
-        let said = |arguments: &[&str]| the_link_named_in(arguments.iter().map(|a| a.to_string()));
-        let link = r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1";
-        assert_eq!(
-            said(&["zyrdeskd.exe", SERVE_ARGUMENT, link]),
-            Some(link.to_string())
-        );
-        // Started for anything else, this program serves no session:
-        // the ordinary commands must go on reaching clap untouched.
-        assert_eq!(said(&["zyrdeskd.exe", "status"]), None);
-        assert_eq!(said(&["zyrdeskd.exe"]), None);
-        // And a link that is not named is no link at all.
-        assert_eq!(said(&["zyrdeskd.exe", SERVE_ARGUMENT]), None);
-        assert_eq!(said(&["zyrdeskd.exe", SERVE_ARGUMENT, ""]), None);
-    }
-
-    #[test]
     fn the_absence_of_a_session_is_recognised() {
         // On a machine with no screen attached, Windows returns a
         // sentinel value that must never be taken for a session.
@@ -1395,7 +930,7 @@ mod tests {
     /// A file of one test's own, in the temporary folder.
     fn scratch(what: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
-            "zyrdeskd-session-{what}-{}.log",
+            "zyr-system-{what}-{}.log",
             zyr_proto::random::alphanumeric_string(8)
         ))
     }
@@ -1444,7 +979,7 @@ mod tests {
     fn a_process_says_what_it_says_where_it_is_told_and_goes_with_its_code() {
         let output = scratch("said");
         let started = born("echo born here& exit 7", &output);
-        let went = Box::new(started).let_go(Duration::from_secs(10)).unwrap();
+        let went = started.let_go(Duration::from_secs(10)).unwrap();
         assert_eq!(went, Some(7));
         let said = std::fs::read_to_string(&output).unwrap();
         assert!(said.contains("born here"), "{said:?}");
@@ -1456,7 +991,7 @@ mod tests {
         let lingering_output = scratch("lingering");
         let lingering = born(LINGERING, &lingering_output);
         assert!(!lingering.gone(), "a process still running was seen gone");
-        let _ = Box::new(lingering).let_go(Duration::ZERO);
+        let _ = lingering.let_go(Duration::ZERO);
 
         let quick_output = scratch("quick");
         let quick = born("exit 3", &quick_output);
@@ -1468,7 +1003,7 @@ mod tests {
             );
             std::thread::sleep(Duration::from_millis(10));
         }
-        assert_eq!(Box::new(quick).let_go(Duration::ZERO).unwrap(), Some(3));
+        assert_eq!(quick.let_go(Duration::ZERO).unwrap(), Some(3));
         let _ = std::fs::remove_file(&lingering_output);
         let _ = std::fs::remove_file(&quick_output);
     }
@@ -1489,9 +1024,7 @@ mod tests {
         // Safe: the handle is taken in charge right after.
         let watching = Handle(unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, started.identifier) });
         assert!(!watching.0.is_null(), "{}", refusal_of("OpenProcess"));
-        let went = Box::new(started)
-            .let_go(Duration::from_millis(200))
-            .unwrap();
+        let went = started.let_go(Duration::from_millis(200)).unwrap();
         assert_eq!(went, None, "it was not meant to go by itself");
         // Safe: the handle is ours and the wait is bounded.
         let gone = unsafe { WaitForSingleObject(watching.0, 10_000) };
@@ -1534,7 +1067,7 @@ mod tests {
             .recv_timeout(Duration::from_secs(10))
             .expect("the process holds a handle it was never given");
         assert!(read.unwrap().is_empty());
-        let _ = Box::new(started).let_go(Duration::ZERO);
+        let _ = started.let_go(Duration::ZERO);
         let _ = std::fs::remove_file(&output);
     }
 }

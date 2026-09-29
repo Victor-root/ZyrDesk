@@ -153,7 +153,7 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     // policy that lets Ctrl+Alt+Del be pressed never reached a computer
     // registered before it existed, and Windows says nothing at all when
     // it refuses a press.
-    crate::attention::let_it_be_pressed(Some(log));
+    zyr_system::let_it_be_pressed(Some(log));
     // A silence left behind by a run of this service that never got to
     // finish: the machine was switched off, or the service fell over,
     // with a session in progress. Only remembered here; the watch gives
@@ -309,7 +309,7 @@ pub fn install() -> Result<Installed, Box<dyn std::error::Error>> {
     // too. It never fails the installation, since a computer without a
     // virtual screen is a computer that works, only less sharply.
     crate::screen::put_in_place(log.as_ref());
-    crate::attention::let_it_be_pressed(log.as_ref());
+    zyr_system::let_it_be_pressed(log.as_ref());
     Ok(installed)
 }
 
@@ -622,7 +622,7 @@ pub fn uninstall() -> ServiceResult<()> {
     // And the door this product opened on Ctrl+Alt+Del is closed with
     // them. A machine that no longer runs ZyrDesk has no reason to go on
     // letting a service press what Windows keeps for itself.
-    crate::attention::forget_it();
+    zyr_system::forget_it();
 
     // After the service is gone and not before: the driver cannot leave
     // Windows' store while anything is still using its device, and the

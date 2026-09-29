@@ -710,7 +710,7 @@ impl Attending {
 /// window station of whoever asks, and the service's carries none.
 #[cfg(windows)]
 fn hold_the_desk_for(wanted: Option<WantedScreen>) -> io::Result<String> {
-    crate::session::hold_the_desk_for(wanted).map(|took| took.to_string())
+    crate::errands::hold_the_desk_for(wanted).map(|took| took.to_string())
 }
 
 #[cfg(not(windows))]
@@ -726,7 +726,7 @@ fn hold_the_desk_for(_wanted: Option<WantedScreen>) -> io::Result<String> {
 /// answer is what the far end opens its picture at.
 #[cfg(windows)]
 fn give_the_desk_back() -> io::Result<String> {
-    crate::session::give_the_desk_back().map(|took| took.to_string())
+    crate::errands::give_the_desk_back().map(|took| took.to_string())
 }
 
 #[cfg(not(windows))]
@@ -741,7 +741,7 @@ fn give_the_desk_back() -> io::Result<String> {
 /// woken that screen: the two halves cannot be done from the same place.
 #[cfg(windows)]
 fn take_the_grown_screen(wanted: WantedScreen) -> io::Result<String> {
-    crate::session::take_the_grown_screen(wanted).map(|took| took.to_string())
+    crate::errands::take_the_grown_screen(wanted).map(|took| took.to_string())
 }
 
 #[cfg(not(windows))]
@@ -775,7 +775,7 @@ fn wake_the_grown_screen(_size: (u32, u32)) -> Result<Vec<String>, String> {
 /// Locks it, where there is a Windows to lock, saying what it cost.
 #[cfg(windows)]
 fn lock_it() -> io::Result<String> {
-    crate::session::lock_the_screen().map(|took| took.to_string())
+    crate::errands::lock_the_screen().map(|took| took.to_string())
 }
 
 #[cfg(not(windows))]
@@ -788,7 +788,7 @@ fn lock_it() -> io::Result<String> {
 /// Presses it, where there is a Windows to press it on.
 #[cfg(windows)]
 fn press_it(log: &Log) -> io::Result<()> {
-    crate::attention::press(log)
+    zyr_system::press(log)
 }
 
 /// Outside Windows there is no such key and no service either. The
@@ -881,7 +881,7 @@ struct Counted {
     _outside: crate::outside::Watching,
     /// This computer's Wi-Fi putting the session first, for as long as it
     /// lasts.
-    _wifi: crate::wifi::Favouring,
+    _wifi: zyr_system::Favouring,
 }
 
 impl Counted {
@@ -891,7 +891,7 @@ impl Counted {
             sessions: sessions.clone(),
             media: media.clone(),
             _outside: crate::outside::watch(log),
-            _wifi: crate::wifi::favour_latency(log),
+            _wifi: zyr_system::favour_latency(log),
         }
     }
 }

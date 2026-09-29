@@ -84,7 +84,7 @@ const SCREEN_WATCH: Duration = Duration::from_secs(2);
 /// Identifier of the session attached to the screen, when there is one.
 #[cfg(windows)]
 fn screen_session() -> Option<u32> {
-    crate::session::session_on_screen()
+    zyr_system::session_on_screen()
 }
 
 /// Outside Windows there is no console session, and no service either.
@@ -107,14 +107,26 @@ enum Seen {
     Hidden,
 }
 
+/// The product's window, a program beside this one.
+#[cfg(windows)]
+const THE_WINDOW: &str = "ZyrDesk.exe";
+
 /// What the screen of that session shows of ZyrDesk.
+///
+/// Its window is what puts the icon beside the clock, from the moment it
+/// starts to the moment it ends, however it ends: running in the session
+/// on screen, it is in front of whoever sits at this computer. Known by
+/// its whole path, beside this program, and not by its name alone.
 #[cfg(windows)]
 fn seen_in(session: u32) -> Result<Seen, String> {
-    if crate::session::shown_in(session).map_err(|e| e.to_string())? {
+    let the_window = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .with_file_name(THE_WINDOW);
+    if zyr_system::runs_in(session, &the_window).map_err(|e| e.to_string())? {
         return Ok(Seen::Shown);
     }
     Ok(
-        if crate::session::somebody_signed_in(session).map_err(|e| e.to_string())? {
+        if zyr_system::somebody_signed_in(session).map_err(|e| e.to_string())? {
             Seen::Hidden
         } else {
             Seen::NobodySignedIn
@@ -185,7 +197,7 @@ impl Watched {
 /// How each session's engine is started in that session.
 #[cfg(windows)]
 fn launcher(session: u32) -> Arc<dyn Launcher> {
-    Arc::new(crate::session::ServingInSession::new(session))
+    Arc::new(crate::errands::ServingInSession::new(session))
 }
 
 #[cfg(not(windows))]
@@ -238,7 +250,7 @@ fn put_the_desk_back(log: &Log) -> bool {
 /// Puts back what was noted, saying whether it really went back.
 #[cfg(windows)]
 fn the_desk_as_it_was(log: &Log) -> bool {
-    match crate::session::give_the_desk_back() {
+    match crate::errands::give_the_desk_back() {
         Ok(took) => {
             log.write(&format!(
                 "the desk was put back from the session on screen ({took})"

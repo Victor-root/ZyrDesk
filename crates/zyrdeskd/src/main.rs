@@ -23,14 +23,11 @@ mod speakers;
 mod supervisor;
 mod transfer;
 mod ways;
-mod wifi;
 
 #[cfg(windows)]
-mod attention;
+mod errands;
 #[cfg(windows)]
 mod service;
-#[cfg(windows)]
-mod session;
 
 use std::process::ExitCode;
 
@@ -83,7 +80,7 @@ fn main() -> ExitCode {
     // one session: it films, encodes and plays what the far computer
     // types, over the link the service named. Nobody types this either.
     #[cfg(windows)]
-    if let Some(link) = session::the_link_to_serve() {
+    if let Some(link) = errands::the_link_to_serve() {
         return match zyr_proto::log::Log::open(&zyr_proto::paths::logs_dir().join("engine.log")) {
             Ok(log) => zyr_host::serve(&link, log),
             // Nothing to say it in: the console, which the service has
@@ -98,8 +95,8 @@ fn main() -> ExitCode {
     // The answer is more than yes or no: two means the speakers were
     // already the way they were asked to be, so nothing is owed back.
     #[cfg(windows)]
-    if let Some(quiet) = session::asked_about_the_speakers() {
-        return ExitCode::from(session::move_the_speakers(quiet) as u8);
+    if let Some(quiet) = errands::asked_about_the_speakers() {
+        return ExitCode::from(errands::move_the_speakers(quiet) as u8);
     }
 
     // And a fourth, to lock the screen. The other way round from
@@ -108,8 +105,8 @@ fn main() -> ExitCode {
     // one from the interactive desktop and nothing else. Both refusals
     // protect what a lock screen is worth.
     #[cfg(windows)]
-    if session::asked_to_lock_the_screen() {
-        return if session::lock_this_desktop() {
+    if errands::asked_to_lock_the_screen() {
+        return if zyr_system::lock_this_desktop() {
             ExitCode::SUCCESS
         } else {
             ExitCode::FAILURE
@@ -124,8 +121,8 @@ fn main() -> ExitCode {
     // from there this computer has no screens to note and none to put
     // back.
     #[cfg(windows)]
-    if let Some(asked) = session::the_desk_asked_for() {
-        session::do_this_to_the_desk(asked);
+    if let Some(asked) = errands::the_desk_asked_for() {
+        errands::do_this_to_the_desk(asked);
         return ExitCode::SUCCESS;
     }
 
@@ -134,7 +131,7 @@ fn main() -> ExitCode {
     // the service's window station carries none. This one reads for a
     // while instead of doing one thing, and ends by itself.
     #[cfg(windows)]
-    if session::asked_to_follow_the_pointer() {
+    if errands::asked_to_follow_the_pointer() {
         pointer::follow_the_pointer_here();
         return ExitCode::SUCCESS;
     }
@@ -145,7 +142,7 @@ fn main() -> ExitCode {
     // while and ends by itself, and unlike it, it writes as well: what
     // was copied on the far computer is put on this one from here.
     #[cfg(windows)]
-    if session::asked_to_carry_the_clipboard() {
+    if errands::asked_to_carry_the_clipboard() {
         clipboard::carry_the_clipboard_here();
         return ExitCode::SUCCESS;
     }

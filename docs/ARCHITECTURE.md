@@ -166,6 +166,7 @@ ZyrDesk/
 │  ├─ zyr-account/             # le lien de compte, le rattachement, le canal vivant, la présence, le rendez-vous
 │  ├─ zyr-screen/              # l'écran virtuel : pilote, réveil, sommeil, arrangement des écrans
 │  ├─ zyr-sound/               # le son de la session, dans le mélangeur de Windows
+│  ├─ zyr-system/              # ce que le service demande à Windows lui-même : la session qui tient l'écran et qui y est, y lancer ce programme (le moteur d'une session, une course, un assistant), verrouiller, Ctrl+Alt+Suppr, le Wi-Fi qui passe la session d'abord, la forme du pointeur
 │  ├─ zyr-win32/               # la façon de Windows de dire les choses, pour toutes les briques qui lui parlent : texte, codes d'erreur, poignées, processus
 │  ├─ zyr-cli/                 # doctor, session sans fenêtre, banc de mesure, identité, compte
 │  ├─ zyr-ui/                  # l'application : cœur Rust, écrans dessinés par le produit, image de la session, journal, bouton flottant
@@ -194,7 +195,7 @@ Les briques sont rangées en couches, et chacune n'utilise que des briques de sa
 | Produit | `zyr-control`, `zyr-session`, `zyr-clipboard` | Le produit qui se parle à lui-même : la fenêtre et le service, l'ouverture d'une session, le presse-papiers |
 | Réseau et comptes | `zyr-transport`, `zyr-tunnel`, `zyr-lan`, `zyr-broker`, `zyr-account` | La connexion entre deux ordinateurs, le réseau local, le serveur |
 | Moteur | `zyr-media`, `zyr-codec`, `zyr-link`, `zyr-host`, `zyr-player` | L'image, le son et les entrées, de l'écran filmé à l'image affichée, et le tube de chaque moitié vers son service |
-| Plateforme | `zyr-screen`, `zyr-sound`, `zyr-win32` | Ce que Windows fait pour le produit, et sa façon de dire les choses |
+| Plateforme | `zyr-screen`, `zyr-sound`, `zyr-system`, `zyr-win32` | Ce que Windows fait pour le produit, et sa façon de dire les choses |
 | Base | `zyr-proto`, `zyr-i18n` | Ce que toutes les briques partagent, et les mots de ce que la personne lit |
 
 Seules la fenêtre et la ligne de commande utilisent `zyr-i18n` : tout ce qui est en dessous dit des faits, jamais des phrases, et ce sont les programmes qu'une personne lit qui choisissent les mots ([D236](DECISIONS.md)).

@@ -334,7 +334,7 @@ fn keep_a_helper(log: Log) {
             if a_stand_is_up().is_none()
                 && started.is_none_or(|at| at.elapsed() > START_ANOTHER_AFTER)
             {
-                match crate::session::start_carrying_the_clipboard() {
+                match crate::errands::start_carrying_the_clipboard() {
                     Ok(()) => {
                         if started.is_none() {
                             log.write("reading it from the session that owns the screen");
@@ -407,7 +407,12 @@ pub fn carry_the_clipboard_here() {
     // Under whose name, because that decides what it is allowed to see:
     // a helper under the wrong one reads a clipboard that looks empty and
     // has no way at all of saying why.
-    hunted(|| format!("this helper is running as {}", whoever_this_is()));
+    hunted(|| {
+        format!(
+            "this helper is running as {}",
+            zyr_system::whoever_this_is()
+        )
+    });
     let until = Instant::now() + HELPER_LIVES;
     let mut counted: Option<u32> = None;
     // Whether this helper is the one holding the far computer's files.
@@ -636,21 +641,6 @@ fn hunted(what: impl FnOnce() -> String) {
     if let Ok(log) = Log::open(&crate::service::log_path()) {
         log.about(TAG).debug(what);
     }
-}
-
-/// Who this helper is, as Windows names them.
-#[cfg(windows)]
-fn whoever_this_is() -> String {
-    use windows_sys::Win32::System::WindowsProgramming::GetUserNameW;
-
-    let mut spelled = [0u16; 256];
-    let mut room = spelled.len() as u32;
-    // SAFETY: a buffer of ours, whose length is handed over and written
-    // back as the length of what was put in it, the nought counted.
-    if unsafe { GetUserNameW(spelled.as_mut_ptr(), &mut room) } == 0 {
-        return "a name Windows would not give".to_string();
-    }
-    String::from_utf16_lossy(&spelled[..room.saturating_sub(1) as usize])
 }
 
 /// Whether what was just found on the clipboard is already written down.

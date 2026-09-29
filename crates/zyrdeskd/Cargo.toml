@@ -21,6 +21,7 @@ zyr-link.workspace = true
 zyr-lan.workspace = true
 zyr-screen.workspace = true
 zyr-sound.workspace = true
+zyr-system.workspace = true
 zyr-win32.workspace = true
 zyr-broker.workspace = true
 zyr-account.workspace = true
@@ -39,22 +40,3 @@ winresource = "0.1.31"
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8.1"
-windows-sys = { version = "0.61.2", features = [
-    "Win32_Foundation",
-    # The Wi-Fi's types only: its functions are looked for at run time,
-    # wlanapi.dll being missing from a Windows Server without its
-    # wireless service.
-    "Win32_NetworkManagement_WiFi",
-    "Win32_Security",
-    "Win32_Storage_FileSystem",
-    "Win32_System_Environment",
-    "Win32_System_JobObjects",
-    "Win32_System_LibraryLoader",
-    "Win32_System_Registry",
-    "Win32_System_RemoteDesktop",
-    "Win32_System_Shutdown",
-    "Win32_System_StationsAndDesktops",
-    "Win32_System_Threading",
-    "Win32_System_WindowsProgramming",
-    "Win32_UI_WindowsAndMessaging",
-] }

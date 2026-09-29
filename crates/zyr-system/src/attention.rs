@@ -102,7 +102,7 @@ pub fn press(log: &Log) -> io::Result<()> {
             None => "unset".to_string(),
         },
         said(our_session()),
-        said(crate::session::session_on_screen()),
+        said(crate::onscreen::session_on_screen()),
     ));
 
     use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};

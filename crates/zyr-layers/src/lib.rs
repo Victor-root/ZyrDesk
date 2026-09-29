@@ -5,8 +5,9 @@
 //!
 //! - the base: `zyr-proto`, the values every brick shares, and
 //!   `zyr-i18n`, the words the person reads;
-//! - the platform, `zyr-screen`, `zyr-sound` and `zyr-win32`: what
-//!   Windows does for the product, and Windows' own way of saying things;
+//! - the platform, `zyr-screen`, `zyr-sound`, `zyr-system` and
+//!   `zyr-win32`: what Windows does for the product, and Windows' own way
+//!   of saying things;
 //! - the engine, `zyr-media`, `zyr-codec`, `zyr-link`, `zyr-host` and
 //!   `zyr-player`: the picture, the sound and the input, from the screen
 //!   filmed to the picture drawn, and the one link each half of the
@@ -71,6 +72,7 @@ mod tests {
         ("zyr-i18n", Base, &["zyr-proto"]),
         ("zyr-screen", Platform, &["zyr-win32"]),
         ("zyr-sound", Platform, &[]),
+        ("zyr-system", Platform, &["zyr-proto", "zyr-win32"]),
         ("zyr-win32", Platform, &[]),
         ("zyr-media", Engine, &["zyr-proto"]),
         ("zyr-codec", Engine, &["zyr-media", "zyr-proto"]),
@@ -144,6 +146,7 @@ mod tests {
                 "zyr-proto",
                 "zyr-screen",
                 "zyr-sound",
+                "zyr-system",
                 "zyr-transport",
                 "zyr-tunnel",
                 "zyr-win32",

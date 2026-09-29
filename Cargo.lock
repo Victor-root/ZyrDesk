@@ -3258,6 +3258,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "zyr-system"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.61.2",
+ "zyr-proto",
+ "zyr-win32",
+]
+
+[[package]]
 name = "zyr-transport"
 version = "0.1.0"
 dependencies = [
@@ -3319,7 +3328,6 @@ dependencies = [
  "rcgen",
  "tokio",
  "windows-service",
- "windows-sys 0.61.2",
  "winresource",
  "zyr-account",
  "zyr-broker",
@@ -3333,6 +3341,7 @@ dependencies = [
  "zyr-screen",
  "zyr-server",
  "zyr-sound",
+ "zyr-system",
  "zyr-transport",
  "zyr-tunnel",
  "zyr-win32",

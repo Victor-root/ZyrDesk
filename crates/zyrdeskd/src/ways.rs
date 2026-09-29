@@ -146,7 +146,7 @@ struct Open {
     _outside: crate::outside::Watching,
     /// This computer's Wi-Fi putting the session first, for as long as the
     /// way lasts.
-    _wifi: crate::wifi::Favouring,
+    _wifi: zyr_system::Favouring,
     /// What tells the player how the tunnel stands, and hears it.
     _telling: Aborting,
 }
@@ -719,7 +719,7 @@ impl Ways {
                 crossing,
                 said: Said::from(opened_at),
                 _outside: crate::outside::watch(&self.log),
-                _wifi: crate::wifi::favour_latency(&self.log),
+                _wifi: zyr_system::favour_latency(&self.log),
                 _telling: telling,
             },
         );

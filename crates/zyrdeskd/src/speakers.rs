@@ -162,7 +162,7 @@ fn what_is_owed(owed: bool, log: &Log) {
 /// nobody is listening to.
 #[cfg(windows)]
 fn moved(quiet: bool) -> std::io::Result<bool> {
-    crate::session::set_the_speakers(quiet)
+    crate::errands::set_the_speakers(quiet)
 }
 
 /// Outside Windows there is no service and no session on a screen. The

@@ -1,0 +1,32 @@
+[package]
+name = "zyr-system"
+description = "What the service asks of Windows itself: the session that holds the screen, and what is started there"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zyr-proto.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+zyr-win32.workspace = true
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    # The Wi-Fi's types only: its functions are looked for at run time,
+    # wlanapi.dll being missing from a Windows Server without its
+    # wireless service.
+    "Win32_NetworkManagement_WiFi",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Environment",
+    "Win32_System_JobObjects",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Shutdown",
+    "Win32_System_StationsAndDesktops",
+    "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
+    "Win32_UI_WindowsAndMessaging",
+] }
