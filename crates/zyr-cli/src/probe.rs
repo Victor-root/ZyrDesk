@@ -280,7 +280,8 @@ fn time_it(packet: &[u8], start: Instant) -> Option<RoundTrip> {
 
 #[cfg(test)]
 mod tests {
-    use zyr_link::{Access, LinkListener};
+    use zyr_link::LinkListener;
+    use zyr_link::testing::in_tests;
 
     use super::*;
 
@@ -356,7 +357,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_stand_in_engine_sends_back_the_pictures_and_nothing_else() {
-        let listener = LinkListener::create(Access::SystemOnly).unwrap();
+        let listener = LinkListener::create(in_tests()).unwrap();
         let name = listener.name().to_string();
         let (player, engine) = tokio::join!(zyr_link::connect(&name), listener.accept());
         tokio::spawn(echo_pictures(engine.unwrap()));
@@ -370,7 +371,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_probe_through_a_link_measures_what_the_engine_sends_back() {
-        let listener = LinkListener::create(Access::SystemOnly).unwrap();
+        let listener = LinkListener::create(in_tests()).unwrap();
         let name = listener.name().to_string();
         let (player, engine) = tokio::join!(zyr_link::connect(&name), listener.accept());
         tokio::spawn(echo_pictures(engine.unwrap()));

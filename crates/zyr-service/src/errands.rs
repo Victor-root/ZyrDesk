@@ -15,6 +15,7 @@
 use std::io;
 use std::time::Duration;
 
+use zyr_link::Access;
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
@@ -232,6 +233,12 @@ impl ServingInSession {
 }
 
 impl Launcher for ServingInSession {
+    /// The system account alone: the engine is started under it, as the
+    /// service itself runs.
+    fn access(&self) -> Access {
+        Access::SystemOnly
+    }
+
     fn launch(&self, link: &str) -> io::Result<Box<dyn Launched>> {
         let ourselves = std::env::current_exe()?;
         let arguments = StartedFor::Serving(link.to_string()).arguments();

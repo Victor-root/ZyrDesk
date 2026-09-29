@@ -7,7 +7,8 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
-use zyr_link::{Access, Channel, LinkListener};
+use zyr_link::testing::in_tests;
+use zyr_link::{Channel, LinkListener};
 use zyr_media::MEDIA_VERSION;
 use zyr_media::codec::CodecSet;
 use zyr_media::control::{ByeReason, ControlReader, NoticeKind, ToEngine, ToPlayer};
@@ -75,7 +76,7 @@ impl Engine {
                 .build()
                 .unwrap();
             runtime.block_on(async move {
-                let listener = LinkListener::create(Access::SystemOnly).unwrap();
+                let listener = LinkListener::create(in_tests()).unwrap();
                 named.send(listener.name().to_string()).unwrap();
                 let (mut reader, mut writer) = listener.accept().await.unwrap().split();
                 let mut control = ControlReader::<ToEngine>::new();

@@ -34,3 +34,6 @@ winresource = "0.1.31"
 # The encoders the diagnosis tries, the way the host engine tries them.
 zyr-host.workspace = true
 windows-sys = { version = "0.61.2", features = ["Win32_Networking_WinSock", "Win32_System_Threading"] }
+
+[dev-dependencies]
+zyr-link = { workspace = true, features = ["testing"] }

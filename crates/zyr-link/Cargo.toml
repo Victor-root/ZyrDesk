@@ -6,6 +6,12 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+# What the tests share: the access their links are made with. This
+# crate's tests use it, and so do those of every crate that makes a
+# link in a test; nothing built for the product does.
+testing = []
+
 [dependencies]
 bytes = "1.12.1"
 tokio = { version = "1.53.1", features = ["net", "io-util", "time"] }

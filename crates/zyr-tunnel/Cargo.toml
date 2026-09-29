@@ -15,3 +15,6 @@ tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "io-util"
 zyr-link.workspace = true
 zyr-proto.workspace = true
 zyr-transport.workspace = true
+
+[dev-dependencies]
+zyr-link = { workspace = true, features = ["testing"] }

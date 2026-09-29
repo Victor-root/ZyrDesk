@@ -15,7 +15,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use zyr_link::{Access, Channel, Link, LinkListener, LinkReader, LinkWriter};
+use zyr_link::testing::in_tests;
+use zyr_link::{Channel, Link, LinkListener, LinkReader, LinkWriter};
 use zyr_proto::clipboard::{Clip, Stamp};
 use zyr_proto::session::{Pointer, WantedScreen};
 use zyr_transport::{Bytes, Connection, Identity, MediaProfile, TunnelEndpoint};
@@ -340,7 +341,7 @@ impl Waiting {
             let opening = aside::until_a_session_opens(&host_connection, answering.clone(), None)
                 .await
                 .unwrap();
-            let listener = LinkListener::create(Access::SystemOnly).unwrap();
+            let listener = LinkListener::create(in_tests()).unwrap();
             let name = listener.name().to_string();
             let (engine, accepted) = tokio::join!(zyr_link::connect(&name), listener.accept());
             let (side, service) = service_channel();
@@ -356,7 +357,7 @@ impl Waiting {
         .await;
         opened.unwrap();
 
-        let listener = LinkListener::create(Access::SystemAndInteractive).unwrap();
+        let listener = LinkListener::create(in_tests()).unwrap();
         let player_link = listener.name().to_string();
         let (side, client_service) = service_channel();
         let client = Tunnel::client(client_connection.clone(), listener, side, None);

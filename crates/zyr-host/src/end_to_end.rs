@@ -15,7 +15,8 @@ use tokio::time::timeout;
 use zyr_codec::{
     DecodeOutput, DecodedFrame, Frame, GpuVendor, Input, OpusDecoder, VideoDecoder, VideoEncoder,
 };
-use zyr_link::{Access, Channel, LinkListener, LinkReader, LinkWriter};
+use zyr_link::testing::in_tests;
+use zyr_link::{Channel, LinkListener, LinkReader, LinkWriter};
 use zyr_media::MEDIA_VERSION;
 use zyr_media::audio::read_audio;
 use zyr_media::codec::{CodecChoice, CodecSet, VideoCodec};
@@ -152,7 +153,7 @@ impl Far {
     }
 
     async fn filming(test: &str, screen: MakeScreen, sound: Box<dyn Sound>) -> Self {
-        let listener = LinkListener::create(Access::SystemOnly).unwrap();
+        let listener = LinkListener::create(in_tests()).unwrap();
         let name = listener.name().to_owned();
         let (injector, recorded) = RecordingInjector::new();
         let parts = Parts {

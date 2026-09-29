@@ -22,6 +22,8 @@
 //! conversation never reaches an engine. The command channel is a named
 //! pipe too, and takes from here what every pipe of the product shares.
 
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 #[cfg(windows)]
 pub mod windows_pipe;
 
@@ -457,22 +459,14 @@ mod tests {
 
     use tokio::io::DuplexStream;
 
+    use crate::testing::in_tests;
+
     const EVERY_CHANNEL: [Channel; 4] = [
         Channel::Control,
         Channel::Video,
         Channel::Service,
         Channel::Audio,
     ];
-
-    /// Access every test link is made with: the system, and every
-    /// account signed in whatever the way, so a test reaches its own
-    /// link on Windows when run at the machine as well as by a service
-    /// or over the network, where nobody counts as logged in at it.
-    fn in_tests() -> Access {
-        Access::SystemAnd {
-            user_sid: "S-1-5-11".to_string(),
-        }
-    }
 
     /// Both ends of a fresh link: the one that accepted, then the one
     /// that connected.

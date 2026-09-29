@@ -32,3 +32,5 @@ rcgen = "0.14.10"
 # The whole service is only started for a test where the engine really
 # has no FFmpeg, as the engine itself says.
 zyr-host.workspace = true
+# The access every link a test makes is made with.
+zyr-link = { workspace = true, features = ["testing"] }

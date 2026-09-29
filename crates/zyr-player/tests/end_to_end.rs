@@ -35,7 +35,8 @@ use zyr_host::{
     Aimed, Captured, Drawing, Ending as EngineEnding, Feed, Injected, MakeScreen, Parts, Screen,
     ScreenError, Sound,
 };
-use zyr_link::{Access, LinkListener};
+use zyr_link::LinkListener;
+use zyr_link::testing::in_tests;
 use zyr_media::service::{Display, ToEngine, ToPlayer, ToService};
 use zyr_player::{
     Button, CodecChoice, Ending, Event, InputEvent, Measures, Player, Surface, Tallies, VideoCodec,
@@ -94,16 +95,6 @@ fn synthetic_screen() -> MakeScreen {
 fn at_the_rate_asked(rate: f64) -> bool {
     let asked = f64::from(FPS);
     (asked * 0.9..=asked * 1.1).contains(&rate)
-}
-
-/// Who may open the tests' links: the system, and every account signed
-/// in whatever the way. The service opens the engine's link to the
-/// system alone and the player's to the accounts at the machine, which a
-/// test run by a service on Windows is neither.
-fn in_tests() -> Access {
-    Access::SystemAnd {
-        user_sid: "S-1-5-11".to_string(),
-    }
 }
 
 /// Held by each test for as long as it runs.

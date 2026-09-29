@@ -91,6 +91,10 @@ const CLOSING_PATIENCE: Duration = Duration::from_secs(3);
 
 /// Starts the engine of one session, told the link it is to serve it on.
 pub trait Launcher: Send + Sync {
+    /// Who may open the engine's link: the account the engine is started
+    /// under.
+    fn access(&self) -> Access;
+
     /// Called where blocking is allowed: starting a program in another
     /// session waits on Windows.
     fn launch(&self, link: &str) -> io::Result<Box<dyn Launched>>;
@@ -1195,7 +1199,7 @@ async fn bring_up_the_engine(
         .guaranteed_usable_datagram()
         .and_then(zyr_transport::datagram_budget)
         .ok_or("the path announces no datagram size")?;
-    let listener = LinkListener::create(Access::SystemOnly)
+    let listener = LinkListener::create(door.launcher.access())
         .map_err(|e| format!("the engine's link could not be made: {}", with_its_code(&e)))?;
     let name = listener.name().to_string();
     let launcher = door.launcher.clone();
@@ -1492,6 +1496,8 @@ fn joined(written: Vec<Fingerprint>, seen: Vec<Fingerprint>) -> Vec<Fingerprint>
 
 #[cfg(test)]
 mod tests {
+    use zyr_link::testing::in_tests;
+
     use super::*;
 
     fn fingerprint(seed: u8) -> Fingerprint {
@@ -1618,6 +1624,10 @@ mod tests {
     }
 
     impl Launcher for StandIn {
+        fn access(&self) -> Access {
+            in_tests()
+        }
+
         fn launch(&self, link: &str) -> io::Result<Box<dyn Launched>> {
             use zyr_link::Channel;
 
@@ -1699,6 +1709,10 @@ mod tests {
     struct WentAtOnce;
 
     impl Launcher for GoesAtOnce {
+        fn access(&self) -> Access {
+            in_tests()
+        }
+
         fn launch(&self, _link: &str) -> io::Result<Box<dyn Launched>> {
             Ok(Box::new(WentAtOnce))
         }
@@ -1826,7 +1840,7 @@ mod tests {
 
         // The player, on the way's link: what it says reaches the engine
         // and comes back.
-        let listener = LinkListener::create(Access::SystemAndInteractive).unwrap();
+        let listener = LinkListener::create(in_tests()).unwrap();
         let name = listener.name().to_string();
         let (side, _way) = service_channel();
         let tunnel = Tunnel::client(connection.clone(), listener, side, None);
