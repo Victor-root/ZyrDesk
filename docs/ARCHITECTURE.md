@@ -171,7 +171,7 @@ ZyrDesk/
 │  ├─ zyr-system/              # ce que le service demande à Windows lui-même : la session qui tient l'écran et qui y est, y lancer ce programme (le moteur d'une session, une course, un assistant), verrouiller, Ctrl+Alt+Suppr, le Wi-Fi qui passe la session d'abord, la forme du pointeur, et ce qui met un programme en route (sans console, avec les droits administrateur, à l'ouverture de session)
 │  ├─ zyr-win32/               # la façon de Windows de dire les choses, pour toutes les briques qui lui parlent : texte, codes d'erreur, poignées, processus
 │  ├─ zyr-cli/                 # doctor, session sans fenêtre, banc de mesure, identité, compte
-│  ├─ zyr-ui/                  # l'application : cœur Rust, écrans dessinés par le produit, image de la session, journal, bouton flottant
+│  ├─ zyr-ui/                  # l'application, rangée en trois dossiers : la coquille (le programme, sa fenêtre, l'icône près de l'horloge, le journal, le thème, les réglages, les raccourcis), l'accueil, et l'interface de session (l'image, le pointeur, les voyants, les chiffres, le bouton flottant et son menu)
 │  ├─ zyr-service/             # ce que fait le service : le superviseur, la porte d'entrée et les sessions qui la passent, le registre des voies et tous les tunnels, le lien de compte, le serveur du tube de la fenêtre, et ce pour quoi il se relance dans la session de l'écran
 │  ├─ zyrdeskd/                # binaire service Windows, qui ne fait qu'assembler : démarrage par Windows, installation (pare-feu, droits, écran virtuel), aiguillage de ce pour quoi il est relancé ; relancé, c'est aussi le moteur hôte
 │  └─ zyr-layers/              # la carte des briques : qui peut utiliser qui, vérifiée par les essais

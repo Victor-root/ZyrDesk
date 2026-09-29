@@ -96,7 +96,7 @@ Les deux sont exactement symétriques et pour la même raison, vue des deux côt
 | Le crochet, la liste des touches prises et la décision | `crates/zyr-ui/src/session/system_keys.rs` |
 | Le fil qui tient un crochet et le repose sans trou | `crates/zyr-ui/src/session/hook.rs` |
 | La fenêtre de l'image, qui lit les autres touches et la souris | `crates/zyr-ui/src/session/video.rs` |
-| L'interrupteur du menu | `crates/zyr-ui/src/session/floating/mod.rs`, `crates/zyr-ui/src/session/floating/menu.rs` |
+| L'interrupteur du menu | `crates/zyr-ui/src/session/floating/mod.rs`, `crates/zyr-ui/src/session/floating/menu/lines.rs` |
 | Ce qui relâche tout de l'autre côté | `crates/zyr-player` (perte du clavier), `crates/zyr-host` (fin ou silence du lien) |
 
 ## Si ça revient un jour
