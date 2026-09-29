@@ -7,7 +7,8 @@
 //! busy it was and with what, what the system counted of UDP and IP, and
 //! what the network card that reaches the far computer carried and lost.
 //! Held on both sides, since a picture is made on one computer and shown
-//! on the other.
+//! on the other. What the computer is, which no second changes, is said
+//! once before them.
 //!
 //! What is counted and how it is worded belongs to `zyr-system`, which
 //! knows Windows; when to read, and for how long, belongs here. Elsewhere
@@ -19,7 +20,7 @@ use std::thread;
 use std::time::Duration;
 
 use zyr_proto::log::Log;
-use zyr_system::Vitals;
+use zyr_system::{Vitals, describe_this_computer};
 use zyr_transport::{Junction, is_card};
 
 /// What this module's lines are filed under.
@@ -53,6 +54,9 @@ pub fn sample(log: &Log, peer: impl Fn() -> Option<IpAddr> + Send + 'static) -> 
             let Some(mut vitals) = Vitals::start() else {
                 return;
             };
+            if let Some(machine) = describe_this_computer() {
+                log.write(&format!("this computer: {machine}"));
+            }
             // Nothing is ever sent on `stopped`: it only goes away.
             vitals.second(peer());
             while let Err(RecvTimeoutError::Timeout) = stopped.recv_timeout(EVERY) {
@@ -115,6 +119,10 @@ mod tests {
         drop(sampling);
         let written = std::fs::read_to_string(&path).unwrap_or_default();
         let _ = std::fs::remove_dir_all(&folder);
+        assert!(
+            written.contains("[vitals] this computer: Windows "),
+            "{written}"
+        );
         assert!(written.contains("[vitals] over "), "{written}");
     }
 }

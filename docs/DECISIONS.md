@@ -4106,6 +4106,26 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows. Le compte des mises à jour repliées se lit dans les informations que Windows donne avec chaque image (DXGI), qu'aucun essai d'ici ne peut produire.
 
+## D255. Le journal dit ce qu'est l'ordinateur et ce que le processus a obtenu de Windows (2026-09-29, pendant MZ)
+
+> Cinquième étape de l'inventaire du journal ([D254](#d254-le-journal-de-lhôte-dit-ce-que-la-capture-et-lencodeur-ont-fait-de-chaque-seconde-2026-09-29-pendant-mz)). Le journal disait ce que les programmes avaient fait ; il ne disait rien de la machine sous eux, ni de ce que Windows avait accordé aux programmes.
+
+**Le constat.** Une même session ne se comporte pas de la même façon sur un portable sur batterie et sur une tour, avec Windows 10 et avec 11, avec un pilote graphique d'il y a un an et avec celui du mois. Rien de cela n'était écrit : les lignes existantes nomment la carte graphique, sans son pilote, et personne ne pense à dire l'ordinateur en envoyant un journal. Et les demandes faites à Windows pour la session (garder l'écran éveillé, minuteries à la milliseconde, priorités) n'étaient écrites que quand elles étaient refusées : une demande acceptée mais sans effet restait invisible (depuis Windows 10 2004, la minuterie fine ne vaut que pour le processus qui la demande, et Windows 11 ne la garantit plus à un processus dont la fenêtre est cachée ou réduite).
+
+**Ce qui est fait.**
+
+- Au début de chaque session, sur les deux ordinateurs, le service écrit une ligne `vitals` qui dit ce qu'est l'ordinateur : Windows, sa version et son numéro de build, le processeur et le nombre de processeurs logiques, la mémoire, le plan d'alimentation et le mode choisi par-dessus, le secteur ou la batterie, et chaque carte graphique avec le pilote installé pour elle et sa mémoire. Tout est lu dans le registre et par quelques appels de lecture, sans droit particulier, et ce qui ne se lit pas est simplement absent de la ligne. Les cartes viennent de la liste des pilotes d'affichage de Windows, pas de la carte qui sert à la session : le moteur dit déjà laquelle il utilise, et cette liste dit le pilote de chacune.
+- Le moteur hôte écrit, une fois, ce qu'il a obtenu de Windows pour la session (« set up for the session : ... ») en plus des refus déjà écrits, et chaque fil du moteur qui rejoint une classe du planificateur multimédia le dit en ligne de chasse.
+- Le moteur hôte et le lecteur chronomètrent douze attentes d'une milliseconde sur un canal où rien n'arrive, qui est comment leurs fils attendent une image ou une commande, et disent de combien elles se réveillent en retard (médiane, 95e centile, pire). Cela mesure ce que le processus reçoit vraiment des minuteries, quelle que soit la demande. Le coût est d'environ quinze millisecondes une fois par session, ou deux cents si les minuteries sont grossières.
+
+**Ce qui se voit.** Rien à l'écran. Dans le journal, tri `vitals` (l'ordinateur), `engine` (le moteur hôte) et `player` (le lecteur).
+
+**Comment la lire.** Une attente d'une milliseconde qui se réveille en médiane à moins d'une milliseconde de retard : les minuteries sont fines. À une quinzaine de millisecondes : elles ne le sont pas, la demande a été acceptée pour rien, et toute la cadence du processus en souffre. Un portable « on battery » avec le mode « Best power efficiency » explique à lui seul des images inégales.
+
+**Les essais.** Les mots de la ligne de l'ordinateur, les cas où une donnée manque, la lecture des octets d'un texte de Windows, celle de la mémoire déclarée par un pilote et les noms des modes d'alimentation s'essaient sur tout système. La lecture du registre et des appels de Windows s'essaie sous Windows : elle dit au moins Windows, le nombre de processeurs et la mémoire. La mesure des réveils s'essaie partout : elle attend au moins le temps demandé et dit sa phrase.
+
+**Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows, sauf sous Wine, qui répond avec ses propres valeurs. La liste des cartes vient du registre et peut garder une carte retirée ; le pilote générique de Windows est écarté quand une autre carte est là. La charge de la carte graphique n'est pas lue : les temps de décodage et d'encodage de chaque image disent déjà si elle ne suit plus.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

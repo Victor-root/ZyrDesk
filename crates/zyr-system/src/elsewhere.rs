@@ -37,6 +37,11 @@ impl Vitals {
     }
 }
 
+/// What this computer is, which is not read here.
+pub fn describe_this_computer() -> Option<String> {
+    None
+}
+
 pub fn runs_in(_session: u32, _program: &Path) -> io::Result<bool> {
     Err(not_here())
 }

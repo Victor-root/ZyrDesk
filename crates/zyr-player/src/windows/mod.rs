@@ -11,12 +11,15 @@ mod present;
 
 pub use present::Screen;
 
+use std::time::Duration;
+
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Media::{TIMERR_NOERROR, timeBeginPeriod, timeEndPeriod};
 use windows::Win32::System::Threading::{
     AvRevertMmThreadCharacteristics, AvSetMmThreadCharacteristicsW,
 };
 use windows::core::{Error, HRESULT, PCWSTR};
+use zyr_media::trace::late_wakes;
 use zyr_proto::log::Log;
 
 /// What was being done, and how Windows refused it.
@@ -41,12 +44,15 @@ impl Multimedia {
     /// ordinary priority, and the journal says why.
     fn join(task: PCWSTR, log: &Log) -> Self {
         let mut index = 0;
+        // SAFETY: a name the macro made, a C string.
+        let name = unsafe { task.to_string() }.unwrap_or_default();
         // SAFETY: a task name the macro made, and an index of ours.
         match unsafe { AvSetMmThreadCharacteristicsW(task, &mut index) } {
-            Ok(handle) => Self(Some(handle)),
+            Ok(handle) => {
+                log.debug(&format!("this thread joined the multimedia class {name}"));
+                Self(Some(handle))
+            }
             Err(e) => {
-                // SAFETY: the same name, a C string.
-                let name = unsafe { task.to_string() }.unwrap_or_default();
                 log.write(&failure(
                     &format!("AvSetMmThreadCharacteristicsW({name})"),
                     &e,
@@ -74,13 +80,18 @@ struct FineTimers(bool);
 impl FineTimers {
     const MS: u32 = 1;
 
-    /// Refused, timers keep their pace, and the journal says so.
+    /// Refused, timers keep their pace, and the journal says so. Granted
+    /// or not, it says how late a wait of a millisecond really wakes.
     fn ask(log: &Log) -> Self {
         // SAFETY: a plain value, undone once with the same value on drop.
         let granted = unsafe { timeBeginPeriod(Self::MS) } == TIMERR_NOERROR;
         if !granted {
             log.write("timers to the millisecond were refused (timeBeginPeriod)");
         }
+        log.write(&format!(
+            "timers: {}",
+            late_wakes(Duration::from_millis(u64::from(Self::MS)))
+        ));
         Self(granted)
     }
 }

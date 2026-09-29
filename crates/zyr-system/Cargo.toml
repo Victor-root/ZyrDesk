@@ -32,10 +32,14 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_Environment",
     "Win32_System_JobObjects",
     "Win32_System_LibraryLoader",
+    # The power plan and whether the mains is on.
+    "Win32_System_Power",
     "Win32_System_Registry",
     "Win32_System_RemoteDesktop",
     "Win32_System_Shutdown",
     "Win32_System_StationsAndDesktops",
+    # How much memory the computer has.
+    "Win32_System_SystemInformation",
     "Win32_System_Threading",
     "Win32_System_WindowsProgramming",
     # The one verb that raises the administrator prompt.

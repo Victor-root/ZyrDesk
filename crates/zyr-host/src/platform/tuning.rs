@@ -10,7 +10,11 @@
 //! NVIDIA card is kept at full speed (see `nvidia`); the desktop's
 //! compositor is scheduled as multimedia, so that its images come on
 //! time; and the threads that capture sit in the multimedia scheduler's
-//! classes. Each refusal is said and costs only what it was for.
+//! classes. Each refusal is said and costs only what it was for; what was
+//! obtained is said too, with how late a wait of a millisecond really
+//! wakes in the end.
+
+use std::time::Duration;
 
 use windows::Wdk::Graphics::Direct3D::{
     D3DKMT_SCHEDULINGPRIORITYCLASS_HIGH, D3DKMTSetProcessSchedulingPriorityClass,
@@ -29,6 +33,7 @@ use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
 use windows::core::PCWSTR;
+use zyr_media::trace::late_wakes;
 use zyr_proto::log::Log;
 
 use super::failed;
@@ -49,6 +54,7 @@ pub struct Tuned {
 
 impl Tuned {
     pub fn for_the_session(log: &Log) -> Self {
+        let mut obtained = Vec::new();
         // SAFETY: a process-wide setting, made before any window exists.
         if let Err(e) =
             unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) }
@@ -64,10 +70,14 @@ impl Tuned {
         };
         if before.0 == 0 {
             log.write("keeping the screen awake was refused");
+        } else {
+            obtained.push("the screen kept awake");
         }
         // SAFETY: a plain value, undone once with the same value on drop.
         let timer = unsafe { timeBeginPeriod(TIMER_MS) } == 0;
-        if !timer {
+        if timer {
+            obtained.push("timers to the millisecond");
+        } else {
             log.write("timers to the millisecond were refused");
         }
         // SAFETY: the pseudo handle of this process and a plain class.
@@ -77,7 +87,9 @@ impl Tuned {
                 D3DKMT_SCHEDULINGPRIORITYCLASS_HIGH,
             )
         };
-        if status.0 != 0 {
+        if status.0 == 0 {
+            obtained.push("first on the graphics card");
+        } else {
             log.write(&format!(
                 "putting this process first on the graphics card was refused: NTSTATUS 0x{:08X}",
                 status.0 as u32
@@ -92,7 +104,10 @@ impl Tuned {
         // SAFETY: as above, and a class that needs no privilege.
         let priority_before =
             match unsafe { SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS) } {
-                Ok(()) => (before != 0).then_some(PROCESS_CREATION_FLAGS(before)),
+                Ok(()) => {
+                    obtained.push("threads before the screen's programs");
+                    (before != 0).then_some(PROCESS_CREATION_FLAGS(before))
+                }
                 Err(e) => {
                     log.write(&failed(
                         "putting this process's threads before the screen's programs",
@@ -104,7 +119,10 @@ impl Tuned {
         // SAFETY: a plain flag, for as long as this process lives or until
         // taken back on drop.
         let compositor = match unsafe { DwmEnableMMCSS(true) } {
-            Ok(()) => true,
+            Ok(()) => {
+                obtained.push("the desktop's compositor scheduled as multimedia");
+                true
+            }
             Err(e) => {
                 log.write(&failed(
                     "scheduling the desktop's compositor as multimedia",
@@ -113,6 +131,18 @@ impl Tuned {
                 false
             }
         };
+        log.write(&format!(
+            "set up for the session: {}",
+            if obtained.is_empty() {
+                "nothing".to_string()
+            } else {
+                obtained.join(", ")
+            }
+        ));
+        log.write(&format!(
+            "timers: {}",
+            late_wakes(Duration::from_millis(u64::from(TIMER_MS)))
+        ));
         Self {
             timer,
             priority_before,
@@ -153,12 +183,15 @@ impl ThreadTask {
     /// Windows refuses.
     pub(super) fn join(task: PCWSTR, log: &Log) -> Self {
         let mut index = 0;
+        // SAFETY: the name is one of ours, a terminated constant.
+        let name = unsafe { task.to_string() }.unwrap_or_default();
         // SAFETY: a task name Windows knows and a plain out value.
         let handle = match unsafe { AvSetMmThreadCharacteristicsW(task, &mut index) } {
-            Ok(handle) => Some(handle),
+            Ok(handle) => {
+                log.debug(&format!("this thread joined the multimedia class {name}"));
+                Some(handle)
+            }
             Err(e) => {
-                // SAFETY: the name is one of ours, a terminated constant.
-                let name = unsafe { task.to_string() }.unwrap_or_default();
                 log.write(&failed(&format!("joining the multimedia class {name}"), &e));
                 None
             }

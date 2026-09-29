@@ -8,8 +8,9 @@
 //! read for a while; locking that screen from inside it; pressing
 //! Ctrl+Alt+Del, which Windows takes from a service and from nothing
 //! else; asking the Wi-Fi to put a session first; reading the shape
-//! the pointer has on the desktop this program stands on; and counting
-//! how busy the computer is and what its network has carried and lost.
+//! the pointer has on the desktop this program stands on; counting
+//! how busy the computer is and what its network has carried and lost;
+//! and saying what the computer is.
 //!
 //! And what gets a program running at all: with no console flashing up,
 //! with administrator rights asked of the person, or when the person
@@ -29,6 +30,10 @@ mod counted;
 mod elevated;
 #[cfg(not(windows))]
 mod elsewhere;
+#[cfg(windows)]
+mod inspection;
+#[cfg(any(windows, test))]
+mod machine;
 #[cfg(windows)]
 mod onscreen;
 #[cfg(windows)]
@@ -51,10 +56,12 @@ pub use attention::{forget_it, let_it_be_pressed, press};
 pub use elevated::run_as_administrator;
 #[cfg(not(windows))]
 pub use elsewhere::{
-    SessionProcess, Vitals, errand, errand_code, lock_this_desktop, pointer_shape, press,
-    run_as_administrator, runs_in, session_on_screen, somebody_signed_in, start_a_helper,
-    start_at_sign_in, start_in_session, still_running, whoever_this_is,
+    SessionProcess, Vitals, describe_this_computer, errand, errand_code, lock_this_desktop,
+    pointer_shape, press, run_as_administrator, runs_in, session_on_screen, somebody_signed_in,
+    start_a_helper, start_at_sign_in, start_in_session, still_running, whoever_this_is,
 };
+#[cfg(windows)]
+pub use inspection::describe_this_computer;
 #[cfg(windows)]
 pub use onscreen::{
     SessionProcess, errand, errand_code, lock_this_desktop, runs_in, session_on_screen,

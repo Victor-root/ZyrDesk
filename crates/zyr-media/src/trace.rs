@@ -9,6 +9,7 @@
 //! second on the player can be laid side by side frame for frame.
 
 use std::fmt;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 /// How often a second is written out.
@@ -67,6 +68,29 @@ impl fmt::Display for Spread {
     }
 }
 
+/// How many waits are timed to tell how late a wait wakes.
+const WAKES_TIMED: u32 = 12;
+
+/// How late a timed wait wakes in this process, told for the journal.
+///
+/// A few waits of `wait` on a channel nothing is ever sent on, which is
+/// how the threads that wait for a picture or a command are woken. The
+/// system's timers decide how late, and only a wait shows what this
+/// process really gets from them, whatever it asked for.
+pub fn late_wakes(wait: Duration) -> String {
+    let (_kept, nothing) = mpsc::channel::<()>();
+    let mut late = Spread::default();
+    for _ in 0..WAKES_TIMED {
+        let began = Instant::now();
+        let _ = nothing.recv_timeout(wait);
+        late.add(began.elapsed().saturating_sub(wait));
+    }
+    format!(
+        "{WAKES_TIMED} waits of {} ms woke {late} ms late (median/95th/worst)",
+        wait.as_millis()
+    )
+}
+
 /// When the next second is to be written.
 ///
 /// Counted from the first thing that happened rather than from a clock
@@ -119,6 +143,15 @@ mod tests {
         spread.clear();
         spread.add_value(42.0);
         assert_eq!(spread.to_string(), "42.0/42.0/42.0");
+    }
+
+    #[test]
+    fn waits_are_told_late_by_as_much_as_the_timers_let_them_be() {
+        let began = Instant::now();
+        let told = late_wakes(Duration::from_millis(2));
+        assert!(began.elapsed() >= Duration::from_millis(2 * u64::from(WAKES_TIMED)));
+        assert!(told.starts_with("12 waits of 2 ms woke "), "{told}");
+        assert!(told.ends_with(" ms late (median/95th/worst)"), "{told}");
     }
 
     #[test]
