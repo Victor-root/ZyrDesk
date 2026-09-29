@@ -242,13 +242,13 @@ fn last_lines(path: &Path, within: &str, sift: &Sifting, named: &mut BTreeSet<St
     // Wider when something is being asked for, and by a good deal: what
     // is asked for is rare by definition, and a hundred lines about the
     // clipboard are spread across a session's whole journal rather than
-    // sitting at the end of it.
+    // sitting at the end of it. All of the file, then, since a file never
+    // holds more than the log lets it grow to.
     const READ_AT_MOST: u64 = 256 * 1024;
-    const READ_AT_MOST_WHEN_ASKED: u64 = 4 * 1024 * 1024;
     let read_at_most = if sift.takes_everything() {
         READ_AT_MOST
     } else {
-        READ_AT_MOST_WHEN_ASKED
+        crate::log::AT_MOST
     };
 
     let read = std::fs::File::open(path).and_then(|mut file| {
@@ -386,6 +386,30 @@ mod tests {
         // And what was left out is announced: a journal cut short in
         // silence reads like a complete one.
         assert!(kept.starts_with("(the beginning is not shown)"), "{kept}");
+
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_sift_reaches_back_through_all_of_a_long_file() {
+        let folder = a_folder_of_its_own("reach");
+        let path = folder.join("reach.log");
+
+        // The moment that matters at the very beginning of five
+        // megabytes, further back than the four a sift used to reach.
+        let mut written = String::from("2026-09-11 18:55:03 I [flow] the moment that matters\n");
+        while written.len() < 5 * 1024 * 1024 {
+            written.push_str("2026-09-11 18:56:00 D [flow] a second of no interest, for padding\n");
+        }
+        std::fs::write(&path, &written).unwrap();
+
+        let asked = Sifting::of("\"the moment that matters\"");
+        assert!(
+            read(&path, "reach", &asked).contains("the moment that matters"),
+            "not found"
+        );
+        // Without a sift only the end is read, where that moment is not.
+        assert!(!read(&path, "reach", &everything()).contains("the moment that matters"));
 
         std::fs::remove_dir_all(&folder).unwrap();
     }

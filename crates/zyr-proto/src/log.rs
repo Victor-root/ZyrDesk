@@ -64,12 +64,19 @@ const TIMESTAMP: &[BorrowedFormatItem<'static>] =
 /// A service runs for months, and a file nothing ever trims grows for
 /// exactly that long: reading it back into a window, or asking someone
 /// to send it, stops being reasonable long before anyone notices.
-const AT_MOST: u64 = 4 * 1024 * 1024;
+///
+/// Wide enough for a long session written as it is now, a second at a
+/// time and in full: at a few kilobytes a second, the last three
+/// quarters of an hour or so.
+pub(crate) const AT_MOST: u64 = 12 * 1024 * 1024;
 
 /// What is kept of the old lines when it is.
 ///
-/// The end, where whatever is being investigated lives.
-const KEPT: u64 = 256 * 1024;
+/// The end, where whatever is being investigated lives. Half the limit
+/// and not a small part of it, so that a session which ends just after a
+/// cut is not left with the last minute of itself: what is kept is the
+/// last twenty minutes or so of a session at sixty pictures a second.
+const KEPT: u64 = 6 * 1024 * 1024;
 
 /// What a line is filed under when nobody said.
 ///
@@ -80,10 +87,10 @@ pub const OTHERWISE: &str = "zyrdesk";
 
 /// The two voices a line can be written in, one letter each.
 ///
-/// One says what the product did, and is there in every build. The other
-/// is what a hunt wants and nothing else, and only a build made for
-/// hunting carries it. They sit in the same file, in the order things
-/// happened, because a hunt is exactly the moment the two are read
+/// One says what the product did. The other is what a hunt wants and
+/// nothing else. Every build writes both, and the letter is what lets
+/// the sifting tell them apart. They sit in the same file, in the order
+/// things happened, because a hunt is exactly the moment the two are read
 /// against each other.
 pub const SAYS: char = 'I';
 pub const HUNTS: char = 'D';
@@ -401,9 +408,10 @@ mod tests {
         {
             let mut file = log.file.lock().unwrap();
             let line = format!("{} filler of no interest\n", now());
-            let times = (AT_MOST / line.len() as u64) + 2;
+            let block = line.repeat(1_000);
+            let times = (AT_MOST / block.len() as u64) + 2;
             for _ in 0..times {
-                file.write_all(line.as_bytes()).unwrap();
+                file.write_all(block.as_bytes()).unwrap();
             }
         }
 

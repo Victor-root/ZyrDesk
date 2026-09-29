@@ -278,14 +278,27 @@ Les journaux des **deux PC**, pris **juste après** l'essai raté, sans rien red
 - sur le **PC hôte** : `engine gateway`. Les lignes `engine` sont celles du moteur lui-même : quels encodeurs il a trouvés, quel écran il filme, chaque flux qu'il ouvre. Les lignes `gateway` disent quand le service l'a lancé, et comment il s'est arrêté ;
 - sur le **PC client** : `player picture session`. Les lignes `player` et `picture` sont celles du lecteur : le décodage de chaque flux (`decoding stream …`), et ce qui a été perdu ou refusé.
 
-**Si l'image n'est pas fluide** (le bandeau dit 60 images par seconde, mais une fenêtre qu'on déplace avance par à-coups), ce sont les lignes écrites chaque seconde qui comptent ([MOTEUR.md](../MOTEUR.md), section 9) :
+**Si l'image n'est pas fluide** (le bandeau dit 60 images par seconde, mais une fenêtre qu'on déplace avance par à-coups, ou l'icône du lien s'allume), ce sont les lignes écrites chaque seconde qui comptent ([MOTEUR.md](../MOTEUR.md), section 9) :
 
 1. sur les deux PC, dans le journal, **Vider** puis **Confirmer** ;
-2. ouvrir la session, puis déplacer une fenêtre en rond sur l'hôte pendant 30 secondes, sans s'arrêter ;
+2. ouvrir la session, puis déplacer une fenêtre en rond sur l'hôte pendant 30 secondes, sans s'arrêter (ou refaire ce qui saccade), et noter l'heure d'une saccade ;
 3. terminer la session ;
-4. dans la boîte de tri, taper les noms, puis **Copier le tri** :
-   - sur le **PC hôte** : `pace engine tunnel wifi`. Les lignes `pace` disent, image par image, quand chacune est partie du moteur et ce qu'elle y a attendu ; les lignes `engine` disent, au début, si le pilote NVIDIA garde la carte à pleine vitesse ; les lignes `tunnel` ce qui a traversé le service, et ce que la connexion mesure du chemin ; les lignes `wifi` ce que la carte Wi-Fi a accepté pour la session, ou qu'aucune n'est connectée ;
-   - sur le **PC client** : `flow measures tunnel wifi`. Les lignes `flow` disent quand chaque image est arrivée, son décodage, et ce que l'écran en a vraiment montré ; les lignes `tunnel` et `wifi` la même chose que sur l'hôte, de ce côté-ci.
+4. dans la boîte de tri, taper ce texte, **le même sur les deux PC**, puis **Copier le tri** :
+
+   ```
+   flow measures picture badges player pace engine ffmpeg tunnel way vitals wifi session gateway
+   ```
+
+   Chaque mot est une partie du produit, et chaque PC ne rend que celles qu'il a : le client rend `flow`, `measures`, `picture`, `badges` et `player` (l'image reçue, décodée et montrée, les voyants), l'hôte `pace`, `engine` et `ffmpeg` (l'image capturée, encodée, envoyée), et les deux `tunnel`, `way`, `vitals` et `wifi` (le réseau, ce que fait l'ordinateur, la carte Wi-Fi), `session` et `gateway` (la vie de la session).
+
+Tout est dans ces lignes : une image perdue dit ce qu'elle avait et pourquoi elle a été abandonnée ; le débit produit par l'encodeur se lit contre le débit demandé ; la ligne `vitals` dit ce que l'ordinateur était en train de faire à la seconde de la saccade (processeur, programmes, paquets UDP jetés, carte réseau) ; `wifi` dit le signal et les changements de borne.
+
+**Une session longue** (plusieurs minutes) ne tient pas dans une copie : chaque PC ne rend que les 500 dernières lignes de chaque fichier. Alors, en deux temps :
+
+- d'abord l'**aperçu**, qui est petit : dans la boîte de tri, taper `-level:debug` ; ce sont les événements de la session, sans les lignes de chaque seconde. Ils disent ce qui s'est passé et **à quelle heure** ;
+- puis le **détail** des secondes qui comptent : le même texte que ci-dessus, précédé de l'heure de l'aperçu entre guillemets, à la dizaine de secondes près, par exemple `"09:58:1" flow measures picture badges player pace engine ffmpeg tunnel way vitals wifi session gateway`. **L'heure des journaux est l'heure universelle** (UTC), pas celle de Windows : en France, deux heures de moins l'été, une heure de moins l'hiver. Le plus sûr est de la recopier d'une ligne de l'aperçu.
+
+Les journaux gardent le détail d'au moins un quart d'heure ([D257](../DECISIONS.md)) : ce qui est plus vieux que ça n'est plus là.
 
 Dire aussi comment chaque PC était relié à Internet (câble, Wi-Fi, fibre, 4G) et la fréquence de l'écran du client (60 Hz, 144 Hz…).
 

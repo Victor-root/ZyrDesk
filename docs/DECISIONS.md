@@ -4146,6 +4146,24 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas sûr.** Rien de cela n'a tourné sur une vraie carte Wi-Fi. Certains pilotes ne donnent pas la force reçue ou le canal : la ligne ne les porte alors pas. Deux secondes est un choix prudent pour ne pas déranger la carte, pas une mesure ; si des coupures apparaissaient aux mêmes instants que ces lectures, le premier réflexe serait de les espacer.
 
+## D257. Les journaux gardent de quoi couvrir une longue session (2026-09-29, pendant MZ)
+
+> Septième et dernière étape de l'inventaire du journal ([D256](#d256-le-journal-suit-la-connexion-wi-fi-pendant-la-session-2026-09-29-pendant-mz)). Écrire chaque seconde en détail ne sert à rien si le fichier se coupe avant qu'on le copie.
+
+**Le constat.** Un fichier de journal qui dépasse 4 Mio est coupé et ne garde que ses derniers 256 Kio. Avec les lignes des étapes D250 à D256, un fichier de la fenêtre écrit de trois à quatre kilooctets par seconde à 60 images par seconde, et davantage à 144 : 4 Mio se remplissent en un quart d'heure, et juste après la coupure il ne reste qu'une minute de session. Une personne qui termine sa session à ce moment-là envoie un journal qui ne contient plus la saccade qu'elle cherche à montrer. C'est aussi ce que lisait la copie triée : elle ne remontait que sur 4 Mio, quelle que soit la taille du fichier.
+
+**Ce qui est fait.**
+
+- Un fichier n'est coupé qu'au-delà de 12 Mio, et il garde alors ses derniers 6 Mio : une vingtaine de minutes de détail à 60 images par seconde, en tout temps, et jusqu'à cinquante minutes avant la coupure suivante. La coupure recopie six mégaoctets une fois par heure environ, ce qui dure quelques millisecondes.
+- La copie triée lit désormais tout le fichier, qui ne peut pas dépasser la limite, au lieu de ses quatre derniers mégaoctets. Elle rend toujours au plus 500 lignes par fichier : c'est le tri qui dit lesquelles, et une heure entre guillemets permet d'aller chercher un moment précis dans tout ce qui est gardé.
+- Deux commentaires disaient encore que les lignes de chasse n'existent que dans un produit fait pour chasser. C'est faux depuis D191 : les deux voix sont écrites par toutes les versions. Ils le disent maintenant.
+
+**Comment l'utiliser.** [MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.md) : pour une session courte, un seul tri sur chaque ordinateur, le même ; pour une session longue, l'aperçu `-level:debug` d'abord, qui dit quand quelque chose s'est passé, puis le détail de ces secondes-là avec l'heure entre guillemets. L'heure des journaux est l'heure universelle.
+
+**Les essais.** Une coupure laisse le début du fichier annoncé comme retiré, la fin intacte et jamais une demi-ligne, avec les nouvelles limites.
+
+**Ce qui reste ouvert.** Le journal ne date qu'à la seconde. Chaque ligne de chaque seconde porte les images par leur numéro, et les images perdues ou en retard se retrouvent par ce numéro entre l'hôte et le lecteur, mais deux événements de la même seconde ne se remettent pas dans l'ordre par l'heure.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

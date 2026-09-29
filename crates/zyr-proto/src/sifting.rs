@@ -33,8 +33,8 @@
 //! - `level:debug` keeps only what was written for a hunt, and
 //!   `-level:debug` throws all of it away. There are two levels and no
 //!   more: what the product says of itself, and what only a hunt wants.
-//!   The second is written by a build made for hunting and by no other,
-//!   so in an ordinary build there is none of it to ask for.
+//!   Both are written by every build, so either can be asked for after
+//!   the fact.
 //! - a `-` in front of anything throws away what it names instead of
 //!   keeping it.
 //!
