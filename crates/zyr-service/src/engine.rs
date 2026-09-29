@@ -156,11 +156,19 @@ impl Engine {
 
     /// Serves the session from this computer's own screens again, if it
     /// was served from the one it grew.
+    ///
+    /// The engine is told to film the main screen even if that is what
+    /// it was last told: while the desktop was on the grown screen, the
+    /// main screen was that one, and a capture that never heard otherwise
+    /// goes on duplicating a screen that is asleep.
     pub fn no_longer_the_grown_screen(&self) -> Result<(), String> {
-        if !self.films_the_grown_screen() {
+        let mut heard = self.heard.lock().expect("session's engine");
+        if heard.film != Film::Grown {
             return Ok(());
         }
-        self.film(Film::Main)
+        heard.film = Film::Main;
+        heard.told = None;
+        self.film_if_it_changed(&mut heard)
     }
 
     /// The screens a session may ask to be served from: every screen the
@@ -435,6 +443,34 @@ mod tests {
         engine.no_longer_the_grown_screen().unwrap();
         assert!(!engine.films_the_grown_screen());
         assert_eq!(filmed(&mut told), vec![String::new()]);
+    }
+
+    #[test]
+    fn an_engine_told_the_main_screen_all_along_is_told_again_when_the_grown_one_goes() {
+        let (engine, mut told) = connected();
+        engine.film_now().unwrap();
+        engine.heard(ToService::Ready {
+            encodable: CodecSet::empty().with(VideoCodec::H264),
+            encoders: "libx264".to_string(),
+            displays: two_screens(),
+        });
+        // The grown screen never showed among the engine's screens, so
+        // the engine was never told its name: it has been filming "the
+        // main screen", which was the grown one for as long as the
+        // desktop was on it.
+        engine.film(Film::Grown).unwrap();
+        assert_eq!(filmed(&mut told), vec![String::new()]);
+
+        // The desktop is back on this computer's own screens: "the main
+        // screen" is another one, and the engine looks for it again.
+        engine.no_longer_the_grown_screen().unwrap();
+        assert_eq!(filmed(&mut told), vec![String::new()]);
+        assert!(engine.films_the_main_screen());
+
+        // A session that was never served from the grown screen has
+        // nothing to be told again.
+        engine.no_longer_the_grown_screen().unwrap();
+        assert!(filmed(&mut told).is_empty());
     }
 
     #[test]

@@ -45,6 +45,8 @@ mod platform;
 #[cfg(any(windows, test))]
 mod pointer;
 mod session;
+#[cfg(any(windows, test))]
+mod short_lived;
 mod sound;
 mod timeline;
 

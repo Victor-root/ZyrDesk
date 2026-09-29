@@ -14,7 +14,10 @@
 //! picture was frozen; a duplication that stops again at every picture
 //! is said at a measured pace. A screen that has vanished is waited for
 //! 3 s, for a mode change takes it out of the lists for a moment; after
-//! that, the main screen is filmed instead.
+//! that, the main screen is filmed instead. One that stops before giving
+//! a single image, again and again, is not made again at once each time:
+//! the tries are spaced, and the lists it was found in are no longer
+//! believed (`short_lived`).
 
 use std::thread;
 use std::time::{Duration, Instant};
@@ -54,6 +57,7 @@ use super::{Counter, failed};
 use crate::parts::{Aimed, Captured, Drawing, Feed, Screen, ScreenError};
 use crate::picture::{Rect, Size};
 use crate::pointer::{Kind, shape};
+use crate::short_lived::{Distrust, ShortLived};
 
 /// How often duplication is tried again at first after it stopped, and
 /// for how long.
@@ -144,6 +148,9 @@ pub(super) struct DuplicatedScreen {
     /// up again after each desktop switch is said once.
     described: String,
     filming: Option<Filming>,
+    /// What the screen was last aimed at: "" for the main screen, else a
+    /// screen's id.
+    asked: String,
     lost: Option<Lost>,
     /// Updates of the screen the system folded into the images given, not
     /// yet told.
@@ -152,6 +159,10 @@ pub(super) struct DuplicatedScreen {
     /// every picture for as long as a program holds them.
     losses: Seldom,
     returns: Seldom,
+    /// Duplications that stopped before giving an image, one after the
+    /// other, and the run of them said at a measured pace.
+    short_lived: ShortLived,
+    short_lived_said: Seldom,
     latest: Option<Latest>,
     pointer: Pointer,
     /// Last, so that the thread leaves its class once all the rest is
@@ -195,10 +206,13 @@ impl DuplicatedScreen {
             newer_refused: false,
             described: String::new(),
             filming: None,
+            asked: String::new(),
             lost: None,
             folded: 0,
             losses: Seldom::default(),
             returns: Seldom::default(),
+            short_lived: ShortLived::default(),
+            short_lived_said: Seldom::default(),
             latest: None,
             pointer: Pointer::default(),
             _task: task,
@@ -213,6 +227,18 @@ impl DuplicatedScreen {
                 Ok(factory) => self.factory = factory,
                 Err(e) => self.log.write(&e.to_string()),
             }
+        }
+        filmable(&self.factory, &self.log)
+    }
+
+    /// The screens now, from a new factory: DXGI's word that its lists
+    /// are current is not taken. Windows has been seen to say so while a
+    /// screen it lists gave nothing but a duplication that stopped at its
+    /// first image.
+    fn fresh_screens(&mut self) -> Vec<Filmable> {
+        match new_factory() {
+            Ok(factory) => self.factory = factory,
+            Err(e) => self.log.write(&e.to_string()),
         }
         filmable(&self.factory, &self.log)
     }
@@ -253,6 +279,7 @@ impl DuplicatedScreen {
         let (duplication, rotation, refused) = match duplicated {
             Ok((duplication, way)) => {
                 self.lost = None;
+                self.short_lived.made();
                 // SAFETY: a getter on a live duplication.
                 let desc = unsafe { duplication.GetDesc() };
                 self.describe(&gdi, way, &desc);
@@ -379,11 +406,20 @@ impl DuplicatedScreen {
             ),
             e,
         );
-        if let Some(unsaid) = self.losses.allow(Instant::now()) {
+        let now = Instant::now();
+        if let Some(unsaid) = self.losses.allow(now) {
             self.log
                 .write(&format!("{why} ({unsaid} more stops unsaid)"));
         }
-        self.lost = Some(Lost::now(why));
+        let mut lost = Lost::now(why);
+        // One that stops before giving anything is not tried again at
+        // once, over and over: the tries are spaced for as long as the
+        // run lasts.
+        if self.short_lived.stopped(now) {
+            lost.since = self.short_lived.since().unwrap_or(now);
+            lost.next_try = now + self.short_lived.wait(now);
+        }
+        self.lost = Some(lost);
     }
 
     /// Takes duplication up again, until `until` at the latest.
@@ -430,6 +466,12 @@ impl DuplicatedScreen {
         let Some(output) = self.filming.as_ref().map(|filming| filming.output.clone()) else {
             return Ok(None);
         };
+        // What was kept from the screens is trusted less the more
+        // duplications in a row stop before giving an image.
+        let distrust = self.short_lived.distrust();
+        if distrust != Distrust::Nothing {
+            self.say_it_keeps_stopping(&output, distrust);
+        }
         // The device is gone (a driver update, a card reset): a new one on
         // the same card. Said once it is made; until then, with the other
         // refusals, at their pace rather than at every try.
@@ -451,6 +493,11 @@ impl DuplicatedScreen {
                     }
                 }
             }
+        } else if distrust == Distrust::ListsAndDevice
+            && let Err(e) = self.remake_device(&output)
+            && let Some(lost) = &mut self.lost
+        {
+            lost.last_refusal = format!("another Direct3D device cannot be made: {e}");
         }
         let Some(filming) = &self.filming else {
             return Ok(None);
@@ -458,9 +505,12 @@ impl DuplicatedScreen {
         // The same screen on the same card, while the lists it was found
         // in hold: after a desktop switch, what was filmed is filmed again
         // straight away. Once they no longer hold, it is looked for in new
-        // lists at every try, so that one gone for good is given up.
+        // lists at every try, so that one gone for good is given up. And
+        // so it is when duplications keep stopping at once, whatever the
+        // lists say.
         // SAFETY: a question to a live factory.
-        let screen = if unsafe { filming.lists.IsCurrent() }.as_bool()
+        let screen = if distrust == Distrust::Nothing
+            && unsafe { filming.lists.IsCurrent() }.as_bool()
             && filming.output.card.AdapterLuid == self.device.card
         {
             Filmable {
@@ -468,7 +518,7 @@ impl DuplicatedScreen {
                 output: filming.output.clone(),
             }
         } else {
-            match self.screen_again(&filming.display.id.clone()) {
+            match self.screen_again(&filming.display.id.clone(), distrust != Distrust::Nothing) {
                 Some(screen) => screen,
                 None => return Ok(None),
             }
@@ -491,8 +541,22 @@ impl DuplicatedScreen {
 
     /// The screen `id` in DXGI's lists made again, or the main screen
     /// once it has been gone for long enough.
-    fn screen_again(&mut self, id: &str) -> Option<Filmable> {
-        let mut screens = self.screens();
+    ///
+    /// `fresh` reads the lists from a new factory, and a session that
+    /// asked for the main screen gets the main screen of the moment: the
+    /// one it was is what the capture was stuck on.
+    fn screen_again(&mut self, id: &str, fresh: bool) -> Option<Filmable> {
+        let mut screens = if fresh {
+            self.fresh_screens()
+        } else {
+            self.screens()
+        };
+        if fresh && self.asked.is_empty() {
+            if let Some(lost) = &mut self.lost {
+                lost.missing_since = None;
+            }
+            return chosen(screens, "");
+        }
         match screens.iter().position(|screen| screen.display.id == id) {
             Some(at) => {
                 if let Some(lost) = &mut self.lost {
@@ -519,6 +583,47 @@ impl DuplicatedScreen {
                 Some(main)
             }
         }
+    }
+
+    /// Says, at a measured pace, that duplications keep stopping before
+    /// they give an image, and what is done about it.
+    fn say_it_keeps_stopping(&mut self, output: &Output, distrust: Distrust) {
+        let Some(unsaid) = self.short_lived_said.allow(Instant::now()) else {
+            return;
+        };
+        // SAFETY: a getter on a live output.
+        let now = unsafe { output.output.GetDesc() };
+        let standing = match now {
+            Ok(desc) => format!(
+                "{} to the desktop, {}x{} at {},{}",
+                if desc.AttachedToDesktop.as_bool() {
+                    "attached"
+                } else {
+                    "not attached"
+                },
+                desc.DesktopCoordinates
+                    .right
+                    .saturating_sub(desc.DesktopCoordinates.left),
+                desc.DesktopCoordinates
+                    .bottom
+                    .saturating_sub(desc.DesktopCoordinates.top),
+                desc.DesktopCoordinates.left,
+                desc.DesktopCoordinates.top
+            ),
+            Err(e) => failed("describing it", &e),
+        };
+        self.log.write(&format!(
+            "{} stopped {} times in a row before giving an image ({standing}, desktop {}): the \
+             screens are listed again{} ({unsaid} more unsaid)",
+            output.gdi_name(),
+            self.short_lived.in_a_row(),
+            self.desktop.name(),
+            if distrust == Distrust::ListsAndDevice {
+                " and the Direct3D device is made again"
+            } else {
+                ""
+            }
+        ));
     }
 
     /// A new device, on the card of `output`: everything made on the one
@@ -681,7 +786,8 @@ impl Screen for DuplicatedScreen {
     }
 
     fn aim(&mut self, display: &str) -> Result<Aimed, ScreenError> {
-        let screens = self.screens();
+        self.asked = display.to_string();
+        let screens = self.fresh_screens();
         let screen = chosen(screens, display)
             .ok_or_else(|| ScreenError(Fact::new("engine.no_screen_on")))?;
         if let Some(why) = self.film(screen, QUICK_FOR)? {
@@ -733,6 +839,7 @@ impl Screen for DuplicatedScreen {
         let acquired = unsafe { duplication.AcquireNextFrame(timeout, &mut info, &mut resource) };
         match acquired {
             Ok(()) => {
+                self.short_lived.works();
                 let taken = self.take(&info, resource);
                 // SAFETY: the frame acquired above.
                 if let Err(e) = unsafe { duplication.ReleaseFrame() } {
@@ -740,7 +847,10 @@ impl Screen for DuplicatedScreen {
                 }
                 taken
             }
-            Err(e) if e.code() == DXGI_ERROR_WAIT_TIMEOUT => Ok(Captured::Nothing),
+            Err(e) if e.code() == DXGI_ERROR_WAIT_TIMEOUT => {
+                self.short_lived.works();
+                Ok(Captured::Nothing)
+            }
             Err(e) if losing(e.code()) => {
                 self.lose(&e);
                 self.recover(until)

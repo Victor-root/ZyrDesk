@@ -4178,6 +4178,31 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui reste ouvert.** Le client peut toujours se reconnecter de lui-même à la main, et l'hôte ne garde pas la mémoire de l'avoir renvoyé : une exclusion qui dure, jusqu'à ce que l'hôte la lève, serait une autre décision, sur les appareils autorisés.
 
+## D259. Passer à la résolution de l'hôte en pleine session ne fige plus l'image (2026-09-29, pendant MZ)
+
+> Dit par Victor : en passant, pendant une session, de la résolution du client à celle de l'hôte, le flux a gelé. Les deux journaux, lus en entier, montrent un moteur qui refait sans fin la même duplication d'écran.
+
+**Le constat.** Le menu passe à « hôte ». Le service de l'hôte rend son bureau et rendort l'écran virtuel, puis dit que l'ordinateur montre du 1920x1080. Côté moteur, la capture perd sa duplication à cet instant (`0x887A0026`, l'accès est perdu) et la reprend en quatre millisecondes. Ensuite il n'y a plus une seule image jusqu'à la fin de la session, dix-sept secondes plus tard, et le moteur perd et refait la duplication environ 680 fois par seconde (6 842 arrêts non dits en dix secondes). Le processeur du moteur monte à trois quarts d'un cœur, celui de `csrss` aussi. Rien n'est écrit des trois lignes qui suivent d'ordinaire un changement d'écran : le moteur n'a pas entendu « filme cet écran », n'a pas relu la liste des écrans, n'a pas changé de cible. Il refaisait la duplication de la sortie qu'il avait gardée.
+
+**Ce que le code en dit, et c'est une lecture, pas une mesure.** Trois choses s'additionnent.
+
+- Le service ne dit au moteur de filmer « l'écran principal » que si ce n'est pas ce qu'il lui a dit en dernier. Or tant que le bureau est sur l'écran virtuel, l'écran principal est celui-là : un moteur qui n'a jamais su nommer l'écran virtuel a entendu « l'écran principal » pendant toute la session. Au retour sur l'écran réel, rien n'est renvoyé, et sa capture reste sur la sortie de l'écran endormi.
+- Une duplication qui meurt à sa première image était refaite aussitôt, sur la même sortie tant que les listes de DXGI se disaient à jour, sans pause ni fin.
+- Rien de tout cela ne se voyait ailleurs que dans le processeur : la capture « en reprise » ne donne pas l'alarme d'un écran muet.
+
+**Ce qui est fait.**
+
+- Le service renvoie l'ordre de filmer l'écran principal chaque fois qu'une session cesse d'être servie par l'écran que l'ordinateur fait pousser, même si c'est ce que le moteur a entendu en dernier : l'écran principal n'est plus le même.
+- Une duplication qui meurt avant sa première image n'est plus refaite en boucle. Les essais s'espacent dès la deuxième fois de suite (5 ms, puis 25 ms au bout de 400 ms). Dès la troisième, la liste des écrans est relue d'une fabrique DXGI neuve, sans croire sa parole d'être à jour, et une session qui a demandé « l'écran principal » filme l'écran principal du moment. Tous les dix arrêts, le périphérique Direct3D est refait aussi. Une duplication qui a donné une image, ou attendu la suivante sans se plaindre, ferme la série : un écran qui s'arrête à chaque image parce qu'un programme le tient garde le comportement d'avant.
+- Chaque ordre de filmer relit les écrans d'une fabrique neuve.
+- Une ligne du journal, à rythme mesuré, dit la série : combien de fois de suite, si la sortie est rattachée au bureau, sa taille et sa place, et le bureau où l'on est.
+
+**Ce qui n'est pas prouvé.** Le journal montre l'ordre qui manque et la boucle, pas ce que Windows répondait à chaque duplication. Si l'image gèle encore après ce changement, la ligne nouvelle dit l'état de la sortie au moment où elle meurt, et c'est elle qu'il faut lire.
+
+**Les essais.** Le service renvoie l'ordre à un moteur à qui l'on n'avait jamais nommé l'écran endormi, et pas à un moteur que rien n'a servi de l'écran virtuel. La règle des séries (espacement, relecture, périphérique refait une fois par dixième, série fermée par une duplication qui marche) est essayée avec l'heure donnée en argument. Rien de tout cela n'a tourné sur un vrai Windows.
+
+**Ce qui se voit.** Passer à la résolution de l'hôte en pleine session remet l'image dans la seconde, et un écran qui refuse de se laisser dupliquer n'emballe plus le processeur.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
