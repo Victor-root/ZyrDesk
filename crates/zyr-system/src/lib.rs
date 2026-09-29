@@ -27,18 +27,20 @@ mod pointer;
 mod wifi;
 
 use std::fmt;
+use std::path::Path;
 use std::time::Duration;
 
 #[cfg(windows)]
 pub use attention::{forget_it, let_it_be_pressed, press};
 #[cfg(not(windows))]
 pub use elsewhere::{
-    errand, errand_code, lock_this_desktop, pointer_shape, press, runs_in, session_on_screen,
-    somebody_signed_in, start_a_helper, still_running, whoever_this_is,
+    SessionProcess, errand, errand_code, lock_this_desktop, pointer_shape, press, runs_in,
+    session_on_screen, somebody_signed_in, start_a_helper, start_in_session, still_running,
+    whoever_this_is,
 };
 #[cfg(windows)]
 pub use onscreen::{
-    Launch, SessionProcess, errand, errand_code, lock_this_desktop, runs_in, session_on_screen,
+    SessionProcess, errand, errand_code, lock_this_desktop, runs_in, session_on_screen,
     somebody_signed_in, start_a_helper, start_in_session, whoever_this_is,
 };
 #[cfg(windows)]
@@ -46,6 +48,17 @@ pub use pointer::pointer_shape;
 pub use wifi::{Favouring, favour_latency};
 #[cfg(windows)]
 pub use zyr_win32::still_running;
+
+/// A program to start in another session.
+pub struct Launch<'a> {
+    pub exe: &'a Path,
+    pub arguments: &'a [String],
+    pub working_dir: Option<&'a Path>,
+    /// Where what it writes on its console goes.
+    pub console: &'a Path,
+    /// The line that marks, in that file, where this run begins.
+    pub starting: &'a str,
+}
 
 /// How long an errand took, in its two halves.
 ///

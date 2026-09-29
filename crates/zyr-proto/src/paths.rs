@@ -106,6 +106,16 @@ pub fn logs_dir() -> PathBuf {
     data_dir().join("logs")
 }
 
+/// Where the service writes what it does.
+///
+/// Named here rather than inside the service because more than the
+/// service writes into it: the errands and helpers it starts in the
+/// session on screen are the same program, and what they have to say
+/// belongs in the same journal.
+pub fn service_log() -> PathBuf {
+    logs_dir().join("service.log")
+}
+
 /// What this computer could reach outside itself while a session ran.
 ///
 /// Its own file, and not a few lines in the service's journal: it holds

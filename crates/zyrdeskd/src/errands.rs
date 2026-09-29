@@ -234,7 +234,7 @@ fn the_way_named_in(arguments: impl Iterator<Item = String>) -> Option<bool> {
 /// number would tell nobody which of them happened.
 pub fn move_the_speakers(quiet: bool) -> u32 {
     let said = |what: String| {
-        if let Ok(log) = zyr_proto::log::Log::open(&crate::service::log_path()) {
+        if let Ok(log) = zyr_proto::log::Log::open(&paths::service_log()) {
             log.about(TAG).write(&what);
         }
     };
@@ -428,7 +428,7 @@ pub fn do_this_to_the_desk(asked: Desk) {
             (screen.wide, screen.high, screen.scale),
         ),
     };
-    if let Ok(log) = zyr_proto::log::Log::open(&crate::service::log_path()) {
+    if let Ok(log) = zyr_proto::log::Log::open(&paths::service_log()) {
         let log = log.about(TAG);
         for line in said {
             log.write(&line);

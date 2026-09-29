@@ -31,17 +31,16 @@
 //! that stops asking, or that stops altogether, leaves nothing behind for
 //! more than a few seconds. A machine nobody is watching reads nothing.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. The shape of it stays compiled and tested everywhere, and the
-// reading itself is the one part that cannot be.
+// Outside Windows the service does not run, and nothing asks for the
+// shape. It stays compiled and tested everywhere all the same.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use zyr_proto::log::Log;
 use zyr_proto::session::Pointer;
+
+use crate::keeper::{Keeper, Timing};
 
 /// What this module's lines are filed under.
 const TAG: &str = "pointer";
@@ -71,11 +70,12 @@ const START_ANOTHER_AFTER: Duration = Duration::from_secs(7);
 /// How long the service goes on keeping a helper after the last question.
 const AFTER_THE_LAST_QUESTION: Duration = Duration::from_secs(2);
 
-/// Whether the thread that keeps a helper alive is running.
-static KEEPING: AtomicBool = AtomicBool::new(false);
-
-/// When the last question came, so the keeper knows when to stop.
-static ASKED: Mutex<Option<Instant>> = Mutex::new(None);
+/// The keeping of the helpers that read it.
+static KEEPER: Keeper = Keeper::new(Timing {
+    look_every: READ_EVERY,
+    start_another_after: START_ANOTHER_AFTER,
+    after_the_last_question: AFTER_THE_LAST_QUESTION,
+});
 
 /// The shape the pointer has right now.
 ///
@@ -86,8 +86,7 @@ static ASKED: Mutex<Option<Instant>> = Mutex::new(None);
 /// more than an answer that holds up the channel it travels on.
 pub fn shape(log: &Log) -> Pointer {
     let log = &log.about(TAG);
-    *ASKED.lock().expect("last question") = Some(Instant::now());
-    if !KEEPING.swap(true, Ordering::SeqCst) {
+    if KEEPER.asked() {
         keep_a_helper(log.clone());
     }
     written_shape()
@@ -101,51 +100,18 @@ fn written_shape() -> Pointer {
         .unwrap_or_default()
 }
 
-/// Whether the last question is far enough behind to stop.
-fn nobody_is_asking() -> bool {
-    ASKED
-        .lock()
-        .expect("last question")
-        .is_none_or(|asked| asked.elapsed() > AFTER_THE_LAST_QUESTION)
-}
-
 /// Keeps a helper reading in the session that owns the screen, for as
 /// long as anybody is asking.
-///
-/// A thread of its own because starting a program in another session
-/// takes milliseconds, and the threads that answer the far computer are
-/// shared with everything else this service does.
-#[cfg(windows)]
 fn keep_a_helper(log: Log) {
-    let log = log.about(TAG);
     std::thread::spawn(move || {
         log.write("a session is asking what shape this computer's pointer has");
-        let mut started: Option<Instant> = None;
-        let mut refused = false;
-        while !nobody_is_asking() {
-            if started.is_none_or(|at| at.elapsed() > START_ANOTHER_AFTER) {
-                match crate::errands::start_reading_the_pointer() {
-                    Ok(()) => {
-                        if started.is_none() {
-                            log.write("reading it from the session that owns the screen");
-                        }
-                        refused = false;
-                        started = Some(Instant::now());
-                    }
-                    // Said once and not every second: a machine at its
-                    // sign-in screen has no session to read from, and
-                    // that is a state it can sit in for hours.
-                    Err(e) => {
-                        if !refused {
-                            refused = true;
-                            log.write(&format!("nothing can read the pointer here: {e}"));
-                        }
-                        started = None;
-                    }
-                }
-            }
-            std::thread::sleep(READ_EVERY);
-        }
+        KEEPER.keep(
+            crate::errands::start_reading_the_pointer,
+            || true,
+            || false,
+            "read the pointer",
+            &log,
+        );
         log.write(&format!(
             "nobody is asking any more, the last shape read was {}",
             written_shape()
@@ -154,13 +120,8 @@ fn keep_a_helper(log: Log) {
         // ordinary pointer rather than on whatever shape this one was
         // left under.
         let _ = std::fs::remove_file(zyr_proto::paths::pointer_here());
-        KEEPING.store(false, Ordering::SeqCst);
+        KEEPER.over();
     });
-}
-
-#[cfg(not(windows))]
-fn keep_a_helper(_log: Log) {
-    KEEPING.store(false, Ordering::SeqCst);
 }
 
 /// Reads the pointer of the desktop this program is standing on, and
@@ -169,7 +130,6 @@ fn keep_a_helper(_log: Log) {
 /// This is the helper, and it only ever runs in the session that owns the
 /// screen: started anywhere else it reads a desktop with no pointer on
 /// it. It ends by itself so that nothing has to end it.
-#[cfg(windows)]
 pub fn follow_the_pointer_here() {
     let until = Instant::now() + HELPER_LIVES;
     let mut written = None;
@@ -188,25 +148,9 @@ pub fn follow_the_pointer_here() {
     }
 }
 
-#[cfg(not(windows))]
-pub fn follow_the_pointer_here() {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn nobody_asks_as_long_as_nobody_has_asked() {
-        // That is what decides that a computer nobody is watching
-        // reads nothing at all: with no question, no helper is started
-        // again and the last one goes out by itself.
-        *ASKED.lock().unwrap() = None;
-        assert!(nobody_is_asking());
-        *ASKED.lock().unwrap() = Some(Instant::now());
-        assert!(!nobody_is_asking());
-        *ASKED.lock().unwrap() = Instant::now().checked_sub(AFTER_THE_LAST_QUESTION * 2);
-        assert!(nobody_is_asking());
-    }
 
     #[test]
     fn a_helper_is_restarted_before_the_previous_one_dies() {

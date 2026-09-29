@@ -40,7 +40,7 @@ use zyr_proto::paths;
 
 use crate::account::Account;
 use crate::control::{Answering, Desk};
-use crate::gateway::{Gateway, Launcher};
+use crate::gateway::Gateway;
 use crate::machine::{Hosting, Machine};
 use crate::preferences::Remembered;
 use crate::ways::Ways;
@@ -81,20 +81,6 @@ const COMING_BACK: Duration = Duration::from_secs(60);
 /// is refused again for a while.
 const SCREEN_WATCH: Duration = Duration::from_secs(2);
 
-/// Identifier of the session attached to the screen, when there is one.
-#[cfg(windows)]
-fn screen_session() -> Option<u32> {
-    zyr_system::session_on_screen()
-}
-
-/// Outside Windows there is no console session, and no service either.
-/// The supervisor stays compiled and tested everywhere, its logic having
-/// nothing platform-specific about it.
-#[cfg(not(windows))]
-fn screen_session() -> Option<u32> {
-    Some(0)
-}
-
 /// What the screen shows of ZyrDesk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Seen {
@@ -108,7 +94,6 @@ enum Seen {
 }
 
 /// The product's window, a program beside this one.
-#[cfg(windows)]
 const THE_WINDOW: &str = "ZyrDesk.exe";
 
 /// What the screen of that session shows of ZyrDesk.
@@ -117,7 +102,6 @@ const THE_WINDOW: &str = "ZyrDesk.exe";
 /// starts to the moment it ends, however it ends: running in the session
 /// on screen, it is in front of whoever sits at this computer. Known by
 /// its whole path, beside this program, and not by its name alone.
-#[cfg(windows)]
 fn seen_in(session: u32) -> Result<Seen, String> {
     let the_window = std::env::current_exe()
         .map_err(|e| e.to_string())?
@@ -132,13 +116,6 @@ fn seen_in(session: u32) -> Result<Seen, String> {
             Seen::NobodySignedIn
         },
     )
-}
-
-/// Outside Windows there is no screen and no service: the supervisor
-/// stays compiled and tested everywhere, and nothing is hidden there.
-#[cfg(not(windows))]
-fn seen_in(_session: u32) -> Result<Seen, String> {
-    Ok(Seen::Shown)
 }
 
 /// Whether this computer may be taken over, from what its screen shows
@@ -194,37 +171,11 @@ impl Watched {
     }
 }
 
-/// How each session's engine is started in that session.
-#[cfg(windows)]
-fn launcher(session: u32) -> Arc<dyn Launcher> {
-    Arc::new(crate::errands::ServingInSession::new(session))
-}
-
-#[cfg(not(windows))]
-fn launcher(_session: u32) -> Arc<dyn Launcher> {
-    Arc::new(crate::gateway::NotHere)
-}
-
-/// Puts the screen this computer grew for itself back to sleep.
-///
-/// Answers whether it really went: a refusal has to be tried again, and
-/// the caller is the only one that knows when.
-#[cfg(windows)]
-fn put_the_grown_screen_away(log: &Log, still_nobody: &dyn Fn() -> bool) -> bool {
-    crate::screen::back_to_sleep(log, still_nobody)
-}
-
-#[cfg(not(windows))]
-fn put_the_grown_screen_away(_log: &Log, _still_nobody: &dyn Fn() -> bool) -> bool {
-    true
-}
-
 /// Puts this computer's desk back the way it was noted before a session
 /// took it, from the session that owns the screen.
 ///
 /// Answers whether it really went back: a refusal has to be tried again,
 /// and the caller is the only one that knows when.
-#[cfg(windows)]
 fn put_the_desk_back(log: &Log) -> bool {
     // The desk first and the grown screen after it, and that order is the
     // whole of the safety. A session that borrowed the grown screen has
@@ -241,14 +192,13 @@ fn put_the_desk_back(log: &Log) -> bool {
     } else {
         the_desk_as_it_was(log)
     };
-    if !screen_asleep() {
-        put_the_grown_screen_away(log, &|| true);
+    if !crate::screen::asleep() {
+        crate::screen::back_to_sleep(log, &|| true);
     }
     back
 }
 
 /// Puts back what was noted, saying whether it really went back.
-#[cfg(windows)]
 fn the_desk_as_it_was(log: &Log) -> bool {
     match crate::errands::give_the_desk_back() {
         Ok(took) => {
@@ -266,15 +216,6 @@ fn the_desk_as_it_was(log: &Log) -> bool {
             false
         }
     }
-}
-
-#[cfg(not(windows))]
-fn put_the_desk_back(_log: &Log) -> bool {
-    true
-}
-
-fn screen_asleep() -> bool {
-    crate::screen::asleep()
 }
 
 /// Stop order, shared with whatever commands the service.
@@ -474,7 +415,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             ffmpegless = false;
         }
 
-        let Some(session) = screen_session() else {
+        let Some(session) = zyr_system::session_on_screen() else {
             // Between two sign-ins, no session owns the screen. An engine
             // started then would capture nothing, so the door waits.
             if !screenless {
@@ -643,13 +584,14 @@ fn one_door_life(session: u32, around: &Around<'_>) -> Result<Closed, String> {
              back",
         );
         put_the_desk_back(log);
-    } else if !screen_asleep() {
+    } else if !crate::screen::asleep() {
         log.write("a screen was left awake by a run that did not finish, putting it back");
-        put_the_grown_screen_away(log, &|| true);
+        crate::screen::back_to_sleep(log, &|| true);
     }
 
     let wire = machine.remembered.wire();
-    let gateway = Gateway::open(runtime, launcher(session), (*machine).clone(), log)
+    let launcher = Arc::new(crate::errands::ServingInSession::new(session));
+    let gateway = Gateway::open(runtime, launcher, (*machine).clone(), log)
         .map_err(|e| format!("the tunnel could not be opened: {e}"))?;
     machine.hosting.open();
     log.write(&format!(
@@ -768,7 +710,7 @@ fn watch_the_door(
             }
         }
 
-        if screen_session() != Some(session) {
+        if zyr_system::session_on_screen() != Some(session) {
             return Closed::SessionChanged;
         }
         std::thread::sleep(WATCH_PERIOD);

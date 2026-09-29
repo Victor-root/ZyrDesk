@@ -12,13 +12,10 @@
 //! serve a screen bigger than its own properly. That is worth saying out
 //! loud at every step and worth failing not one single thing over.
 
-#[cfg(windows)]
 use zyr_proto::log::Log;
-#[cfg(windows)]
 use zyr_proto::paths;
 
 /// What this module's lines are filed under.
-#[cfg(windows)]
 const TAG: &str = "screen";
 
 /// Puts the virtual screen on this computer, if it is not on it already.
@@ -101,7 +98,6 @@ pub fn put_in_place(log: Option<&Log>) {
 /// The size is settled on the way, because waking is when the driver
 /// reads the sizes written down for it and there is no second chance
 /// until the next wake.
-#[cfg(windows)]
 pub fn wake_for_a_session(size: (u32, u32)) -> Result<Vec<String>, String> {
     let (width, height) = size;
     let mode = zyr_screen::Mode::new(width, height, SESSION_RATE);
@@ -117,7 +113,6 @@ pub fn wake_for_a_session(size: (u32, u32)) -> Result<Vec<String>, String> {
 /// session can open inside it. Asked only at the start, the screen was
 /// taken away from a session that had just asked for it, and the wake
 /// that followed found a device still being stopped.
-#[cfg(windows)]
 pub fn sleep_after_a_session(still_nobody: &dyn Fn() -> bool) -> Result<Vec<String>, String> {
     zyr_screen::go_to_sleep(zyr_screen::shipped(), still_nobody)
         .map(|done| done.steps)
@@ -131,7 +126,6 @@ pub fn sleep_after_a_session(still_nobody: &dyn Fn() -> bool) -> Result<Vec<Stri
 /// end of a session is exactly what the desk going home is doing, so a
 /// refusal here is ordinary and means try again in a moment, never give
 /// up.
-#[cfg(windows)]
 pub fn back_to_sleep(log: &Log, still_nobody: &dyn Fn() -> bool) -> bool {
     let log = &log.about(TAG);
     match sleep_after_a_session(still_nobody) {
@@ -157,14 +151,8 @@ pub fn back_to_sleep(log: &Log, still_nobody: &dyn Fn() -> bool) -> bool {
 
 /// Whether it is asleep right now, and `true` where there is none at all:
 /// both mean there is no virtual screen to film.
-#[cfg(windows)]
 pub fn asleep() -> bool {
     !zyr_screen::awake(zyr_screen::shipped()).is_ok_and(|awake| awake == Some(true))
-}
-
-#[cfg(not(windows))]
-pub fn asleep() -> bool {
-    true
 }
 
 /// Rate the virtual screen is offered at.
@@ -175,7 +163,6 @@ pub fn asleep() -> bool {
 /// engine can find something new to capture. Sixty covers every desktop,
 /// and a session asking for more is served by the engine resending, which
 /// is the setting that already exists for it.
-#[cfg(windows)]
 const SESSION_RATE: u32 = 60;
 
 /// Takes it back off, along with everything that pointed at it.

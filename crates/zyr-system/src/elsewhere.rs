@@ -1,13 +1,15 @@
 //! What there is of all this outside Windows: no session holds a screen,
 //! so nothing is started in one, locked, pressed or read there.
 
+use std::convert::Infallible;
 use std::io;
 use std::path::Path;
+use std::time::Duration;
 
 use zyr_proto::log::Log;
 use zyr_proto::session::Pointer;
 
-use crate::{Errand, Whose};
+use crate::{Errand, Launch, Whose};
 
 fn not_here() -> io::Error {
     io::Error::new(
@@ -30,6 +32,28 @@ pub fn somebody_signed_in(_session: u32) -> io::Result<bool> {
 
 pub fn whoever_this_is() -> String {
     "nobody Windows would name, this is not Windows".to_string()
+}
+
+/// A program started in a session on screen, which never exists here.
+#[derive(Debug)]
+pub struct SessionProcess(Infallible);
+
+impl SessionProcess {
+    pub fn process(&self) -> u32 {
+        match self.0 {}
+    }
+
+    pub fn gone(&self) -> bool {
+        match self.0 {}
+    }
+
+    pub fn let_go(self, _within: Duration) -> io::Result<Option<u32>> {
+        match self.0 {}
+    }
+}
+
+pub fn start_in_session(_launch: &Launch, _session: u32) -> io::Result<SessionProcess> {
+    Err(not_here())
 }
 
 pub fn errand(_arguments: &[String], _refused: &str) -> io::Result<Errand> {

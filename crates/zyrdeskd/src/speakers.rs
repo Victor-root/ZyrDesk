@@ -160,19 +160,8 @@ fn what_is_owed(owed: bool, log: &Log) {
 /// own: which device the desktop plays to depends on who is signed in,
 /// and a service asking the question in its own session names a device
 /// nobody is listening to.
-#[cfg(windows)]
 fn moved(quiet: bool) -> std::io::Result<bool> {
     crate::errands::set_the_speakers(quiet)
-}
-
-/// Outside Windows there is no service and no session on a screen. The
-/// rest of this file stays compiled and tested everywhere, having
-/// nothing platform-specific about it.
-#[cfg(not(windows))]
-fn moved(_quiet: bool) -> std::io::Result<bool> {
-    Err(std::io::Error::other(
-        "this computer has no speakers to mute this way",
-    ))
 }
 
 #[cfg(test)]

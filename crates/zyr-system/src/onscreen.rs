@@ -55,7 +55,7 @@ use windows_sys::Win32::System::Threading::{
 };
 use zyr_win32::{Handle, image_of, read_wide, refusal_of, wide};
 
-use crate::{Errand, Whose};
+use crate::{Errand, Launch, Whose};
 
 /// Value Windows returns when no session is attached to the screen.
 const NO_SESSION: u32 = 0xFFFF_FFFF;
@@ -183,17 +183,6 @@ unsafe fn wide_text(text: *const u16) -> String {
     }
     // Safe: the letters just counted.
     String::from_utf16_lossy(unsafe { std::slice::from_raw_parts(text, length) })
-}
-
-/// A program to start in another session.
-pub struct Launch<'a> {
-    pub exe: &'a Path,
-    pub arguments: &'a [String],
-    pub working_dir: Option<&'a Path>,
-    /// Where what it writes on its console goes.
-    pub console: &'a Path,
-    /// The line that marks, in that file, where this run begins.
-    pub starting: &'a str,
 }
 
 /// Environment block, given back to the system at the end.

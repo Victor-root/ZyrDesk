@@ -37,14 +37,13 @@ use zyr_proto::net::EVERY_INTERFACE;
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
+use zyr_system::still_running;
 use zyr_transport::relay::{Holding, hold_a_branch};
 use zyr_transport::{
     Connection, Identity, Junction, Media, MediaProfile, Road, Sending, TunnelEndpoint,
     first_to_answer,
 };
 use zyr_tunnel::{Presence, ServiceEnd, Tunnel, aside, nudge, service_channel};
-#[cfg(windows)]
-use zyr_win32::still_running;
 
 use crate::account::{self, Rendezvous};
 use crate::preferences::Remembered;
@@ -1325,12 +1324,6 @@ fn resolve(host: &str) -> Result<SocketAddr, Fact> {
         .map_err(|e| unknown(&e))?
         .next()
         .ok_or_else(|| unknown(&"the name leads to no address"))
-}
-
-/// Outside Windows the service does not exist, and nothing holds a way.
-#[cfg(not(windows))]
-fn still_running(_process: u32) -> bool {
-    false
 }
 
 #[cfg(test)]

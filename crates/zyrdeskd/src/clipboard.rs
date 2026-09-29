@@ -40,18 +40,18 @@
 //! when the last session goes it takes the file away, which is how the
 //! helper is told to let go and end.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. The shape of it stays compiled and tested everywhere, and the
-// clipboard itself is the one part that cannot be.
+// Outside Windows the service does not run, and nothing asks for the
+// clipboard. It stays compiled and tested everywhere all the same.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use zyr_proto::clipboard::{Clip, Head, Kind, Stamp};
 use zyr_proto::log::Log;
 use zyr_proto::paths;
+
+use crate::keeper::{Keeper, Timing};
 
 /// What this module's lines are filed under.
 ///
@@ -102,11 +102,12 @@ const SETTLES_WITHIN: Duration = Duration::from_secs(3);
 /// started beside it for the rest of the session.
 const A_STAND_GOES_STALE_AFTER: Duration = Duration::from_secs(2);
 
-/// Whether the thread that keeps a helper alive is running.
-static KEEPING: AtomicBool = AtomicBool::new(false);
-
-/// When the last question came, so the keeper knows when to stop.
-static ASKED: Mutex<Option<Instant>> = Mutex::new(None);
+/// The keeping of the helpers that carry it.
+static KEEPER: Keeper = Keeper::new(Timing {
+    look_every: LOOK_EVERY,
+    start_another_after: START_ANOTHER_AFTER,
+    after_the_last_question: AFTER_THE_LAST_QUESTION,
+});
 
 /// What was last given to this computer's clipboard, and when, until the
 /// helper says it is really there.
@@ -132,8 +133,7 @@ static PASTE_REFUSED: Mutex<Option<String>> = Mutex::new(None);
 /// anything to say, and saying nothing is never read as « empty yours ».
 pub fn what_this_computer_has(log: &Log) -> Option<Clip> {
     let log = &log.about(TAG);
-    *ASKED.lock().expect("last question") = Some(Instant::now());
-    if !KEEPING.swap(true, Ordering::SeqCst) {
+    if KEEPER.asked() {
         keep_a_helper(log.clone());
     }
     let clip =
@@ -295,67 +295,33 @@ fn more_than_it_carries(clip: &Clip, log: &Log) -> bool {
     true
 }
 
-/// Whether the last question is far enough behind to stop.
-fn nobody_is_asking() -> bool {
-    ASKED
-        .lock()
-        .expect("last question")
-        .is_none_or(|asked| asked.elapsed() > AFTER_THE_LAST_QUESTION)
-}
-
 /// Keeps a helper running in the session that owns the screen, for as
 /// long as anybody is asking.
-///
-/// A thread of its own because starting a program in another session
-/// takes milliseconds, and the threads that answer the far computer are
-/// shared with everything else this service does.
-#[cfg(windows)]
 fn keep_a_helper(log: Log) {
-    let log = log.about(TAG);
     std::thread::spawn(move || {
         log.write("a session is sharing this computer's clipboard");
-        let mut started: Option<Instant> = None;
-        let mut refused = false;
-        // A paste still being served keeps all of this alive past the
-        // session that started it. Everything below hangs together: the
-        // helper standing in for the far computer's files, the mark that
-        // keeps it standing, the bytes already written down, and Windows
-        // waiting on its copy. Ending here on the session alone would
-        // take all four away four seconds after a link blinked, and four
-        // gigabytes at eighty per cent with it. A session that comes back
-        // during that time is simply somebody asking again, and the paste
-        // carries on from the piece it had reached.
-        while !nobody_is_asking() || crate::transfer::still_coming() {
+        KEEPER.keep(
+            crate::errands::start_carrying_the_clipboard,
             // Not while one of them is holding the far computer's files.
             // That one stays for as long as they are on the clipboard,
             // which can be minutes, and a second beside it would read a
             // clipboard it can make nothing of and say so once every few
             // seconds for the whole of that time.
-            if a_stand_is_up().is_none()
-                && started.is_none_or(|at| at.elapsed() > START_ANOTHER_AFTER)
-            {
-                match crate::errands::start_carrying_the_clipboard() {
-                    Ok(()) => {
-                        if started.is_none() {
-                            log.write("reading it from the session that owns the screen");
-                        }
-                        refused = false;
-                        started = Some(Instant::now());
-                    }
-                    // Said once and not every turn: a machine at its
-                    // sign-in screen has no session to read from, and
-                    // that is a state it can sit in for hours.
-                    Err(e) => {
-                        if !refused {
-                            refused = true;
-                            log.write(&format!("nothing can reach the clipboard here: {e}"));
-                        }
-                        started = None;
-                    }
-                }
-            }
-            std::thread::sleep(LOOK_EVERY);
-        }
+            || a_stand_is_up().is_none(),
+            // A paste still being served keeps all of this alive past the
+            // session that started it. Everything below hangs together:
+            // the helper standing in for the far computer's files, the
+            // mark that keeps it standing, the bytes already written
+            // down, and Windows waiting on its copy. Ending here on the
+            // session alone would take all four away four seconds after a
+            // link blinked, and four gigabytes at eighty per cent with it.
+            // A session that comes back during that time is simply
+            // somebody asking again, and the paste carries on from the
+            // piece it had reached.
+            crate::transfer::still_coming,
+            "reach the clipboard",
+            &log,
+        );
         log.write("nobody is sharing it any more");
         // Both pairs go with the asking. What this computer had copied
         // is no more a session's business once the session has gone, and
@@ -371,13 +337,8 @@ fn keep_a_helper(log: Log) {
         let _ = std::fs::remove_file(paths::clipboard_standing());
         crate::transfer::forget(&log);
         *GIVEN.lock().expect("what was just given") = None;
-        KEEPING.store(false, Ordering::SeqCst);
+        KEEPER.over();
     });
-}
-
-#[cfg(not(windows))]
-fn keep_a_helper(_log: Log) {
-    KEEPING.store(false, Ordering::SeqCst);
 }
 
 /// Reads and writes this computer's clipboard, until its time is up.
@@ -391,7 +352,6 @@ fn keep_a_helper(_log: Log) {
 /// clipboard, so a helper that has put one there cannot go home: it would
 /// take the files with it. It stays until somebody copies something else,
 /// or until the service takes its mark away.
-#[cfg(windows)]
 pub fn carry_the_clipboard_here() {
     // Taken before anything else and held to the end. Without it nothing
     // can be offered on this computer's clipboard for other programs, so
@@ -581,7 +541,6 @@ pub fn carry_the_clipboard_here() {
 /// Nothing of them is read here and nothing has to be: what goes on the
 /// clipboard is their names and a promise, and the promise is only called
 /// in when somebody pastes.
-#[cfg(windows)]
 fn stand_in_for_them(wanted: &Clip) -> Result<(), String> {
     let listed = wanted
         .listing()
@@ -601,7 +560,6 @@ fn stand_in_for_them(wanted: &Clip) -> Result<(), String> {
 /// Written at every turn rather than when the word changes: the same file
 /// is also how the service knows a helper is still there, and a file only
 /// says that while it is being written.
-#[cfg(windows)]
 fn hold_the_mark(what: Stand) {
     let _ = zyr_proto::files::replace(
         &paths::clipboard_standing(),
@@ -614,7 +572,6 @@ fn hold_the_mark(what: Stand) {
 /// Everything in the loop above can go wrong at every turn, five times a
 /// second, for as long as whatever is wrong lasts. What is worth reading
 /// is that it went wrong and what it said, once.
-#[cfg(windows)]
 fn say_once(last: &mut Option<String>, what: &str) {
     if last.as_deref() == Some(what) {
         return;
@@ -623,22 +580,17 @@ fn say_once(last: &mut Option<String>, what: &str) {
     said(what);
 }
 
-#[cfg(not(windows))]
-pub fn carry_the_clipboard_here() {}
-
 /// Writes into the service's own journal from the helper, which has no
 /// journal of its own.
-#[cfg(windows)]
 fn said(what: &str) {
-    if let Ok(log) = Log::open(&crate::service::log_path()) {
+    if let Ok(log) = Log::open(&paths::service_log()) {
         log.about(TAG).write(what);
     }
 }
 
 /// The same, in the voice only a hunt wants.
-#[cfg(windows)]
 fn hunted(what: impl FnOnce() -> String) {
-    if let Ok(log) = Log::open(&crate::service::log_path()) {
+    if let Ok(log) = Log::open(&paths::service_log()) {
         log.about(TAG).debug(what);
     }
 }
@@ -655,7 +607,6 @@ fn hunted(what: impl FnOnce() -> String) {
 /// Two landing in the very same instant can still both speak. That is one
 /// line too many in a journal and nothing worse: what they write down is
 /// the same thing.
-#[cfg(windows)]
 fn already_written(found: &zyr_clipboard::Found) -> bool {
     written_clip(&paths::clipboard_here()).map(|clip| clip.stamp()) == Some(found.clip.stamp())
 }
@@ -676,7 +627,6 @@ fn written_clip(named: &std::path::Path) -> Option<Clip> {
 /// before the line that names the other two: the same rule as the bytes,
 /// since a line that names a listing names places that have to be written
 /// down before anybody reads it.
-#[cfg(windows)]
 fn write_it_down(found: &zyr_clipboard::Found) -> std::io::Result<()> {
     if !found.really.is_empty() {
         let mut where_they_are = String::new();
@@ -801,19 +751,6 @@ mod tests {
 
         assert_eq!(written_clip(&named), None);
         std::fs::remove_dir_all(&folder).ok();
-    }
-
-    #[test]
-    fn nobody_asks_as_long_as_nobody_has_asked() {
-        // This is what decides that a computer nobody is watching keeps
-        // its clipboard to itself: with no question, no helper is
-        // started again any more and the last one goes out by itself.
-        *ASKED.lock().unwrap() = None;
-        assert!(nobody_is_asking());
-        *ASKED.lock().unwrap() = Some(Instant::now());
-        assert!(!nobody_is_asking());
-        *ASKED.lock().unwrap() = Instant::now().checked_sub(AFTER_THE_LAST_QUESTION * 2);
-        assert!(nobody_is_asking());
     }
 
     #[test]

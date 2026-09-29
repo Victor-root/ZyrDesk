@@ -116,20 +116,6 @@ pub trait Launched: Send {
     fn let_go(self: Box<Self>, within: Duration) -> io::Result<Option<u32>>;
 }
 
-/// Where no engine can be started, which is everywhere but Windows: the
-/// engine films a Windows screen.
-#[cfg(not(windows))]
-pub struct NotHere;
-
-#[cfg(not(windows))]
-impl Launcher for NotHere {
-    fn launch(&self, _link: &str) -> io::Result<Box<dyn Launched>> {
-        Err(io::Error::other(
-            "the engine only runs on Windows, where it films the screen",
-        ))
-    }
-}
-
 /// One session coming through the door, as its own channel answers for
 /// this computer.
 struct Attending {
@@ -154,7 +140,7 @@ impl Answers for Attending {
     /// This is the service pressing it in its own process, which is the
     /// one thing on this machine Windows will take it from.
     fn secure_attention(&self) -> Result<(), String> {
-        match press_it(&self.log) {
+        match zyr_system::press(&self.log) {
             Ok(()) => {
                 self.log.write("Ctrl+Alt+Del pressed for the far computer");
                 Ok(())
@@ -203,7 +189,7 @@ impl Answers for Attending {
         self.log
             .write("the far computer asked this one to lock itself");
         let asked_at = std::time::Instant::now();
-        match lock_it() {
+        match crate::errands::lock_the_screen() {
             Ok(took) => {
                 self.log.write(&format!(
                     "this computer locked itself after {} ms ({took})",
@@ -276,7 +262,7 @@ impl Answers for Attending {
                 "this session wants this computer's own screen, so the desk an earlier one took is \
                  given back first",
             );
-            match give_the_desk_back() {
+            match crate::errands::give_the_desk_back() {
                 Ok(took) => self.log.write(&format!(
                     "the desk was put back from the session on screen ({took})"
                 )),
@@ -290,7 +276,7 @@ impl Answers for Attending {
             // wallpaper instead of the desktop it asked for.
             self.put_the_grown_screen_away();
         }
-        match hold_the_desk_for(wanted) {
+        match crate::errands::hold_the_desk_for(wanted) {
             // What says somebody's screens are not the way they left them
             // is the note the errand writes, and never the asking: a
             // session that wanted this computer's own screen leaves
@@ -595,7 +581,7 @@ impl Attending {
     /// Wakes the screen this computer grew, at that size, saying what
     /// came of it.
     fn wake_the_one_it_grew(&self, screen: WantedScreen) -> Option<()> {
-        match wake_the_grown_screen((screen.wide, screen.high)) {
+        match crate::screen::wake_for_a_session((screen.wide, screen.high)) {
             Ok(said) => {
                 for line in said {
                     self.log.write(&line);
@@ -659,7 +645,7 @@ impl Attending {
         // Nobody is asked whether somebody wants it: the session asking
         // for this computer's own screen is the one that wants it gone,
         // and it is being answered right now.
-        match sleep_the_grown_screen() {
+        match crate::screen::sleep_after_a_session(&|| true) {
             Ok(said) => {
                 for line in said {
                     self.log.write(&line);
@@ -690,7 +676,7 @@ impl Attending {
     /// that did not move is a session served the wrong size, and the far
     /// end has to be told the size that really arrived.
     fn move_the_desktop_onto_it(&self, screen: WantedScreen) -> Option<(u32, u32)> {
-        match take_the_grown_screen(screen) {
+        match crate::errands::take_the_grown_screen(screen) {
             Ok(took) => self.log.write(&format!(
                 "the desktop was moved from the session on screen ({took})"
             )),
@@ -703,105 +689,6 @@ impl Attending {
         }
         zyr_screen::desk::showing_now(&paths::virtual_screen_dir())
     }
-}
-
-/// Notes this computer's desk and puts its main screen where a session
-/// wants it, saying what it cost.
-///
-/// From the session that owns the screen and never from here: everything
-/// Windows says about the arrangement of screens is answered for the
-/// window station of whoever asks, and the service's carries none.
-#[cfg(windows)]
-fn hold_the_desk_for(wanted: Option<WantedScreen>) -> io::Result<String> {
-    crate::errands::hold_the_desk_for(wanted).map(|took| took.to_string())
-}
-
-#[cfg(not(windows))]
-fn hold_the_desk_for(_wanted: Option<WantedScreen>) -> io::Result<String> {
-    Err(io::Error::other("this computer has no screen to set"))
-}
-
-/// Puts this computer's desk back where it was noted, saying what it cost.
-///
-/// From here as well as from the watch that holds the engine, because a
-/// session asking for this computer's own screen cannot wait for that
-/// watch: it is answered with the size this computer shows, and the
-/// answer is what the far end opens its picture at.
-#[cfg(windows)]
-fn give_the_desk_back() -> io::Result<String> {
-    crate::errands::give_the_desk_back().map(|took| took.to_string())
-}
-
-#[cfg(not(windows))]
-fn give_the_desk_back() -> io::Result<String> {
-    Err(io::Error::other("this computer has no desk to give back"))
-}
-
-/// Moves this computer's desktop onto the screen it grew for itself,
-/// saying what it cost.
-///
-/// From the session that owns the screens, and only once the service has
-/// woken that screen: the two halves cannot be done from the same place.
-#[cfg(windows)]
-fn take_the_grown_screen(wanted: WantedScreen) -> io::Result<String> {
-    crate::errands::take_the_grown_screen(wanted).map(|took| took.to_string())
-}
-
-#[cfg(not(windows))]
-fn take_the_grown_screen(_wanted: WantedScreen) -> io::Result<String> {
-    Err(io::Error::other("this computer has no screen to grow"))
-}
-
-/// Puts that screen back to sleep, where there is one.
-#[cfg(windows)]
-fn sleep_the_grown_screen() -> Result<Vec<String>, String> {
-    crate::screen::sleep_after_a_session(&|| true)
-}
-
-#[cfg(not(windows))]
-fn sleep_the_grown_screen() -> Result<Vec<String>, String> {
-    Err("this computer has no virtual screen".to_string())
-}
-
-/// Wakes the screen this computer grew for itself, for the one machine
-/// that has nothing else to film.
-#[cfg(windows)]
-fn wake_the_grown_screen(size: (u32, u32)) -> Result<Vec<String>, String> {
-    crate::screen::wake_for_a_session(size)
-}
-
-#[cfg(not(windows))]
-fn wake_the_grown_screen(_size: (u32, u32)) -> Result<Vec<String>, String> {
-    Err("this computer has no virtual screen".to_string())
-}
-
-/// Locks it, where there is a Windows to lock, saying what it cost.
-#[cfg(windows)]
-fn lock_it() -> io::Result<String> {
-    crate::errands::lock_the_screen().map(|took| took.to_string())
-}
-
-#[cfg(not(windows))]
-fn lock_it() -> io::Result<String> {
-    Err(io::Error::other(
-        "this computer has no lock screen to put up",
-    ))
-}
-
-/// Presses it, where there is a Windows to press it on.
-#[cfg(windows)]
-fn press_it(log: &Log) -> io::Result<()> {
-    zyr_system::press(log)
-}
-
-/// Outside Windows there is no such key and no service either. The
-/// gateway stays compiled and tested everywhere, its logic having
-/// nothing platform-specific about it.
-#[cfg(not(windows))]
-fn press_it(_log: &Log) -> io::Result<()> {
-    Err(io::Error::other(
-        "this computer has no Ctrl+Alt+Del to press",
-    ))
 }
 
 /// What every session coming through the door shares.

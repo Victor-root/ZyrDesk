@@ -10,8 +10,10 @@ mod account;
 mod clipboard;
 mod control;
 mod engine;
+mod errands;
 mod gateway;
 mod incoming;
+mod keeper;
 mod known;
 mod machine;
 mod outside;
@@ -24,8 +26,6 @@ mod supervisor;
 mod transfer;
 mod ways;
 
-#[cfg(windows)]
-mod errands;
 #[cfg(windows)]
 mod service;
 
@@ -79,7 +79,6 @@ fn main() -> ExitCode {
     // the screen and with the system's own account, to be the engine of
     // one session: it films, encodes and plays what the far computer
     // types, over the link the service named. Nobody types this either.
-    #[cfg(windows)]
     if let Some(link) = errands::the_link_to_serve() {
         return match zyr_proto::log::Log::open(&zyr_proto::paths::logs_dir().join("engine.log")) {
             Ok(log) => zyr_host::serve(&link, log),
@@ -94,7 +93,6 @@ fn main() -> ExitCode {
     // is asked from the session that owns the screen and nowhere else.
     // The answer is more than yes or no: two means the speakers were
     // already the way they were asked to be, so nothing is owed back.
-    #[cfg(windows)]
     if let Some(quiet) = errands::asked_about_the_speakers() {
         return ExitCode::from(errands::move_the_speakers(quiet) as u8);
     }
@@ -104,7 +102,6 @@ fn main() -> ExitCode {
     // Windows takes that one from a service and nothing else, and this
     // one from the interactive desktop and nothing else. Both refusals
     // protect what a lock screen is worth.
-    #[cfg(windows)]
     if errands::asked_to_lock_the_screen() {
         return if zyr_system::lock_this_desktop() {
             ExitCode::SUCCESS
@@ -120,7 +117,6 @@ fn main() -> ExitCode {
     // of whoever asks, and the service's has no screens on it at all, so
     // from there this computer has no screens to note and none to put
     // back.
-    #[cfg(windows)]
     if let Some(asked) = errands::the_desk_asked_for() {
         errands::do_this_to_the_desk(asked);
         return ExitCode::SUCCESS;
@@ -130,7 +126,6 @@ fn main() -> ExitCode {
     // blindness in its plainest form: a pointer belongs to a desktop, and
     // the service's window station carries none. This one reads for a
     // while instead of doing one thing, and ends by itself.
-    #[cfg(windows)]
     if errands::asked_to_follow_the_pointer() {
         pointer::follow_the_pointer_here();
         return ExitCode::SUCCESS;
@@ -141,7 +136,6 @@ fn main() -> ExitCode {
     // service's carries none. Like the pointer above it reads for a
     // while and ends by itself, and unlike it, it writes as well: what
     // was copied on the far computer is put on this one from here.
-    #[cfg(windows)]
     if errands::asked_to_carry_the_clipboard() {
         clipboard::carry_the_clipboard_here();
         return ExitCode::SUCCESS;
@@ -217,7 +211,7 @@ fn run(command: Command) -> ExitCode {
         Command::Status => match service::state() {
             Ok(state) => {
                 println!("{}", readable(state));
-                println!("  Journal: {}", service_log().display());
+                println!("  Journal: {}", zyr_proto::paths::service_log().display());
                 ExitCode::SUCCESS
             }
             Err(e) => absent_or(&e, "service status"),
@@ -239,11 +233,6 @@ fn readable(state: windows_service::service::ServiceState) -> &'static str {
     }
 }
 
-#[cfg(windows)]
-fn service_log() -> std::path::PathBuf {
-    zyr_proto::paths::logs_dir().join("service.log")
-}
-
 /// Writes a line into the service's own log.
 ///
 /// For what is done to the service from outside it, where nothing else
@@ -251,7 +240,7 @@ fn service_log() -> std::path::PathBuf {
 /// console, so anything printed there is read by nobody.
 #[cfg(windows)]
 fn noted(what: &str) {
-    if let Ok(log) = zyr_proto::log::Log::open(&service_log()) {
+    if let Ok(log) = zyr_proto::log::Log::open(&zyr_proto::paths::service_log()) {
         log.about(crate::service::TAG)
             .write(&format!("{what}, {}", zyr_proto::version_line()));
     }

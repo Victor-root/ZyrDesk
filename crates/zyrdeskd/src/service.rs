@@ -9,7 +9,6 @@
 //! work is in the supervisor, which does not know it is a service.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use windows_service::service::{
@@ -80,7 +79,7 @@ pub fn hand_over_to_windows() -> ServiceResult<()> {
 define_windows_service!(ffi_service_main, service_main);
 
 fn service_main(_arguments: Vec<OsString>) {
-    let log = match Log::open(&log_path()) {
+    let log = match Log::open(&paths::service_log()) {
         Ok(log) => log,
         // Without a log there is nothing left to tell anyone: better not
         // to start at all than to run mute and invisible.
@@ -218,15 +217,6 @@ fn stopping() -> ServiceStatus {
     }
 }
 
-/// Where the service writes what it does.
-///
-/// Reachable from outside this file because the short errands the service
-/// starts in the session on screen write into it too: they are the same
-/// program and what they have to say belongs in the same journal.
-pub fn log_path() -> PathBuf {
-    paths::logs_dir().join("service.log")
-}
-
 /// Code Windows returns for a service it does not know.
 const UNKNOWN_SERVICE: i32 = 1060;
 
@@ -300,7 +290,7 @@ pub fn install() -> Result<Installed, Box<dyn std::error::Error>> {
         Err(e) => return Err(e.into()),
     };
 
-    let log = Log::open(&log_path()).ok();
+    let log = Log::open(&paths::service_log()).ok();
     lay_the_firewall(&program, log.as_ref());
     let_the_person_start_and_stop_it(log.as_ref());
     // Here and nowhere else: laying a driver down needs administrator
@@ -627,7 +617,7 @@ pub fn uninstall() -> ServiceResult<()> {
     // After the service is gone and not before: the driver cannot leave
     // Windows' store while anything is still using its device, and the
     // engines the service started are what use it.
-    crate::screen::take_away(Log::open(&log_path()).ok().as_ref());
+    crate::screen::take_away(Log::open(&paths::service_log()).ok().as_ref());
     Ok(())
 }
 
