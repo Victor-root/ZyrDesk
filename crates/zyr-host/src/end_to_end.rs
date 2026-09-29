@@ -5,12 +5,17 @@
 //! [`crate::fake`]; the test holds the other end of the link, where the
 //! service and the player would be, speaks for both, and takes the
 //! pictures back apart and through a decoder as the player would.
+//!
+//! The sessions run one at a time: pictures coming in time are part of
+//! what is checked, and several sessions at once on a small machine
+//! would only check the machine.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use tokio::sync::{Mutex, MutexGuard};
 use tokio::time::timeout;
 use zyr_codec::{
     DecodeOutput, DecodedFrame, Frame, GpuVendor, Input, OpusDecoder, VideoDecoder, VideoEncoder,
@@ -81,6 +86,9 @@ pub(crate) use zyr_codec::testing::ffmpeg;
 /// Longest wait for anything from the engine.
 const PATIENCE: Duration = Duration::from_secs(10);
 
+/// Held by each session for as long as it lasts.
+static ALONE: Mutex<()> = Mutex::const_new(());
+
 const BUDGET: u16 = 1161;
 
 fn wanted() -> Wanted {
@@ -139,8 +147,10 @@ struct Far {
     undecodable: u64,
     sounds: Vec<(u16, Vec<u8>)>,
     recorded: Recorded,
-    /// Last, so that it goes after the engine it logs.
+    /// After the engine, so that it goes after the engine it logs.
     journal: TestLog,
+    /// This session's turn: the next one starts once this one is gone.
+    _alone: MutexGuard<'static, ()>,
 }
 
 impl Far {
@@ -153,6 +163,7 @@ impl Far {
     }
 
     async fn filming(test: &str, screen: MakeScreen, sound: Box<dyn Sound>) -> Self {
+        let alone = ALONE.lock().await;
         let listener = LinkListener::create(in_tests()).unwrap();
         let name = listener.name().to_owned();
         let (injector, recorded) = RecordingInjector::new();
@@ -185,6 +196,7 @@ impl Far {
             sounds: Vec::new(),
             recorded,
             journal: log,
+            _alone: alone,
         }
     }
 
