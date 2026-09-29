@@ -80,16 +80,16 @@ impl Engine {
                 named.send(listener.name().to_string()).unwrap();
                 let (mut reader, mut writer) = listener.accept().await.unwrap().split();
                 let mut control = ControlReader::<ToEngine>::new();
-                loop {
+                // A player that has left closes the link under a write as
+                // it does under a read: a ping answered too late is the
+                // same end, and what the test hears.
+                'session: loop {
                     tokio::select! {
                         frame = reader.next() => {
                             let payload = match frame {
                                 Ok(Some((Channel::Control, payload))) => payload,
                                 Ok(Some(_)) => continue,
-                                Ok(None) | Err(_) => {
-                                    let _ = heard_out.send(Heard::Closed);
-                                    return;
-                                }
+                                Ok(None) | Err(_) => break 'session,
                             };
                             control.feed(&payload);
                             for message in control.by_ref() {
@@ -98,7 +98,9 @@ impl Engine {
                                         let pong = ToPlayer::Pong { sent_us, host_us: host_us(epoch) };
                                         let mut bytes = Vec::new();
                                         pong.write(&mut bytes);
-                                        writer.send(Channel::Control, &bytes).await.unwrap();
+                                        if writer.send(Channel::Control, &bytes).await.is_err() {
+                                            break 'session;
+                                        }
                                     }
                                     other => {
                                         let _ = heard_out.send(Heard::Said(other));
@@ -110,15 +112,20 @@ impl Engine {
                             Some(Send::Control(message)) => {
                                 let mut bytes = Vec::new();
                                 message.write(&mut bytes);
-                                writer.send(Channel::Control, &bytes).await.unwrap();
+                                if writer.send(Channel::Control, &bytes).await.is_err() {
+                                    break 'session;
+                                }
                             }
                             Some(Send::Frame(channel, payload)) => {
-                                writer.send(channel, &payload).await.unwrap();
+                                if writer.send(channel, &payload).await.is_err() {
+                                    break 'session;
+                                }
                             }
                             Some(Send::Close) | None => return,
                         },
                     }
                 }
+                let _ = heard_out.send(Heard::Closed);
             });
         });
         Self {
