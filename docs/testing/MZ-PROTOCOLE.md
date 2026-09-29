@@ -166,7 +166,7 @@ En rétrécissant la fenêtre, les chiffres qui ne tiennent plus passent à la l
 
 Tout se change dans le menu, sans rien valider, et **rien ne doit se relancer** : la fenêtre reste, la session reste.
 
-- **Débit** : pousser la barre, de 5 à 80 Mb/s. **Attendu** : à 5 Mb/s, l'image devient plus floue quand beaucoup de choses bougent ; à 50, elle redevient nette. Le chiffre « Débit » du bandeau suit. Pas de coupure.
+- **Débit** : pousser la barre, de 5 à 80 Mb/s. **Attendu** : à 5 Mb/s, l'image devient plus floue quand beaucoup de choses bougent ; à 50, elle redevient nette. Le chiffre « Débit » du bandeau suit. Pas de coupure. À la lâche, le curseur et son chiffre restent où ils ont été laissés, sans revenir un instant à l'ancienne place ([D248](../DECISIONS.md)).
 - **Codec** : les boutons Automatique, H.264, HEVC, AV1. Ceux que l'hôte ne sait pas produire sont barrés (comparer avec la liste de Z1). **Attendu** : un clic sur un autre codec, et l'image revient en une ou deux secondes au plus ; le début du bandeau dit le nouveau codec.
 - **Résolution** : choisir une autre taille dans la liste. **Attendu** : l'image revient à la nouvelle taille en quelques secondes, sans bande noire, et le bureau de l'hôte a changé de taille. Revenir ensuite à « Résolution du client ».
 - **Écran de l'hôte** : cette ligne n'apparaît que si l'hôte a au moins deux écrans. **Attendu** : l'image passe sur l'autre écran en une seconde environ.

@@ -202,11 +202,16 @@ static SESSION_MENU: Mutex<Option<SessionMenu>> = Mutex::new(None);
 /// The open submenu, or nothing.
 static PANEL: Mutex<Option<Setting>> = Mutex::new(None);
 
-/// The notch where a hand holds the bitrate slider, while it holds it.
+/// The notch a hand has pushed the bitrate slider to: while it holds the
+/// slider, and after it lets go, until the session has answered.
 ///
 /// What is chosen is only written on release: a slider pushed from one
-/// end to the other crosses fifteen notches, and each of them would be a
-/// round trip to the service for a bitrate nobody wanted.
+/// end to the other crosses dozens of notches, and each of them would be
+/// a round trip to the service for a bitrate nobody wanted.
+///
+/// And it stays through that round trip. The thumb goes back to what is in
+/// force only once the session has said what is in force; sent back sooner,
+/// it flashed to its old place at every release.
 static PUSHED: Mutex<Option<usize>> = Mutex::new(None);
 
 /// The program, for the places the system calls and that the toolkit

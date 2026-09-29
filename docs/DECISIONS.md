@@ -3967,6 +3967,28 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows, et Wine n'est pas Windows. La cause est déduite de la documentation et de D33, pas lue dans un journal. Si la barre grise encore, la ligne qui tranche est celle de la fin du geste (tri : `floating window`). `ZyrDesk's` veut dire que le premier plan est resté à une fenêtre de ZyrDesk ; avec une barre grise, c'est alors une des fenêtres du bouton qui le tient. Le nom d'un autre programme veut dire qu'il est parti ailleurs, comme l'`explorer.exe` de D33.
 
+## D248. Le curseur de débit reste où la main l'a lâché (2026-09-29, pendant MZ)
+
+> Complète [D56](#d56-le-menu-de-la-session-dit-où-lon-en-est-2026-08-26-pendant-m4) : le choix du curseur ne part qu'une fois lâché, et le pouce reste où la main l'a laissé jusqu'à la réponse.
+
+**Le relevé.** Dit par Victor : quand il pousse le curseur de débit du bouton flottant, le pouce revient un instant à l'ancienne place à la lâche, puis saute à la nouvelle. « Ce n'est pas du tout fluide. »
+
+**La cause.** Le choix ne part qu'au relâchement (D56), et c'est un aller-retour : le service note le réglage, le lecteur le demande au moteur d'en face, et ce n'est qu'à la réponse que le menu sait ce qui est en place. Au relâchement, le menu cessait aussitôt de montrer ce que la main avait choisi et redessinait la valeur en place, donc l'ancienne, pour toute la durée de cet aller-retour. D'où le retour en arrière, puis le saut quand la réponse arrivait.
+
+**Ce qui est fait.**
+
+- Le pouce, et le chiffre écrit au-dessus, restent où la main les a laissés. Ils ne redeviennent ce que dit la session qu'à la réponse, et après que la valeur en place a été mise à jour, pour ne pas montrer l'ancienne un instant. Une réponse qui refuse ramène le pouce à la valeur en place, avec le refus écrit sur la carte.
+- Une main qui reprend le curseur avant que la réponse au geste précédent n'arrive le garde : cette réponse ne lui prend pas le pouce.
+- Lâcher sur la valeur déjà en place n'écrit rien, comme avant.
+
+**Les essais.** Le pouce reste où la main l'a laissé jusqu'à la réponse, et après ; un refus le ramène ; lâcher sur la valeur en place ne demande rien ; la réponse au geste d'avant ne prend pas le pouce à une main qui le tient de nouveau. Ils n'existent que sous Windows, comme la carte, et tournent sur la CI Windows. Essayés aussi sous Wine : ils échouent quand l'une des trois parties de la correction est retirée.
+
+**Ce qui se voit.** Le pouce ne bouge plus au relâchement : il reste, et le chiffre avec lui.
+
+**Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows, et le geste lui-même, pousser la barre à la souris, ne s'essaie pas ici : seul l'état du pouce s'essaie.
+
+**Ce qui reste ouvert.** La carte ne capture pas la souris pendant le geste. Une main qui sort de la fenêtre de la carte en tenant le curseur et lâche dehors ne finit pas le geste : rien n'est écrit, et le curseur suit le pointeur au retour, sans bouton enfoncé, jusqu'au prochain clic.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
