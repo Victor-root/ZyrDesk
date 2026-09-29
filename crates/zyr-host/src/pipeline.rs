@@ -46,7 +46,7 @@ use crate::parts::{Aimed, Captured, Drawing, Feed, MakeScreen, Screen, ScreenErr
 use crate::picture::{Mapping, Rect, Size, picture_size, placement};
 use crate::session::{self, Event};
 use crate::sound::OPUS_BITRATE;
-use crate::timeline::{self, Left, Picture, Timeline};
+use crate::timeline::{self, KeyBecause, Left, Picture, Rate, Timeline};
 
 /// Fewest milliseconds between two key frames.
 pub(crate) const KEY_FLOOR: Duration = Duration::from_millis(100);
@@ -187,24 +187,25 @@ pub(crate) fn plan(now: &Settings, next: &Settings) -> Plan {
 /// Key frames asked for, and the floor between two of them.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct KeyFrames {
-    wanted: bool,
+    /// Why one is asked for; the first reason stands while it waits.
+    wanted: Option<KeyBecause>,
     last: Option<Instant>,
 }
 
 impl KeyFrames {
-    pub(crate) fn ask(&mut self) {
-        self.wanted = true;
+    pub(crate) fn ask(&mut self, because: KeyBecause) {
+        self.wanted.get_or_insert(because);
     }
 
     /// Whether the next picture is to be a key frame.
     pub(crate) fn due(&self, now: Instant) -> bool {
-        self.wanted && self.last.is_none_or(|last| now >= last + KEY_FLOOR)
+        self.wanted.is_some() && self.last.is_none_or(|last| now >= last + KEY_FLOOR)
     }
 
     /// When one asked for may go, if it has to wait for the floor.
     pub(crate) fn deadline(&self) -> Option<Instant> {
         self.last
-            .filter(|_| self.wanted)
+            .filter(|_| self.wanted.is_some())
             .map(|last| last + KEY_FLOOR)
     }
 
@@ -213,22 +214,23 @@ impl KeyFrames {
         self.deadline().is_some_and(|at| now < at)
     }
 
-    /// Whether the picture going now is to be a key frame; it counts as
-    /// sent if so.
-    pub(crate) fn take(&mut self, now: Instant) -> bool {
-        let due = self.due(now);
-        if due {
-            self.wanted = false;
+    /// Why the picture going now is to be a key frame, if it is; it
+    /// counts as sent if so.
+    pub(crate) fn take(&mut self, now: Instant) -> Option<KeyBecause> {
+        if self.due(now) {
             self.last = Some(now);
+            self.wanted.take()
+        } else {
+            None
         }
-        due
     }
 
-    /// The encoder made a key frame of its own accord: it answers what
-    /// was asked, and counts for the floor.
-    pub(crate) fn made(&mut self, now: Instant) {
-        self.wanted = false;
+    /// The encoder made a key frame nobody was sending: it answers what
+    /// was asked, if anything was, and counts for the floor. Says why the
+    /// key frame went.
+    pub(crate) fn made(&mut self, now: Instant) -> KeyBecause {
         self.last = Some(now);
+        self.wanted.take().unwrap_or(KeyBecause::Encoder)
     }
 }
 
@@ -560,7 +562,7 @@ impl Pipeline {
             .is_some_and(|encoding| encoding.stream == stream)
         {
             self.counts.recovers += 1;
-            streaming.keys.ask();
+            streaming.keys.ask(KeyBecause::Player);
         } else {
             self.counts.recovers_ignored += 1;
         }
@@ -851,11 +853,17 @@ impl Pipeline {
         // A stream opens on a key frame, whenever the last one of the
         // stream before went.
         streaming.keys = KeyFrames::default();
-        streaming.keys.ask();
+        streaming.keys.ask(KeyBecause::Opening);
+        let asked = streaming.wanted.bitrate_kbps;
         streaming.encoding = Some(encoding);
         self.place();
+        self.timeline.rate(Rate {
+            encoder_kbps: settings.kbps,
+            wire_kbps: asked,
+        });
         self.shared.log.write(&format!(
-            "stream {stream} started: {}x{} at {} fps, {} by {}, {} kb/s",
+            "stream {stream} started: {}x{} at {} fps, {} by {}, {} kb/s for the encoder out of \
+             {asked} kb/s asked on the wire, {DEFAULT_FEC_PERCENT} % parity",
             settings.picture.width,
             settings.picture.height,
             settings.fps,
@@ -936,6 +944,12 @@ impl Pipeline {
                 self.shared
                     .log
                     .write(&format!("stream {} now at {kbps} kb/s", encoding.stream));
+                if let Some(streaming) = &self.streaming {
+                    self.timeline.rate(Rate {
+                        encoder_kbps: kbps,
+                        wire_kbps: streaming.wanted.bitrate_kbps,
+                    });
+                }
                 self.serving(&settings);
             }
             Ok(zyr_codec::Applied::NeedsRebuild) => self.open_stream(),
@@ -1001,12 +1015,13 @@ impl Pipeline {
         }
         match waited {
             Ok(Captured::Image { at }) => {
-                self.timeline.captured(at, Instant::now());
+                let folded = self.screen.folded();
+                self.timeline.captured(at, Instant::now(), folded);
                 self.captured(Going::Fresh(at), at);
             }
             Ok(Captured::Pointer) if draw_pointer => {
                 let at = Instant::now();
-                self.timeline.captured(at, at);
+                self.timeline.captured(at, at, 0);
                 self.captured(Going::Fresh(at), at);
             }
             Ok(Captured::Pointer) => {
@@ -1017,6 +1032,7 @@ impl Pipeline {
                 }
             }
             Ok(Captured::Nothing) => {
+                self.timeline.nothing(Instant::now());
                 self.look_for_silence(Instant::now());
                 if key_now {
                     self.captured(Going::Repeat, now);
@@ -1049,6 +1065,7 @@ impl Pipeline {
             Now::Hold => {
                 if streaming.held.replace(going).is_some() {
                     self.counts.held_replaced += 1;
+                    self.timeline.replaced(Instant::now());
                 }
             }
         }
@@ -1086,8 +1103,8 @@ impl Pipeline {
             }
         };
         let drawn = Instant::now();
-        let key = streaming.keys.take(started);
-        if let Err(e) = encoding.encoder.encode(frame, key) {
+        let asked = streaming.keys.take(started);
+        if let Err(e) = encoding.encoder.encode(frame, asked.is_some()) {
             self.encoder_failed(&e.to_string());
             return;
         }
@@ -1103,6 +1120,7 @@ impl Pipeline {
                 started
             }
         };
+        let (mut packets_out, mut bytes_out) = (0u32, 0usize);
         loop {
             let Some(streaming) = &mut self.streaming else {
                 return;
@@ -1110,23 +1128,32 @@ impl Pipeline {
             let Some(encoding) = &mut streaming.encoding else {
                 return;
             };
-            let asked = Instant::now();
+            let waiting = Instant::now();
             let received = encoding.encoder.receive();
             let sent_at = Instant::now();
-            encoded += sent_at - asked;
+            encoded += sent_at - waiting;
             let packet = match received {
                 Ok(Some(packet)) => packet,
-                Ok(None) => break,
+                Ok(None) => {
+                    self.timeline.encoded(sent_at, packets_out, bytes_out);
+                    break;
+                }
                 Err(e) => {
                     self.encoder_failed(&e.to_string());
                     return;
                 }
             };
+            packets_out += 1;
+            bytes_out += packet.data.len();
+            let mut because = None;
             if packet.key {
                 self.counts.keys += 1;
-                streaming.keys.made(started);
+                let answered = streaming.keys.made(started);
+                because = Some(asked.unwrap_or(answered));
                 encoding.holed = false;
-            } else if key && let Some(unsaid) = self.unkeyed.allow(sent_at) {
+            } else if asked.is_some()
+                && let Some(unsaid) = self.unkeyed.allow(sent_at)
+            {
                 self.shared.log.write(&format!(
                     "the encoder did not make the key frame it was asked for ({unsaid} more \
                      unsaid)"
@@ -1153,8 +1180,9 @@ impl Pipeline {
             );
             if let Err(e) = cut {
                 self.counts.too_large += 1;
+                self.timeline.too_large(sent_at);
                 encoding.holed = true;
-                streaming.keys.ask();
+                streaming.keys.ask(KeyBecause::Hole);
                 if let Some(unsaid) = self.oversized.allow(sent_at) {
                     self.shared.log.write(&format!(
                         "frame {frame} could not be sent ({unsaid} more unsaid): {e}"
@@ -1176,7 +1204,7 @@ impl Pipeline {
                             (Going::Fresh(_), true) => Left::Held,
                             (Going::Fresh(_), false) => Left::Fresh,
                         },
-                        key: packet.key,
+                        key: because,
                         captured,
                         started,
                         drawn,
@@ -1190,7 +1218,7 @@ impl Pipeline {
                     self.counts.crowded += 1;
                     self.timeline.crowded(sent_at);
                     encoding.holed = true;
-                    streaming.keys.ask();
+                    streaming.keys.ask(KeyBecause::Hole);
                     if let Some(unsaid) = self.crowded.allow(sent_at) {
                         self.shared.log.write(&format!(
                             "frame {frame} found the link full and was dropped \
@@ -1387,26 +1415,26 @@ mod tests {
         let start = Instant::now();
         let mut keys = KeyFrames::default();
         assert!(!keys.due(start));
-        keys.ask();
+        keys.ask(KeyBecause::Player);
         assert!(keys.due(start));
         assert_eq!(keys.deadline(), None);
-        assert!(keys.take(start));
+        assert_eq!(keys.take(start), Some(KeyBecause::Player));
         assert!(!keys.due(start));
-        assert!(!keys.take(start + KEY_FLOOR));
+        assert_eq!(keys.take(start + KEY_FLOOR), None);
     }
 
     #[test]
     fn key_frames_are_never_closer_than_the_floor() {
         let start = Instant::now();
         let mut keys = KeyFrames::default();
-        keys.ask();
-        assert!(keys.take(start));
+        keys.ask(KeyBecause::Opening);
+        assert_eq!(keys.take(start), Some(KeyBecause::Opening));
         let soon = start + Duration::from_millis(30);
-        keys.ask();
+        keys.ask(KeyBecause::Hole);
         assert!(!keys.due(soon));
-        assert!(!keys.take(soon));
+        assert_eq!(keys.take(soon), None);
         assert_eq!(keys.deadline(), Some(start + KEY_FLOOR));
-        assert!(keys.take(start + KEY_FLOOR));
+        assert_eq!(keys.take(start + KEY_FLOOR), Some(KeyBecause::Hole));
         assert_eq!(keys.deadline(), None);
     }
 
@@ -1414,11 +1442,11 @@ mod tests {
     fn a_key_frame_waits_only_while_asked_for_and_held_by_the_floor() {
         let start = Instant::now();
         let mut keys = KeyFrames::default();
-        keys.ask();
+        keys.ask(KeyBecause::Opening);
         assert!(!keys.waiting(start), "the first one never waits");
-        assert!(keys.take(start));
+        assert!(keys.take(start).is_some());
         assert!(!keys.waiting(start), "none asked for");
-        keys.ask();
+        keys.ask(KeyBecause::Player);
         assert!(keys.waiting(start + KEY_FLOOR / 2));
         assert!(!keys.waiting(start + KEY_FLOOR));
     }
@@ -1427,12 +1455,23 @@ mod tests {
     fn a_key_frame_the_encoder_made_itself_answers_what_was_asked() {
         let start = Instant::now();
         let mut keys = KeyFrames::default();
-        keys.ask();
-        keys.made(start);
+        keys.ask(KeyBecause::Player);
+        assert_eq!(keys.made(start), KeyBecause::Player);
         assert!(!keys.due(start + KEY_FLOOR * 2));
-        keys.ask();
+        keys.ask(KeyBecause::Player);
         assert!(!keys.due(start + KEY_FLOOR / 2));
         assert!(keys.due(start + KEY_FLOOR));
+    }
+
+    #[test]
+    fn a_key_frame_nobody_asked_for_is_the_encoders_own() {
+        let start = Instant::now();
+        let mut keys = KeyFrames::default();
+        assert_eq!(keys.made(start), KeyBecause::Encoder);
+        // And the first reason asked for stands while it waits.
+        keys.ask(KeyBecause::Hole);
+        keys.ask(KeyBecause::Player);
+        assert_eq!(keys.take(start + KEY_FLOOR), Some(KeyBecause::Hole));
     }
 
     #[test]

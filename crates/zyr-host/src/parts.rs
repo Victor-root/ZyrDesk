@@ -41,6 +41,13 @@ pub trait Screen {
         false
     }
 
+    /// How many updates of the screen the system folded into the images
+    /// given since this was last asked, because they were taken late: an
+    /// update that was not seen on its own.
+    fn folded(&mut self) -> u32 {
+        0
+    }
+
     /// Aims the capture at the screen whose [`Display::id`] is `display`,
     /// or at the main one for `""` or a screen that is not there.
     fn aim(&mut self, display: &str) -> Result<Aimed, ScreenError>;

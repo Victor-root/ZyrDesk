@@ -4084,6 +4084,28 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas sûr.** Comme pour D243, le blocage n'a pas pu être reproduit hors de GitHub : ce qui appuie cette cause, c'est que les deux essais en cause sont exactement ceux du journal, qu'ils s'ouvraient au même moment, et que le premier avait échoué au bout de son délai. Les passages qui suivent diront si elle suffit.
 
+## D254. Le journal de l'hôte dit ce que la capture et l'encodeur ont fait de chaque seconde (2026-09-29, pendant MZ)
+
+> Quatrième étape de l'inventaire du journal ([D252](#d252-le-journal-dit-ce-que-fait-lordinateur-lui-même-seconde-par-seconde-2026-09-29-pendant-mz)). Le côté hôte disait où passait le temps de chaque image ([D227](#d227-la-fluidité-se-mesure-image-par-image-à-chaque-étape-du-trajet-2026-09-25-pendant-mz)) ; il ne disait pas ce que l'écran et l'encodeur avaient fait de la seconde.
+
+**Le constat.** Une image qui manque à l'arrivée a pu manquer à quatre endroits chez l'hôte, et le journal n'en départageait aucun. La capture : Windows a fait plus de mises à jour de l'écran que le fil n'en a prises, parce qu'il a repris l'image en retard. L'encodeur : il a produit plus de bits qu'on ne lui en demandait, et ses grosses images sont parties en rafale contre un lien qui ne les prenait pas. Les images clés : le journal en comptait, sans dire pourquoi chacune était partie, alors qu'une rafale d'images clés est la première chose à soupçonner quand des paquets se perdent en local. Et rien ne disait, pour un flux, le débit réellement donné à l'encodeur : ce que la personne demande sur le fil, moins la parité et le son.
+
+**Ce qui est fait.**
+
+- La capture compte les mises à jour de l'écran que Windows a repliées dans une image livrée tard (le nombre d'images accumulées, moins celle qu'on a prise), les attentes sur l'écran qui n'ont rien donné, et les images gardées pour la cadence puis remplacées par une plus neuve.
+- L'encodeur compte les bits qu'il a réellement faits, quel que soit le sort des images ensuite (jetées parce que le lien était plein, ou trop grosses pour être découpées), les encodages qui n'ont pas encore rendu de paquet, et les paquets rendus ensemble.
+- Chaque image clé est comptée par raison : ouverture du flux, demande du lecteur, trou à refermer après une image jetée, ou image que l'encodeur a faite de lui-même. Quand une demande attend encore, sa raison reste la première, et une image clé que l'encodeur fait alors la solde sans changer de raison. La liste image par image de la seconde marque chaque image clé avec sa raison, `k(player)`.
+- Une ligne par seconde (`pace`) rassemble tout cela après la ligne existante : `capture: 60 images, 0 more updates of the screen folded into them, 2 waits gave nothing, 0 pointer only; encoder: 19.88 Mb/s made against 16.54 asked of it and 20.00 on the wire, ...; key frames: 1 opening a stream, 0 asked by the player, ...`.
+- L'ouverture d'un flux dit le débit donné à l'encodeur, celui qui est demandé sur le fil et la part de parité. Quand le débit change en cours de session sans refaire l'encodeur, la ligne de chaque seconde suit le nouveau débit.
+
+**Ce qui se voit.** Rien à l'écran. Dans le journal de l'hôte, tri `pace`.
+
+**Comment la lire.** Un débit produit au-dessus du débit demandé pendant plusieurs secondes de suite : l'encodeur ne tient pas son budget, à corriger de son côté (contrôle de débit, taille de la réserve). Des mises à jour repliées : le fil de capture était en retard, à mettre en regard de la charge de l'ordinateur (`vitals`). Beaucoup d'images clés « asked by the player » : le lecteur perd des images, et la raison est dans son journal (`picture`). Des images clés « closing a hole » : c'est l'hôte qui a jeté une image, lien plein ou image trop grosse.
+
+**Les essais.** La ligne d'une seconde dit exactement ce que la capture et l'encodeur ont fait, sur une seconde simulée de soixante images dont certaines prises en retard et certaines sans paquet ; la raison d'une image clé reste la première demandée, et une image clé que personne n'a demandée est celle de l'encodeur ; une session simulée de bout en bout écrit la ligne de chaque flux et sa ligne d'ouverture.
+
+**Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows. Le compte des mises à jour repliées se lit dans les informations que Windows donne avec chaque image (DXGI), qu'aucun essai d'ici ne peut produire.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

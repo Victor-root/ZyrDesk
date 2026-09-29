@@ -588,6 +588,16 @@ async fn a_session_streams_pictures_a_player_decodes_and_follows_every_change() 
         .await;
     assert_eq!(reason, ByeReason::ServiceStop);
     assert_eq!(far.ended(), Ending::Stopped);
+
+    // The journal says how each stream was set up and what capture and
+    // encoder made of its seconds.
+    assert!(far.journal.lines_with("asked on the wire").len() >= 3);
+    let made = far.journal.lines_with(": capture: ");
+    assert!(
+        made.iter()
+            .any(|line| line.contains("key frames: 1 opening a stream")),
+        "{made:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

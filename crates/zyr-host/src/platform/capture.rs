@@ -145,6 +145,9 @@ pub(super) struct DuplicatedScreen {
     described: String,
     filming: Option<Filming>,
     lost: Option<Lost>,
+    /// Updates of the screen the system folded into the images given, not
+    /// yet told.
+    folded: u32,
     /// Duplication stopping and coming back, which some screens do at
     /// every picture for as long as a program holds them.
     losses: Seldom,
@@ -193,6 +196,7 @@ impl DuplicatedScreen {
             described: String::new(),
             filming: None,
             lost: None,
+            folded: 0,
             losses: Seldom::default(),
             returns: Seldom::default(),
             latest: None,
@@ -537,6 +541,12 @@ impl DuplicatedScreen {
         resource: Option<IDXGIResource>,
     ) -> Result<Captured, ScreenError> {
         let presented = info.LastPresentTime != 0;
+        if presented {
+            // More than one when the frame before was let go of late.
+            self.folded = self
+                .folded
+                .saturating_add(info.AccumulatedFrames.saturating_sub(1));
+        }
         if presented && let Some(resource) = resource {
             let texture: ID3D11Texture2D = resource
                 .cast()
@@ -694,6 +704,10 @@ impl Screen for DuplicatedScreen {
 
     fn vendor(&self) -> GpuVendor {
         self.device.vendor
+    }
+
+    fn folded(&mut self) -> u32 {
+        std::mem::take(&mut self.folded)
     }
 
     fn wait(&mut self, until: Instant) -> Result<Captured, ScreenError> {

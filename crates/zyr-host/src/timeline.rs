@@ -8,7 +8,9 @@
 //! each step of each picture took, and every picture one after the other,
 //! under the frame number the player counts it by.
 //!
-//! Two lines a second while pictures leave, and nothing otherwise.
+//! Three lines a second while pictures leave, and nothing otherwise: the
+//! second as a whole, what capture and encoder made of it, and every
+//! picture one after the other.
 
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
@@ -30,13 +32,46 @@ pub(crate) enum Left {
     Repeat,
 }
 
+/// Why a key frame went.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KeyBecause {
+    /// A stream opens on one.
+    Opening,
+    /// The player lost a frame and asked for one.
+    Player,
+    /// A picture never reached the link, and the stream goes on from a key
+    /// frame that closes the hole.
+    Hole,
+    /// Nobody asked: the encoder made it of its own accord.
+    Encoder,
+}
+
+impl KeyBecause {
+    const ALL: [KeyBecause; 4] = [
+        KeyBecause::Opening,
+        KeyBecause::Player,
+        KeyBecause::Hole,
+        KeyBecause::Encoder,
+    ];
+
+    fn word(self) -> &'static str {
+        match self {
+            KeyBecause::Opening => "opening",
+            KeyBecause::Player => "player",
+            KeyBecause::Hole => "hole",
+            KeyBecause::Encoder => "encoder",
+        }
+    }
+}
+
 /// One picture handed to the link, with when each step of it ended.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Picture {
     pub(crate) stream: u16,
     pub(crate) frame: u32,
     pub(crate) left: Left,
-    pub(crate) key: bool,
+    /// Whether it is a key frame, and why.
+    pub(crate) key: Option<KeyBecause>,
     /// When the image was captured; for a repeat, when it was decided.
     pub(crate) captured: Instant,
     /// When drawing it into the encoder's frame began.
@@ -65,6 +100,17 @@ pub(crate) struct Timeline {
     /// When the previous picture left, and the previous image came.
     last_left: Option<Instant>,
     last_capture: Option<Instant>,
+    /// What the encoder is asked for, in kilobits a second: as it takes
+    /// them, and as they are asked on the wire with the parity and the
+    /// sound.
+    rate: Option<Rate>,
+}
+
+/// The rate of bits a stream is given.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Rate {
+    pub(crate) encoder_kbps: u32,
+    pub(crate) wire_kbps: u32,
 }
 
 /// What one second gathered.
@@ -95,6 +141,26 @@ struct Second {
     stills: u32,
     crowded: u32,
     skipped: u32,
+    /// When the second began and when its last thing happened, to say
+    /// what rate of bits it made.
+    began: Option<Instant>,
+    ended: Option<Instant>,
+    /// Updates of the screen the system folded into the images given,
+    /// because this thread took them late.
+    folded: u32,
+    /// Waits on the screen that gave nothing.
+    nothing: u32,
+    /// Images held for the cadence and replaced by a newer one.
+    replaced: u32,
+    /// Pictures the packets could not be cut from, being too large.
+    too_large: u32,
+    /// Encodes that gave no packet yet, packets that came together, and
+    /// the bytes the encoder made, whatever became of them.
+    kept: u32,
+    together: u32,
+    made: usize,
+    /// Key frames by reason, in the order of [`KeyBecause::ALL`].
+    key_because: [u32; 4],
     /// Every picture, in the order it left: `left every/host/KB` in
     /// milliseconds and kilobytes, then a letter for what it was.
     each: String,
@@ -108,15 +174,31 @@ impl Timeline {
             second: Second::default(),
             last_left: None,
             last_capture: None,
+            rate: None,
         }
     }
 
+    /// Something happened at `now`: the first thing of a second starts it.
+    fn touch(&mut self, now: Instant) {
+        self.seconds.started(now);
+        let second = &mut self.second;
+        second.began = Some(second.began.map_or(now, |began| began.min(now)));
+        second.ended = Some(second.ended.map_or(now, |ended| ended.max(now)));
+    }
+
+    /// A stream is given that rate of bits.
+    pub(crate) fn rate(&mut self, rate: Rate) {
+        self.rate = Some(rate);
+    }
+
     /// The screen gave an image made at `at`, and this thread had it at
-    /// `got`.
-    pub(crate) fn captured(&mut self, at: Instant, got: Instant) {
-        self.seconds.started(got);
+    /// `got`; `folded` updates of the screen went into it because it was
+    /// taken late.
+    pub(crate) fn captured(&mut self, at: Instant, got: Instant, folded: u32) {
+        self.touch(got);
         let second = &mut self.second;
         second.captures += 1;
+        second.folded += folded;
         if let Some(before) = self.last_capture.replace(at) {
             second
                 .capture_every
@@ -127,13 +209,43 @@ impl Timeline {
 
     /// The pointer moved and nothing else did.
     pub(crate) fn pointer_only(&mut self, now: Instant) {
-        self.seconds.started(now);
+        self.touch(now);
         self.second.pointer_only += 1;
+    }
+
+    /// A wait on the screen gave nothing.
+    pub(crate) fn nothing(&mut self, now: Instant) {
+        self.touch(now);
+        self.second.nothing += 1;
+    }
+
+    /// An image held for the cadence was replaced by a newer one.
+    pub(crate) fn replaced(&mut self, now: Instant) {
+        self.touch(now);
+        self.second.replaced += 1;
+    }
+
+    /// A picture could not be cut into packets, being too large.
+    pub(crate) fn too_large(&mut self, now: Instant) {
+        self.touch(now);
+        self.second.too_large += 1;
+    }
+
+    /// An encode gave `bytes` in `packets`: none yet when nought, or more
+    /// than one together.
+    pub(crate) fn encoded(&mut self, now: Instant, packets: u32, bytes: usize) {
+        self.touch(now);
+        self.second.made += bytes;
+        match packets {
+            0 => self.second.kept += 1,
+            1 => {}
+            more => self.second.together += more - 1,
+        }
     }
 
     /// Something the cadence decided went out `late` after it was due.
     pub(crate) fn due(&mut self, due: Due, late: Duration, now: Instant) {
-        self.seconds.started(now);
+        self.touch(now);
         match due {
             Due::Held => self.second.held_late.add(late),
             Due::Repeat => self.second.repeat_late.add(late),
@@ -143,13 +255,13 @@ impl Timeline {
 
     /// A picture found the link full and was dropped.
     pub(crate) fn crowded(&mut self, now: Instant) {
-        self.seconds.started(now);
+        self.touch(now);
         self.second.crowded += 1;
     }
 
     /// A picture was left out, waiting for a key frame.
     pub(crate) fn skipped(&mut self, now: Instant) {
-        self.seconds.started(now);
+        self.touch(now);
         self.second.skipped += 1;
     }
 
@@ -163,7 +275,7 @@ impl Timeline {
         {
             self.write();
         }
-        self.seconds.started(picture.handed);
+        self.touch(picture.handed);
         let every = self
             .last_left
             .replace(picture.started)
@@ -177,7 +289,14 @@ impl Timeline {
             Left::Held => second.held += 1,
             Left::Repeat => second.repeats += 1,
         }
-        second.keys += u32::from(picture.key);
+        if let Some(because) = picture.key {
+            second.keys += 1;
+            let at = KeyBecause::ALL
+                .iter()
+                .position(|each| *each == because)
+                .unwrap_or(0);
+            second.key_because[at] += 1;
+        }
         second.datagrams += picture.datagrams;
         second.bytes += picture.bytes;
         if let Some(every) = every {
@@ -209,7 +328,9 @@ impl Timeline {
                 Left::Held => "h",
                 Left::Repeat => "r",
             },
-            if picture.key { "k" } else { "" },
+            picture
+                .key
+                .map_or(String::new(), |because| format!("k({})", because.word())),
         );
     }
 
@@ -264,12 +385,49 @@ impl Timeline {
             second.crowded,
             second.skipped,
         ));
+        self.log.debug(&self.what_made_of_it(&frames, &second));
         if !nothing_left {
             self.log.debug(&format!(
-                "{frames}, each as out every ms/host ms/KB, h held, r repeat, k key:{}",
+                "{frames}, each as out every ms/host ms/KB, h held, r repeat, k(why) key:{}",
                 second.each
             ));
         }
+    }
+
+    /// What capture and encoder made of the second: how much of the
+    /// screen was taken, what rate of bits came out against what was
+    /// asked, and why the key frames went.
+    fn what_made_of_it(&self, frames: &str, second: &Second) -> String {
+        let elapsed = match (second.began, second.ended) {
+            (Some(began), Some(ended)) => ended.saturating_duration_since(began),
+            _ => Duration::ZERO,
+        }
+        .max(Duration::from_millis(100));
+        let made = second.made as f64 * 8.0 / elapsed.as_secs_f64() / 1e6;
+        let asked = self.rate.map_or(String::new(), |rate| {
+            format!(
+                " against {:.2} asked of it and {:.2} on the wire",
+                f64::from(rate.encoder_kbps) / 1000.0,
+                f64::from(rate.wire_kbps) / 1000.0
+            )
+        });
+        let [opening, player, hole, own] = second.key_because;
+        format!(
+            "{frames}: capture: {} images, {} more updates of the screen folded into them, {} \
+             waits gave nothing, {} pointer only; encoder: {made:.2} Mb/s made{asked}, {} \
+             encodes gave no packet yet, {} packets came together with another; {} held images \
+             replaced by newer ones, {} pictures too large to cut; key frames: {opening} opening \
+             a stream, {player} asked by the player, {hole} closing a hole, {own} of the \
+             encoder's own",
+            second.captures,
+            second.folded,
+            second.nothing,
+            second.pointer_only,
+            second.kept,
+            second.together,
+            second.replaced,
+            second.too_large,
+        )
     }
 }
 
@@ -360,7 +518,7 @@ mod tests {
             stream: 1,
             frame,
             left,
-            key: frame == 0,
+            key: (frame == 0).then_some(KeyBecause::Opening),
             captured: at,
             started: ms(10),
             drawn: ms(15),
@@ -379,7 +537,7 @@ mod tests {
         let period = Duration::from_micros(16_667);
         for n in 0..3u32 {
             let when = at + period * n;
-            timeline.captured(when, when + Duration::from_micros(800));
+            timeline.captured(when, when + Duration::from_micros(800), 0);
             timeline.left(picture(
                 when,
                 n,
@@ -410,7 +568,58 @@ mod tests {
         );
         assert!(said.contains("repeats 0.3/0.3/0.3 ms late"), "{said}");
         assert!(
-            said.contains("each as out every ms/host ms/KB, h held, r repeat, k key: 0.0/5.6/40k 16.7/5.6/40 16.7/5.6/40h 16.7/5.6/40r"),
+            said.contains("each as out every ms/host ms/KB, h held, r repeat, k(why) key: 0.0/5.6/40k(opening) 16.7/5.6/40 16.7/5.6/40h 16.7/5.6/40r"),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn each_second_says_what_capture_and_encoder_made_of_it() {
+        let journal = TestLog::new("timeline-encoder");
+        let mut timeline = Timeline::new(&journal.log);
+        let at = Instant::now();
+        timeline.rate(Rate {
+            encoder_kbps: 16_538,
+            wire_kbps: 20_000,
+        });
+        // 40 KB every 16.7 ms is 19.7 Mb/s.
+        for n in 0..60u32 {
+            let when = at + Duration::from_micros(16_667) * n;
+            // Every tenth image was taken late, and three updates of the
+            // screen were folded into it.
+            timeline.captured(when, when, if n % 10 == 9 { 3 } else { 0 });
+            let packets = match n {
+                20 => 0,
+                21 => 2,
+                _ => 1,
+            };
+            timeline.encoded(when, packets, 40 * 1024 * packets as usize);
+            timeline.left(Picture {
+                key: match n {
+                    0 => Some(KeyBecause::Opening),
+                    30 => Some(KeyBecause::Player),
+                    45 => Some(KeyBecause::Hole),
+                    _ => None,
+                },
+                ..picture(when, n, Left::Fresh)
+            });
+        }
+        timeline.nothing(at + Duration::from_millis(200));
+        timeline.nothing(at + Duration::from_millis(300));
+        timeline.replaced(at + Duration::from_millis(400));
+        timeline.too_large(at + Duration::from_millis(500));
+        timeline.write();
+
+        let said = written(&journal);
+        assert!(
+            said.contains(
+                "stream 1 frames 0-59: capture: 60 images, 18 more updates of the screen folded \
+                 into them, 2 waits gave nothing, 0 pointer only; encoder: 19.88 Mb/s made \
+                 against 16.54 asked of it and 20.00 on the wire, 1 encodes gave no packet yet, \
+                 1 packets came together with another; 1 held images replaced by newer ones, 1 \
+                 pictures too large to cut; key frames: 1 opening a stream, 1 asked by the \
+                 player, 1 closing a hole, 0 of the encoder's own"
+            ),
             "{said}"
         );
     }
