@@ -28,7 +28,9 @@
 mod assemble;
 mod packetize;
 
-pub use assemble::{Assembled, AssembledFrame, Assembler, AssemblyCounters, AssemblyLimits};
+pub use assemble::{
+    Assembled, AssembledFrame, Assembler, AssemblyCounters, AssemblyLimits, GivenUp, Gone, Seen,
+};
 pub use packetize::{DEFAULT_FEC_PERCENT, OutgoingFrame, PacketizeError, Packetizer, Packets};
 
 use crate::codec::VideoCodec;

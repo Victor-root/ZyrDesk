@@ -18,7 +18,7 @@ use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 use zyr_media::trace::{Seconds, Spread, ms};
-use zyr_media::video::AssembledFrame;
+use zyr_media::video::{AssembledFrame, AssemblyCounters, GivenUp, Gone};
 use zyr_proto::log::Log;
 
 use crate::present::Displayed;
@@ -29,6 +29,15 @@ pub const TAG: &str = "flow";
 /// Presents remembered until the screen says it showed them: far more
 /// than the few the system ever queues.
 const REMEMBERED: usize = 16;
+
+/// What the counters kept elsewhere stood at: they only ever grow, and
+/// a second says what they gained.
+#[derive(Clone, Copy, Default)]
+struct Totals {
+    assembly: AssemblyCounters,
+    /// Datagrams left out on the way from the link to the video thread.
+    crowded: u64,
+}
 
 pub(crate) struct Flow {
     log: Log,
@@ -41,6 +50,10 @@ pub(crate) struct Flow {
     /// Presents the screen has not been seen to show yet: their number,
     /// when they were presented, and how long after their capture.
     presents: VecDeque<(u64, Instant, Option<Duration>)>,
+    /// The counters as they stand, and as they stood when the last second
+    /// was written.
+    totals: Totals,
+    written: Totals,
 }
 
 /// What one second gathered.
@@ -50,6 +63,8 @@ struct Second {
     first: Option<u32>,
     last: Option<u32>,
     whole: u32,
+    /// Bytes of the frames that came whole.
+    bytes: u64,
     keys: u32,
     repeats: u32,
     repaired: u32,
@@ -102,7 +117,14 @@ impl Flow {
             last_presented: None,
             screen: None,
             presents: VecDeque::new(),
+            totals: Totals::default(),
+            written: Totals::default(),
         }
+    }
+
+    /// The counters kept by the assembler and by the link, as they stand.
+    pub(crate) fn totals(&mut self, assembly: AssemblyCounters, crowded: u64) {
+        self.totals = Totals { assembly, crowded };
     }
 
     /// This thread took a datagram `lag` after the link had it.
@@ -136,6 +158,7 @@ impl Flow {
         second.first.get_or_insert(frame.frame);
         second.last = Some(frame.frame);
         second.whole += 1;
+        second.bytes += frame.data.len() as u64;
         second.keys += u32::from(frame.key);
         second.repeats += u32::from(frame.repeat);
         second.repaired += u32::from(frame.repaired);
@@ -185,11 +208,11 @@ impl Flow {
         self.second.arrivals.push('x');
     }
 
-    /// A frame could not be completed.
-    pub(crate) fn lost(&mut self, now: Instant) {
+    /// A frame could not be completed, and this is what it had.
+    pub(crate) fn lost(&mut self, now: Instant, frame: u32, gone: &Gone) {
         self.seconds.started(now);
         self.second.lost += 1;
-        self.second.arrivals.push_str(" L");
+        let _ = write!(self.second.arrivals, " L{frame}({})", in_short(gone));
     }
 
     /// Pictures decoded that a newer one replaced before their turn.
@@ -307,11 +330,15 @@ impl Flow {
             }
             _ => "no frame".to_string(),
         };
+        let (now, before) = (&self.totals, &self.written);
+        let gained = |now: u64, before: u64| now.saturating_sub(before);
         self.log.debug(&format!(
             "{frames}: {} whole ({} key, {} repeats, {} repaired), {} lost, {} passed over \
-             waiting for a key frame, {} dropped behind, {} refused; {} datagrams, taken {} ms \
-             after the link had them; whole every {} ms, capture to whole {} ms, first to last \
-             packet {} ms, decoding {} ms (median/95th/worst)",
+             waiting for a key frame, {} dropped behind, {} refused; {} datagrams ({} KB of \
+             whole frames), taken {} ms after the link had them, {} left out on the way to \
+             this thread; of the shards, {} duplicate, {} late, {} unneeded, {} malformed, {} \
+             refused for want of room, {} parity used; whole every {} ms, capture to whole {} \
+             ms, first to last packet {} ms, decoding {} ms (median/95th/worst)",
             second.whole,
             second.keys,
             second.repeats,
@@ -321,17 +348,27 @@ impl Flow {
             second.behind,
             second.refused,
             second.datagrams,
+            second.bytes / 1024,
             second.lag,
+            gained(now.crowded, before.crowded),
+            gained(now.assembly.duplicates, before.assembly.duplicates),
+            gained(now.assembly.late, before.assembly.late),
+            gained(now.assembly.unneeded, before.assembly.unneeded),
+            gained(now.assembly.malformed, before.assembly.malformed),
+            gained(now.assembly.overflow, before.assembly.overflow),
+            gained(now.assembly.parity_used, before.assembly.parity_used),
             second.every,
             second.latency,
             second.spread,
             second.decoding,
         ));
+        self.written = self.totals;
         if !second.arrivals.is_empty() {
             self.log.debug(&format!(
                 "{frames}, each as whole every ms/capture to whole ms/first to last packet \
                  ms/decoding ms, k key, r repeat, p repaired, s passed over, b dropped \
-                 behind, x refused, L lost:{}",
+                 behind, x refused, L<frame>(shards that came/shards it takes of shards sent, \
+                 k a key frame; why it was given up and ms waited) lost:{}",
                 second.arrivals
             ));
         }
@@ -347,6 +384,26 @@ impl Drop for Flow {
     fn drop(&mut self) {
         self.write();
     }
+}
+
+/// What a frame given up had, in few characters: `87/90 of 110k, overdue
+/// 19.0`, or `none, crowded 0.0` when no shard of it ever came.
+fn in_short(gone: &Gone) -> String {
+    let what = match gone.seen {
+        Some(seen) => format!(
+            "{}/{} of {}{}",
+            seen.came,
+            seen.needed,
+            seen.sent,
+            if seen.key { "k" } else { "" }
+        ),
+        None => "none".to_string(),
+    };
+    let why = match gone.why {
+        GivenUp::Overdue => "overdue",
+        GivenUp::Crowded => "crowded",
+    };
+    format!("{what}, {why} {:.1}", ms(gone.waited))
 }
 
 /// What was presented, and what the screen made of it.
@@ -390,6 +447,7 @@ mod tests {
     use super::*;
     use crate::testing;
     use zyr_media::codec::VideoCodec;
+    use zyr_media::video::Seen;
 
     fn frame(at: Instant, number: u32, arrived: Duration) -> AssembledFrame {
         AssembledFrame {
@@ -398,7 +456,7 @@ mod tests {
             key: number == 0,
             repeat: false,
             codec: VideoCodec::Hevc,
-            data: Vec::new(),
+            data: vec![0; 2048],
             captured_us: 0,
             host_latency_us: 0,
             first_packet: at + arrived - Duration::from_micros(1_200),
@@ -454,24 +512,48 @@ mod tests {
                 Some(screen(at, u64::from(n) + 1, u64::from(n) + 1, refresh)),
             );
         }
-        flow.lost(at + period * 5);
+        let gone = Gone {
+            why: GivenUp::Overdue,
+            seen: Some(Seen {
+                key: false,
+                came: 87,
+                needed: 90,
+                sent: 110,
+            }),
+            waited: Duration::from_micros(19_000),
+        };
+        flow.lost(at + period * 5, 4, &gone);
         flow.unshown(1);
         flow.gave_way(2);
+        flow.totals(
+            AssemblyCounters {
+                duplicates: 2,
+                late: 1,
+                unneeded: 9,
+                parity_used: 3,
+                ..AssemblyCounters::default()
+            },
+            5,
+        );
         flow.look(at + Duration::from_secs(5));
 
         let written = journal.written();
         assert!(
             written.contains(
                 "stream 3 frames 0-3: 4 whole (1 key, 0 repeats, 1 repaired), 1 lost, 0 passed \
-                 over waiting for a key frame, 1 dropped behind, 0 refused; 4 datagrams, taken \
-                 0.3/0.3/0.3 ms after the link had them; whole every 16.7/16.7/16.7 ms, capture \
-                 to whole 25.0/25.0/25.0 ms, first to last packet 1.2/1.2/1.2 ms"
+                 over waiting for a key frame, 1 dropped behind, 0 refused; 4 datagrams (8 KB \
+                 of whole frames), taken 0.3/0.3/0.3 ms after the link had them, 5 left out on \
+                 the way to this thread; of the shards, 2 duplicate, 1 late, 9 unneeded, 0 \
+                 malformed, 0 refused for want of room, 3 parity used; whole every \
+                 16.7/16.7/16.7 ms, capture to whole 25.0/25.0/25.0 ms, first to last packet \
+                 1.2/1.2/1.2 ms"
             ),
             "{written}"
         );
         assert!(
             written.contains(
-                ": 0.0/25.0/1.2k/2.0 16.7/25.0/1.2/2.0 16.7/25.0/1.2p/2.0 16.7/25.0/1.2b L"
+                ": 0.0/25.0/1.2k/2.0 16.7/25.0/1.2/2.0 16.7/25.0/1.2p/2.0 16.7/25.0/1.2b \
+                 L4(87/90 of 110, overdue 19.0)"
             ),
             "{written}"
         );

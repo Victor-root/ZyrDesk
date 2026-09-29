@@ -13,12 +13,14 @@
 //! never more parity kept for a frame than it has data shards.
 
 use std::collections::VecDeque;
+use std::fmt;
 use std::time::{Duration, Instant};
 
 use reed_solomon_simd::ReedSolomonDecoder;
 
 use super::{MAX_SHARD_BYTES, VideoHeader, newer_stream};
 use crate::codec::VideoCodec;
+use crate::trace::ms;
 use crate::wire::WireError;
 
 /// How far ahead of the oldest frame still awaited a packet may be.
@@ -95,7 +97,74 @@ pub enum Assembled {
     Lost {
         stream: u16,
         frame: u32,
+        gone: Gone,
     },
+}
+
+/// Why a frame was given up, and what it had when it was.
+///
+/// Told so that a loss can be laid at the right door: shards that never
+/// came point at the road, shards that came a moment too late at the
+/// grace, and a frame crowded out at a player that stopped taking them
+/// in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Gone {
+    pub why: GivenUp,
+    /// What came of it, if any shard of it ever did.
+    pub seen: Option<Seen>,
+    /// How long it was waited for: since its first shard came, or, when
+    /// none did, since the frame after it began to.
+    pub waited: Duration,
+}
+
+/// What a journal says of it: `87 of the 90 shards it takes came (110
+/// sent), a key frame, given up after 19.0 ms as a newer frame was
+/// arriving`.
+impl fmt::Display for Gone {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.seen {
+            Some(seen) => write!(
+                f,
+                "{} of the {} shards it takes came ({} sent){}",
+                seen.came,
+                seen.needed,
+                seen.sent,
+                if seen.key { ", a key frame" } else { "" }
+            ),
+            None => f.write_str("not one shard of it came"),
+        }?;
+        write!(
+            f,
+            ", given up after {:.1} ms as {}",
+            ms(self.waited),
+            match self.why {
+                GivenUp::Overdue => "a newer frame was arriving",
+                GivenUp::Crowded => "newer frames were waiting behind it",
+            }
+        )
+    }
+}
+
+/// Why a frame was given up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GivenUp {
+    /// A newer frame had been arriving for the grace, and it was still
+    /// short of shards.
+    Overdue,
+    /// Too many newer frames were waiting behind it.
+    Crowded,
+}
+
+/// The shards a frame given up had.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Seen {
+    pub key: bool,
+    /// Shards that came, parity included.
+    pub came: usize,
+    /// Shards it takes to rebuild the frame.
+    pub needed: usize,
+    /// Shards the host sent, parity included.
+    pub sent: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,19 +251,39 @@ impl Assembler {
         }
         let newer = self.pending.len() - usize::from(seen);
         let crowded = newer >= self.limits.max_pending_frames;
-        let overdue = self
-            .newer_since()
+        let newer_since = self.newer_since();
+        let overdue = newer_since
             .is_some_and(|since| now.saturating_duration_since(since) >= self.limits.reorder_grace);
         if !crowded && !overdue {
             return None;
         }
-        if seen && let Some(given_up) = self.pending.pop_front() {
-            self.keep_spare(given_up.parts);
-        }
+        let (seen, waited_since) = match seen.then(|| self.pending.pop_front()).flatten() {
+            Some(given_up) => {
+                let seen = given_up.seen();
+                let since = given_up.first_packet;
+                self.keep_spare(given_up.parts);
+                (Some(seen), Some(since))
+            }
+            None => (None, newer_since),
+        };
+        let gone = Gone {
+            why: if crowded {
+                GivenUp::Crowded
+            } else {
+                GivenUp::Overdue
+            },
+            seen,
+            waited: waited_since
+                .map_or(Duration::ZERO, |since| now.saturating_duration_since(since)),
+        };
         self.counters.frames_lost += 1;
         let frame = self.next;
         self.settle(true);
-        Some(Assembled::Lost { stream, frame })
+        Some(Assembled::Lost {
+            stream,
+            frame,
+            gone,
+        })
     }
 
     /// When `poll` may give a frame up with no new datagram, if ever.
@@ -418,6 +507,17 @@ impl Pending {
             last_packet: now,
             complete: false,
             repaired: false,
+        }
+    }
+
+    /// What has come of it so far.
+    fn seen(&self) -> Seen {
+        let (data, parity, _) = geometry(&self.header);
+        Seen {
+            key: self.header.key,
+            came: self.data_count + self.parts.parity_at.len(),
+            needed: data,
+            sent: data + parity,
         }
     }
 
@@ -680,7 +780,17 @@ mod tests {
             out[0],
             Assembled::Lost {
                 stream: 1,
-                frame: 0
+                frame: 0,
+                gone: Gone {
+                    why: GivenUp::Overdue,
+                    seen: Some(Seen {
+                        key: true,
+                        came: first.len() - parity - 1,
+                        needed: first.len() - parity,
+                        sent: first.len(),
+                    }),
+                    waited: ms(16) + GRACE,
+                },
             }
         );
         assert_eq!(frame_of(&out[1]).data, second_data);
@@ -843,20 +953,20 @@ mod tests {
         let out = drain(&mut assembler, at + ms(48) + GRACE);
         assert_eq!(out.len(), 4);
         assert_eq!(frame_of(&out[0]).frame, 0);
-        assert_eq!(
-            out[1],
-            Assembled::Lost {
-                stream: 1,
-                frame: 1
-            }
-        );
-        assert_eq!(
-            out[2],
-            Assembled::Lost {
-                stream: 1,
-                frame: 2
-            }
-        );
+        for (n, lost) in [(1, &out[1]), (2, &out[2])] {
+            assert_eq!(
+                *lost,
+                Assembled::Lost {
+                    stream: 1,
+                    frame: n,
+                    gone: Gone {
+                        why: GivenUp::Overdue,
+                        seen: None,
+                        waited: GRACE,
+                    },
+                }
+            );
+        }
         assert_eq!(frame_of(&out[3]).frame, 3);
     }
 
@@ -889,7 +999,17 @@ mod tests {
             out[0],
             Assembled::Lost {
                 stream: 1,
-                frame: 0
+                frame: 0,
+                gone: Gone {
+                    why: GivenUp::Crowded,
+                    seen: Some(Seen {
+                        key: true,
+                        came: 1,
+                        needed: first.len() - parity_of(&first[0]),
+                        sent: first.len(),
+                    }),
+                    waited: Duration::ZERO,
+                },
             }
         );
         for (n, assembled) in out[1..].iter().enumerate() {
@@ -925,7 +1045,12 @@ mod tests {
                     out,
                     vec![Assembled::Lost {
                         stream: 1,
-                        frame: 1
+                        frame: 1,
+                        gone: Gone {
+                            why: GivenUp::Crowded,
+                            seen: None,
+                            waited: Duration::ZERO,
+                        },
                     }]
                 );
             }
@@ -980,7 +1105,17 @@ mod tests {
             out[0],
             Assembled::Lost {
                 stream: 1,
-                frame: 0
+                frame: 0,
+                gone: Gone {
+                    why: GivenUp::Overdue,
+                    seen: Some(Seen {
+                        key: true,
+                        came: 1,
+                        needed: first.len() - parity_of(&first[0]),
+                        sent: first.len(),
+                    }),
+                    waited: GRACE,
+                },
             }
         );
         assert_eq!(frame_of(&out[1]).data, vec![1]);
@@ -1209,5 +1344,46 @@ mod tests {
             println!("video, {label}: {:.0} MB/s", megabytes / seconds);
         }
         assert_eq!(assembler.counters().frames_lost, 0);
+    }
+
+    #[test]
+    fn a_frame_given_up_says_what_it_had_and_why() {
+        let seen = |key| {
+            Some(Seen {
+                key,
+                came: 87,
+                needed: 90,
+                sent: 110,
+            })
+        };
+        let overdue = Gone {
+            why: GivenUp::Overdue,
+            seen: seen(true),
+            waited: ms(19),
+        };
+        assert_eq!(
+            overdue.to_string(),
+            "87 of the 90 shards it takes came (110 sent), a key frame, given up after 19.0 ms \
+             as a newer frame was arriving"
+        );
+        let crowded = Gone {
+            why: GivenUp::Crowded,
+            seen: seen(false),
+            waited: Duration::ZERO,
+        };
+        assert_eq!(
+            crowded.to_string(),
+            "87 of the 90 shards it takes came (110 sent), given up after 0.0 ms as newer \
+             frames were waiting behind it"
+        );
+        let never = Gone {
+            why: GivenUp::Overdue,
+            seen: None,
+            waited: ms(3),
+        };
+        assert_eq!(
+            never.to_string(),
+            "not one shard of it came, given up after 3.0 ms as a newer frame was arriving"
+        );
     }
 }

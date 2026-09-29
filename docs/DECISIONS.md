@@ -4012,6 +4012,28 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui reste ouvert.** Les images jetées pour reprendre un rafraîchissement de retard, et celles qu'une rafale écrase, comptent toujours comme « en retard » : ce sont de vraies images que la personne n'a pas vues. Un hôte qui enverrait plus d'images par seconde que l'écran d'ici ne sait en montrer (120 pour un écran à 60 Hz) les compterait toutes, et l'icône s'allumerait. Ce cas n'a pas été vu.
 
+## D250. Le journal du lecteur dit pourquoi une image est perdue, et combien de temps on a attendu la suivante (2026-09-29, pendant MZ)
+
+> Prolonge [D227](#d227-la-fluidité-se-mesure-image-par-image-à-chaque-étape-du-trajet-2026-09-25-pendant-mz) : le journal disait où passait chaque image, pas pourquoi l'une d'elles ne passait pas. Première étape d'un inventaire du journal demandé par Victor (« assez de debug pour tout voir d'une session ? »), qui en compte cinq.
+
+**Le constat.** L'inventaire du journal, étage par étage (hôte, réseau et service, lecteur), dit que le trajet de chaque image est bien couvert, mais qu'une perte s'écrivait « image 1234 perdue » sans plus. Impossible de dire si aucun paquet n'était arrivé (l'image ne s'était jamais rendue jusqu'ici), s'il en manquait quelques-uns, s'ils étaient arrivés juste après le délai de tolérance, ou si le lecteur avait cessé de suivre. Une redemande d'image clé ne disait pas pourquoi, ni combien de temps l'image était restée figée. Et un voyant qui s'allumait ne portait que son motif, pas les chiffres qui l'avaient allumé.
+
+**Ce qui est fait, côté lecteur.**
+
+- L'assembleur dit, pour chaque image qu'il abandonne, ce qu'elle avait : combien de morceaux (réparation comprise) sont arrivés, combien il en fallait, combien l'hôte en avait envoyé, si c'était une image clé, combien de temps elle a été attendue et pourquoi elle est abandonnée : une image plus récente arrive depuis le délai de tolérance (`overdue`), ou trop d'images plus récentes attendent derrière elle (`crowded`). Le journal l'écrit dans la ligne d'événement (`picture`) et, image par image, dans la liste de la seconde (`flow`), à la place du simple `L` : `L1234(87/90 of 110k, overdue 19.0)` veut dire 87 morceaux arrivés sur 90 nécessaires, 110 envoyés, image clé, abandonnée après 19 ms.
+- La ligne d'une seconde du lecteur (`flow`) compte aussi ce que l'assembleur a reçu : morceaux en double, en retard, superflus, refusés faute de place, réparation utilisée, octets d'images entières, et les paquets jetés entre le tube du service et le fil de l'image.
+- Chaque demande d'image clé dit pourquoi (image perdue, ordinateur en retard, décodeur qui refuse, carte graphique refaite, demande restée sans réponse). Quand l'image clé arrive, une ligne (`picture`) dit après combien de temps, combien de demandes il a fallu et combien d'images ont été passées en attendant.
+- Chaque seconde, même quand aucune image ne vient, le lecteur écrit les chiffres du bandeau sur une ligne et ce que les compteurs ont gagné depuis la ligne d'avant (`measures`). C'est la seconde où l'image s'arrête qu'on veut avoir, et les lignes `flow` se taisent quand rien n'arrive.
+- Quand un voyant s'allume ou s'éteint, sa ligne (`badges`) porte les chiffres du bandeau de l'instant.
+
+**Ce que ça coûte.** Environ 350 caractères de plus par seconde dans le journal de la fenêtre, et rien sur le chemin d'une image : les lignes se composent hors du chemin de décodage, ou une seule fois par seconde.
+
+**Ce qui se voit.** Rien à l'écran. Dans le journal, tri `flow picture measures badges`.
+
+**Les essais.** L'assembleur dit la cause et le contenu de chaque image abandonnée dans les quatre cas qu'il connaît (en retard avec quelques morceaux, en retard sans aucun, poussée dehors avec un morceau, poussée dehors sans aucun) ; la ligne d'une seconde dit ce que l'assembleur a compté ; l'attente d'une image clé est chronométrée et ses images passées comptées ; le journal d'une session simulée dit pourquoi l'image est perdue, pourquoi l'image clé est demandée et combien de temps elle a mis ; les compteurs disent ce qu'ils ont gagné, et la ligne d'une seconde s'écrit vraiment chaque seconde.
+
+**Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows. Les autres étages (réseau et service, hôte, charge des machines, Wi-Fi) ont leurs propres étapes, dans les décisions qui suivent.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

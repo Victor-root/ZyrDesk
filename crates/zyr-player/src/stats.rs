@@ -27,6 +27,12 @@ pub const EVERY: Duration = Duration::from_millis(200);
 /// How often the counters go to the journal, as one line.
 const SUMMARY_EVERY: Duration = Duration::from_secs(10);
 
+/// How often the measures and what the counters gained go to the journal.
+///
+/// Every second while the player runs, even when no picture comes: the
+/// second a picture stops is the one worth having a line for.
+const SECOND: Duration = Duration::from_secs(1);
+
 /// Round trips are few (two a second): their spread is taken over
 /// this much time to mean anything.
 const ROUND_TRIPS_OVER: Duration = Duration::from_secs(5);
@@ -240,8 +246,8 @@ fn ms(duration: Duration) -> f64 {
 }
 
 /// The stats thread: takes the measures every [`EVERY`] until `stop`
-/// is dropped, and writes the counters down now and then and at the
-/// end.
+/// is dropped, and writes them down every second, the counters now and
+/// then, and the counters again at the end.
 pub fn run(
     tally: &Mutex<Tally>,
     measures: &Mutex<Measures>,
@@ -250,10 +256,22 @@ pub fn run(
     log: &Log,
 ) {
     let mut summary_at = Instant::now() + SUMMARY_EVERY;
+    let mut second_at = Instant::now() + SECOND;
+    let mut before = lock(tallies).clone();
     // Nothing is ever sent on `stop`: it only goes away.
     while let Err(RecvTimeoutError::Timeout) = stop.recv_timeout(EVERY) {
         let now = Instant::now();
         let taken = lock(tally).measures(now);
+        if now >= second_at {
+            second_at = now + SECOND;
+            let counters = lock(tallies).clone();
+            log.debug(&format!(
+                "{}; in the last second: {}",
+                taken.in_a_line(),
+                counters.gained_since(&before)
+            ));
+            before = counters;
+        }
         *lock(measures) = taken;
         if now >= summary_at {
             summary_at = now + SUMMARY_EVERY;
@@ -270,6 +288,32 @@ mod tests {
 
     fn ms_after(at: Instant, n: u64) -> Instant {
         at + Duration::from_millis(n)
+    }
+
+    #[test]
+    fn every_second_the_measures_and_what_the_counters_gained_are_written() {
+        let journal = crate::testing::OwnLog::new("measures-every-second");
+        let tally = Mutex::new(Tally::new(Clock::starting_now()));
+        let measures = Mutex::new(Measures::default());
+        let tallies = Mutex::new(Tallies::default());
+        let (stop, stopped) = std::sync::mpsc::channel::<()>();
+        let (tally, measures, tallies, log) = (&tally, &measures, &tallies, &journal.log);
+        std::thread::scope(|scope| {
+            scope.spawn(move || run(tally, measures, tallies, &stopped, log));
+            std::thread::sleep(SECOND + EVERY * 2);
+            lock(tallies).pictures.decoded = 60;
+            std::thread::sleep(SECOND + EVERY);
+            drop(stop);
+        });
+        let written = journal.written();
+        assert!(
+            written.contains(
+                "in the last second: frames whole 0 (repaired 0), lost 0; pictures decoded 0,"
+            ),
+            "{written}"
+        );
+        assert!(written.contains("pictures decoded 60,"), "{written}");
+        assert!(written.contains("at the end: "), "{written}");
     }
 
     #[test]

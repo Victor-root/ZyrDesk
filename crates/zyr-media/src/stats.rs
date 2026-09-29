@@ -48,6 +48,37 @@ pub struct Measures {
     pub frame_interval_p99_ms: Option<f64>,
 }
 
+impl Measures {
+    /// Every figure on one line, for the journal: what the person reads
+    /// in the statistics banner, and the few it does not show.
+    pub fn in_a_line(&self) -> String {
+        let figure = |value: Option<f64>, decimals: usize, unit: &str| match value {
+            Some(value) => format!("{value:.decimals$} {unit}"),
+            None => "-".to_string(),
+        };
+        let stream = match (&self.codec, self.width, self.height) {
+            (Some(codec), Some(width), Some(height)) => format!("{codec} {width}x{height}, "),
+            _ => String::new(),
+        };
+        format!(
+            "{stream}{} frames/s, {}; host {}, network {} (variance {}), decode {}, display {}, \
+             capture to screen {}; lost {}, replaced {}; last frame {} ago, interval 99th {}",
+            figure(self.fps, 1, "").trim_end(),
+            figure(self.bitrate_mbps, 2, "Mb/s"),
+            figure(self.host_ms, 1, "ms"),
+            figure(self.network_ms, 1, "ms"),
+            figure(self.network_variance_ms, 1, "ms"),
+            figure(self.decode_ms, 1, "ms"),
+            figure(self.render_ms, 1, "ms"),
+            figure(self.latency_ms, 0, "ms"),
+            figure(self.dropped_network_pct, 1, "%"),
+            figure(self.dropped_jitter_pct, 1, "%"),
+            figure(self.since_frame_ms, 0, "ms"),
+            figure(self.frame_interval_p99_ms, 1, "ms"),
+        )
+    }
+}
+
 /// Samples of one measure over a sliding window.
 #[derive(Debug, Clone)]
 pub struct Rolling {
@@ -133,6 +164,39 @@ mod tests {
 
     fn ms(n: u64) -> Duration {
         Duration::from_millis(n)
+    }
+
+    #[test]
+    fn the_measures_read_on_one_line() {
+        let measures = Measures {
+            codec: Some("H.264".to_string()),
+            width: Some(1920),
+            height: Some(1080),
+            fps: Some(59.94),
+            decode_ms: Some(1.24),
+            render_ms: Some(0.9),
+            host_ms: Some(2.3),
+            network_ms: Some(1.0),
+            network_variance_ms: Some(0.4),
+            bitrate_mbps: Some(24.31),
+            dropped_network_pct: Some(0.0),
+            dropped_jitter_pct: Some(1.25),
+            since_frame_ms: Some(8.0),
+            latency_ms: Some(41.0),
+            frame_interval_p99_ms: Some(17.1),
+        };
+        assert_eq!(
+            measures.in_a_line(),
+            "H.264 1920x1080, 59.9 frames/s, 24.31 Mb/s; host 2.3 ms, network 1.0 ms (variance \
+             0.4 ms), decode 1.2 ms, display 0.9 ms, capture to screen 41 ms; lost 0.0 %, \
+             replaced 1.2 %; last frame 8 ms ago, interval 99th 17.1 ms"
+        );
+        // Before anything is known, every figure is a dash.
+        assert_eq!(
+            Measures::default().in_a_line(),
+            "- frames/s, -; host -, network - (variance -), decode -, display -, capture to \
+             screen -; lost -, replaced -; last frame - ago, interval 99th -"
+        );
     }
 
     #[test]

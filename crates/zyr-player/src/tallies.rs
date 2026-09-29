@@ -76,6 +76,39 @@ pub struct LinkTallies {
     pub too_early: u64,
 }
 
+impl Tallies {
+    /// What the counters gained since `before`, for the journal: the
+    /// picture and the sound of the seconds between two readings.
+    pub fn gained_since(&self, before: &Tallies) -> String {
+        let gained = |now: u64, before: u64| now.saturating_sub(before);
+        let (a, b) = (&self.assembly, &before.assembly);
+        let (p, q) = (&self.pictures, &before.pictures);
+        let (l, m) = (&self.link, &before.link);
+        format!(
+            "frames whole {} (repaired {}), lost {}; pictures decoded {}, shown {}, replaced {}, \
+             sent again gave way {}, passed over {}, fallen behind {}, broken {}, undrawn {}, key \
+             frames asked {}; datagrams left out on the way to the video thread {}; sound packets \
+             concealed {}, underruns {}, left out on the way {}",
+            gained(a.frames_complete, b.frames_complete),
+            gained(a.frames_recovered_by_fec, b.frames_recovered_by_fec),
+            gained(a.frames_lost, b.frames_lost),
+            gained(p.decoded, q.decoded),
+            gained(p.shown, q.shown),
+            gained(p.unshown, q.unshown),
+            gained(p.gave_way, q.gave_way),
+            gained(p.skipped, q.skipped),
+            gained(p.behind, q.behind),
+            gained(p.broken, q.broken),
+            gained(p.undrawn, q.undrawn),
+            gained(p.recovers, q.recovers),
+            gained(l.video_crowded, m.video_crowded),
+            gained(self.sound.concealed, before.sound.concealed),
+            gained(self.jitter.underruns, before.jitter.underruns),
+            gained(l.sound_crowded, m.sound_crowded),
+        )
+    }
+}
+
 impl fmt::Display for Tallies {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let a = &self.assembly;
@@ -131,5 +164,42 @@ impl fmt::Display for Tallies {
             l.pressed_again,
             l.too_early,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn what_the_counters_gained_between_two_readings_is_told() {
+        let before = Tallies::default();
+        let mut now = Tallies::default();
+        now.assembly.frames_complete = 60;
+        now.assembly.frames_recovered_by_fec = 2;
+        now.assembly.frames_lost = 1;
+        now.pictures.decoded = 59;
+        now.pictures.shown = 55;
+        now.pictures.unshown = 3;
+        now.pictures.gave_way = 1;
+        now.pictures.skipped = 4;
+        now.pictures.recovers = 2;
+        now.link.video_crowded = 7;
+        now.sound.concealed = 5;
+        now.jitter.underruns = 1;
+        assert_eq!(
+            now.gained_since(&before),
+            "frames whole 60 (repaired 2), lost 1; pictures decoded 59, shown 55, replaced 3, \
+             sent again gave way 1, passed over 4, fallen behind 0, broken 0, undrawn 0, key \
+             frames asked 2; datagrams left out on the way to the video thread 7; sound packets \
+             concealed 5, underruns 1, left out on the way 0"
+        );
+        // Counters only grow: a reading older than the other tells of
+        // nothing gained rather than of a wrap.
+        assert!(
+            before
+                .gained_since(&now)
+                .starts_with("frames whole 0 (repaired 0), lost 0;")
+        );
     }
 }

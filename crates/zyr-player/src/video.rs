@@ -21,6 +21,7 @@
 //! undecoded instead and a key frame asked for, which the backlog, only
 //! passed over, no longer delays.
 
+use std::fmt;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -66,6 +67,33 @@ pub struct Recover {
     pub frame: u32,
 }
 
+/// Why a key frame is asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Because {
+    /// The assembler gave a frame up.
+    Lost,
+    /// This computer fell so far behind that what waited was dropped.
+    FellBehind,
+    /// The decoder refused a frame.
+    Refused,
+    /// The graphics card went away and was made again.
+    CardRenewed,
+    /// The last request went unanswered.
+    Unanswered,
+}
+
+impl fmt::Display for Because {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Because::Lost => "a frame was lost",
+            Because::FellBehind => "this computer fell behind",
+            Because::Refused => "the decoder refused a frame",
+            Because::CardRenewed => "the graphics card was made again",
+            Because::Unanswered => "the last request went unanswered",
+        })
+    }
+}
+
 /// What the video thread has to tell the rest of the player.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Said {
@@ -94,6 +122,29 @@ pub struct Recovery {
     needs_key: bool,
     /// When the request for a key frame still unanswered was last sent.
     asked_at: Option<Instant>,
+    /// The wait a request started, until the key frame ends it.
+    waiting: Option<Wait>,
+    /// The wait that just ended, until it is told.
+    recovered: Option<Recovered>,
+}
+
+/// A wait for a key frame, under way.
+#[derive(Debug, Clone, Copy)]
+struct Wait {
+    since: Instant,
+    /// Whole frames passed over meanwhile.
+    skipped: u32,
+    /// Requests made, the repeated ones included.
+    asked: u32,
+}
+
+/// A wait for a key frame, over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Recovered {
+    /// From the first request to the key frame.
+    pub after: Duration,
+    pub skipped: u32,
+    pub asked: u32,
 }
 
 impl Default for Recovery {
@@ -110,21 +161,36 @@ impl Recovery {
             // A stream starts at a key frame, and the decoder with it.
             needs_key: true,
             asked_at: None,
+            waiting: None,
+            recovered: None,
         }
     }
 
-    /// A whole frame came out of the assembler.
-    pub fn whole(&mut self, frame: &AssembledFrame) -> Verdict {
+    /// A whole frame came out of the assembler, at `now`.
+    pub fn whole(&mut self, frame: &AssembledFrame, now: Instant) -> Verdict {
         self.follow(frame.stream);
         if frame.key {
             self.needs_key = false;
             self.asked_at = None;
+            self.recovered = self.waiting.take().map(|wait| Recovered {
+                after: now.saturating_duration_since(wait.since),
+                skipped: wait.skipped,
+                asked: wait.asked,
+            });
         }
         if self.needs_key {
+            if let Some(wait) = &mut self.waiting {
+                wait.skipped += 1;
+            }
             Verdict::Skip
         } else {
             Verdict::Decode
         }
+    }
+
+    /// The wait for a key frame that just ended, once.
+    pub fn recovered(&mut self) -> Option<Recovered> {
+        self.recovered.take()
     }
 
     /// That frame of the current stream was decoded.
@@ -153,11 +219,7 @@ impl Recovery {
         if self.asked_at.is_some() {
             return None;
         }
-        self.asked_at = Some(now);
-        Some(Recover {
-            stream,
-            frame: self.decoded,
-        })
+        Some(self.request(stream, now))
     }
 
     /// The request again, when it has waited long enough.
@@ -166,11 +228,22 @@ impl Recovery {
         if now < self.next_resend()? {
             return None;
         }
+        Some(self.request(stream, now))
+    }
+
+    fn request(&mut self, stream: u16, now: Instant) -> Recover {
         self.asked_at = Some(now);
-        Some(Recover {
+        self.waiting
+            .get_or_insert(Wait {
+                since: now,
+                skipped: 0,
+                asked: 0,
+            })
+            .asked += 1;
+        Recover {
             stream,
             frame: self.decoded,
-        })
+        }
     }
 
     pub fn next_resend(&self) -> Option<Instant> {
@@ -185,6 +258,7 @@ impl Recovery {
             self.decoded = 0;
             self.needs_key = true;
             self.asked_at = None;
+            self.waiting = None;
         }
     }
 }
@@ -438,7 +512,7 @@ impl<P: Presenter> Video<P> {
     /// frame: datagrams still waiting for this thread may complete it.
     pub fn draw(&mut self, now: Instant) -> Vec<Said> {
         if let Some(recover) = self.recovery.due(now) {
-            self.ask(recover, now);
+            self.ask(recover, Because::Unanswered, now);
         }
         if let Some(turn) = self.pacer.due(now) {
             self.unshown(now, turn.unshown);
@@ -471,14 +545,21 @@ impl<P: Presenter> Video<P> {
     fn assemble(&mut self, clock: Instant, now: Instant) {
         while let Some(assembled) = self.assembler.poll(clock) {
             match assembled {
-                Assembled::Lost { stream, frame } => {
+                Assembled::Lost {
+                    stream,
+                    frame,
+                    gone,
+                } => {
                     lock(&self.tally).lost(now);
-                    self.flow.lost(now);
+                    self.flow.lost(now, frame, &gone);
                     self.hushed.lost.note(&self.log, now, |times| {
-                        format!("frame {frame} of stream {stream} lost ({times} since last said)")
+                        format!(
+                            "frame {frame} of stream {stream} lost: {gone} ({times} since last \
+                             said)"
+                        )
                     });
                     if let Some(recover) = self.recovery.lost(stream, now) {
-                        self.ask(recover, now);
+                        self.ask(recover, Because::Lost, now);
                     }
                 }
                 Assembled::Frame(frame) => {
@@ -504,7 +585,18 @@ impl<P: Presenter> Video<P> {
     }
 
     fn decode(&mut self, frame: &AssembledFrame, now: Instant) -> Option<DecodedFrame> {
-        if self.recovery.whole(frame) == Verdict::Skip {
+        let verdict = self.recovery.whole(frame, now);
+        if let Some(recovered) = self.recovery.recovered() {
+            self.log.write(&format!(
+                "the key frame of stream {} came {:.0} ms after the first request, {} requests \
+                 made and {} frames passed over meanwhile",
+                frame.stream,
+                recovered.after.as_secs_f64() * 1000.0,
+                recovered.asked,
+                recovered.skipped
+            ));
+        }
+        if verdict == Verdict::Skip {
             self.counters.skipped += 1;
             self.flow.skipped();
             self.hushed.skipped.note(&self.log, now, |times| {
@@ -530,7 +622,7 @@ impl<P: Presenter> Video<P> {
                 )
             });
             if let Some(recover) = self.recovery.broken(now) {
-                self.ask(recover, now);
+                self.ask(recover, Because::FellBehind, now);
             }
             return None;
         }
@@ -567,7 +659,7 @@ impl<P: Presenter> Video<P> {
                     Some(reason) => self.fault(Fault::Lost(reason), now),
                     None => {
                         if let Some(recover) = self.recovery.broken(now) {
-                            self.ask(recover, now);
+                            self.ask(recover, Because::Refused, now);
                         }
                     }
                 }
@@ -648,7 +740,7 @@ impl<P: Presenter> Video<P> {
                     Ok(()) => {
                         self.log.write("the graphics card is back");
                         if let Some(recover) = self.recovery.broken(now) {
-                            self.ask(recover, now);
+                            self.ask(recover, Because::CardRenewed, now);
                         }
                     }
                     Err(reason) => {
@@ -664,11 +756,12 @@ impl<P: Presenter> Video<P> {
         }
     }
 
-    fn ask(&mut self, recover: Recover, now: Instant) {
+    fn ask(&mut self, recover: Recover, because: Because, now: Instant) {
         self.counters.recovers += 1;
         self.hushed.asked.note(&self.log, now, |times| {
             format!(
-                "key frame of stream {} asked for after frame {} ({times} since last said)",
+                "key frame of stream {} asked for after frame {}, {because} ({times} since last \
+                 said)",
                 recover.stream, recover.frame
             )
         });
@@ -694,11 +787,14 @@ impl<P: Presenter> Video<P> {
 
     /// What the rest of the player reads: the counters, and where the
     /// picture is.
-    fn publish(&self) {
+    fn publish(&mut self) {
+        let assembly = self.assembler.counters();
         let mut tallies = lock(&self.tallies);
-        tallies.assembly = self.assembler.counters();
+        tallies.assembly = assembly;
         tallies.pictures = self.counters;
+        let crowded = tallies.link.video_crowded;
         drop(tallies);
+        self.flow.totals(assembly, crowded);
         *lock(&self.rect) = self.presenter.picture_rect();
     }
 }
@@ -844,13 +940,17 @@ mod tests {
     }
 
     fn video(presenter: Recording) -> Video<Recording> {
+        video_logging(presenter, testing::log(TAG))
+    }
+
+    fn video_logging(presenter: Recording, log: Log) -> Video<Recording> {
         Video::new(
             testing::ffmpeg(),
             presenter,
             Arc::new(Mutex::new(Tally::new(Clock::starting_now()))),
             Arc::new(Mutex::new(Tallies::default())),
             Arc::new(Mutex::new(None)),
-            testing::log(TAG),
+            log,
         )
     }
 
@@ -895,7 +995,8 @@ mod tests {
     #[test]
     fn a_lost_frame_is_asked_for_once_then_again_and_the_rest_waits_for_a_key_frame() {
         let (packets, looks) = h264(12, &[9]);
-        let mut video = video(Recording::default());
+        let journal = testing::OwnLog::new("video-lost-frame");
+        let mut video = video_logging(Recording::default(), journal.log.clone());
         let at = Instant::now();
         let mut first_pictures = 0;
         let mut asked = Vec::new();
@@ -961,6 +1062,77 @@ mod tests {
         assert_eq!(video.counters.recovers, 2);
         assert_eq!(video.counters.shown, 8);
         assert_eq!(video.assembler.counters().frames_lost, 1);
+
+        // The journal says why it was lost, why a key frame was asked for,
+        // and how long the wait for it lasted.
+        let written = journal.written();
+        for line in [
+            "frame 5 of stream 1 lost: not one shard of it came, given up after 4.0 ms as a \
+             newer frame was arriving",
+            "key frame of stream 1 asked for after frame 4, a frame was lost",
+            "the key frame of stream 1 came 309 ms after the first request, 2 requests made \
+             and 3 frames passed over meanwhile",
+        ] {
+            assert!(written.contains(line), "{line}\n{written}");
+        }
+    }
+
+    /// A whole frame, as the assembler hands it out.
+    fn whole(stream: u16, frame: u32, key: bool, at: Instant) -> AssembledFrame {
+        AssembledFrame {
+            stream,
+            frame,
+            key,
+            repeat: false,
+            codec: VideoCodec::H264,
+            data: Vec::new(),
+            captured_us: 0,
+            host_latency_us: 0,
+            first_packet: at,
+            last_packet: at,
+            repaired: false,
+        }
+    }
+
+    #[test]
+    fn a_wait_for_a_key_frame_is_timed_and_what_it_passed_over_counted() {
+        let at = Instant::now();
+        let ms = |n: u64| at + Duration::from_millis(n);
+        let mut recovery = Recovery::new();
+        // The stream begins with its key frame: nothing was asked, so
+        // there is no wait to tell of.
+        assert_eq!(recovery.whole(&whole(1, 0, true, at), at), Verdict::Decode);
+        recovery.decoded(0);
+        assert_eq!(recovery.recovered(), None);
+
+        let asked = recovery.lost(1, ms(20));
+        assert_eq!(
+            asked,
+            Some(Recover {
+                stream: 1,
+                frame: 0
+            })
+        );
+        for (n, at) in [(2, 30), (3, 40)] {
+            let frame = whole(1, n, false, ms(at));
+            assert_eq!(recovery.whole(&frame, ms(at)), Verdict::Skip);
+        }
+        assert!(recovery.due(ms(200)).is_none());
+        assert!(recovery.due(ms(270)).is_some());
+
+        assert_eq!(
+            recovery.whole(&whole(1, 4, true, ms(300)), ms(300)),
+            Verdict::Decode
+        );
+        assert_eq!(
+            recovery.recovered(),
+            Some(Recovered {
+                after: Duration::from_millis(280),
+                skipped: 2,
+                asked: 2,
+            })
+        );
+        assert_eq!(recovery.recovered(), None, "told once");
     }
 
     #[test]

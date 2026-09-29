@@ -27,6 +27,8 @@
 
 use std::time::Duration;
 
+use zyr_player::Measures;
+use zyr_proto::fact::Fact;
 use zyr_session::health::{Lit, Reads};
 
 /// What this module files its journal lines under.
@@ -113,11 +115,12 @@ async fn keep_up(app: &crate::shell::app::App) {
             return;
         }
         let held = crate::session::floating::the_badges_are_held_up(app);
-        let reads = health::read(&crate::session::measures());
+        let measures = crate::session::measures();
+        let reads = health::read(&measures);
         let now = Instant::now();
         let shown = steady.after(&reads, now);
         if shown != was {
-            said(&reads, was, shown);
+            said(&reads, &measures, was, shown);
             was = shown;
         }
         // Said on every round and not only on a change: this loop starts
@@ -135,23 +138,29 @@ async fn keep_up(app: &crate::shell::app::App) {
 /// per reading: a dozen of those go by every second, and a journal that
 /// carried them all would carry nothing else.
 #[cfg(windows)]
-fn said(reads: &Reads, was: Lit, shown: Lit) {
+fn said(reads: &Reads, measures: &Measures, was: Lit, shown: Lit) {
     for (which, before, after, why) in [
         (Which::Link, was.link, shown.link, &reads.link),
         (Which::Far, was.far, shown.far, &reads.far),
         (Which::Here, was.here, shown.here, &reads.here),
     ] {
-        if before == after {
-            continue;
+        if before != after {
+            note(&line(which, after, why.as_ref(), measures));
         }
-        note(&match (after, why) {
-            (true, Some(why)) => format!("{which} badge: {why}"),
-            // Lit with no reason in this reading: the cause came and
-            // went between two readings and the badge is still
-            // holding.
-            (true, None) => format!("{which} badge lit"),
-            (false, _) => format!("{which} badge out"),
-        });
+    }
+}
+
+/// What the journal says of a badge that just lit or went out, with the
+/// figures of that moment: a badge that says only that it lit leaves the
+/// reader to guess what the session was doing.
+fn line(which: Which, lit: bool, why: Option<&Fact>, measures: &Measures) -> String {
+    let figures = measures.in_a_line();
+    match (lit, why) {
+        (true, Some(why)) => format!("{which} badge: {why} (figures then: {figures})"),
+        // Lit with no reason in this reading: the cause came and went
+        // between two readings and the badge is still holding.
+        (true, None) => format!("{which} badge lit (figures then: {figures})"),
+        (false, _) => format!("{which} badge out (figures then: {figures})"),
     }
 }
 
@@ -701,10 +710,33 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
 
 #[cfg(test)]
 mod tests {
-    use zyr_player::Measures;
     use zyr_session::health::read;
 
     use super::*;
+
+    #[test]
+    fn a_badge_that_changes_is_journaled_with_the_figures_of_the_moment() {
+        let measures = Measures {
+            fps: Some(58.0),
+            since_frame_ms: Some(412.0),
+            ..Default::default()
+        };
+        let reads = read(&measures);
+        let lit = line(Which::Link, true, reads.link.as_ref(), &measures);
+        assert!(
+            lit.starts_with("link badge: badge.frozen ms=412 (figures then: "),
+            "{lit}"
+        );
+        assert!(lit.contains("58.0 frames/s"), "{lit}");
+        assert!(lit.contains("last frame 412 ms ago"), "{lit}");
+        let held = line(Which::Link, true, None, &measures);
+        assert!(held.starts_with("link badge lit (figures then: "), "{held}");
+        let out = line(Which::Far, false, None, &measures);
+        assert!(
+            out.starts_with("far picture badge out (figures then: "),
+            "{out}"
+        );
+    }
 
     #[test]
     fn a_badge_under_the_hand_says_what_it_reads() {
