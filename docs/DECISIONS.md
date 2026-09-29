@@ -3840,6 +3840,14 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Rien dans le produit. Sur GitHub, plus de passages « annulés » et un travail de plus. « Moteurs » reste dans la liste de l'onglet Actions tant que ses passages ne sont pas effacés ; on peut aussi l'y désactiver.
 
+## D241. Le presse-papiers rejoint la plateforme, et trois petits restes partent (2026-09-29, pendant MZ)
+
+- **`zyr-clipboard` passe dans la couche plateforme.** Il sait lire et remplir le presse-papiers de Windows et ne décide rien pour le produit, exactement comme `zyr-sound` pour le son : c'est une brique de plateforme, que [D233](#d233-les-briques-en-couches-et-les-moteurs-à-part-2026-09-28-pendant-mz) avait rangée avec le produit. Il n'utilise que la base, donc rien d'autre ne bouge ; la carte des briques, ARCHITECTURE.md et le CLAUDE.md suivent.
+- **Les essais sous Linux ne laissent plus de fichiers dans le dépôt** : le canal de commande, hors de Windows, se pose dans le dossier temporaire et se retire en se fermant.
+- **Le moteur ne nomme plus l'AV1 de Media Foundation**, que notre FFmpeg n'embarque pas.
+
+**Ce qui se voit.** Rien.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

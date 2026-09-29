@@ -5,9 +5,10 @@
 //!
 //! - the base: `zyr-proto`, the values every brick shares, and
 //!   `zyr-i18n`, the words the person reads;
-//! - the platform, `zyr-draw`, `zyr-screen`, `zyr-sound`, `zyr-system`
-//!   and `zyr-win32`: what Windows does for the product, what the product
-//!   is drawn with, and Windows' own way of saying things;
+//! - the platform, `zyr-clipboard`, `zyr-draw`, `zyr-screen`,
+//!   `zyr-sound`, `zyr-system` and `zyr-win32`: what Windows does for the
+//!   product, what the product is drawn with, and Windows' own way of
+//!   saying things;
 //! - the engine, `zyr-media`, `zyr-codec`, `zyr-link`, `zyr-host` and
 //!   `zyr-player`: the picture, the sound and the input, from the screen
 //!   filmed to the picture drawn, and the one link each half of the
@@ -16,7 +17,7 @@
 //!   `zyr-lan`, `zyr-broker` and `zyr-account`;
 //! - the product speaking to itself: `zyr-control`, the conversation
 //!   between the window and the service, `zyr-session`, which opens a
-//!   session, `zyr-clipboard`, `zyr-launch`, how the product's programs
+//!   session, `zyr-launch`, how the product's programs
 //!   are started, and `zyr-service`, what the service does;
 //! - the programs, which assemble the rest and are used by nothing: the
 //!   window `zyr-ui`, the service `zyrdeskd`, the command line `zyr-cli`
@@ -71,6 +72,7 @@ mod tests {
     const MAP: &[(&str, Layer, &[&str])] = &[
         ("zyr-proto", Base, &[]),
         ("zyr-i18n", Base, &["zyr-proto"]),
+        ("zyr-clipboard", Platform, &["zyr-proto"]),
         ("zyr-draw", Platform, &[]),
         ("zyr-screen", Platform, &["zyr-proto", "zyr-win32"]),
         ("zyr-sound", Platform, &[]),
@@ -108,7 +110,6 @@ mod tests {
             Network,
             &["zyr-broker", "zyr-proto", "zyr-transport"],
         ),
-        ("zyr-clipboard", Product, &["zyr-proto"]),
         ("zyr-launch", Product, &["zyr-proto", "zyr-system"]),
         (
             "zyr-control",

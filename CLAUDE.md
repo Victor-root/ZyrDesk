@@ -37,10 +37,10 @@ Chaque brique n'utilise que des briques de sa couche ou des couches du dessous (
 | Couche | Briques | Rôle |
 |---|---|---|
 | Programmes | `zyr-ui`, `zyrdeskd`, `zyr-cli`, `zyr-server` | Assemblent le reste ; rien ne les utilise |
-| Produit | `zyr-control`, `zyr-session`, `zyr-clipboard`, `zyr-launch`, `zyr-service` | Le produit qui se parle à lui-même : fenêtre et service, ouverture et reprise d'une session, presse-papiers, mise en route des programmes, logique du service |
+| Produit | `zyr-control`, `zyr-session`, `zyr-launch`, `zyr-service` | Le produit qui se parle à lui-même : fenêtre et service, ouverture et reprise d'une session, mise en route des programmes, logique du service |
 | Réseau et comptes | `zyr-transport`, `zyr-tunnel`, `zyr-lan`, `zyr-broker`, `zyr-account` | La connexion entre deux ordinateurs, le réseau local, le serveur |
 | Moteur | `zyr-media`, `zyr-codec`, `zyr-link`, `zyr-host`, `zyr-player` | L'image, le son et les entrées, de l'écran filmé à l'image affichée |
-| Plateforme | `zyr-draw`, `zyr-screen`, `zyr-sound`, `zyr-system`, `zyr-win32` | Ce que Windows fait pour le produit, et ce avec quoi il est dessiné. Elles répondent, elles ne décident rien pour le produit |
+| Plateforme | `zyr-clipboard`, `zyr-draw`, `zyr-screen`, `zyr-sound`, `zyr-system`, `zyr-win32` | Ce que Windows fait pour le produit (dont son presse-papiers), et ce avec quoi il est dessiné. Elles répondent, elles ne décident rien pour le produit |
 | Base | `zyr-proto`, `zyr-i18n` | Les valeurs que tout le monde partage, et les mots |
 
 Ce que `crates/zyr-layers` vérifie à chaque `cargo test` :
