@@ -65,14 +65,8 @@ use windows::core::{HSTRING, Interface};
 use windows_numerics::{Matrix3x2, Vector2};
 
 use crate::design::{Colour, Shadow};
-
-/// What this module's lines are filed under.
-const TAG: &str = "paint";
-
-/// Writes a line under this module's tag.
-fn note(what: &str) {
-    crate::journal::note_about(TAG, what);
-}
+use crate::icons::{Icon, Stroke};
+use crate::path::Step;
 
 /// The font family, the system's own, in the order the renderer looks
 /// for it.
@@ -88,32 +82,6 @@ const FAMILY_BEFORE: &str = "Segoe UI";
 /// under one another.
 const MONO: &str = "Cascadia Mono";
 const MONO_BEFORE: &str = "Consolas";
-
-/// A piece of an icon, written in the same words as the drawing it
-/// comes from.
-pub enum Stroke {
-    /// The "d" of an SVG path, taken as it is.
-    ///
-    /// Taken over and not translated: an icon transcribed by hand is an
-    /// icon that ends up no longer being the same, and these are already
-    /// written once. What is understood here is what they use: move to,
-    /// line to, horizontally, vertically, a curve, an arc, and close.
-    SvgPath(&'static str),
-    /// A rounded rectangle: x, y, width, height and radius.
-    RoundRect(f32, f32, f32, f32, f32),
-}
-
-/// An icon: its strokes, the grid they are written in, and the
-/// thickness of its stroke in that grid.
-///
-/// It carries its grid with it, as a vector drawing does: that is what
-/// lets it be placed in any rect without anyone having to know what
-/// units it was drawn in.
-pub struct Icon {
-    pub grid: f32,
-    pub thickness: f32,
-    pub strokes: &'static [Stroke],
-}
 
 /// Where a word is aligned in the rect it is given.
 #[derive(Clone, Copy, PartialEq)]
@@ -492,14 +460,14 @@ impl Canvas {
     /// and an ordinary window knows nothing of. The transparency does not
     /// travel here, and has no business here: what is poured was drawn on
     /// a background.
-    pub fn copy_to(&self, dc: HDC, x: i32, y: i32) -> bool {
+    pub fn copy_to(&self, dc: isize, x: i32, y: i32) -> bool {
         use windows::Win32::Graphics::Gdi::{BitBlt, SRCCOPY};
 
         // SAFETY: a surface of ours, copied as it is into the one the
         // system has just lent.
         unsafe {
             BitBlt(
-                dc,
+                HDC(dc as *mut std::ffi::c_void),
                 x,
                 y,
                 self.width,
@@ -522,7 +490,7 @@ impl Canvas {
     ///
     /// The mask is that of an icon with four bytes per pixel: all zeros,
     /// the transparency being carried by the pixels themselves.
-    pub fn to_icon(&self) -> Option<windows::Win32::UI::WindowsAndMessaging::HICON> {
+    pub fn to_icon(&self) -> Option<isize> {
         use windows::Win32::Graphics::Gdi::CreateBitmap;
         use windows::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, ICONINFO};
 
@@ -551,7 +519,7 @@ impl Canvas {
                 hbmColor: self.bitmap,
             });
             let _ = DeleteObject(mask.into());
-            icon.ok()
+            icon.ok().map(|icon| icon.0 as isize)
         }
     }
 
@@ -957,9 +925,13 @@ impl Canvas {
 
     /// The path of this drawing, read once.
     ///
-    /// An unreadable path is remembered as such and reported only once.
-    /// Remembering it is not thrift: without it, it would be read again,
-    /// and so reported again, for every frame drawn.
+    /// An unreadable path is remembered as such, so it is not read again
+    /// for every frame drawn. None ships: every path of the product is
+    /// read by this brick's tests, since an icon is made of several
+    /// strokes and the one that cannot be read disappears while the
+    /// others stay, which shows an unrecognisable icon with nothing to say
+    /// that it is incomplete. It happened once, to the menu's crossed-out
+    /// eye, whose outline is the only Bézier curve in the product.
     fn path_of(&self, said: &'static str) -> Option<ID2D1PathGeometry> {
         if let Some((_, found)) = self
             .paths
@@ -969,138 +941,65 @@ impl Canvas {
         {
             return found.clone();
         }
-        let made = self.read_path(said);
-        if made.is_none() {
-            // Reported, not kept quiet. An icon is made of several
-            // strokes: the one that cannot be read disappears, the
-            // others stay, and what is shown is an unrecognisable icon
-            // with nothing to say that it is incomplete. It happened
-            // once, to the menu's crossed-out eye, whose outline is the
-            // only Bézier curve in the product.
-            note(&format!("drawing: path not read, « {said} »"));
-        }
+        let made = self.shape_of(said);
         self.paths.borrow_mut().push((said, made.clone()));
         made
     }
 
-    /// Reads the "d" of an SVG path and turns it into a shape.
-    ///
-    /// What is understood is what the icons of this product use, and
-    /// nothing more: move to, line to, horizontal line, vertical line,
-    /// a curve, an arc, and close. An unknown letter stops the reading
-    /// rather than being skipped: a half-drawn icon looks like a
-    /// defect, a missing icon like an oversight, and the second one
-    /// gets looked into. It is `path_of` that says so out loud.
-    fn read_path(&self, said: &str) -> Option<ID2D1PathGeometry> {
+    /// Turns the "d" of an SVG path into a shape.
+    fn shape_of(&self, said: &str) -> Option<ID2D1PathGeometry> {
+        let steps = crate::path::read(said)?;
         // SAFETY: a shape and its sink, both ours, closed again before
         // leaving.
         unsafe {
             let shape = self.factory.CreatePathGeometry().ok()?;
             let sink = shape.Open().ok()?;
-            let mut words = Tokens::over(said);
-            let (mut at, mut start) = ((0.0f32, 0.0f32), (0.0f32, 0.0f32));
             let mut figure_open = false;
-            let mut letter = ' ';
-            while let Some(next) = words.letter_or_number() {
-                if let Some(this_one) = next {
-                    letter = this_one;
-                }
-                let relative = letter.is_lowercase();
-                let mut number = || words.number();
-                match letter.to_ascii_uppercase() {
-                    'M' => {
-                        let (x, y) = (number()?, number()?);
-                        at = if relative {
-                            (at.0 + x, at.1 + y)
-                        } else {
-                            (x, y)
-                        };
+            for step in steps {
+                match step {
+                    Step::Start(at) => {
                         if figure_open {
                             sink.EndFigure(D2D1_FIGURE_END_OPEN);
                         }
                         sink.BeginFigure(point(at), D2D1_FIGURE_BEGIN_HOLLOW);
-                        start = at;
                         figure_open = true;
-                        letter = if relative { 'l' } else { 'L' };
                     }
-                    'L' => {
-                        let (x, y) = (number()?, number()?);
-                        at = if relative {
-                            (at.0 + x, at.1 + y)
+                    Step::Line(to) => sink.AddLine(point(to)),
+                    Step::Curve { first, second, to } => sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+                        point1: point(first),
+                        point2: point(second),
+                        point3: point(to),
+                    }),
+                    Step::Arc {
+                        to,
+                        radii,
+                        rotation,
+                        large,
+                        clockwise,
+                    } => sink.AddArc(&D2D1_ARC_SEGMENT {
+                        point: point(to),
+                        size: D2D_SIZE_F {
+                            width: radii.0,
+                            height: radii.1,
+                        },
+                        rotationAngle: rotation,
+                        sweepDirection: if clockwise {
+                            D2D1_SWEEP_DIRECTION_CLOCKWISE
                         } else {
-                            (x, y)
-                        };
-                        sink.AddLine(point(at));
-                    }
-                    'H' => {
-                        let x = number()?;
-                        at.0 = if relative { at.0 + x } else { x };
-                        sink.AddLine(point(at));
-                    }
-                    'V' => {
-                        let y = number()?;
-                        at.1 = if relative { at.1 + y } else { y };
-                        sink.AddLine(point(at));
-                    }
-                    'C' => {
-                        // Both handles are counted from the point the
-                        // curve starts from, so before having left it.
-                        let (x1, y1) = (number()?, number()?);
-                        let (x2, y2) = (number()?, number()?);
-                        let (x, y) = (number()?, number()?);
-                        let (first_control, second_control) = if relative {
-                            ((at.0 + x1, at.1 + y1), (at.0 + x2, at.1 + y2))
+                            D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE
+                        },
+                        arcSize: if large {
+                            D2D1_ARC_SIZE_LARGE
                         } else {
-                            ((x1, y1), (x2, y2))
-                        };
-                        at = if relative {
-                            (at.0 + x, at.1 + y)
-                        } else {
-                            (x, y)
-                        };
-                        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-                            point1: point(first_control),
-                            point2: point(second_control),
-                            point3: point(at),
-                        });
-                    }
-                    'A' => {
-                        let (rx, ry) = (number()?, number()?);
-                        let rotation = number()?;
-                        let (large_arc, sweep) = (number()?, number()?);
-                        let (x, y) = (number()?, number()?);
-                        at = if relative {
-                            (at.0 + x, at.1 + y)
-                        } else {
-                            (x, y)
-                        };
-                        sink.AddArc(&D2D1_ARC_SEGMENT {
-                            point: point(at),
-                            size: D2D_SIZE_F {
-                                width: rx,
-                                height: ry,
-                            },
-                            rotationAngle: rotation,
-                            sweepDirection: if sweep != 0.0 {
-                                D2D1_SWEEP_DIRECTION_CLOCKWISE
-                            } else {
-                                D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE
-                            },
-                            arcSize: if large_arc != 0.0 {
-                                D2D1_ARC_SIZE_LARGE
-                            } else {
-                                D2D1_ARC_SIZE_SMALL
-                            },
-                        });
-                    }
-                    'Z' => {
+                            D2D1_ARC_SIZE_SMALL
+                        },
+                    }),
+                    Step::Close => {
                         if figure_open {
                             sink.EndFigure(D2D1_FIGURE_END_CLOSED);
                             figure_open = false;
                         }
-                        at = start;
                     }
-                    _ => return None,
                 }
             }
             if figure_open {
@@ -1109,56 +1008,6 @@ impl Canvas {
             sink.Close().ok()?;
             Some(shape)
         }
-    }
-}
-
-/// What an SVG path says, letter by letter and number by number.
-///
-/// A minus sign opens a number, it does not separate: that is the rule of
-/// this language, and it is what allows writing "a9 9 0 1 1-12.8 0" with
-/// no space before the twelve.
-struct Tokens<'a> {
-    rest: &'a str,
-}
-
-impl<'a> Tokens<'a> {
-    fn over(said: &'a str) -> Self {
-        Tokens { rest: said }
-    }
-
-    fn skip(&mut self) {
-        self.rest = self.rest.trim_start_matches([' ', ',', '\t', '\n']);
-    }
-
-    /// The next thing: a letter, or nothing when a number is coming, or
-    /// the end.
-    fn letter_or_number(&mut self) -> Option<Option<char>> {
-        self.skip();
-        let first = self.rest.chars().next()?;
-        if first.is_ascii_alphabetic() {
-            self.rest = &self.rest[first.len_utf8()..];
-            return Some(Some(first));
-        }
-        Some(None)
-    }
-
-    fn number(&mut self) -> Option<f32> {
-        self.skip();
-        let mut end = 0;
-        for (at, character) in self.rest.char_indices() {
-            let open = at == 0 && (character == '-' || character == '+');
-            if character.is_ascii_digit() || character == '.' || open {
-                end = at + character.len_utf8();
-            } else {
-                break;
-            }
-        }
-        if end == 0 {
-            return None;
-        }
-        let (read, rest) = self.rest.split_at(end);
-        self.rest = rest;
-        read.parse().ok()
     }
 }
 

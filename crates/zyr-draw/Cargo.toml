@@ -1,0 +1,31 @@
+[package]
+name = "zyr-draw"
+description = "What ZyrDesk is drawn with: the canvas, the design system, the icons, the mark and the beat of what moves"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Direct2D and DirectWrite, provided by Windows itself, so nothing is
+# bundled. They are COM objects, which `windows-sys` cannot describe and
+# `windows` does: both crates are of the same family, and this one is
+# already in the project's lock file, pulled in by the sound crate.
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }
+# The points and matrices Direct2D uses: a separate crate of the family,
+# already in the project's lock file since `windows` depends on it.
+windows-numerics = "0.3.1"
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    # The compositor's beat, which is the screen's.
+    "Win32_Graphics_Dwm",
+    "Win32_UI_WindowsAndMessaging",
+] }

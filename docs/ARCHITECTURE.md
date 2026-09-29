@@ -164,6 +164,7 @@ ZyrDesk/
 │  ├─ zyr-lan/                 # annonce mDNS de cet ordinateur, appel direct, découverte des autres
 │  ├─ zyr-broker/              # ce que le service et le serveur se disent : messages, tickets et laissez-passer signés
 │  ├─ zyr-account/             # le lien de compte, le rattachement, le canal vivant, la présence, le rendez-vous
+│  ├─ zyr-draw/                # ce avec quoi le produit est dessiné : la toile (Direct2D et DirectWrite), la charte graphique lue dans design.css, les icônes et la lecture de leurs tracés, la marque ZyrDesk, le rythme de ce qui bouge
 │  ├─ zyr-screen/              # l'écran virtuel : pilote, réveil, sommeil, arrangement des écrans, et le bureau prêté à une session puis rendu tel qu'il était noté
 │  ├─ zyr-sound/               # le son de la session, dans le mélangeur de Windows
 │  ├─ zyr-system/              # ce que le service demande à Windows lui-même : la session qui tient l'écran et qui y est, y lancer ce programme (le moteur d'une session, une course, un assistant), verrouiller, Ctrl+Alt+Suppr, le Wi-Fi qui passe la session d'abord, la forme du pointeur
@@ -196,7 +197,7 @@ Les briques sont rangées en couches, et chacune n'utilise que des briques de sa
 | Produit | `zyr-control`, `zyr-session`, `zyr-clipboard`, `zyr-service` | Le produit qui se parle à lui-même : la fenêtre et le service, l'ouverture d'une session, le presse-papiers, ce que fait le service |
 | Réseau et comptes | `zyr-transport`, `zyr-tunnel`, `zyr-lan`, `zyr-broker`, `zyr-account` | La connexion entre deux ordinateurs, le réseau local, le serveur |
 | Moteur | `zyr-media`, `zyr-codec`, `zyr-link`, `zyr-host`, `zyr-player` | L'image, le son et les entrées, de l'écran filmé à l'image affichée, et le tube de chaque moitié vers son service |
-| Plateforme | `zyr-screen`, `zyr-sound`, `zyr-system`, `zyr-win32` | Ce que Windows fait pour le produit, et sa façon de dire les choses |
+| Plateforme | `zyr-draw`, `zyr-screen`, `zyr-sound`, `zyr-system`, `zyr-win32` | Ce que Windows fait pour le produit, ce avec quoi le produit est dessiné, et la façon de Windows de dire les choses |
 | Base | `zyr-proto`, `zyr-i18n` | Ce que toutes les briques partagent, et les mots de ce que la personne lit |
 
 Seules la fenêtre et la ligne de commande utilisent `zyr-i18n` : tout ce qui est en dessous dit des faits, jamais des phrases, et ce sont les programmes qu'une personne lit qui choisissent les mots ([D236](DECISIONS.md)).

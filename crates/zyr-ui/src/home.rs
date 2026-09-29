@@ -28,15 +28,15 @@ use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 
 use zyr_broker::rest::Access;
 use zyr_control::{Account, Attach, Device, Registering};
+use zyr_draw::design::{self, Colour, Palette};
+use zyr_draw::icons::{self, Icon};
+use zyr_draw::{Align, Canvas, Pen, Rect};
 use zyr_proto::fact::Fact;
 use zyr_win32::wide;
 
 use crate::app::App;
 
-use crate::design::{self, Colour, Palette};
 use crate::desk::{Attached, Peer, Standing, Watcher};
-use crate::icons;
-use crate::paint::{Align, Canvas, Icon, Pen, Rect};
 use crate::session::Ongoing;
 use crate::settings::Settings;
 use crate::shortcuts::{Combination, Doing, Held};
@@ -1155,7 +1155,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             return;
         }
         *CLICKABLES.lock().expect("home") = clickables;
-        canvas.copy_to(windows::Win32::Graphics::Gdi::HDC(surface), 0, 0);
+        canvas.copy_to(surface as isize, 0, 0);
     });
     // SAFETY: the painting opened just above.
     unsafe { EndPaint(window, &paint) };
@@ -1171,9 +1171,9 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
 /// changes.
 fn clock(window: windows_sys::Win32::Foundation::HWND) {
     if STATE.lock().expect("home").opening.is_some() {
-        crate::pulse::beat(window, ANIMATE);
+        zyr_draw::pulse::beat(window, ANIMATE);
     } else {
-        crate::pulse::stop(window);
+        zyr_draw::pulse::stop(window);
     }
 }
 
@@ -3817,7 +3817,7 @@ impl Painter<'_> {
 
     fn brand(&self, at: Rect) {
         if !self.silent {
-            crate::logo::brand(self.canvas, at, 1.0, false);
+            zyr_draw::mark::lay(self.canvas, at, 1.0, false);
         }
     }
 }

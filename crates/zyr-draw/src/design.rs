@@ -15,7 +15,6 @@
 //! is used today would mean reopening it for every screen brought over,
 //! which opens the door to a second palette written by hand in the
 //! meantime.
-#![allow(dead_code)]
 
 /// A colour, as four numbers between zero and one, which is how
 /// everything that draws wants them.

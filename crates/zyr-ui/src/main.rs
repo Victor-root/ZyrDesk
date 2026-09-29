@@ -22,7 +22,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
-mod design;
 mod desk;
 mod floating;
 mod folders;
@@ -33,19 +32,6 @@ mod journal;
 // on Windows, like the window that carries it.
 #[cfg(windows)]
 mod logo;
-
-// What draws the interface without a browser. Windows only, like the
-// windows it dresses.
-#[cfg(windows)]
-mod paint;
-
-// The icons this program draws, shared by all of its screens.
-#[cfg(windows)]
-mod icons;
-
-// The beat of whatever moves, tuned to the Windows compositor.
-#[cfg(windows)]
-mod pulse;
 
 // The floating button's menu, drawn by this program.
 #[cfg(windows)]

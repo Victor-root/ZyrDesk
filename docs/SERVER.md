@@ -497,7 +497,7 @@ Cibles : Debian 12 (support LTS jusqu'en juin 2028) et Debian 13 (13.6 est la ve
 
 L'esprit des scripts Proxmox-Tools, relevé sur leurs sources : un logo en lettres bloc dans une seule couleur d'accent, un sous-titre et un trait, des panneaux ouverts (`┌ Titre`, `│ lignes`, `└`) dont la couleur dit le sens, une ligne par message qui commence par un glyphe (`›` information, `✓` fait, `⚠` attention, `✗` erreur, `?` question), une roue braille sur les étapes longues dont la ligne se réécrit en `✓` ou `✗`, la sortie des commandes cachée sauf en cas d'échec, des valeurs détectées en défaut entre crochets, `[Entrée=oui / non]` écrit en toutes lettres, un « oui » tapé en entier avant ce qui ne se défait pas, un récapitulatif avant d'agir, un panneau vert avec des valeurs alignées à la fin, le français quand la machine est en français et l'anglais sinon, aucune émoticône, jamais de couleur quand la sortie n'est pas un terminal ou que `NO_COLOR` est posé.
 
-Ce qui change, pour que ce soit ZyrDesk et non Proxmox : la palette, tirée de [design.css](../crates/zyr-ui/design.css) plutôt que de l'orange de Proxmox ou du rouge de WireGuard.
+Ce qui change, pour que ce soit ZyrDesk et non Proxmox : la palette, tirée de [design.css](../crates/zyr-draw/design.css) plutôt que de l'orange de Proxmox ou du rouge de WireGuard.
 
 | Rôle | design.css | Terminal (256 couleurs) | Où |
 |---|---|---|---|

@@ -186,23 +186,23 @@ const LOOK_EVERY: std::time::Duration = std::time::Duration::from_millis(200);
 /// The size of what is written on it, in page pixels: the product's
 /// captions.
 #[cfg(windows)]
-const WORDS: f32 = crate::design::CAPTION;
+const WORDS: f32 = zyr_draw::design::CAPTION;
 
 /// The room above and below its lines.
 #[cfg(windows)]
-const ABOVE: f32 = crate::design::SPACE_1;
+const ABOVE: f32 = zyr_draw::design::SPACE_1;
 
 /// The room before its lines and after them.
 #[cfg(windows)]
-const ASIDE: f32 = crate::design::SPACE_3;
+const ASIDE: f32 = zyr_draw::design::SPACE_3;
 
 /// What separates two pieces of a line, a stroke standing in the middle.
 #[cfg(windows)]
-const BETWEEN: f32 = crate::design::SPACE_4;
+const BETWEEN: f32 = zyr_draw::design::SPACE_4;
 
 /// What separates a word from its figure: about a space.
 #[cfg(windows)]
-const AFTER_THE_WORD: f32 = crate::design::SPACE_1;
+const AFTER_THE_WORD: f32 = zyr_draw::design::SPACE_1;
 
 /// The window, and whether the loop that fills it runs.
 #[cfg(windows)]
@@ -231,7 +231,7 @@ static STRIP: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0
 
 #[cfg(windows)]
 thread_local! {
-    static CANVAS: std::cell::RefCell<Option<crate::paint::Canvas>> =
+    static CANVAS: std::cell::RefCell<Option<zyr_draw::Canvas>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -271,11 +271,11 @@ impl Measured {
 #[cfg(windows)]
 #[derive(Clone, Copy)]
 struct Pens {
-    word: crate::paint::Pen,
-    stream: crate::paint::Pen,
+    word: zyr_draw::Pen,
+    stream: zyr_draw::Pen,
     /// Of fixed width: figures that change five times a second cannot be
     /// read unless every digit keeps its own room.
-    figure: crate::paint::Pen,
+    figure: zyr_draw::Pen,
 }
 
 #[cfg(windows)]
@@ -283,7 +283,7 @@ impl Pens {
     /// The pens at that magnification, on one line whatever the room:
     /// where each piece goes is decided by `flowed`, not by the pen.
     fn at(scale: f32) -> Self {
-        let word = crate::paint::Pen::of(WORDS * scale).overflowing();
+        let word = zyr_draw::Pen::of(WORDS * scale).overflowing();
         Pens {
             word,
             stream: word.in_bold(),
@@ -295,7 +295,7 @@ impl Pens {
 /// How wide each piece of that banner is written, in the order it is
 /// read.
 #[cfg(windows)]
-fn widths(canvas: &crate::paint::Canvas, banner: &Banner, pens: Pens, scale: f32) -> Vec<f32> {
+fn widths(canvas: &zyr_draw::Canvas, banner: &Banner, pens: Pens, scale: f32) -> Vec<f32> {
     banner
         .pieces()
         .map(|(word, text)| match word {
@@ -315,7 +315,7 @@ fn widths(canvas: &crate::paint::Canvas, banner: &Banner, pens: Pens, scale: f32
 /// opens, and when the screen's magnification changes: every length here
 /// is in its real pixels.
 #[cfg(windows)]
-fn measure(canvas: &crate::paint::Canvas, banner: &Banner, scale: f32) -> Measured {
+fn measure(canvas: &zyr_draw::Canvas, banner: &Banner, scale: f32) -> Measured {
     let pens = Pens::at(scale);
     let mut kept = MEASURED.lock().expect("figures' measures");
     let had = kept
@@ -612,7 +612,7 @@ fn repaint() {
 /// top edge; says how tall it came out.
 #[cfg(windows)]
 fn draw(
-    kept: &mut Option<crate::paint::Canvas>,
+    kept: &mut Option<zyr_draw::Canvas>,
     window: isize,
     banner: &Banner,
     picture: (i32, i32, i32, i32),
@@ -621,8 +621,8 @@ fn draw(
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{SW_SHOWNOACTIVATE, ShowWindow};
 
-    use crate::design::{Colour, DARK};
-    use crate::paint::{Align, Canvas, Rect};
+    use zyr_draw::design::{Colour, DARK};
+    use zyr_draw::{Align, Canvas, Rect};
 
     // Measured on whatever canvas there is: measuring text takes
     // something to measure it with, not a canvas of the right size.

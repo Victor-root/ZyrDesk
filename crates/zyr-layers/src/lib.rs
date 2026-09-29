@@ -5,9 +5,9 @@
 //!
 //! - the base: `zyr-proto`, the values every brick shares, and
 //!   `zyr-i18n`, the words the person reads;
-//! - the platform, `zyr-screen`, `zyr-sound`, `zyr-system` and
-//!   `zyr-win32`: what Windows does for the product, and Windows' own way
-//!   of saying things;
+//! - the platform, `zyr-draw`, `zyr-screen`, `zyr-sound`, `zyr-system`
+//!   and `zyr-win32`: what Windows does for the product, what the product
+//!   is drawn with, and Windows' own way of saying things;
 //! - the engine, `zyr-media`, `zyr-codec`, `zyr-link`, `zyr-host` and
 //!   `zyr-player`: the picture, the sound and the input, from the screen
 //!   filmed to the picture drawn, and the one link each half of the
@@ -70,6 +70,7 @@ mod tests {
     const MAP: &[(&str, Layer, &[&str])] = &[
         ("zyr-proto", Base, &[]),
         ("zyr-i18n", Base, &["zyr-proto"]),
+        ("zyr-draw", Platform, &[]),
         ("zyr-screen", Platform, &["zyr-proto", "zyr-win32"]),
         ("zyr-sound", Platform, &[]),
         ("zyr-system", Platform, &["zyr-proto", "zyr-win32"]),
@@ -144,6 +145,7 @@ mod tests {
                 "zyr-broker",
                 "zyr-clipboard",
                 "zyr-control",
+                "zyr-draw",
                 "zyr-i18n",
                 "zyr-player",
                 "zyr-proto",

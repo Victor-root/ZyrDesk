@@ -252,13 +252,13 @@ fn asked_for() -> i32 {
 #[cfg(windows)]
 fn drawn(dimmed: bool) -> windows_sys::Win32::UI::WindowsAndMessaging::HICON {
     let side = asked_for();
-    let Some(canvas) = crate::paint::Canvas::new(side, side) else {
+    let Some(canvas) = zyr_draw::Canvas::new(side, side) else {
         return std::ptr::null_mut();
     };
-    canvas.begin(crate::design::Colour::TRANSPARENT);
-    crate::logo::brand(
+    canvas.begin(zyr_draw::design::Colour::TRANSPARENT);
+    zyr_draw::mark::lay(
         &canvas,
-        crate::paint::Rect::at(0.0, 0.0, side as f32, side as f32),
+        zyr_draw::Rect::at(0.0, 0.0, side as f32, side as f32),
         if dimmed { DIMMED } else { 1.0 },
         false,
     );
@@ -267,7 +267,7 @@ fn drawn(dimmed: bool) -> windows_sys::Win32::UI::WindowsAndMessaging::HICON {
     }
     canvas
         .to_icon()
-        .map_or(std::ptr::null_mut(), |icon| icon.0 as _)
+        .map_or(std::ptr::null_mut(), |icon| icon as _)
 }
 
 /// SAFETY: called by the system on the thread that made this window,

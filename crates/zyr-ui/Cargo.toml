@@ -26,6 +26,8 @@ zyr-proto.workspace = true
 # What the person reads, in their language.
 zyr-i18n.workspace = true
 zyr-clipboard.workspace = true
+# What every window of this program is painted with.
+zyr-draw.workspace = true
 zyr-control.workspace = true
 # The player of a session, which draws its picture into a window of
 # ours and hears its keyboard and mouse from there.
@@ -42,24 +44,6 @@ tokio = { version = "1.53.1", features = [
 
 [target.'cfg(windows)'.dependencies]
 zyr-win32.workspace = true
-# Drawing the interface: Direct2D and DirectWrite, provided by Windows
-# itself, so nothing is bundled. They are COM objects, which `windows-sys`
-# cannot describe and `windows` does: both crates are of the same family,
-# and this one is already in the project's lock file, pulled in by the
-# sound crate.
-windows = { version = "0.62.2", features = [
-    "Win32_Foundation",
-    "Win32_Graphics_Direct2D",
-    "Win32_Graphics_Direct2D_Common",
-    "Win32_Graphics_DirectWrite",
-    "Win32_Graphics_Dxgi_Common",
-    "Win32_Graphics_Gdi",
-    "Win32_Graphics_Imaging",
-    "Win32_UI_WindowsAndMessaging",
-] }
-# The points and matrices Direct2D uses: a separate crate of the family,
-# already in the project's lock file since `windows` depends on it.
-windows-numerics = "0.3.1"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     # The languages the person reads Windows in, which choose the words.

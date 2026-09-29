@@ -408,7 +408,7 @@ static WHY: std::sync::Mutex<Reads> = std::sync::Mutex::new(Reads {
 
 #[cfg(windows)]
 thread_local! {
-    static CANVAS: std::cell::RefCell<Option<crate::paint::Canvas>> =
+    static CANVAS: std::cell::RefCell<Option<zyr_draw::Canvas>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -728,8 +728,8 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
-    use crate::design::{Colour, DARK};
-    use crate::paint::Rect;
+    use zyr_draw::Rect;
+    use zyr_draw::design::{Colour, DARK};
 
     let lit = LIT.load(Ordering::Relaxed);
     // Held on screen, both are drawn and each one still says what it
@@ -747,7 +747,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             .as_ref()
             .is_none_or(|had| had.size() != (wide_px, high))
         {
-            *canvas = crate::paint::Canvas::new(wide_px, high);
+            *canvas = zyr_draw::Canvas::new(wide_px, high);
         }
         let Some(canvas) = canvas.as_ref() else {
             return;
@@ -794,7 +794,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             let icon_area = dot.grown(-INSET * scale);
             if rank == 0 {
                 let colour = if on { DARK.warning } else { DARK.text_faint };
-                canvas.icon(&crate::icons::LINK, icon_area, colour);
+                canvas.icon(&zyr_draw::icons::LINK, icon_area, colour);
                 continue;
             }
             // The picture badge carries both computers, the far one
@@ -803,12 +803,12 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             // struggling is drawn over again brightly: that is all it
             // takes to say which of the two, and it reads without a
             // caption since it is the brand's own drawing.
-            canvas.icon(&crate::icons::HOST_SCREEN, icon_area, DARK.text_faint);
+            canvas.icon(&zyr_draw::icons::HOST_SCREEN, icon_area, DARK.text_faint);
             if lit & bit::FAR != 0 {
-                canvas.icon(&crate::icons::SCREEN_OVER_THERE, icon_area, DARK.warning);
+                canvas.icon(&zyr_draw::icons::SCREEN_OVER_THERE, icon_area, DARK.warning);
             }
             if lit & bit::HERE != 0 {
-                canvas.icon(&crate::icons::SCREEN_HERE, icon_area, DARK.warning);
+                canvas.icon(&zyr_draw::icons::SCREEN_HERE, icon_area, DARK.warning);
             }
         }
         // The bubble after the badges, so that it goes on top should the
@@ -816,7 +816,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         if lit & bit::OVER != 0 {
             let rank = usize::from(lit & bit::OVER_LINK == 0);
             let text = what_it_says(rank, &WHY.lock().expect("badges' reasons"));
-            let pen = crate::paint::Pen::of(WORDS * scale);
+            let pen = zyr_draw::Pen::of(WORDS * scale);
             let inside = (BUBBLE - 2.0 * PADDING) * scale;
             let bubble = Rect::at(
                 ROOM * scale,

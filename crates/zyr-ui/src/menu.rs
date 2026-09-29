@@ -27,13 +27,13 @@ use std::time::{Duration, Instant};
 
 use crate::app::App;
 
-use crate::design::{self, Colour, Palette};
 use crate::floating::{Act, Opens};
-use crate::icons;
-use crate::paint::{Align, Canvas, Icon, Pen, Rect};
 use crate::settings::{Offered, SessionMenu};
 use crate::shortcuts::Doing;
 use crate::win32::pointer_in;
+use zyr_draw::design::{self, Colour, Palette};
+use zyr_draw::icons::{self, Icon};
+use zyr_draw::{Align, Canvas, Pen, Rect};
 use zyr_i18n::key;
 use zyr_player::Measures;
 use zyr_proto::fact::Fact;

@@ -12,7 +12,31 @@
 //! one of them without exception. The ones with a different grid say
 //! so.
 
-use crate::paint::{Icon, Stroke};
+/// A piece of an icon, written in the same words as the drawing it
+/// comes from.
+pub enum Stroke {
+    /// The "d" of an SVG path, taken as it is.
+    ///
+    /// Taken over and not translated: an icon transcribed by hand is an
+    /// icon that ends up no longer being the same, and these are already
+    /// written once. What is understood is what they use, and `path`
+    /// says what that is.
+    SvgPath(&'static str),
+    /// A rounded rectangle: x, y, width, height and radius.
+    RoundRect(f32, f32, f32, f32, f32),
+}
+
+/// An icon: its strokes, the grid they are written in, and the
+/// thickness of its stroke in that grid.
+///
+/// It carries its grid with it, as a vector drawing does: that is what
+/// lets it be placed in any rect without anyone having to know what
+/// units it was drawn in.
+pub struct Icon {
+    pub grid: f32,
+    pub thickness: f32,
+    pub strokes: &'static [Stroke],
+}
 
 /// The common grid and stroke, written once.
 const fn icon_of(strokes: &'static [Stroke]) -> Icon {
@@ -190,3 +214,25 @@ pub const NO_COMPUTER: Icon = Icon {
         Stroke::SvgPath("M17 41h27M24 33.5v7"),
     ],
 };
+
+#[cfg(test)]
+mod tests {
+    /// Every path above, read the way the canvas reads it.
+    ///
+    /// Found in this file's own text rather than in a list, which the
+    /// next icon would be missing from.
+    #[test]
+    fn every_path_is_read() {
+        let (icons, _) = include_str!("icons.rs").split_once("#[cfg(test)]").unwrap();
+        let mut read = 0;
+        for after in icons.split("SvgPath(").skip(1) {
+            let Some(said) = after.trim_start().strip_prefix('"') else {
+                continue;
+            };
+            let said = &said[..said.find('"').unwrap()];
+            assert!(crate::path::read(said).is_some(), "not read: « {said} »");
+            read += 1;
+        }
+        assert_ne!(read, 0);
+    }
+}
