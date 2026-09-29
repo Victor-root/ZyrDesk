@@ -26,6 +26,6 @@ pub use identity::{AllowedPeers, Identity, signed_by};
 pub use junction::{Junction, Road, card_of, is_card};
 pub use marking::Marking;
 pub use mtu::datagram_budget;
-pub use path::Path;
+pub use path::{Lapses, Path};
 pub use race::first_to_answer;
 pub use relay::{Branch, Doorway, RelayError, Wanted};

@@ -312,7 +312,11 @@ fn open(
     server: Option<ServerConfig>,
     path: Path,
 ) -> Result<Endpoint, EndpointError> {
-    let Path::Degraded { loss_per_thousand } = path else {
+    let Path::Degraded {
+        loss_per_thousand,
+        lapses,
+    } = path
+    else {
         return Ok(match server {
             Some(config) => Endpoint::server(config, listen)?,
             None => Endpoint::client(listen)?,
@@ -322,7 +326,7 @@ fn open(
     let runtime = quinn::default_runtime()
         .ok_or_else(|| EndpointError::Configuration("no async runtime".to_string()))?;
     let socket = runtime.wrap_udp_socket(std::net::UdpSocket::bind(listen)?)?;
-    let degraded = Arc::new(DegradedPath::new(socket, loss_per_thousand));
+    let degraded = Arc::new(DegradedPath::new(socket, loss_per_thousand, lapses));
 
     Ok(Endpoint::new_with_abstract_socket(
         quinn::EndpointConfig::default(),

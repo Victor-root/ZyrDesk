@@ -46,7 +46,7 @@ use zyr_proto::clipboard::{Clip, Stamp};
 use zyr_proto::fact::Fact;
 use zyr_proto::log::Log;
 use zyr_proto::session::{Pointer, WantedScreen};
-use zyr_transport::{Bytes, Connection, Identity, MediaProfile, Path, TunnelEndpoint};
+use zyr_transport::{Bytes, Connection, Identity, Lapses, MediaProfile, Path, TunnelEndpoint};
 use zyr_tunnel::aside::{self, Given};
 use zyr_tunnel::{Answers, Presence, Tunnel, service_channel};
 
@@ -773,6 +773,16 @@ fn a_session_goes_from_the_host_engine_through_the_tunnel_to_the_player_and_back
 /// Lost on the way from the host, one packet in twenty.
 const LOSS_PER_THOUSAND: u16 = 50;
 
+/// And now and then a few in a row, about two frames' worth: the parity
+/// repairs a packet lost here and there, and a frame lost whole is what
+/// the holes of this test have to be. Left to the loss alone, how many
+/// there are depends on whether the shards of a frame happened to share a
+/// packet.
+const LAPSES: Lapses = Lapses {
+    every: 240,
+    lasting: 6,
+};
+
 /// How long a lossy session is watched at least.
 const LOSSY_FOR: Duration = Duration::from_secs(4);
 
@@ -800,6 +810,7 @@ fn pictures_keep_coming_through_a_lossy_tunnel_and_each_hole_closes_on_a_key_fra
         },
         Path::Degraded {
             loss_per_thousand: LOSS_PER_THOUSAND,
+            lapses: Some(LAPSES),
         },
         synthetic_screen(),
         Box::new(SilentSound),

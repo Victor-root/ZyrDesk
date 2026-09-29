@@ -277,7 +277,10 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
     // trip for both measurements, or the comparison says nothing.
     let path = match args.loss {
         0 => Path::Direct,
-        loss_per_thousand => Path::Degraded { loss_per_thousand },
+        loss_per_thousand => Path::Degraded {
+            loss_per_thousand,
+            lapses: None,
+        },
     };
     let serving = profile(args.rate, args.fps);
     let endpoint = TunnelEndpoint::client_on_path(

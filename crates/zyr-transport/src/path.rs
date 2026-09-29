@@ -7,8 +7,9 @@
 //! to hold its rate.
 //!
 //! This socket wrapper drops a fraction of outgoing packets underneath
-//! the transport, where a saturated link would lose them. The transport
-//! therefore sees real losses, with its real detection machinery.
+//! the transport, where a saturated link would lose them, and when asked
+//! runs of them in a row, as interference does. The transport therefore
+//! sees real losses, with its real detection machinery.
 //!
 //! It exists only to measure. Nothing in the product goes through it.
 
@@ -31,8 +32,36 @@ pub enum Path {
     /// The real path, as it is.
     Direct,
     /// Degraded path: the given fraction of outgoing packets is dropped,
-    /// expressed per thousand.
-    Degraded { loss_per_thousand: u16 },
+    /// expressed per thousand, and now and then a run of them in a row.
+    Degraded {
+        loss_per_thousand: u16,
+        lapses: Option<Lapses>,
+    },
+}
+
+/// A moment of interference: a run of packets lost in a row.
+///
+/// Parity repairs a packet lost here and there, and cannot repair a
+/// frame lost with all its shards. A run does that whatever the packets
+/// are made of and however they are packed, where a loss drawn packet by
+/// packet loses a frame or not by the way its shards happened to travel.
+///
+/// Counted in packets, like the loss, so that the same run replays the
+/// same lapses. A lapse as long as its stretch is a total cut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Lapses {
+    /// One lapse in this many packets.
+    pub every: u32,
+    /// Packets lost in a row at the end of each stretch: the first ones,
+    /// which open the connection, are not lost.
+    pub lasting: u32,
+}
+
+impl Lapses {
+    fn covers(self, rank: u64) -> bool {
+        let stretch = u64::from(self.every.max(1));
+        rank % stretch >= stretch.saturating_sub(u64::from(self.lasting))
+    }
 }
 
 /// Socket that loses a fraction of what it is handed.
@@ -40,14 +69,20 @@ pub enum Path {
 pub struct DegradedPath {
     inner: Arc<dyn AsyncUdpSocket>,
     loss_per_thousand: u64,
+    lapses: Option<Lapses>,
     sent: AtomicU64,
 }
 
 impl DegradedPath {
-    pub fn new(inner: Arc<dyn AsyncUdpSocket>, loss_per_thousand: u16) -> Self {
+    pub fn new(
+        inner: Arc<dyn AsyncUdpSocket>,
+        loss_per_thousand: u16,
+        lapses: Option<Lapses>,
+    ) -> Self {
         Self {
             inner,
             loss_per_thousand: u64::from(loss_per_thousand).min(PER_THOUSAND),
+            lapses,
             sent: AtomicU64::new(0),
         }
     }
@@ -59,7 +94,8 @@ impl DegradedPath {
     /// run replays the same losses.
     fn should_drop(&self) -> bool {
         let rank = self.sent.fetch_add(1, Ordering::Relaxed);
-        stir(rank) % PER_THOUSAND < self.loss_per_thousand
+        self.lapses.is_some_and(|lapses| lapses.covers(rank))
+            || stir(rank) % PER_THOUSAND < self.loss_per_thousand
     }
 }
 
@@ -152,9 +188,9 @@ mod tests {
     }
 
     /// Sends the given number of packets and reports what got through.
-    fn send(loss_per_thousand: u16, packets: u64) -> u64 {
+    fn send(loss_per_thousand: u16, lapses: Option<Lapses>, packets: u64) -> u64 {
         let arrived = Arc::new(Counter(AtomicU64::new(0)));
-        let path = DegradedPath::new(arrived.clone(), loss_per_thousand);
+        let path = DegradedPath::new(arrived.clone(), loss_per_thousand, lapses);
         let payload = [0u8; 64];
 
         for _ in 0..packets {
@@ -172,13 +208,13 @@ mod tests {
 
     #[test]
     fn a_direct_path_loses_nothing() {
-        assert_eq!(send(0, 10_000), 10_000);
+        assert_eq!(send(0, None, 10_000), 10_000);
     }
 
     #[test]
     fn the_requested_rate_is_honoured() {
         for per_thousand in [10u16, 20, 50] {
-            let arrived = send(per_thousand, 100_000);
+            let arrived = send(per_thousand, None, 100_000);
             let lost = 100_000 - arrived;
             let expected = per_thousand as u64 * 100;
             let gap = lost.abs_diff(expected);
@@ -191,16 +227,51 @@ mod tests {
 
     #[test]
     fn a_fully_cut_path_lets_nothing_through() {
-        assert_eq!(send(1000, 5_000), 0);
+        assert_eq!(send(1000, None, 5_000), 0);
         // Past the base, the rate falls back to a total cut.
-        assert_eq!(send(u16::MAX, 5_000), 0);
+        assert_eq!(send(u16::MAX, None, 5_000), 0);
+    }
+
+    #[test]
+    fn a_lapse_loses_a_run_of_packets_at_the_end_of_each_stretch() {
+        let lapses = Lapses {
+            every: 10,
+            lasting: 3,
+        };
+        let path = DegradedPath::new(Arc::new(Counter(AtomicU64::new(0))), 0, Some(lapses));
+        let lost: Vec<u64> = (0..30).filter(|_| path.should_drop()).collect();
+        assert_eq!(lost, [7, 8, 9, 17, 18, 19, 27, 28, 29]);
+    }
+
+    #[test]
+    fn a_lapse_as_long_as_its_stretch_is_a_total_cut() {
+        let lapses = Lapses {
+            every: 10,
+            lasting: 10,
+        };
+        assert_eq!(send(0, Some(lapses), 1_000), 0);
+    }
+
+    #[test]
+    fn the_lapses_come_on_top_of_the_loss() {
+        let lapses = Lapses {
+            every: 100,
+            lasting: 5,
+        };
+        let lost = 100_000 - send(50, Some(lapses), 100_000);
+        // Five in a hundred to the lapses, and a twentieth of what is left.
+        let expected = 5_000 + 95_000 / 20;
+        assert!(
+            lost.abs_diff(expected) * 10 < expected,
+            "{lost} lost instead of {expected}"
+        );
     }
 
     #[test]
     fn the_losses_do_not_fall_in_cadence() {
         // One loss every hundred packets exactly would match any sending
         // rhythm and hide window computation errors.
-        let path = DegradedPath::new(Arc::new(Counter(AtomicU64::new(0))), 100);
+        let path = DegradedPath::new(Arc::new(Counter(AtomicU64::new(0))), 100, None);
         let dropped: Vec<bool> = (0..2000).map(|_| path.should_drop()).collect();
         let gaps: Vec<usize> = dropped
             .iter()
