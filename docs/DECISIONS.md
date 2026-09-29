@@ -3805,6 +3805,22 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui reste.** Le choix de la couleur d'accentuation : où la personne le fait, et si le logo la suit. L'icône du programme et le dessin du logo dans `packaging/brand` sont des fichiers livrés tels quels : ils restent dorés quoi qu'on choisisse.
 
+## D239. Les règles écrites pour l'IA, et les essais qui tournent de nouveau sous Windows (2026-09-29, pendant MZ)
+
+**Les règles.** Un `CLAUDE.md`, à la racine, dit à toute IA qui travaille sur le dépôt ce qu'elle lit avant chaque demande : ce qu'il faut lire d'abord, les couches et qui peut utiliser qui, où va chaque sorte de code, l'organisation des fichiers, les essais, les faits et les mots, les journaux, les dialogues entre deux versions, l'interface, Windows et les autres systèmes, la performance et la sécurité, les dépendances, ce qu'on vérifie avant chaque commit et ce qu'on documente. Relu et validé par Victor avant d'entrer dans le dépôt.
+
+**Le constat.** Depuis l'arrivée du moteur, le 25/09, les essais sous Windows ne se terminaient plus sur GitHub. Deux essais de la ligne de commande ouvraient le tuyau du moteur pour le seul compte système de Windows ; un essai tourne sous un compte ordinaire : il était refusé, et attendait pour toujours, jusqu'à ce que GitHub coupe tout au bout de six heures. Tout ce qui venait après n'a pas tourné sous Windows pendant quatre jours, le chantier de [D233](#d233-les-briques-en-couches-et-les-moteurs-à-part-2026-09-28-pendant-mz) compris : il était compilé et analysé pour Windows, et essayé sous Linux seulement. Le même oubli attendait dans les essais du tunnel, du moteur hôte, du lecteur et du service. Sous Linux, un essai du moteur hôte échouait de temps en temps (156 ms pour moins de 150 attendues) : ses neuf sessions de bout en bout se partageaient le processeur.
+
+**Ce qui est fait.**
+
+- L'accès des essais (le compte système et tout compte connecté) est écrit une seule fois, dans `zyr-link`, derrière une fonctionnalité que seuls les essais allument. Tous les essais qui ouvrent un tuyau s'en servent.
+- La porte du service ouvre le tuyau du moteur avec l'accès que donne celui qui lance le moteur : le seul compte système dans le produit, comme avant, et le compte de l'essai pour les moteurs de remplacement de ses essais.
+- Les sessions de bout en bout du moteur hôte passent une par une, comme celles du lecteur.
+- Sur GitHub, les essais ont trente minutes : un essai bloqué passe au rouge au lieu de faire attendre six heures.
+- La voix de chasse du journal prend une ligne, comme l'autre voix. Sa forme d'avant, faite pour ne rien assembler quand personne ne chassait, n'avait plus de raison depuis [D191](#d191-la-chasse-se-décide-au-démarrage-pas-à-la-compilation-2026-09-12-pendant-m6), et son commentaire disait encore qu'elle n'écrivait que dans une version faite pour la chasse.
+
+**Ce qui se voit.** Rien : les lignes du journal sont les mêmes, et le produit ouvre le tuyau du moteur comme avant.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

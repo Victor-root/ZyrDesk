@@ -92,7 +92,7 @@ Construction de l'installateur Windows : voir [packaging/windows/README.md](pack
 
 ## Conventions du code
 
-Ceci s'adresse autant à une IA qu'à une personne qui reprend le dépôt.
+Ceci s'adresse autant à une IA qu'à une personne qui reprend le dépôt. Une IA trouve en plus, dans [CLAUDE.md](CLAUDE.md), ces règles et celles de l'architecture, qu'elle lit avant chaque demande.
 
 - **Le code s'écrit en anglais** : noms de fichiers et de modules, types, fonctions, variables, constantes, noms des tests, commentaires et documentation du code, dans le Rust comme dans les scripts, la CI et la feuille de style.
 - **Ce que la personne lit passe par une traduction, l'anglais d'abord**, le français s'y greffant, et **les journaux s'écrivent en anglais** ([D234](docs/DECISIONS.md#d234-les-journaux-passent-en-anglais-et-ce-que-la-personne-lit-passe-par-une-traduction-2026-09-28-pendant-mz), [D236](docs/DECISIONS.md#d236-des-faits-plutôt-que-des-phrases-et-les-journaux-en-anglais-2026-09-28-pendant-mz)). Les moteurs, le service et le serveur ne composent pas de phrases pour la personne : ils disent des faits, un code et ses valeurs (`zyr_proto::fact::Fact`). Seules la fenêtre et la ligne de commande choisissent les mots, par la brique `zyr-i18n`, dont les textes vivent dans `crates/zyr-i18n/words/`, un fichier par langue : ajouter une langue, c'est ajouter un fichier. Un texte nouveau s'écrit dans `en.txt` d'abord, puis dans chaque autre langue ; les essais de la brique refusent une langue qui ne dit pas tout ce que dit l'anglais, avec les mêmes valeurs, et un code ou une clé demandés par le code sans texte anglais. La ligne de commande parle anglais. L'accueil, qui sera refait, garde ses textes français et montre les faits par la brique.
