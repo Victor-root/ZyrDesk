@@ -3241,6 +3241,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "zyr-service"
+version = "0.1.0"
+dependencies = [
+ "rcgen",
+ "tokio",
+ "zyr-account",
+ "zyr-broker",
+ "zyr-clipboard",
+ "zyr-control",
+ "zyr-host",
+ "zyr-lan",
+ "zyr-link",
+ "zyr-media",
+ "zyr-proto",
+ "zyr-screen",
+ "zyr-server",
+ "zyr-sound",
+ "zyr-system",
+ "zyr-transport",
+ "zyr-tunnel",
+ "zyr-win32",
+]
+
+[[package]]
 name = "zyr-session"
 version = "0.1.0"
 dependencies = [
@@ -3326,24 +3350,12 @@ name = "zyrdeskd"
 version = "0.1.0"
 dependencies = [
  "clap",
- "rcgen",
- "tokio",
  "windows-service",
  "winresource",
- "zyr-account",
- "zyr-broker",
- "zyr-clipboard",
- "zyr-control",
  "zyr-host",
  "zyr-lan",
- "zyr-link",
- "zyr-media",
  "zyr-proto",
  "zyr-screen",
- "zyr-server",
- "zyr-sound",
+ "zyr-service",
  "zyr-system",
- "zyr-transport",
- "zyr-tunnel",
- "zyr-win32",
 ]

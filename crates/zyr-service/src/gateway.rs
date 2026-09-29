@@ -23,11 +23,6 @@
 //! lets go of whatever it held and goes, and what is left of it is taken
 //! with the job it was started in.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. Its logic has nothing platform-specific about it and stays
-// compiled and tested everywhere.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;

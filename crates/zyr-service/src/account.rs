@@ -20,11 +20,6 @@
 //! account, or one whose server cannot be reached, is knocked on at its
 //! address.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. Its logic has nothing platform-specific about it and stays
-// compiled and tested everywhere.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;

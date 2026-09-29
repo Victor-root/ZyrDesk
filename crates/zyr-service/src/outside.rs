@@ -26,11 +26,6 @@
 //! the right to open one; this needs neither, and answers the same
 //! thing: whether anything at all still comes back from the Internet.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. Its logic has nothing platform-specific about it and stays
-// compiled and tested everywhere.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 

@@ -5,26 +5,10 @@
 //! with another, it becomes the engine of one session, or runs one short
 //! errand in the session that owns the screen. Started by hand, it serves
 //! to install, start, stop or remove the service.
-
-mod account;
-mod clipboard;
-mod control;
-mod engine;
-mod errands;
-mod gateway;
-mod incoming;
-mod keeper;
-mod known;
-mod machine;
-mod outside;
-mod pointer;
-mod preferences;
-mod said;
-mod screen;
-mod speakers;
-mod supervisor;
-mod transfer;
-mod ways;
+//!
+//! This program only assembles. What the service does is `zyr_service`'s,
+//! the engine is `zyr_host`'s, and what is left here is how Windows starts
+//! the one and the service starts the other.
 
 #[cfg(windows)]
 mod service;
@@ -33,8 +17,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use zyr_proto::log::Log;
-
-use errands::StartedFor;
+use zyr_service::StartedFor;
 
 #[derive(Parser)]
 #[command(
@@ -81,8 +64,9 @@ fn main() -> ExitCode {
     // And the service starts this program again, in the session that owns
     // the screen, for what it cannot do from its own: to be the engine of
     // one session, or to run an errand there. Nobody types these either,
-    // and why each has to be done over there is said beside its argument.
-    if let Some(started_for) = errands::started_for() {
+    // and why each has to be done over there is said beside its argument,
+    // in `zyr_service`.
+    if let Some(started_for) = zyr_service::started_for() {
         return match started_for {
             // With the system's own account, it films, encodes and plays
             // what the far computer types, over the link the service named.
@@ -94,7 +78,9 @@ fn main() -> ExitCode {
                     Err(e) => failure("the engine could not open its journal", e),
                 }
             }
-            StartedFor::Speakers(quiet) => ExitCode::from(errands::move_the_speakers(quiet) as u8),
+            StartedFor::Speakers(quiet) => {
+                ExitCode::from(zyr_service::move_the_speakers(quiet) as u8)
+            }
             StartedFor::Locking => {
                 if zyr_system::lock_this_desktop() {
                     ExitCode::SUCCESS
@@ -103,15 +89,15 @@ fn main() -> ExitCode {
                 }
             }
             StartedFor::Desk(asked) => {
-                errands::do_this_to_the_desk(asked);
+                zyr_service::do_this_to_the_desk(asked);
                 ExitCode::SUCCESS
             }
             StartedFor::FollowingThePointer => {
-                pointer::follow_the_pointer_here();
+                zyr_service::follow_the_pointer_here();
                 ExitCode::SUCCESS
             }
             StartedFor::CarryingTheClipboard => {
-                clipboard::carry_the_clipboard_here();
+                zyr_service::carry_the_clipboard_here();
                 ExitCode::SUCCESS
             }
         };

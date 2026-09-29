@@ -29,11 +29,6 @@
 //! eighty per cent for a hiccup. What is kept meanwhile is exactly what
 //! lets the next way carry on from the piece that was reached.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. Its logic has nothing platform-specific about it and stays
-// compiled and tested everywhere.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::io::{Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::Mutex;

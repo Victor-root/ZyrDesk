@@ -3,8 +3,10 @@
 //! The screen itself is grown by `zyr-screen`, which knows drivers and
 //! nothing about ZyrDesk, and so is this computer's desk, noted and given
 //! back around a session. This file is the other half: when the screen
-//! is put in place, where its papers live, when it is woken and put back
-//! to sleep, and what all of that writes into the service's log.
+//! is woken for a session and put back to sleep after it, where its
+//! papers live, and what that writes into the service's log. Putting it
+//! on this computer and taking it off again is installing, and belongs to
+//! the program that installs the service.
 //!
 //! Everything here is deliberately forgiving. A computer with no virtual
 //! screen is a computer that still opens sessions, still reaches other
@@ -17,76 +19,6 @@ use zyr_proto::paths;
 
 /// What this module's lines are filed under.
 const TAG: &str = "screen";
-
-/// Puts the virtual screen on this computer, if it is not on it already.
-///
-/// Asked for where the service is registered **and at every start of the
-/// service**. Registration alone was not enough and never could be: a
-/// computer whose service was registered before this existed would go on
-/// without a virtual screen for ever, and nothing would ever try again or
-/// even say so. That is exactly what happened, and the firewall rules
-/// beside it had already learned the same lesson: they are laid at every
-/// start for that very reason.
-///
-/// Both moments qualify. Laying a driver down needs administrator rights,
-/// which the service has, and needs nobody to be watching a session,
-/// which is true of a service whose door is not open yet.
-///
-/// Whether it is already there is asked first, and the whole of the
-/// laying down hangs on that answer. Laying a driver onto a device that
-/// already carries it makes Windows install it again, which takes the
-/// screen away and hands it back; done at every start, that would be a
-/// computer clicking through its monitors every time it is switched on.
-#[cfg(windows)]
-pub fn put_in_place(log: Option<&Log>) {
-    let driver = zyr_screen::shipped();
-    match zyr_screen::present(driver) {
-        Ok(true) => {
-            // Left as it is, awake or asleep. A service killed in the
-            // middle of a session leaves the screen awake, and it does
-            // have to go back; the supervisor does it as the door opens,
-            // after the desk, which is the order everything here puts
-            // them back in.
-            write_down(log, vec!["virtual screen already in place".to_string()]);
-            return;
-        }
-        Ok(false) => {}
-        // Not laid down on a maybe. The answer to this question is what
-        // keeps the laying down from happening twice, and without it the
-        // safe thing is to leave the screen as it is and say why.
-        Err(e) => {
-            write_down(
-                log,
-                vec![format!(
-                    "cannot tell whether the virtual screen is in place, leaving it alone: {e}"
-                )],
-            );
-            return;
-        }
-    }
-    let package = paths::virtual_screen_driver_dir();
-    let home = paths::virtual_screen_dir();
-    let said = match zyr_screen::install(driver, &package, &home) {
-        Ok(done) => {
-            let mut said = done.steps;
-            said.push(if done.changed {
-                "virtual screen ready: this computer can now be asked for a picture larger than \
-                 its own screen"
-                    .to_string()
-            } else {
-                "virtual screen was already in place".to_string()
-            });
-            said
-        }
-        Err(e) => vec![
-            format!("virtual screen not installed: {e}"),
-            "this computer will only serve pictures its own screen can draw; a session asked for \
-             a larger one gets that screen blown up, which costs rate and gives no detail"
-                .to_string(),
-        ],
-    };
-    write_down(log, said);
-}
 
 /// Wakes the virtual screen for a session that wants a picture that size.
 ///
@@ -164,27 +96,3 @@ pub fn asleep() -> bool {
 /// and a session asking for more is served by the engine resending, which
 /// is the setting that already exists for it.
 const SESSION_RATE: u32 = 60;
-
-/// Takes it back off, along with everything that pointed at it.
-#[cfg(windows)]
-pub fn take_away(log: Option<&Log>) {
-    let driver = zyr_screen::shipped();
-    let package = paths::virtual_screen_driver_dir();
-    let home = paths::virtual_screen_dir();
-    let said = match zyr_screen::uninstall(driver, &package, &home) {
-        Ok(done) => done.steps,
-        Err(e) => vec![format!("virtual screen not fully removed: {e}")],
-    };
-    write_down(log, said);
-}
-
-#[cfg(windows)]
-fn write_down(log: Option<&Log>, said: Vec<String>) {
-    let Some(log) = log else {
-        return;
-    };
-    let log = log.about(TAG);
-    for line in said {
-        log.write(&line);
-    }
-}

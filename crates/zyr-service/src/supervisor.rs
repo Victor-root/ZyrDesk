@@ -21,20 +21,12 @@
 //! there to show an icon on, and reaching it before anyone signs in is
 //! precisely what they asked for.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. It stays compiled and tested everywhere, the logic having
-// nothing platform-specific about it, but with no caller it would pass
-// for dead code. The exception stops at platforms without a service: on
-// Windows, genuinely dead code is still reported.
-#![cfg_attr(not(windows), allow(dead_code))]
-
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use zyr_control::Holdup;
-use zyr_host::Ffmpeg;
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 
@@ -271,10 +263,41 @@ pub enum End {
     NoRuntime,
 }
 
-/// Runs until a stop is asked for.
-pub fn run(order: &StopOrder, log: &Log) -> End {
-    let log = &log.about(TAG);
+/// What the program running the service wires it to, which the service
+/// itself knows nothing of: the engine it starts for each session, and
+/// Windows' own register of services.
+///
+/// Knowing neither is what lets everything here be tried on its own, on
+/// any machine.
+#[derive(Clone, Copy)]
+pub struct Wiring {
+    /// Which of the files the engine needs that folder does not hold.
+    pub engine_missing_from: fn(&Path) -> Vec<PathBuf>,
+    /// Whether Windows starts the service on its own.
+    pub starts_with_windows: fn() -> bool,
+    /// Decides whether it does, saying why when it cannot.
+    pub start_with_windows: fn(bool) -> Result<(), String>,
+}
 
+/// Runs until a stop is asked for.
+pub fn run(order: &StopOrder, log: &Log, wiring: Wiring) -> End {
+    let log = &log.about(TAG);
+    // A silence left behind by a run of this service that never got to
+    // finish: the machine was switched off, or the service fell over,
+    // with a session in progress. Only remembered here; the watch gives
+    // the sound back on its first turn, since at this moment there may
+    // still be nobody signed in.
+    crate::speakers::pick_up_where_it_was_left(log);
+    let end = keep_the_door(order, log, wiring);
+    // Whatever took the service down, including Windows on its way out:
+    // the speakers were only ever quiet for a session, and there is no
+    // longer one.
+    crate::speakers::keep_in_step(false, false, log);
+    end
+}
+
+/// Everything the service does between those two moments.
+fn keep_the_door(order: &StopOrder, log: &Log, wiring: Wiring) -> End {
     // One runtime for the whole life of the service: the door is opened
     // and closed many times, but rebuilding the threads underneath it
     // every time would be waste.
@@ -334,7 +357,13 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     // Not being able to answer the interface leaves this computer
     // reachable all the same, so it is worth saying loudly and carrying
     // on rather than giving up on remote access entirely.
-    let _desk = match desk(runtime.handle(), machine.clone(), order.clone(), log) {
+    let _desk = match desk(
+        runtime.handle(),
+        machine.clone(),
+        order.clone(),
+        wiring,
+        log,
+    ) {
         Ok(desk) => Some(desk),
         Err(e) => {
             log.write(&format!(
@@ -351,6 +380,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         runtime: runtime.handle(),
         machine: &machine,
         order,
+        wiring,
         log,
     };
     let mut screenless = false;
@@ -390,7 +420,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         }
 
         let ffmpeg = paths::ffmpeg_dir();
-        let missing = missing_from(&ffmpeg);
+        let missing = missing_from(&ffmpeg, wiring);
         if !missing.is_empty() {
             // FFmpeg can be dropped in later, and everything this
             // computer needs to reach another one works without it. So
@@ -432,7 +462,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         let seen = seen_in(session);
         if !seen
             .as_ref()
-            .is_ok_and(|seen| may_be_taken(*seen, crate::control::at_boot))
+            .is_ok_and(|seen| may_be_taken(*seen, wiring.starts_with_windows))
         {
             if !unseen {
                 log.write(&format!(
@@ -483,8 +513,8 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
 /// Looked for and not opened: opening them is the engine's, in the
 /// session it runs in. What matters here is only whether there is
 /// anything to open at all.
-fn missing_from(folder: &Path) -> Vec<String> {
-    Ffmpeg::missing_from(folder)
+fn missing_from(folder: &Path, wiring: Wiring) -> Vec<String> {
+    (wiring.engine_missing_from)(folder)
         .iter()
         .filter_map(|file| file.file_name())
         .map(|name| name.to_string_lossy().into_owned())
@@ -496,6 +526,7 @@ fn desk(
     runtime: &tokio::runtime::Handle,
     machine: Machine,
     order: StopOrder,
+    wiring: Wiring,
     log: &Log,
 ) -> Result<Desk, String> {
     let identity = zyr_transport::Identity::load_or_create(&paths::identity_dir())
@@ -507,6 +538,7 @@ fn desk(
             fingerprint: identity.fingerprint(),
             machine,
             order,
+            wiring,
             log: log.about(crate::control::TAG),
         },
     )
@@ -558,6 +590,7 @@ struct Around<'a> {
     runtime: &'a tokio::runtime::Handle,
     machine: &'a Machine,
     order: &'a StopOrder,
+    wiring: Wiring,
     log: &'a Log,
 }
 
@@ -570,6 +603,7 @@ fn one_door_life(session: u32, around: &Around<'_>) -> Result<Closed, String> {
         runtime,
         machine,
         order,
+        wiring,
         log,
     } = around;
 
@@ -598,7 +632,7 @@ fn one_door_life(session: u32, around: &Around<'_>) -> Result<Closed, String> {
         "remote access active, each session's engine starting in session {session}"
     ));
 
-    let closed = watch_the_door(&gateway, session, wire, machine, order, log);
+    let closed = watch_the_door(&gateway, session, wire, machine, order, *wiring, log);
     machine.hosting.held_by(match closed {
         Closed::FfmpegGone => Holdup::EngineMissing,
         Closed::Unseen => Holdup::Unseen,
@@ -616,6 +650,7 @@ fn watch_the_door(
     wire: crate::preferences::Wire,
     machine: &Machine,
     order: &StopOrder,
+    wiring: Wiring,
     log: &Log,
 ) -> Closed {
     let mut last_look_for_ffmpeg = Instant::now();
@@ -635,7 +670,7 @@ fn watch_the_door(
         let seen = seen_in(session);
         let allowed = seen
             .as_ref()
-            .is_ok_and(|seen| watched.allows(*seen, crate::control::at_boot, Instant::now()));
+            .is_ok_and(|seen| watched.allows(*seen, wiring.starts_with_windows, Instant::now()));
         if !allowed {
             log.write(&format!("{}, the door closes", why_unseen(&seen)));
             return Closed::Unseen;
@@ -665,7 +700,7 @@ fn watch_the_door(
 
         if last_look_for_ffmpeg.elapsed() >= ENGINE_WATCH {
             last_look_for_ffmpeg = Instant::now();
-            let missing = missing_from(&paths::ffmpeg_dir());
+            let missing = missing_from(&paths::ffmpeg_dir(), wiring);
             if !missing.is_empty() {
                 log.write(&format!(
                     "FFmpeg is no longer all there ({} missing), the door closes",
@@ -808,7 +843,12 @@ mod tests {
         // own right. A service that stopped there would cost it the
         // tunnel, network discovery and its interface, for one half of
         // the product it may have no use for.
-        if missing_from(&paths::ffmpeg_dir()).is_empty() {
+        let wiring = Wiring {
+            engine_missing_from: zyr_host::Ffmpeg::missing_from,
+            starts_with_windows: || false,
+            start_with_windows: |_| Err("there is no Windows here to ask".to_string()),
+        };
+        if missing_from(&paths::ffmpeg_dir(), wiring).is_empty() {
             return;
         }
         let folder = std::env::temp_dir().join(format!("zyrdeskd-{}-none", std::process::id()));
@@ -821,7 +861,7 @@ mod tests {
             asking.ask_for_a_stop();
         });
 
-        assert_eq!(run(&order, &log), End::Asked);
+        assert_eq!(run(&order, &log, wiring), End::Asked);
         let _ = std::fs::remove_dir_all(&folder);
     }
 }

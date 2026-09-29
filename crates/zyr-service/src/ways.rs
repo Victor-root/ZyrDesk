@@ -14,11 +14,6 @@
 //! interface opened in the middle of a session reads to name it: it was
 //! not there when it started, and nothing else survived.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. Its logic has nothing platform-specific about it and stays
-// compiled and tested everywhere.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};

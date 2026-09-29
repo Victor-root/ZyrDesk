@@ -31,10 +31,6 @@
 //! that stops asking, or that stops altogether, leaves nothing behind for
 //! more than a few seconds. A machine nobody is watching reads nothing.
 
-// Outside Windows the service does not run, and nothing asks for the
-// shape. It stays compiled and tested everywhere all the same.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::time::{Duration, Instant};
 
 use zyr_proto::log::Log;

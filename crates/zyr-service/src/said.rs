@@ -21,11 +21,6 @@
 //! journal said nothing of them: a fault visible only from the machine
 //! that does not cause it is a fault chased on the wrong machine.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. Its logic has nothing platform-specific about it and stays
-// compiled and tested everywhere.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::sync::Arc;
 use std::time::Duration;
 

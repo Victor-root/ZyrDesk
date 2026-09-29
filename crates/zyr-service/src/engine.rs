@@ -10,11 +10,6 @@
 //! in, and what has to leave is handed back or put on a channel. That is
 //! what lets all of it be tried anywhere.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. Its logic has nothing platform-specific about it and stays
-// compiled and tested everywhere.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::sync::Mutex;
 
 use tokio::sync::mpsc;

@@ -5,8 +5,9 @@
 //! that takes too long to confirm a stop is killed, and its engines with
 //! it, with nothing put away.
 //!
-//! Everything touching the service control manager lives here. The real
-//! work is in the supervisor, which does not know it is a service.
+//! Everything touching the service control manager lives here, with what
+//! installing the service lays on this computer. The real work is in
+//! `zyr_service`, which does not know it is a service.
 
 use std::ffi::OsString;
 use std::time::{Duration, Instant};
@@ -21,8 +22,7 @@ use windows_service::{Result as ServiceResult, define_windows_service, service_d
 
 use zyr_proto::log::Log;
 use zyr_proto::paths;
-
-use crate::supervisor::{self, End, StopOrder};
+use zyr_service::{End, StopOrder, Wiring};
 
 /// What this module's lines are filed under.
 ///
@@ -30,6 +30,10 @@ use crate::supervisor::{self, End, StopOrder};
 /// Windows starts and what it runs are one thing to whoever is looking
 /// for a line about either.
 pub const TAG: &str = "service";
+
+/// What the virtual screen's lines are filed under, the word its waking
+/// and sleeping in a session are filed under too.
+const SCREEN_TAG: &str = "screen";
 
 /// Internal service name, the one Windows uses.
 pub const NAME: &str = "ZyrDesk";
@@ -146,26 +150,16 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     // registered, it never arrived on a computer registered before it
     // existed, and nothing said so. Asked for here as well, where it does
     // nothing at all when the screen is already there.
-    crate::screen::put_in_place(Some(log));
+    put_the_virtual_screen_in_place(Some(log));
     // And a fourth time, for the same reason again, which this one has
     // already cost: laid only where the service is registered, the
     // policy that lets Ctrl+Alt+Del be pressed never reached a computer
     // registered before it existed, and Windows says nothing at all when
     // it refuses a press.
     zyr_system::let_it_be_pressed(Some(log));
-    // A silence left behind by a run of this service that never got to
-    // finish: the machine was switched off, or the service fell over,
-    // with a session in progress. Only remembered here; the watch gives
-    // the sound back on its first turn, since at this moment there may
-    // still be nobody signed in.
-    crate::speakers::pick_up_where_it_was_left(log);
     say_how_the_networks_are_classed(log);
 
-    let end = supervisor::run(&order, log);
-    // Whatever took the service down, including Windows on its way
-    // out: the speakers were only ever quiet for a session, and there
-    // is no longer one.
-    crate::speakers::keep_in_step(false, false, log);
+    let end = zyr_service::run(&order, log, WIRING);
     log.write(&format!("service stopped: {}", reason(end)));
 
     // A service that gives up has to tell Windows so, rather than
@@ -298,7 +292,7 @@ pub fn install() -> Result<Installed, Box<dyn std::error::Error>> {
     // nobody to be watching a session, which is true of this one moment
     // too. It never fails the installation, since a computer without a
     // virtual screen is a computer that works, only less sharply.
-    crate::screen::put_in_place(log.as_ref());
+    put_the_virtual_screen_in_place(log.as_ref());
     zyr_system::let_it_be_pressed(log.as_ref());
     Ok(installed)
 }
@@ -345,8 +339,107 @@ fn let_the_person_start_and_stop_it(log: Option<&Log>) {
     });
 }
 
+/// Puts the virtual screen on this computer, if it is not on it already.
+///
+/// Asked for where the service is registered **and at every start of the
+/// service**. Registration alone was not enough and never could be: a
+/// computer whose service was registered before this existed would go on
+/// without a virtual screen for ever, and nothing would ever try again or
+/// even say so. That is exactly what happened, and the firewall rules
+/// beside it had already learned the same lesson: they are laid at every
+/// start for that very reason.
+///
+/// Both moments qualify. Laying a driver down needs administrator rights,
+/// which the service has, and needs nobody to be watching a session,
+/// which is true of a service whose door is not open yet.
+///
+/// Whether it is already there is asked first, and the whole of the
+/// laying down hangs on that answer. Laying a driver onto a device that
+/// already carries it makes Windows install it again, which takes the
+/// screen away and hands it back; done at every start, that would be a
+/// computer clicking through its monitors every time it is switched on.
+fn put_the_virtual_screen_in_place(log: Option<&Log>) {
+    let driver = zyr_screen::shipped();
+    match zyr_screen::present(driver) {
+        Ok(true) => {
+            // Left as it is, awake or asleep. A service killed in the
+            // middle of a session leaves the screen awake, and it does
+            // have to go back; the supervisor does it as the door opens,
+            // after the desk, which is the order everything here puts
+            // them back in.
+            write_down_about_the_screen(log, vec!["virtual screen already in place".to_string()]);
+            return;
+        }
+        Ok(false) => {}
+        // Not laid down on a maybe. The answer to this question is what
+        // keeps the laying down from happening twice, and without it the
+        // safe thing is to leave the screen as it is and say why.
+        Err(e) => {
+            write_down_about_the_screen(
+                log,
+                vec![format!(
+                    "cannot tell whether the virtual screen is in place, leaving it alone: {e}"
+                )],
+            );
+            return;
+        }
+    }
+    let package = paths::virtual_screen_driver_dir();
+    let home = paths::virtual_screen_dir();
+    let said = match zyr_screen::install(driver, &package, &home) {
+        Ok(done) => {
+            let mut said = done.steps;
+            said.push(if done.changed {
+                "virtual screen ready: this computer can now be asked for a picture larger than \
+                 its own screen"
+                    .to_string()
+            } else {
+                "virtual screen was already in place".to_string()
+            });
+            said
+        }
+        Err(e) => vec![
+            format!("virtual screen not installed: {e}"),
+            "this computer will only serve pictures its own screen can draw; a session asked for \
+             a larger one gets that screen blown up, which costs rate and gives no detail"
+                .to_string(),
+        ],
+    };
+    write_down_about_the_screen(log, said);
+}
+
+/// Takes it back off, along with everything that pointed at it.
+fn take_the_virtual_screen_away(log: Option<&Log>) {
+    let driver = zyr_screen::shipped();
+    let package = paths::virtual_screen_driver_dir();
+    let home = paths::virtual_screen_dir();
+    let said = match zyr_screen::uninstall(driver, &package, &home) {
+        Ok(done) => done.steps,
+        Err(e) => vec![format!("virtual screen not fully removed: {e}")],
+    };
+    write_down_about_the_screen(log, said);
+}
+
+fn write_down_about_the_screen(log: Option<&Log>, said: Vec<String>) {
+    let Some(log) = log else {
+        return;
+    };
+    let log = log.about(SCREEN_TAG);
+    for line in said {
+        log.write(&line);
+    }
+}
+
+/// What the service is wired to: the engine this program serves as, and
+/// what Windows' service manager says of this service.
+const WIRING: Wiring = Wiring {
+    engine_missing_from: zyr_host::Ffmpeg::missing_from,
+    starts_with_windows: || starts_with_windows().unwrap_or(false),
+    start_with_windows: |on| start_with_windows(on).map_err(|e| e.to_string()),
+};
+
 /// Whether Windows starts the service on its own.
-pub fn starts_with_windows() -> Result<bool, windows_service::Error> {
+fn starts_with_windows() -> Result<bool, windows_service::Error> {
     let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
     let service = manager.open_service(NAME, ServiceAccess::QUERY_CONFIG)?;
     Ok(service.query_config()?.start_type == ServiceStartType::AutoStart)
@@ -357,7 +450,7 @@ pub fn starts_with_windows() -> Result<bool, windows_service::Error> {
 /// Asked of the service and not of the interface: the service runs as
 /// the system, which is the one identity allowed to change this without
 /// anybody being asked for administrator rights.
-pub fn start_with_windows(on: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn start_with_windows(on: bool) -> Result<(), Box<dyn std::error::Error>> {
     let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
     let service = manager.open_service(NAME, ServiceAccess::CHANGE_CONFIG)?;
     service.change_config(&described(on)?)?;
@@ -617,7 +710,7 @@ pub fn uninstall() -> ServiceResult<()> {
     // After the service is gone and not before: the driver cannot leave
     // Windows' store while anything is still using its device, and the
     // engines the service started are what use it.
-    crate::screen::take_away(Log::open(&paths::service_log()).ok().as_ref());
+    take_the_virtual_screen_away(Log::open(&paths::service_log()).ok().as_ref());
     Ok(())
 }
 

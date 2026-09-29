@@ -1,0 +1,34 @@
+[package]
+name = "zyr-service"
+description = "What the ZyrDesk service does: the door, the ways out, the account link and the desk the window talks to"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zyr-proto.workspace = true
+zyr-media.workspace = true
+zyr-clipboard.workspace = true
+zyr-transport.workspace = true
+zyr-tunnel.workspace = true
+zyr-control.workspace = true
+zyr-link.workspace = true
+zyr-lan.workspace = true
+zyr-screen.workspace = true
+zyr-sound.workspace = true
+zyr-system.workspace = true
+zyr-win32.workspace = true
+zyr-broker.workspace = true
+zyr-account.workspace = true
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
+
+[dev-dependencies]
+# The account link is tried against a real server, in the same process,
+# with a certificate nobody vouches for: the road of every self-hosted
+# server.
+zyr-server = { path = "../../server/zyr-server" }
+rcgen = "0.14.10"
+# The whole service is only started for a test where the engine really
+# has no FFmpeg, as the engine itself says.
+zyr-host.workspace = true

@@ -114,9 +114,6 @@ pub fn keep_in_step(wanted: bool, a_session_is_open: bool, log: &Log) {
 /// way: at the moment the service starts there may be nobody signed in
 /// at all, and the speakers can only be reached from the session that
 /// owns the screen.
-///
-/// Only the service asks this, and a service is a Windows thing.
-#[cfg(windows)]
 pub fn pick_up_where_it_was_left(log: &Log) {
     let log = &log.about(TAG);
     if !paths::hushed_speakers().exists() {

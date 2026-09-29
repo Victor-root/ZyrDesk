@@ -65,7 +65,7 @@ Le serveur est facultatif. Sans lui, ZyrDesk se joint sur le réseau local, par 
 | Processus | Rôle | Compte | Durée de vie |
 |---|---|---|---|
 | `ZyrDesk.exe` | Interface, dessinée par le produit lui-même dans sa propre fenêtre Win32, icône de zone de notification. Pendant une session : le lecteur (`zyr-player`), qui décode, dessine l'image dans une fenêtre enfant de la fenêtre principale et joue le son, et le bouton flottant au-dessus | Utilisateur connecté | Session utilisateur |
-| `zyrdeskd.exe` | Service Windows : identité de l'appareil, lien de compte, LES DEUX extrémités de tunnel (rôle client et rôle hôte), tube de commande de la fenêtre, un tube par session pour le moteur, lancement du moteur hôte | LocalSystem | Démarré par la fenêtre, ou avec Windows quand l'ordinateur doit répondre avant toute ouverture de session |
+| `zyrdeskd.exe` | Service Windows (`zyr-service`) : identité de l'appareil, lien de compte, LES DEUX extrémités de tunnel (rôle client et rôle hôte), tube de commande de la fenêtre, un tube par session pour le moteur, lancement du moteur hôte | LocalSystem | Démarré par la fenêtre, ou avec Windows quand l'ordinateur doit répondre avant toute ouverture de session |
 | `zyrdeskd.exe --serve-a-session <tube>` | Moteur hôte (`zyr-host`) : capture, conversion, encodage, découpe en paquets, son, clavier et souris ; ne parle qu'au service, par son tube | SYSTEM, dans la session de l'écran | Une session entrante |
 
 Le service se relance aussi, brièvement, dans la session de l'écran pour quelques courses que Windows ne permet que de là : couper ou rendre les enceintes, verrouiller l'écran, tenir et rendre l'arrangement des écrans, suivre la forme du pointeur. L'assistant du presse-papiers est de la même famille, à ceci près qu'il tourne sous le compte de la personne (§9).
@@ -170,7 +170,8 @@ ZyrDesk/
 │  ├─ zyr-win32/               # la façon de Windows de dire les choses, pour toutes les briques qui lui parlent : texte, codes d'erreur, poignées, processus
 │  ├─ zyr-cli/                 # doctor, session sans fenêtre, banc de mesure, identité, compte
 │  ├─ zyr-ui/                  # l'application : cœur Rust, écrans dessinés par le produit, image de la session, journal, bouton flottant
-│  ├─ zyrdeskd/                # binaire service Windows : registre des voies, serveur du tube, tous les tunnels, superviseur ; relancé, c'est aussi le moteur hôte
+│  ├─ zyr-service/             # ce que fait le service : le superviseur, la porte d'entrée et les sessions qui la passent, le registre des voies et tous les tunnels, le lien de compte, le serveur du tube de la fenêtre, et ce pour quoi il se relance dans la session de l'écran
+│  ├─ zyrdeskd/                # binaire service Windows, qui ne fait qu'assembler : démarrage par Windows, installation (pare-feu, droits, écran virtuel), aiguillage de ce pour quoi il est relancé ; relancé, c'est aussi le moteur hôte
 │  └─ zyr-layers/              # la carte des briques : qui peut utiliser qui, vérifiée par les essais
 ├─ server/                     # zyr-server, le serveur facultatif (comptes, mise en relation et relais ; un binaire, AGPLv3), install.sh, README
 ├─ vendor/
@@ -192,7 +193,7 @@ Les briques sont rangées en couches, et chacune n'utilise que des briques de sa
 | Couche | Briques | Rôle |
 |---|---|---|
 | Programmes | `zyr-ui`, `zyrdeskd`, `zyr-cli`, `zyr-server` | Assemblent le reste ; rien ne les utilise |
-| Produit | `zyr-control`, `zyr-session`, `zyr-clipboard` | Le produit qui se parle à lui-même : la fenêtre et le service, l'ouverture d'une session, le presse-papiers |
+| Produit | `zyr-control`, `zyr-session`, `zyr-clipboard`, `zyr-service` | Le produit qui se parle à lui-même : la fenêtre et le service, l'ouverture d'une session, le presse-papiers, ce que fait le service |
 | Réseau et comptes | `zyr-transport`, `zyr-tunnel`, `zyr-lan`, `zyr-broker`, `zyr-account` | La connexion entre deux ordinateurs, le réseau local, le serveur |
 | Moteur | `zyr-media`, `zyr-codec`, `zyr-link`, `zyr-host`, `zyr-player` | L'image, le son et les entrées, de l'écran filmé à l'image affichée, et le tube de chaque moitié vers son service |
 | Plateforme | `zyr-screen`, `zyr-sound`, `zyr-system`, `zyr-win32` | Ce que Windows fait pour le produit, et sa façon de dire les choses |

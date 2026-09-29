@@ -5,11 +5,6 @@
 //! the service, engine or no engine, because most of what is asked of it
 //! has nothing to do with the local engine.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. Its logic has nothing platform-specific about it and stays
-// compiled and tested everywhere.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::io;
 use std::net::SocketAddr;
 
@@ -28,7 +23,7 @@ use zyr_transport::authorized;
 use crate::account::{self, Attaching};
 use crate::known;
 use crate::machine::Machine;
-use crate::supervisor::StopOrder;
+use crate::supervisor::{StopOrder, Wiring};
 use crate::ways::Knock;
 
 /// The desk, open. Dropping it closes the channel.
@@ -72,29 +67,10 @@ pub struct Answering {
     /// can take the service with it without asking Windows, which would
     /// mean an administrator prompt at every quit.
     pub order: StopOrder,
+    /// Whether Windows starts the service on its own, which only the
+    /// program that registered it can say or change.
+    pub wiring: Wiring,
     pub log: Log,
-}
-
-/// Whether Windows starts the service on its own.
-#[cfg(windows)]
-pub(crate) fn at_boot() -> bool {
-    crate::service::starts_with_windows().unwrap_or(false)
-}
-
-/// Outside Windows there is no service to start.
-#[cfg(not(windows))]
-pub(crate) fn at_boot() -> bool {
-    false
-}
-
-#[cfg(windows)]
-fn set_at_boot(on: bool) -> Result<(), String> {
-    crate::service::start_with_windows(on).map_err(|e| e.to_string())
-}
-
-#[cfg(not(windows))]
-fn set_at_boot(_on: bool) -> Result<(), String> {
-    Err("the ZyrDesk service only exists on Windows".to_string())
 }
 
 async fn serve(mut door: Door, answering: Answering) {
@@ -421,7 +397,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 trusting: answering.machine.remembered.trust_local_network(),
                 ecn: answering.machine.remembered.read().ecn,
                 fixed_port: answering.machine.remembered.read().fixed_port,
-                at_boot: at_boot(),
+                at_boot: (answering.wiring.starts_with_windows)(),
                 ways: answering.machine.ways.count(),
             })
         }
@@ -637,7 +613,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 Answer::Refused(Fact::new("peer.not_connected"))
             }
         }
-        Request::SetAtBoot { on } => match set_at_boot(on) {
+        Request::SetAtBoot { on } => match (answering.wiring.start_with_windows)(on) {
             Ok(()) => {
                 answering.log.write(if on {
                     "this computer will be reachable from the moment it powers on"
@@ -770,6 +746,11 @@ mod tests {
                     fingerprint,
                     machine: machine.clone(),
                     order: StopOrder::new(),
+                    wiring: Wiring {
+                        engine_missing_from: |_| Vec::new(),
+                        starts_with_windows: || false,
+                        start_with_windows: |_| Err("there is no Windows here to ask".to_string()),
+                    },
                     log: log.about(TAG),
                 },
             )

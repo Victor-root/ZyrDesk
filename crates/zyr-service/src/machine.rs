@@ -13,11 +13,6 @@
 //! over: by the person sitting at the machine, and by a computer reading
 //! this one's journal from where it is rather than walking over.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. Its logic has nothing platform-specific about it and stays
-// compiled and tested everywhere.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::sync::{Arc, Mutex};
 
 use zyr_account::Snapshot;

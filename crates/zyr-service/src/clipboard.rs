@@ -40,10 +40,6 @@
 //! when the last session goes it takes the file away, which is how the
 //! helper is told to let go and end.
 
-// Outside Windows the service does not run, and nothing asks for the
-// clipboard. It stays compiled and tested everywhere all the same.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 

@@ -13,11 +13,6 @@
 //! service taking connections in writes to, and the part answering the
 //! interface only ever reads or asks to close.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. Its logic has nothing platform-specific about it and stays
-// compiled and tested everywhere.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
