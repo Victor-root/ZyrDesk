@@ -69,7 +69,9 @@ mod mechanism {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    use windows_sys::Win32::Foundation::{ERROR_SUCCESS, FreeLibrary, HANDLE, HMODULE};
+    use windows_sys::Win32::Foundation::{
+        ERROR_SERVICE_NOT_ACTIVE, ERROR_SUCCESS, FreeLibrary, HANDLE, HMODULE,
+    };
     use windows_sys::Win32::NetworkManagement::WiFi::{
         L2_NOTIFICATION_DATA, WLAN_API_VERSION_2_0, WLAN_CONNECTION_ATTRIBUTES,
         WLAN_CONNECTION_NOTIFICATION_DATA, WLAN_INTERFACE_INFO, WLAN_INTERFACE_INFO_LIST,
@@ -309,6 +311,12 @@ mod mechanism {
                     &mut handle,
                 )
             };
+            if opened == ERROR_SERVICE_NOT_ACTIVE {
+                // A computer with no Wi-Fi card has no Wi-Fi service
+                // running: nothing is wrong, and nothing to ask.
+                log.debug("no Wi-Fi service runs on this computer, so there is no Wi-Fi to ask");
+                return None;
+            }
             if opened != ERROR_SUCCESS {
                 log.write(&format!(
                     "the Wi-Fi could not be asked to put the session first: the Wi-Fi service \
