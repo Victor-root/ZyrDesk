@@ -16,6 +16,11 @@
 //! Progress is reported as it happens rather than returned at the end:
 //! opening a way takes seconds, and a window with nothing to say for all
 //! of them looks stuck.
+//!
+//! Once open, what the player measures says how the session is doing,
+//! and [`health`] reads it the same way for whoever shows it.
+
+pub mod health;
 
 use std::fmt;
 use std::path::{Path, PathBuf};

@@ -15,27 +15,19 @@
 //! Never a warning drawn into the picture: the picture is the far
 //! computer's desktop and not ours to write on.
 //!
-//! What makes it quick. The player measures what a session costs five
-//! times a second, and one of its numbers is how long the picture has not
-//! moved. That one is not averaged and not waited for, it is true the
-//! moment it is read, and it is what lights the first badge before the
-//! hand has had time to move the mouse to check.
-//!
-//! What decides is not Windows code and compiles everywhere: it is
-//! arithmetic on a reading, and it is the only half a test can say
-//! anything about. The badges, for their part, are a window, so Windows
-//! code, like the session.
+//! What lights them is decided by `zyr_session::health`, from what the
+//! player measures: that is arithmetic, and it is tried there. Here is
+//! what shows it: the words, compiled and tested everywhere, and the
+//! badges themselves, which are a window, so Windows code, like the
+//! session.
 
-// Outside Windows there is no picture to cover, but what decides is
+// Outside Windows there is no picture to cover, but what is said is
 // compiled and tested everywhere.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use zyr_player::Measures;
-use zyr_proto::fact::Fact;
-
-/* ---- What a reading says --------------------------------------------- */
+use zyr_session::health::{Lit, Reads};
 
 /// What this module files its journal lines under.
 const TAG: &str = "badges";
@@ -44,37 +36,6 @@ const TAG: &str = "badges";
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
-
-/// How long the picture must have been frozen for it to show, in
-/// milliseconds.
-///
-/// A third of a second. Below that, it is one of the late frames that go
-/// by all the time, and a badge that blinks at that pace no longer means
-/// anything; above it, the person has already noticed and the badge
-/// arrives after them.
-const FROZEN_MS: f64 = 350.0;
-
-/// How many frames lost on the way, as a percentage of the second gone
-/// by, before it is said.
-///
-/// Two percent: one frame in fifty, which shows on a desktop being
-/// scrolled and does not show on a still desktop.
-const LOST_PCT: f64 = 2.0;
-
-/// And how many arriving too late to be shown.
-///
-/// Higher than for the ones before: these did arrive, and what they
-/// say is that the link is shaking rather than losing.
-const TOO_LATE_PCT: f64 = 5.0;
-
-/// How long a badge stays lit after its cause has stopped.
-///
-/// Without this it blinks: the cause holds for one reading, readings
-/// arrive five times a second, and a network that is doing badly does
-/// badly in fits and starts. A second and a half is what it takes for
-/// the person, looking up at the corner of the picture, to still find
-/// something there.
-const HOLDS: Duration = Duration::from_millis(1500);
 
 /// What a badge can say.
 ///
@@ -99,118 +60,6 @@ impl std::fmt::Display for Which {
             Which::Here => "picture here",
         })
     }
-}
-
-/// What a reading says about each one: nothing, or what is wrong.
-///
-/// Why, and not only whether: a badge that lights up with nothing saying
-/// why is a badge people end up ignoring. Told as facts, put into words
-/// in the bubble under the hand and written as they are in the journal.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct Reads {
-    pub link: Option<Fact>,
-    pub far: Option<Fact>,
-    pub here: Option<Fact>,
-}
-
-/// What a reading says, with no memory of any kind.
-///
-/// The time available for a frame is worked out from the measured frame
-/// rate and not from the one asked for, and that is not a second best:
-/// what we are after is whether one of the two computers is what sets
-/// the pace. A host that takes twenty-five milliseconds per frame serves
-/// forty frames a second, so its encoding time **is** the time
-/// available, and the badge lights up; the same host at three
-/// milliseconds on a thirty-frame session has thirty-three milliseconds
-/// ahead of it and gets in nobody's way. Asking for the wanted frame
-/// rate would have cost a round trip to the service on every reading,
-/// and would have been wrong as soon as someone changes it during the
-/// session.
-pub fn read(measures: &Measures) -> Reads {
-    let mut reads = Reads::default();
-
-    if let Some(frozen) = measures.since_frame_ms.filter(|held| *held >= FROZEN_MS) {
-        reads.link = Some(Fact::new("badge.frozen").with("ms", format!("{frozen:.0}")));
-    } else if let Some(lost) = measures.dropped_network_pct.filter(|pct| *pct >= LOST_PCT) {
-        reads.link = Some(Fact::new("badge.lost").with("pct", format!("{lost:.1}")));
-    } else if let Some(late) = measures
-        .dropped_jitter_pct
-        .filter(|pct| *pct >= TOO_LATE_PCT)
-    {
-        reads.link = Some(Fact::new("badge.late").with("pct", format!("{late:.1}")));
-    }
-
-    // A missing frame rate leaves these two off: without it there is no
-    // time available, so nothing to compare, and a badge lit for want of
-    // a measure would be a badge lit for nothing.
-    //
-    // Each of the two is weighed on its own and not one or the other:
-    // they may very well struggle together, on two tired machines or on a
-    // session too big for both, and the badge can say so.
-    if let Some(budget) = measures
-        .fps
-        .filter(|rate| *rate > 0.0)
-        .map(|rate| 1000.0 / rate)
-    {
-        let per_frame = |late: Fact, each: f64| {
-            late.with("each", format!("{each:.0}"))
-                .with("budget", format!("{budget:.0}"))
-        };
-        if let Some(host) = measures.host_ms.filter(|each| *each >= budget) {
-            reads.far = Some(per_frame(Fact::new("badge.far_too_slow"), host));
-        }
-        if let Some(decode) = measures.decode_ms.filter(|each| *each >= budget) {
-            reads.here = Some(per_frame(Fact::new("badge.here_too_slow"), decode));
-        }
-    }
-    reads
-}
-
-/// What the badges show, once the reading has been calmed.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct Shown {
-    pub link: bool,
-    pub far: bool,
-    pub here: bool,
-}
-
-impl Shown {
-    /// Nothing at all.
-    pub fn nothing(self) -> bool {
-        !self.link && !self.far && !self.here
-    }
-}
-
-/// What keeps the badges lit from one reading to the next.
-///
-/// One thing only, and it is all that separates a useful badge from a
-/// string of fairy lights: lit on the reading that says so, off only
-/// once nothing has said so for a while.
-#[derive(Default)]
-pub struct Steady {
-    link: Option<Instant>,
-    far: Option<Instant>,
-    here: Option<Instant>,
-}
-
-impl Steady {
-    /// What this reading leaves lit.
-    pub fn after(&mut self, reads: &Reads, now: Instant) -> Shown {
-        Shown {
-            link: still(&mut self.link, reads.link.is_some(), now),
-            far: still(&mut self.far, reads.far.is_some(), now),
-            here: still(&mut self.here, reads.here.is_some(), now),
-        }
-    }
-}
-
-/// One badge, lit again for a while when its cause is
-/// there.
-fn still(until: &mut Option<Instant>, wrong: bool, now: Instant) -> bool {
-    if wrong {
-        *until = Some(now + HOLDS);
-    }
-    until.is_some_and(|end| now < end)
 }
 
 /* ---- The loop that keeps them ---------------------------------------- */
@@ -241,7 +90,7 @@ pub fn watch(app: &crate::app::App) {
     let app = app.clone();
     crate::app::spawn(async move {
         keep_up(&app).await;
-        show(&app, Shown::default(), &Reads::default(), false);
+        show(&app, Lit::default(), &Reads::default(), false);
         WATCHING.store(false, Ordering::SeqCst);
     });
 }
@@ -252,15 +101,19 @@ pub fn watch(_app: &crate::app::App) {}
 /// The loop itself.
 #[cfg(windows)]
 async fn keep_up(app: &crate::app::App) {
+    use std::time::Instant;
+
+    use zyr_session::health::{self, Steady};
+
     let mut steady = Steady::default();
-    let mut was = Shown::default();
+    let mut was = Lit::default();
     loop {
         tokio::time::sleep(LOOK_EVERY).await;
         if !crate::floating::a_session_is_up(app) {
             return;
         }
         let held = crate::floating::the_badges_are_held_up(app);
-        let reads = read(&crate::session::measures());
+        let reads = health::read(&crate::session::measures());
         let now = Instant::now();
         let shown = steady.after(&reads, now);
         if shown != was {
@@ -282,7 +135,7 @@ async fn keep_up(app: &crate::app::App) {
 /// per reading: a dozen of those go by every second, and a journal that
 /// carried them all would carry nothing else.
 #[cfg(windows)]
-fn said(reads: &Reads, was: Shown, shown: Shown) {
+fn said(reads: &Reads, was: Lit, shown: Lit) {
     for (which, before, after, why) in [
         (Which::Link, was.link, shown.link, &reads.link),
         (Which::Far, was.far, shown.far, &reads.far),
@@ -521,7 +374,7 @@ fn window_corner(anchor: (i32, i32)) -> (i32, i32) {
 /// seen, but it is still a window the compositor blends into every frame
 /// of the session.
 #[cfg(windows)]
-fn show(app: &crate::app::App, shown: Shown, reads: &Reads, held: bool) {
+fn show(app: &crate::app::App, shown: Lit, reads: &Reads, held: bool) {
     use std::sync::atomic::Ordering;
 
     let window = ITS_WINDOW.load(Ordering::Relaxed);
@@ -571,7 +424,7 @@ fn show(app: &crate::app::App, shown: Shown, reads: &Reads, held: bool) {
 }
 
 #[cfg(not(windows))]
-fn show(_app: &crate::app::App, _shown: Shown, _reads: &Reads, _held: bool) {}
+fn show(_app: &crate::app::App, _shown: Lit, _reads: &Reads, _held: bool) {}
 
 /// Which of the two the hand is resting on, if either.
 ///
@@ -848,29 +701,16 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use zyr_player::Measures;
+    use zyr_session::health::read;
 
-    /// A reading from a session that is doing well, at sixty
-    /// frames.
-    fn healthy() -> Measures {
-        Measures {
-            fps: Some(60.0),
-            decode_ms: Some(0.4),
-            render_ms: Some(15.0),
-            host_ms: Some(2.3),
-            network_ms: Some(8.0),
-            dropped_network_pct: Some(0.0),
-            dropped_jitter_pct: Some(0.1),
-            since_frame_ms: Some(12.0),
-            ..Default::default()
-        }
-    }
+    use super::*;
 
     #[test]
     fn a_badge_under_the_hand_says_what_it_reads() {
         let reads = read(&Measures {
-            since_frame_ms: Some(FROZEN_MS),
-            ..healthy()
+            since_frame_ms: Some(350.0),
+            ..Default::default()
         });
         let said = what_it_says(0, &reads);
         assert!(said.contains("350 ms"), "{said}");
@@ -891,220 +731,9 @@ mod tests {
             fps: Some(24.0),
             host_ms: Some(45.0),
             decode_ms: Some(50.0),
-            ..healthy()
+            ..Default::default()
         });
         let said = what_it_says(1, &reads);
         assert!(said.contains("45 ms") && said.contains("50 ms"), "{said}");
-    }
-
-    #[test]
-    fn a_session_that_is_going_well_lights_nothing() {
-        assert_eq!(read(&healthy()), Reads::default());
-    }
-
-    #[test]
-    fn a_reading_that_says_nothing_lights_nothing_either() {
-        // A session that has just opened: the player has not yet
-        // measured a single second. Nothing is known, so nothing lights
-        // up.
-        assert_eq!(read(&Measures::default()), Reads::default());
-    }
-
-    #[test]
-    fn a_picture_that_has_stopped_lights_the_link() {
-        let frozen = Measures {
-            since_frame_ms: Some(FROZEN_MS),
-            ..healthy()
-        };
-        let reads = read(&frozen);
-        assert!(reads.link.is_some_and(|why| why.code() == "badge.frozen"));
-        assert!(reads.far.is_none() && reads.here.is_none());
-    }
-
-    #[test]
-    fn frames_lost_on_the_way_light_the_link_too() {
-        let lost = Measures {
-            dropped_network_pct: Some(LOST_PCT),
-            ..healthy()
-        };
-        assert!(
-            read(&lost)
-                .link
-                .is_some_and(|why| why.code() == "badge.lost")
-        );
-
-        let late = Measures {
-            dropped_jitter_pct: Some(TOO_LATE_PCT),
-            ..healthy()
-        };
-        assert!(
-            read(&late)
-                .link
-                .is_some_and(|why| why.code() == "badge.late")
-        );
-    }
-
-    #[test]
-    fn a_host_that_cannot_keep_up_lights_the_picture() {
-        // Twenty-five milliseconds per frame on a session that serves
-        // forty: its encoding is what sets the pace.
-        let slow = Measures {
-            fps: Some(40.0),
-            host_ms: Some(25.0),
-            ..healthy()
-        };
-        let reads = read(&slow);
-        assert!(
-            reads
-                .far
-                .is_some_and(|why| why.code() == "badge.far_too_slow")
-        );
-        // And this one has nothing to do with it: the badge must light
-        // the right one of the two screens, not both.
-        assert!(reads.here.is_none());
-        assert!(reads.link.is_none());
-    }
-
-    #[test]
-    fn a_computer_that_cannot_decode_in_time_lights_it_as_well() {
-        let slow = Measures {
-            fps: Some(30.0),
-            decode_ms: Some(40.0),
-            ..healthy()
-        };
-        let reads = read(&slow);
-        assert!(
-            reads
-                .here
-                .is_some_and(|why| why.code() == "badge.here_too_slow")
-        );
-        assert!(reads.far.is_none());
-    }
-
-    #[test]
-    fn two_computers_that_both_struggle_light_both_screens() {
-        // A session too big for both machines: the badge does not have to
-        // choose which one to name, it lights them both.
-        let both = Measures {
-            fps: Some(24.0),
-            host_ms: Some(45.0),
-            decode_ms: Some(50.0),
-            ..healthy()
-        };
-        let reads = read(&both);
-        assert!(reads.far.is_some());
-        assert!(reads.here.is_some());
-
-        let mut steady = Steady::default();
-        assert_eq!(
-            steady.after(&reads, Instant::now()),
-            Shown {
-                link: false,
-                far: true,
-                here: true
-            }
-        );
-    }
-
-    #[test]
-    fn a_slow_session_that_asked_for_slow_is_not_a_fault() {
-        // Thirty frames a second leave thirty-three milliseconds per
-        // frame: a host at twenty is late for nothing.
-        let calm = Measures {
-            fps: Some(30.0),
-            host_ms: Some(20.0),
-            decode_ms: Some(5.0),
-            ..healthy()
-        };
-        assert_eq!(read(&calm), Reads::default());
-    }
-
-    #[test]
-    fn the_time_a_frame_waits_for_the_screen_is_not_counted() {
-        // The render time includes waiting for the screen's refresh,
-        // so it always comes close to the time available: counted,
-        // this badge would be lit the whole session.
-        let ordinary = Measures {
-            render_ms: Some(16.6),
-            ..healthy()
-        };
-        assert_eq!(read(&ordinary), Reads::default());
-    }
-
-    #[test]
-    fn a_badge_stays_lit_for_a_moment_after_its_cause_has_gone() {
-        // Without this it blinks: the cause holds for one reading, and a
-        // dozen go by every second.
-        let start = Instant::now();
-        let mut steady = Steady::default();
-        let wrong = read(&Measures {
-            since_frame_ms: Some(900.0),
-            ..healthy()
-        });
-
-        assert_eq!(
-            steady.after(&wrong, start),
-            Shown {
-                link: true,
-                far: false,
-                here: false
-            }
-        );
-        let well = read(&healthy());
-        assert!(steady.after(&well, start + Duration::from_millis(100)).link);
-        assert!(
-            steady
-                .after(&well, start + HOLDS - Duration::from_millis(1))
-                .link
-        );
-        assert!(!steady.after(&well, start + HOLDS).link);
-    }
-
-    #[test]
-    fn a_cause_that_comes_back_holds_it_on_from_there() {
-        let start = Instant::now();
-        let mut steady = Steady::default();
-        let wrong = read(&Measures {
-            since_frame_ms: Some(900.0),
-            ..healthy()
-        });
-        let well = read(&healthy());
-
-        steady.after(&wrong, start);
-        let again = start + HOLDS - Duration::from_millis(10);
-        steady.after(&wrong, again);
-        // The second cause starts again from where it is, and not from
-        // the first: otherwise a network doing badly in fits and starts
-        // would turn the badge off in the middle of its fits.
-        assert!(steady.after(&well, start + HOLDS).link);
-        assert!(!steady.after(&well, again + HOLDS).link);
-    }
-
-    #[test]
-    fn the_three_are_counted_apart() {
-        let start = Instant::now();
-        let mut steady = Steady::default();
-        let only_the_far_one = read(&Measures {
-            fps: Some(40.0),
-            host_ms: Some(25.0),
-            ..healthy()
-        });
-        assert_eq!(
-            steady.after(&only_the_far_one, start),
-            Shown {
-                link: false,
-                far: true,
-                here: false
-            }
-        );
-        assert!(
-            !Shown {
-                link: false,
-                far: true,
-                here: false
-            }
-            .nothing()
-        );
-        assert!(Shown::default().nothing());
     }
 }
