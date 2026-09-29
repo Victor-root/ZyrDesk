@@ -681,26 +681,24 @@ mod tests {
 
     #[test]
     fn an_encoder_this_ffmpeg_lacks_is_named() {
+        // No build of ours carries this one: the Linux build has no
+        // hardware encoder at all, and the Windows build leaves Media
+        // Foundation's AV1 out. Any other would be there on Windows, and
+        // refused there only for want of the card it drives.
         let refused = VideoEncoder::open(
             &testing::ffmpeg(),
             EncoderConfig {
-                codec: VideoCodec::Hevc,
+                codec: VideoCodec::Av1,
                 width: WIDTH,
                 height: HEIGHT,
                 fps: 30,
                 bitrate_kbps: 1_000,
-                backend: Backend::Nvenc,
+                backend: Backend::MediaFoundation,
                 input: Input::Cpu,
             },
         );
-        // The Linux build carries no hardware encoder.
         assert!(
-            matches!(
-                refused,
-                Err(CodecError::Missing {
-                    codec: "hevc_nvenc"
-                })
-            ),
+            matches!(refused, Err(CodecError::Missing { codec: "av1_mf" })),
             "{:?}",
             refused.err()
         );
