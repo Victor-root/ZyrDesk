@@ -3821,6 +3821,25 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Rien : les lignes du journal sont les mêmes, et le produit ouvre le tuyau du moteur comme avant.
 
+## D240. GitHub vérifie chaque envoi jusqu'au bout, et ce dont le produit est fait (2026-09-29, pendant MZ)
+
+**La demande.** Victor veut une CI sans vérification morte, qui fasse de vraies vérifications à chaque commit.
+
+**Le constat.**
+
+- Une vérification morte : « Moteurs », la compilation de Sunshine et Moonlight, dont le fichier est parti avec eux ([D222](#d222-le-moteur-zyrdesk-remplace-les-deux-autres-dun-coup-2026-09-24-pendant-m6)). Aucune branche ne la porte plus et elle ne peut plus tourner ; GitHub la garde dans sa liste pour ses soixante-quatre passages.
+- Un envoi suivi d'un autre voyait sa vérification coupée : la plupart des commits des derniers jours n'avaient jamais été vérifiés jusqu'au bout.
+- [TESTING.md](TESTING.md) promettait à chaque commit un audit des dépendances, licences et failles connues, que rien ne faisait.
+- Le premier passage complet des essais sous Windows depuis le 25/09 ([D239](#d239-les-règles-écrites-pour-lia-et-les-essais-qui-tournent-de-nouveau-sous-windows-2026-09-29-pendant-mz)) n'a trouvé qu'un échec sur quelque neuf cents : un essai du codec tenait l'encodeur H.265 de NVIDIA pour absent de FFmpeg, ce qu'il n'est que sous Linux.
+
+**Ce qui est fait.**
+
+- Chaque envoi est vérifié jusqu'au bout, même quand un autre le suit une minute après.
+- Un travail de plus sur GitHub, « Dépendances » : `cargo deny`, selon `deny.toml`. Il refuse une faille connue, une version retirée par son auteur, une bibliothèque abandonnée que le dépôt a choisie lui-même, une licence qui ne peut pas voyager dans un programme GPLv3 (l'AGPLv3 n'est permise qu'au serveur), et tout ce qui ne vient pas de crates.io. Aujourd'hui tout passe : aucune faille connue, et des licences MIT, Apache 2.0, BSD, ISC, Zlib, Unicode et CDLA-Permissive. Deux versions d'une même bibliothèque ne sont pas une faute : elles viennent de bibliothèques tierces, les nôtres étant à leur dernière version.
+- L'essai du codec demande l'AV1 de Media Foundation, qu'aucun de nos FFmpeg ne contient.
+
+**Ce qui se voit.** Rien dans le produit. Sur GitHub, plus de passages « annulés » et un travail de plus. « Moteurs » reste dans la liste de l'onglet Actions tant que ses passages ne sont pas effacés ; on peut aussi l'y désactiver.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

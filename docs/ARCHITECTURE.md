@@ -185,7 +185,7 @@ ZyrDesk/
 │  └─ brand/                   # logo et icônes
 ├─ perf/                       # GATES.md (seuils chiffrés), relevés de référence
 ├─ docs/                       # ce dossier
-└─ .github/workflows/          # ci (format, analyse statique, tests Windows et Linux, installateur), serveur (un binaire statique x86_64)
+└─ .github/workflows/          # ci (format, analyse statique, dépendances selon deny.toml, tests Windows et Linux, installateur), serveur (un binaire statique x86_64)
 ```
 
 ### Qui peut utiliser qui

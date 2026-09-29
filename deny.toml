@@ -1,0 +1,36 @@
+# What `cargo deny check` holds the dependencies to, at every change
+# (.github/workflows/ci.yml): no known vulnerability, only licences a
+# GPLv3 program can carry, and nothing from outside crates.io.
+
+[advisories]
+# Unmaintained fails only for what the workspace chose itself: a library
+# further down is replaced by replacing the one that brings it in.
+unmaintained = "workspace"
+# A version taken back by its author is taken back here too.
+yanked = "deny"
+
+[licenses]
+# Each one lets a library travel inside a GPLv3 program, the licence of
+# the whole product.
+allow = [
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "CDLA-Permissive-2.0",
+    "GPL-3.0-only",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
+# The server, the one work of the repository under the AGPLv3.
+exceptions = [{ allow = ["AGPL-3.0-only"], crate = "zyr-server" }]
+
+[bans]
+# A library found in two versions comes from two others that have not
+# moved together yet: ours are at their latest, the rest is not ours to
+# settle, and a warning nobody can act on would bury the others.
+multiple-versions = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

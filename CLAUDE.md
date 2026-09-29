@@ -140,6 +140,7 @@ Une nouvelle brique ne naît que pour une responsabilité qui a sa propre raison
 - La dernière version stable de Rust, de chaque bibliothèque et de FFmpeg (D221). Un retard se justifie par écrit, dans le manifeste concerné et dans `DECISIONS.md`, jamais par commodité.
 - Aucun programme tiers piloté de l'extérieur : ce dont le produit a besoin, il le fait lui-même ou par une bibliothèque qu'il charge.
 - Une bibliothèque extérieure vit dans la seule brique qui en a besoin : `quinn` n'est nommé que dans `zyr-transport`, FFmpeg que dans `zyr-codec`.
+- Toute dépendance passe `cargo deny check` (`deny.toml`) : une licence que la GPLv3 accepte, aucune faille connue, crates.io seulement. Une licence nouvelle n'entre dans `deny.toml` qu'après avoir vérifié qu'elle est compatible, jamais pour faire passer la vérification.
 - `vendor/ffmpeg` ne se retouche qu'en le recompilant par `packaging/ffmpeg/build.sh` (`vendor/ffmpeg/README.md`). Le pilote de `vendor/ecran-virtuel`, signé par son auteur, ne se modifie pas.
 
 ## Avant chaque commit
@@ -148,7 +149,7 @@ Une nouvelle brique ne naît que pour une responsabilité qui a sa propre raison
 - `cargo clippy --workspace --all-targets -- -D warnings`, pour Linux et pour Windows (`--target x86_64-pc-windows-gnu`).
 - Les essais, dosés selon ce qui bouge : ceux de la brique touchée au minimum ; la suite entière (`cargo test --workspace --all-targets`) dès que plusieurs briques, le moteur, le réseau, le service ou un dialogue changent.
 - Relire le diff complet : aucune modification sans rapport, aucun reste, aucun tiret long.
-- La CI refait tout à chaque poussée (format, analyse statique Linux et Windows, essais Linux et Windows, `zyr-cli doctor`, installateur) : elle reste verte.
+- La CI refait tout à chaque poussée, jusqu'au bout (format, analyse statique Linux et Windows, dépendances, essais Linux et Windows, `zyr-cli doctor`, installateur) : elle reste verte.
 
 ## Documenter
 
