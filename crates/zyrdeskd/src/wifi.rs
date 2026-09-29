@@ -74,8 +74,7 @@ mod mechanism {
     };
     use windows_sys::core::{BOOL, GUID, w};
     use zyr_proto::log::Log;
-
-    use crate::gateway::with_its_code;
+    use zyr_win32::{read_wide, with_its_code};
 
     /// What the thread that speaks to the Wi-Fi hears.
     enum Told {
@@ -254,7 +253,7 @@ mod mechanism {
                 );
                 log.write(&format!(
                     "the Wi-Fi card {} {} and {} ({}, asked in {} ms)",
-                    name(card),
+                    read_wide(&card.strInterfaceDescription),
                     match looking {
                         Ok(false) => "looks for no other network while connected".to_string(),
                         Ok(true) =>
@@ -474,16 +473,6 @@ mod mechanism {
         // SAFETY: an exported function's address, of the type the caller
         // vouches for, which is as large as an address.
         Ok(unsafe { std::mem::transmute_copy(&found) })
-    }
-
-    /// A card as its driver names it.
-    fn name(card: &WLAN_INTERFACE_INFO) -> String {
-        let named = &card.strInterfaceDescription;
-        let end = named
-            .iter()
-            .position(|&unit| unit == 0)
-            .unwrap_or(named.len());
-        String::from_utf16_lossy(&named[..end])
     }
 
     fn same(one: &GUID, other: &GUID) -> bool {

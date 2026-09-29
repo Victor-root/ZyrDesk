@@ -655,7 +655,7 @@ fn build(owner: isize, anchor: (i32, i32)) {
     if !crate::floating::still_to_be_made(&ITS_WINDOW) {
         return;
     }
-    let name = crate::win32::wide("ZyrDeskVoyants");
+    let name = zyr_win32::wide("ZyrDeskVoyants");
     let (wide_px, high) = its_size();
     let (left, top) = window_corner(anchor);
     // SAFETY: a class registered once and a window built on it, on the

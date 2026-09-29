@@ -50,8 +50,8 @@ use windows_sys::Win32::Security::Cryptography::{
     CryptMsgClose, CryptMsgGetParam, CryptQueryObject, HCERTSTORE, PKCS_7_ASN_ENCODING,
     X509_ASN_ENCODING,
 };
+use zyr_win32::wide;
 
-use crate::text::wide;
 use crate::{Done, Trouble};
 
 /// Windows' own name for the list of publishers a machine expects.

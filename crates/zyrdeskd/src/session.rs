@@ -22,12 +22,11 @@ use std::ffi::{OsStr, OsString, c_void};
 use std::fmt;
 use std::io;
 use std::marker::PhantomData;
-use std::os::windows::ffi::OsStringExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GENERIC_READ, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    GENERIC_READ, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows_sys::Win32::Security::{
     DuplicateTokenEx, SECURITY_ATTRIBUTES, SecurityImpersonation, SetTokenInformation,
@@ -51,16 +50,15 @@ use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessAsUserW, DETACHED_PROCESS,
     DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
     GetExitCodeProcess, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
-    OpenProcess, OpenProcessToken, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-    PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION, PROCESS_NAME_WIN32,
-    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW, STARTF_USESTDHANDLES,
-    STARTUPINFOEXW, STARTUPINFOW, UpdateProcThreadAttribute, WaitForSingleObject,
+    OpenProcessToken, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
+    PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW,
+    UpdateProcThreadAttribute, WaitForSingleObject,
 };
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
+use zyr_win32::{Handle, image_of, read_wide, refusal_of, wide};
 
-use crate::gateway::{Launched, Launcher, with_its_code};
-use crate::text::wide;
+use crate::gateway::{Launched, Launcher};
 
 /// Value Windows returns when no session is attached to the screen.
 const NO_SESSION: u32 = 0xFFFF_FFFF;
@@ -259,24 +257,6 @@ pub fn somebody_signed_in(session: u32) -> io::Result<bool> {
     Ok(signed_in)
 }
 
-/// The file a running program was started from.
-fn image_of(process: u32) -> Option<PathBuf> {
-    // Safe: a refused or finished process gives a null handle, which its
-    // guard leaves alone; a real one is closed by it.
-    let handle = Handle(unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process) });
-    if handle.0.is_null() {
-        return None;
-    }
-    let mut path = [0u16; 1024];
-    let mut length = path.len() as u32;
-    // Safe: the handle is live, and the slot is ours with its length in
-    // letters given alongside it.
-    let read = unsafe {
-        QueryFullProcessImageNameW(handle.0, PROCESS_NAME_WIN32, path.as_mut_ptr(), &mut length)
-    };
-    (read != 0).then(|| PathBuf::from(OsString::from_wide(&path[..length as usize])))
-}
-
 /// Whether two paths name the same file, as Windows reads them: with no
 /// regard to case.
 fn same_file(one: &Path, other: &Path) -> bool {
@@ -352,22 +332,6 @@ struct Launch<'a> {
     log: &'a Path,
 }
 
-/// Handle closed for certain, whatever happens next.
-///
-/// Windows handles leak silently: one error in the middle of a run of
-/// calls is enough to abandon one, and nothing reports it.
-#[derive(Debug)]
-struct Handle(HANDLE);
-
-impl Drop for Handle {
-    fn drop(&mut self) {
-        if !self.0.is_null() && self.0 != INVALID_HANDLE_VALUE {
-            // Safe: the handle is valid and closed only here.
-            unsafe { CloseHandle(self.0) };
-        }
-    }
-}
-
 /// Environment block, given back to the system at the end.
 #[derive(Debug)]
 struct Environment(*mut core::ffi::c_void);
@@ -432,20 +396,6 @@ impl Launched for SessionProcess {
         }
         Ok(Some(code))
     }
-}
-
-/// What the system just refused, named by the call that refused it and
-/// with its own number for the refusal.
-///
-/// One line of the journal then says which step broke and why, where the
-/// bare message would leave a person with « Accès refusé » and a dozen
-/// calls to choose from.
-fn refusal_of(call: &str) -> io::Error {
-    let refused = io::Error::last_os_error();
-    io::Error::new(
-        refused.kind(),
-        format!("{call}: {}", with_its_code(&refused)),
-    )
 }
 
 /// How many things a process is given at its birth: the handles it
@@ -1109,8 +1059,7 @@ fn desktop_with_the_input() -> Option<String> {
     if read == 0 {
         return None;
     }
-    let end = name.iter().position(|letter| *letter == 0).unwrap_or(0);
-    Some(String::from_utf16_lossy(&name[..end]))
+    Some(read_wide(&name))
 }
 
 /// Runs this program in another Windows session, for one short errand.
@@ -1392,13 +1341,6 @@ mod tests {
     fn read_back(wide: &[u16]) -> String {
         let without_zero = wide.strip_suffix(&[0]).expect("string not terminated");
         String::from_utf16(without_zero).unwrap()
-    }
-
-    #[test]
-    fn a_wide_string_ends_with_a_zero() {
-        let encoded = wide("desktop");
-        assert_eq!(encoded.last(), Some(&0));
-        assert_eq!(read_back(&encoded), "desktop");
     }
 
     #[test]

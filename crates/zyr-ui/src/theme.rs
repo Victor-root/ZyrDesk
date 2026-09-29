@@ -186,7 +186,7 @@ pub fn watch(app: App) {
     use windows_sys::Win32::System::Threading::{CreateEventW, INFINITE, WaitForSingleObject};
 
     std::thread::spawn(move || {
-        let name = crate::win32::wide(PERSONALIZE);
+        let name = zyr_win32::wide(PERSONALIZE);
         let mut key: HKEY = std::ptr::null_mut();
         // SAFETY: the name outlives the call, and the slot for the key it
         // hands back is ours.
@@ -276,8 +276,8 @@ const APPS_USE_LIGHT: &str = "AppsUseLightTheme";
 fn windows_wants_light() -> bool {
     use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 
-    let key = crate::win32::wide(PERSONALIZE);
-    let value = crate::win32::wide(APPS_USE_LIGHT);
+    let key = zyr_win32::wide(PERSONALIZE);
+    let value = zyr_win32::wide(APPS_USE_LIGHT);
     let mut found = 0u32;
     let mut size = size_of::<u32>() as u32;
     // SAFETY: both names outlive the call, and the four bytes written

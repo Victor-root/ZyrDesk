@@ -35,9 +35,9 @@ use windows_sys::Win32::System::Registry::{
     RegCreateKeyExW, RegDeleteTreeW, RegSetValueExW,
 };
 use windows_sys::core::GUID;
+use zyr_win32::{read_wide, wide};
 
 use crate::driver::{Driver, Guid};
-use crate::text::{read_wide, wide};
 use crate::{Done, Trouble};
 
 /// What every call in this file answers with when it has no answer.

@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+zyr-win32.workspace = true
 windows-sys = { version = "0.61.2", features = [
     "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Devices_Display",

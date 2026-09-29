@@ -233,7 +233,7 @@ mod windows_only {
             if unsafe { EnumDisplayDevicesW(std::ptr::null(), index, &mut adapter, 0) } == 0 {
                 break;
             }
-            let name = crate::text::read_wide(&adapter.DeviceName);
+            let name = zyr_win32::read_wide(&adapter.DeviceName);
             if name.is_empty() {
                 continue;
             }
@@ -298,7 +298,7 @@ mod windows_only {
         if unsafe { EnumDisplayDevicesW(adapter.as_ptr(), 0, &mut screen, 0) } == 0 {
             return String::new();
         }
-        crate::text::read_wide(&screen.DeviceID)
+        zyr_win32::read_wide(&screen.DeviceID)
     }
 
     /// Puts an arrangement back, saying whether the screens are where
@@ -520,7 +520,7 @@ mod windows_only {
                  asked for instead: {stretched}"
             );
         };
-        let name = crate::text::wide(screen);
+        let name = zyr_win32::wide(screen);
         // SAFETY: the name and the mode are ours and outlive the call.
         // Applied on its own and not written down for later, because
         // this one is wanted now: the picture opens on it.
@@ -569,7 +569,7 @@ mod windows_only {
     /// wins, then the fastest: a session must not quietly drop a 144 Hz
     /// screen to 60.
     fn the_mode_for(screen: &str, wide: u32, high: u32) -> Option<DEVMODEW> {
-        let name = crate::text::wide(screen);
+        let name = zyr_win32::wide(screen);
         let now = at_present(&name);
         let mut best: Option<DEVMODEW> = None;
         for raw in [0, EDS_RAWMODE] {
@@ -631,7 +631,7 @@ mod windows_only {
     /// the modes: a screen offers the same size at several rates and
     /// depths, and naming it once is enough.
     fn offered(screen: &str) -> String {
-        let name = crate::text::wide(screen);
+        let name = zyr_win32::wide(screen);
         let mut sizes: Vec<(u32, u32)> = Vec::new();
         for raw in [0, EDS_RAWMODE] {
             for index in 0.. {
@@ -775,7 +775,7 @@ mod windows_only {
         if seat.on && seat.main {
             how |= CDS_SET_PRIMARY;
         }
-        let name = crate::text::wide(&seat.adapter);
+        let name = zyr_win32::wide(&seat.adapter);
         // SAFETY: the name and the mode are ours and outlive the call,
         // which is told to write this down rather than apply it.
         let answer = unsafe {

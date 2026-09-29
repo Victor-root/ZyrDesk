@@ -53,9 +53,9 @@ fn written(command: &str) -> Result<(), String> {
         HKEY_CURRENT_USER, KEY_SET_VALUE, REG_SZ, RegCloseKey, RegOpenKeyExW, RegSetValueExW,
     };
 
-    let path = crate::win32::wide(WHERE);
-    let name = crate::win32::wide(ENTRY);
-    let value = crate::win32::wide(command);
+    let path = zyr_win32::wide(WHERE);
+    let name = zyr_win32::wide(ENTRY);
+    let value = zyr_win32::wide(command);
 
     // SAFETY: every pointer below is to a buffer that outlives the call,
     // and the key is closed on both ways out.
@@ -89,8 +89,8 @@ fn erased() -> Result<(), String> {
         HKEY_CURRENT_USER, KEY_SET_VALUE, RegCloseKey, RegDeleteValueW, RegOpenKeyExW,
     };
 
-    let path = crate::win32::wide(WHERE);
-    let name = crate::win32::wide(ENTRY);
+    let path = zyr_win32::wide(WHERE);
+    let name = zyr_win32::wide(ENTRY);
 
     // SAFETY: as above.
     unsafe {

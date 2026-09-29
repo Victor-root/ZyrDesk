@@ -39,8 +39,7 @@
 use std::io;
 
 use zyr_proto::log::Log;
-
-use crate::text::wide;
+use zyr_win32::wide;
 
 /// What this module's lines are filed under.
 const TAG: &str = "attention";

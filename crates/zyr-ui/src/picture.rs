@@ -587,10 +587,6 @@ pub(crate) fn the_front_in_words() -> String {
 /// Names that window: its program and its title.
 #[cfg(windows)]
 fn describe(window: windows_sys::Win32::Foundation::HWND) -> String {
-    use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Threading::{
-        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
-    };
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowTextW, GetWindowThreadProcessId};
 
     if window.is_null() {
@@ -606,30 +602,13 @@ fn describe(window: windows_sys::Win32::Foundation::HWND) -> String {
     let read = unsafe { GetWindowTextW(window, buffer.as_mut_ptr(), buffer.len() as i32) };
     let title = String::from_utf16_lossy(&buffer[..read.max(0) as usize]);
 
-    let exe = 'named: {
-        // SAFETY: the pid comes from a live window, and a refusal is one
-        // of the answers.
-        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
-        if handle.is_null() {
-            break 'named String::new();
-        }
-        let mut path = [0u16; 260];
-        let mut length = path.len() as u32;
-        // SAFETY: the handle is live, and the buffer and its length are
-        // ours.
-        let named =
-            unsafe { QueryFullProcessImageNameW(handle, 0, path.as_mut_ptr(), &mut length) };
-        // SAFETY: the handle came from the call above and is closed once.
-        unsafe { CloseHandle(handle) };
-        if named == 0 {
-            break 'named String::new();
-        }
-        String::from_utf16_lossy(&path[..length as usize])
-            .rsplit(['\\', '/'])
-            .next()
-            .unwrap_or_default()
-            .to_string()
-    };
+    let exe = zyr_win32::image_of(pid)
+        .and_then(|image| {
+            image
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .unwrap_or_default();
 
     match (exe.is_empty(), title.is_empty()) {
         (false, false) => format!("process {pid} ({exe}), title « {title} »"),

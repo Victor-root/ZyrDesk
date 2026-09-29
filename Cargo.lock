@@ -3210,6 +3210,7 @@ name = "zyr-screen"
 version = "0.1.0"
 dependencies = [
  "windows-sys 0.61.2",
+ "zyr-win32",
 ]
 
 [[package]]
@@ -3300,6 +3301,14 @@ dependencies = [
  "zyr-player",
  "zyr-proto",
  "zyr-session",
+ "zyr-win32",
+]
+
+[[package]]
+name = "zyr-win32"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3326,4 +3335,5 @@ dependencies = [
  "zyr-sound",
  "zyr-transport",
  "zyr-tunnel",
+ "zyr-win32",
 ]

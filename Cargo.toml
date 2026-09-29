@@ -18,6 +18,7 @@ members = [
     "crates/zyr-account",
     "crates/zyr-screen",
     "crates/zyr-sound",
+    "crates/zyr-win32",
     "crates/zyr-cli",
     "crates/zyr-ui",
     "crates/zyrdeskd",
@@ -49,6 +50,7 @@ zyr-broker = { path = "crates/zyr-broker" }
 zyr-account = { path = "crates/zyr-account" }
 zyr-screen = { path = "crates/zyr-screen" }
 zyr-sound = { path = "crates/zyr-sound" }
+zyr-win32 = { path = "crates/zyr-win32" }
 clap = { version = "4.6.7", features = ["derive"] }
 
 [profile.release]

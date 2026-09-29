@@ -38,8 +38,6 @@ mod place;
 #[cfg(windows)]
 pub mod stretched;
 #[cfg(windows)]
-mod text;
-#[cfg(windows)]
 mod vouching;
 
 use std::fmt;

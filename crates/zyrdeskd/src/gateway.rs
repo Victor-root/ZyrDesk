@@ -52,6 +52,7 @@ use zyr_transport::{
     TunnelEndpoint, authorized, is_card,
 };
 use zyr_tunnel::{Answers, ServiceSide, Tunnel, aside, nudge, service_channel};
+use zyr_win32::with_its_code;
 
 use crate::engine::{Engine, Film};
 use crate::machine::{Door, Machine};
@@ -1444,15 +1445,6 @@ async fn let_the_engine_go(launched: Box<dyn Launched>, log: &Log) {
     });
 }
 
-/// An error, with the system's own number for it when it gave one: the
-/// number is what names the fault in Microsoft's documentation.
-pub(crate) fn with_its_code(e: &io::Error) -> String {
-    match e.raw_os_error() {
-        Some(code) => format!("{e} (0x{:08X})", code as u32),
-        None => e.to_string(),
-    }
-}
-
 /// Waits for the session to end, saying what it throws away while it
 /// lasts.
 ///
@@ -1714,22 +1706,6 @@ mod tests {
         assert_eq!(devices, vec![fingerprint(1), fingerprint(2)]);
 
         let _ = std::fs::remove_dir_all(&folder);
-    }
-
-    #[test]
-    fn a_refusal_carries_the_systems_own_number_as_microsoft_writes_it() {
-        let denied = io::Error::from_raw_os_error(5);
-        assert_eq!(with_its_code(&denied), format!("{denied} (0x00000005)"));
-        // An HRESULT reads the way the documentation prints it, sign bit
-        // and all, rather than as a negative number nobody can look up.
-        let hresult = io::Error::from_raw_os_error(0x8007_0005_u32 as i32);
-        assert!(
-            with_its_code(&hresult).ends_with("(0x80070005)"),
-            "{}",
-            with_its_code(&hresult)
-        );
-        // A refusal the system did not number carries no number.
-        assert_eq!(with_its_code(&io::Error::other("refused")), "refused");
     }
 
     /// An engine standing in for the real one: it joins the link it is

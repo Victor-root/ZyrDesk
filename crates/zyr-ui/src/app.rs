@@ -119,7 +119,7 @@ pub fn open_the_mailbox() -> Result<(), String> {
         CreateWindowExW, HWND_MESSAGE, RegisterClassW, WNDCLASSW,
     };
 
-    let class_name = crate::win32::wide("ZyrDeskCourrier");
+    let class_name = zyr_win32::wide("ZyrDeskCourrier");
     // SAFETY: a class declared once and a window built on it, on the
     // thread that will pump its messages. It shows nothing: a window
     // whose parent is this one is never drawn.
@@ -269,7 +269,7 @@ pub fn already_open() -> bool {
     use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, GetLastError};
     use windows_sys::Win32::System::Threading::CreateMutexW;
 
-    let name = crate::win32::wide(ONLY_ONE);
+    let name = zyr_win32::wide(ONLY_ONE);
     // SAFETY: a name that outlives the call, and a lock held until the
     // end of the program, which gives it back as it stops.
     let (lock, already) = unsafe {

@@ -29,6 +29,7 @@ use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 use zyr_broker::rest::Access;
 use zyr_control::{Account, Attach, Device, Registering};
 use zyr_proto::fact::Fact;
+use zyr_win32::wide;
 
 use crate::app::App;
 
@@ -40,7 +41,6 @@ use crate::session::Ongoing;
 use crate::settings::Settings;
 use crate::shortcuts::{Combination, Doing, Held};
 use crate::theme::Choice;
-use crate::win32::wide;
 
 /// What this module's lines are filed under.
 const TAG: &str = "home";

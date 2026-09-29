@@ -21,6 +21,7 @@ zyr-link.workspace = true
 zyr-lan.workspace = true
 zyr-screen.workspace = true
 zyr-sound.workspace = true
+zyr-win32.workspace = true
 zyr-broker.workspace = true
 zyr-account.workspace = true
 clap.workspace = true

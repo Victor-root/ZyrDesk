@@ -100,7 +100,7 @@ const SHOW_YOURSELF: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
 pub fn show_the_one_running() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW};
 
-    let class_name = crate::win32::wide(CLASS_NAME);
+    let class_name = zyr_win32::wide(CLASS_NAME);
     // SAFETY: a name that outlives the call, and a message that belongs
     // to us alone, posted to a window of our own class.
     unsafe {
@@ -135,8 +135,8 @@ pub fn open(app: &App) -> Result<(), String> {
     }
     *PROGRAM.lock().expect("window's program") = Some(app.clone());
 
-    let class_name = crate::win32::wide(CLASS_NAME);
-    let title = crate::win32::wide(CLASS_NAME);
+    let class_name = zyr_win32::wide(CLASS_NAME);
+    let title = zyr_win32::wide(CLASS_NAME);
     // SAFETY: no argument beyond what is asked for.
     let dpi = unsafe { GetDpiForSystem() };
     let (width, height) = (

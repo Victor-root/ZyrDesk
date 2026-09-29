@@ -41,6 +41,7 @@ tokio = { version = "1.53.1", features = [
 ] }
 
 [target.'cfg(windows)'.dependencies]
+zyr-win32.workspace = true
 # Drawing the interface: Direct2D and DirectWrite, provided by Windows
 # itself, so nothing is bundled. They are COM objects, which `windows-sys`
 # cannot describe and `windows` does: both crates are of the same family,

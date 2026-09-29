@@ -1,0 +1,14 @@
+[package]
+name = "zyr-win32"
+description = "Windows' own way of saying things, for every brick that talks to it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    # A process's program file, and whether it is still running.
+    "Win32_System_Threading",
+] }

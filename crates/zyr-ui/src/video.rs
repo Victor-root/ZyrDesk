@@ -310,7 +310,7 @@ fn build() -> Result<isize, Fact> {
     };
     // SAFETY: our own window, whose rectangle is read into ours.
     unsafe { GetClientRect(outer, &mut inside) };
-    let class_name = crate::win32::wide("ZyrDeskImage");
+    let class_name = zyr_win32::wide("ZyrDeskImage");
     // SAFETY: a class declared once and a window built on it, on the
     // thread that pumps the main window's messages. A class declared
     // twice is refused with no other effect, which is every session after

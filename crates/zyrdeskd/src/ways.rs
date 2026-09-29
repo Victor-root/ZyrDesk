@@ -42,6 +42,8 @@ use zyr_transport::{
     Connection, Identity, Junction, Media, MediaProfile, Road, Sending, TunnelEndpoint,
 };
 use zyr_tunnel::{Presence, ServiceEnd, Tunnel, aside, nudge, service_channel};
+#[cfg(windows)]
+use zyr_win32::still_running;
 
 use crate::account::{self, Rendezvous};
 use crate::preferences::Remembered;
@@ -1340,29 +1342,6 @@ fn resolve(host: &str) -> Result<SocketAddr, Fact> {
         .map_err(|e| unknown(&e))?
         .next()
         .ok_or_else(|| unknown(&"the name leads to no address"))
-}
-
-/// Whether that process is still running.
-#[cfg(windows)]
-fn still_running(process: u32) -> bool {
-    use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
-    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
-
-    // SAFETY: a refused or finished process gives a null handle, which
-    // is the answer we are after; a real one is closed right below.
-    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process) };
-    if handle.is_null() {
-        return false;
-    }
-    let mut code = 0u32;
-    // SAFETY: the handle is live and the slot is ours.
-    let asked =
-        unsafe { windows_sys::Win32::System::Threading::GetExitCodeProcess(handle, &mut code) };
-    // SAFETY: the handle came from the call above and is closed once.
-    unsafe { CloseHandle(handle) };
-    // A handle can outlive the process it names: only the exit code says
-    // which of the two we are looking at.
-    asked != 0 && code == STILL_ACTIVE as u32
 }
 
 /// Outside Windows the service does not exist, and nothing holds a way.

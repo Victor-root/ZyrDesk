@@ -65,9 +65,9 @@ impl Drop for Com {
 pub fn run(program: &Path, arguments: &str) -> Result<(), Fact> {
     let _com = Com::entered();
 
-    let verb = crate::win32::wide("runas");
+    let verb = zyr_win32::wide("runas");
     let file: Vec<u16> = program.as_os_str().encode_wide().chain(Some(0)).collect();
-    let words = crate::win32::wide(arguments);
+    let words = zyr_win32::wide(arguments);
 
     let mut about: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
     about.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
