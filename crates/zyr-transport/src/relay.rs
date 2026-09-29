@@ -700,8 +700,10 @@ impl Bare {
                         presenting.refused("this is not a pass").await.ok();
                         return;
                     }
-                    presenting.taken().await.unwrap();
+                    // In place before the answer: a branch is told it is
+                    // taken once packets can reach it.
                     both.lock().await.push(connection.clone());
+                    presenting.taken().await.unwrap();
                     while let Ok(packet) = connection.read_datagram().await {
                         for other in both.lock().await.iter() {
                             if other.remote_address() != connection.remote_address() {
