@@ -50,9 +50,10 @@ impl Backend {
             (Backend::Qsv, VideoCodec::Av1) => "av1_qsv",
             (Backend::MediaFoundation, VideoCodec::H264) => "h264_mf",
             (Backend::MediaFoundation, VideoCodec::Hevc) => "hevc_mf",
-            (Backend::MediaFoundation, VideoCodec::Av1) => "av1_mf",
             (Backend::Software, VideoCodec::H264) => "libx264",
-            (Backend::Software, VideoCodec::Hevc | VideoCodec::Av1) => return None,
+            // Media Foundation's AV1 is not built into our FFmpeg.
+            (Backend::MediaFoundation, VideoCodec::Av1)
+            | (Backend::Software, VideoCodec::Hevc | VideoCodec::Av1) => return None,
         })
     }
 
@@ -681,24 +682,10 @@ mod tests {
 
     #[test]
     fn an_encoder_this_ffmpeg_lacks_is_named() {
-        // No build of ours carries this one: the Linux build has no
-        // hardware encoder at all, and the Windows build leaves Media
-        // Foundation's AV1 out. Any other would be there on Windows, and
-        // refused there only for want of the card it drives.
-        let refused = VideoEncoder::open(
-            &testing::ffmpeg(),
-            EncoderConfig {
-                codec: VideoCodec::Av1,
-                width: WIDTH,
-                height: HEIGHT,
-                fps: 30,
-                bitrate_kbps: 1_000,
-                backend: Backend::MediaFoundation,
-                input: Input::Cpu,
-            },
-        );
+        // x265: no build of ours carries it, on any system.
+        let refused = CodecContext::encoder(&testing::ffmpeg(), "libx265");
         assert!(
-            matches!(refused, Err(CodecError::Missing { codec: "av1_mf" })),
+            matches!(refused, Err(CodecError::Missing { codec: "libx265" })),
             "{:?}",
             refused.err()
         );
