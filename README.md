@@ -115,6 +115,7 @@ Le détail et ses raisons : [D220](docs/DECISIONS.md#d220-le-code-sécrit-en-ang
 | [docs/NETWORK.md](docs/NETWORK.md) | Tunnel, transport QUIC, traversée NAT, relais, budget latence et MTU |
 | [docs/SECURITY.md](docs/SECURITY.md) | Identités, tickets de session, chiffrement, stockage Windows, modèle de menace |
 | [docs/UI-UX.md](docs/UI-UX.md) | Direction visuelle, écrans, design system |
+| [docs/INTERFACE.md](docs/INTERFACE.md) | Le plan du nouvel accueil, bloc par bloc, ce qui marche et ce qui est grisé |
 | [docs/TECH-CHOICES.md](docs/TECH-CHOICES.md) | Choix de technologies et alternatives rejetées |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Jalons M0 à M10 avec critères de sortie mesurables |
 | [docs/TESTING.md](docs/TESTING.md) | Niveaux de tests, seuils de performance, banc de mesure |

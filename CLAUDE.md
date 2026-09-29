@@ -7,7 +7,7 @@ Bureau à distance open source en Rust, pour Windows, à très faible latence. U
 - `README.md`, section « Conventions du code ».
 - `docs/ARCHITECTURE.md` : les processus et les flux, et surtout le §10 (organisation du dépôt, « Qui peut utiliser qui ») et le §11 (ce que les composants se disent).
 - `docs/DECISIONS.md` : la raison de chaque choix. Y chercher le sujet avant de le toucher : ce qui a l'air d'un oubli est souvent une décision.
-- Selon le sujet : `docs/MOTEUR.md` (le moteur), `docs/NETWORK.md` (tunnel, relais), `docs/SECURITY.md` (identités, chiffrement), `docs/SERVER.md` et `server/README.md` (le serveur), `docs/CLAVIER.md` (touches réservées), `docs/ECRAN-VIRTUEL.md`, `docs/UI-UX.md` (direction visuelle, ton), `docs/TESTING.md` et `perf/GATES.md` (essais et seuils), `docs/TECH-CHOICES.md`, `docs/COMPLIANCE.md` (licences), `docs/ROADMAP.md` (jalons).
+- Selon le sujet : `docs/MOTEUR.md` (le moteur), `docs/NETWORK.md` (tunnel, relais), `docs/SECURITY.md` (identités, chiffrement), `docs/SERVER.md` et `server/README.md` (le serveur), `docs/CLAVIER.md` (touches réservées), `docs/ECRAN-VIRTUEL.md`, `docs/UI-UX.md` (direction visuelle, ton), `docs/INTERFACE.md` (le plan du nouvel accueil), `docs/TESTING.md` et `perf/GATES.md` (essais et seuils), `docs/TECH-CHOICES.md`, `docs/COMPLIANCE.md` (licences), `docs/ROADMAP.md` (jalons).
 
 ## Le mainteneur
 
@@ -116,11 +116,11 @@ Une nouvelle brique ne naît que pour une responsabilité qui a sa propre raison
 
 ## L'interface
 
-- **Aucune couleur en dur.** Tout ce qui est coloré passe par les rôles de la charte, `crates/zyr-draw/design.css`, dans ses deux thèmes. Le doré n'est que la valeur par défaut de la couleur d'accentuation, qui deviendra un choix de la personne dans les réglages du nouvel accueil : rien ne suppose qu'elle est dorée. Seuls l'icône du programme et le logo livrés dans `packaging/brand` restent dorés.
+- **Aucune couleur en dur.** Tout ce qui est coloré passe par les rôles de la charte, `crates/zyr-draw/design.css`, dans ses deux thèmes. La couleur d'accentuation est le doré, fixe (D242), écrit à ce seul endroit : la changer un jour, c'est changer une ligne.
 - Les icônes vivent dans `zyr-draw/src/icons.rs`, et un essai lit chaque tracé.
 - La fenêtre ne parle au lecteur que par des appels qui n'attendent jamais : rien de l'interface ne se met sur le trajet d'une image.
 - L'interface de session est définitive (D238) : on la retouche à la demande, sans la réorganiser.
-- **L'accueil sera refait de zéro**, à partir d'une page vierge, quand Victor le demandera. D'ici là, on ne l'améliore pas : on le garde en état de marche. Le nouvel accueil naîtra avec l'accès aux données séparé du dessin, tous ses textes par `zyr-i18n`, les jetons de la charte et la couleur d'accentuation dans ses réglages.
+- **L'accueil sera refait de zéro**, à partir d'une page vierge, quand Victor le demandera. D'ici là, on ne l'améliore pas : on le garde en état de marche. Son plan est `docs/INTERFACE.md` : ce qui n'existe pas encore y est dessiné grisé. Il naîtra avec l'accès aux données séparé du dessin, tous ses textes par `zyr-i18n`, les jetons de la charte et les icônes Tabler.
 - Ton, accessibilité et ce que la personne ne voit jamais (noms de bibliothèques, de codecs, de pilotes) : `docs/UI-UX.md`.
 
 ## Windows et les autres systèmes

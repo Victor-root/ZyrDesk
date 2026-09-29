@@ -3848,6 +3848,22 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Rien.
 
+## D242. Le doré reste, et le nouvel accueil a son plan (2026-09-29, pendant MZ)
+
+> Clôt ce que [D238](#d238-linterface-de-session-rangée-et-ce-qui-nest-pas-de-linterface-en-sort-2026-09-29-pendant-mz) laissait ouvert.
+
+**Décisions de Victor.**
+
+- La couleur d'accentuation n'est pas un choix de la personne : c'est le doré, écrit à un seul endroit, la charte graphique, pour qu'un changement futur tienne en une ligne.
+- Le nouvel accueil a son plan, [INTERFACE.md](INTERFACE.md), tiré d'une maquette dont le résultat doit rester très proche. Tout ce qui est prévu s'y voit dès le premier jour, grisé tant que la fonction manque : Victor suit le chantier sur l'écran plutôt que dans un document.
+- Thèmes clair et sombre, en automatique par défaut, qui suivent Windows en direct.
+- Icônes Tabler (licence MIT). Une page « À propos », sous Paramètres, pour les remerciements et les licences.
+- L'empreinte quitte l'accueil pour « Ajouter un ordinateur » et les détails de cet ordinateur, les seuls endroits où elle sert.
+- Chaque carte d'ordinateur montrera le vrai fond d'écran de l'ordinateur, envoyé par lui ; le prénom du bandeau est celui du compte, sinon celui de la session.
+- Les pages Ordinateurs, Contacts et Activité viennent après l'accueil, dans son style.
+
+**Ce qui se voit.** Rien encore : c'est le plan.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
