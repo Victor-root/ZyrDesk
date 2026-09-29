@@ -32,6 +32,9 @@ mod service;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use zyr_proto::log::Log;
+
+use errands::StartedFor;
 
 #[derive(Parser)]
 #[command(
@@ -76,69 +79,42 @@ fn main() -> ExitCode {
     }
 
     // And the service starts this program again, in the session that owns
-    // the screen and with the system's own account, to be the engine of
-    // one session: it films, encodes and plays what the far computer
-    // types, over the link the service named. Nobody types this either.
-    if let Some(link) = errands::the_link_to_serve() {
-        return match zyr_proto::log::Log::open(&zyr_proto::paths::logs_dir().join("engine.log")) {
-            Ok(log) => zyr_host::serve(&link, log),
-            // Nothing to say it in: the console, which the service has
-            // pointed at a file of its own, is all that is left.
-            Err(e) => failure("the engine could not open its journal", e),
+    // the screen, for what it cannot do from its own: to be the engine of
+    // one session, or to run an errand there. Nobody types these either,
+    // and why each has to be done over there is said beside its argument.
+    if let Some(started_for) = errands::started_for() {
+        return match started_for {
+            // With the system's own account, it films, encodes and plays
+            // what the far computer types, over the link the service named.
+            StartedFor::Serving(link) => {
+                match Log::open(&zyr_proto::paths::logs_dir().join("engine.log")) {
+                    Ok(log) => zyr_host::serve(&link, log),
+                    // Nothing to say it in: the console, which the service
+                    // has pointed at a file of its own, is all that is left.
+                    Err(e) => failure("the engine could not open its journal", e),
+                }
+            }
+            StartedFor::Speakers(quiet) => ExitCode::from(errands::move_the_speakers(quiet) as u8),
+            StartedFor::Locking => {
+                if zyr_system::lock_this_desktop() {
+                    ExitCode::SUCCESS
+                } else {
+                    ExitCode::FAILURE
+                }
+            }
+            StartedFor::Desk(asked) => {
+                errands::do_this_to_the_desk(asked);
+                ExitCode::SUCCESS
+            }
+            StartedFor::FollowingThePointer => {
+                pointer::follow_the_pointer_here();
+                ExitCode::SUCCESS
+            }
+            StartedFor::CarryingTheClipboard => {
+                clipboard::carry_the_clipboard_here();
+                ExitCode::SUCCESS
+            }
         };
-    }
-
-    // And a third time, for the speakers of this computer. Which device
-    // the desktop plays to depends on who is signed in, so the question
-    // is asked from the session that owns the screen and nowhere else.
-    // The answer is more than yes or no: two means the speakers were
-    // already the way they were asked to be, so nothing is owed back.
-    if let Some(quiet) = errands::asked_about_the_speakers() {
-        return ExitCode::from(errands::move_the_speakers(quiet) as u8);
-    }
-
-    // And a fourth, to lock the screen. The other way round from
-    // Ctrl+Alt+Del, which the service presses in its own process:
-    // Windows takes that one from a service and nothing else, and this
-    // one from the interactive desktop and nothing else. Both refusals
-    // protect what a lock screen is worth.
-    if errands::asked_to_lock_the_screen() {
-        return if zyr_system::lock_this_desktop() {
-            ExitCode::SUCCESS
-        } else {
-            ExitCode::FAILURE
-        };
-    }
-
-    // And a fifth, about this computer's desk: holding it for a session
-    // that is starting, or giving it back once that session has gone. The
-    // same blindness again, and the worst case of it: what Windows says
-    // about the arrangement of screens is answered for the window station
-    // of whoever asks, and the service's has no screens on it at all, so
-    // from there this computer has no screens to note and none to put
-    // back.
-    if let Some(asked) = errands::the_desk_asked_for() {
-        errands::do_this_to_the_desk(asked);
-        return ExitCode::SUCCESS;
-    }
-
-    // And a sixth, for the shape of this computer's pointer. The same
-    // blindness in its plainest form: a pointer belongs to a desktop, and
-    // the service's window station carries none. This one reads for a
-    // while instead of doing one thing, and ends by itself.
-    if errands::asked_to_follow_the_pointer() {
-        pointer::follow_the_pointer_here();
-        return ExitCode::SUCCESS;
-    }
-
-    // And a seventh, for this computer's clipboard. The same blindness
-    // once more: a clipboard belongs to a window station, and the
-    // service's carries none. Like the pointer above it reads for a
-    // while and ends by itself, and unlike it, it writes as well: what
-    // was copied on the far computer is put on this one from here.
-    if errands::asked_to_carry_the_clipboard() {
-        clipboard::carry_the_clipboard_here();
-        return ExitCode::SUCCESS;
     }
 
     match Cli::parse().command {
@@ -240,7 +216,7 @@ fn readable(state: windows_service::service::ServiceState) -> &'static str {
 /// console, so anything printed there is read by nobody.
 #[cfg(windows)]
 fn noted(what: &str) {
-    if let Ok(log) = zyr_proto::log::Log::open(&zyr_proto::paths::service_log()) {
+    if let Ok(log) = Log::open(&zyr_proto::paths::service_log()) {
         log.about(crate::service::TAG)
             .write(&format!("{what}, {}", zyr_proto::version_line()));
     }

@@ -6,14 +6,16 @@
 //! why: to be the engine of one session, to run one short errand whose
 //! exit code is its answer (the speakers, the lock screen, the desk), or
 //! to be a helper that reads for a while and ends by itself (the pointer,
-//! the clipboard). Both ends of each argument live here, the one that
-//! starts the program and the one that recognises what it was started
-//! for, so that they cannot drift apart. How a program is started in that
-//! session at all is `zyr_system`'s.
+//! the clipboard). Both ends of each argument live here, in
+//! [`StartedFor`]: the arguments the service starts this program with,
+//! and what this program reads it was started for, so that the two cannot
+//! drift apart. How a program is started in that session at all is
+//! `zyr_system`'s.
 
 use std::io;
 use std::time::Duration;
 
+use zyr_proto::log::Log;
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
 use zyr_system::{Errand, Launch, SessionProcess, Whose};
@@ -29,7 +31,7 @@ const TAG: &str = "desk";
 /// An argument and not a command, like the one Windows starts the
 /// service with: nobody types it, and it names a moment rather than
 /// something a person can ask for.
-pub const SERVE_ARGUMENT: &str = "--serve-a-session";
+const SERVE_ARGUMENT: &str = "--serve-a-session";
 
 /// Where the engine's own console output goes, which is what it says
 /// before its journal is open, and what a crash leaves behind.
@@ -40,9 +42,9 @@ const ENGINE_CONSOLE: &str = "engine-console.log";
 ///
 /// It carries which way they are to be moved, because both ways are the
 /// same errand and one name for it is one name to keep in step.
-pub const SPEAKERS_ARGUMENT: &str = "--set-the-speakers";
-pub const SPEAKERS_QUIET: &str = "quiet";
-pub const SPEAKERS_PLAYING: &str = "playing";
+const SPEAKERS_ARGUMENT: &str = "--set-the-speakers";
+const SPEAKERS_QUIET: &str = "quiet";
+const SPEAKERS_PLAYING: &str = "playing";
 
 /// What that errand answers with.
 ///
@@ -50,9 +52,9 @@ pub const SPEAKERS_PLAYING: &str = "playing";
 /// it now owes the person their sound back. Muting speakers that were
 /// already muted owes nothing, and giving that sound back at the end of
 /// a session would be undoing something this product never did.
-pub const SPEAKERS_MOVED: u32 = 0;
-pub const SPEAKERS_REFUSED: u32 = 1;
-pub const SPEAKERS_ALREADY: u32 = 2;
+const SPEAKERS_MOVED: u32 = 0;
+const SPEAKERS_REFUSED: u32 = 1;
+const SPEAKERS_ALREADY: u32 = 2;
 
 /// And the same for locking this computer's screen; see
 /// `zyr_system::lock_this_desktop`.
@@ -60,7 +62,7 @@ pub const SPEAKERS_ALREADY: u32 = 2;
 /// Windows will only take that order from a program on the interactive
 /// desktop, which a service is not, and there is no way round it: it is
 /// what makes a lock screen worth trusting.
-pub const LOCK_ARGUMENT: &str = "--lock-the-screen";
+const LOCK_ARGUMENT: &str = "--lock-the-screen";
 
 /// And the same for this computer's desk; see `do_this_to_the_desk`.
 ///
@@ -75,8 +77,8 @@ pub const LOCK_ARGUMENT: &str = "--lock-the-screen";
 /// whoever asks, and a service sits on one with no screens at all: asked
 /// from there, this computer has no screens, which is what it used to
 /// answer a session that asked what it was showing.
-pub const DESK_ARGUMENT: &str = "--hold-the-desk";
-pub const DESK_BACK_ARGUMENT: &str = "--give-the-desk-back";
+const DESK_ARGUMENT: &str = "--hold-the-desk";
+const DESK_BACK_ARGUMENT: &str = "--give-the-desk-back";
 
 /// And a third, for the computer whose own screens cannot draw the size
 /// a session asked for: the desktop moves onto the screen this computer
@@ -87,9 +89,9 @@ pub const DESK_BACK_ARGUMENT: &str = "--give-the-desk-back";
 /// device is administrator work, so the service wakes the screen; putting
 /// a desktop on it is window station work, so the session on screen does
 /// that. One cannot wait for the other inside a single errand.
-pub const DESK_GROWN_ARGUMENT: &str = "--take-the-grown-screen";
+const DESK_GROWN_ARGUMENT: &str = "--take-the-grown-screen";
 
-/// And a sixth, for the shape of this computer's pointer; see
+/// And the same for the shape of this computer's pointer; see
 /// `crate::pointer`.
 ///
 /// The same blindness once more, and the plainest case of it: a pointer
@@ -98,13 +100,13 @@ pub const DESK_GROWN_ARGUMENT: &str = "--take-the-grown-screen";
 /// desktop at all. Asked from there, this computer has no pointer, which
 /// is exactly what it answered a session that asked for the shape of it.
 ///
-/// This one differs from the five above in one way: it does not do a
+/// This one differs from the errands above in one way: it does not do a
 /// thing and come back, it reads for a while. It ends by itself after a
 /// short life so that nothing has to end it, and the service starts
 /// another for as long as somebody is asking.
-pub const POINTER_ARGUMENT: &str = "--follow-the-pointer";
+const POINTER_ARGUMENT: &str = "--follow-the-pointer";
 
-/// And a seventh, for this computer's clipboard; see
+/// And the same for this computer's clipboard; see
 /// `crate::clipboard`.
 ///
 /// The same blindness again: a clipboard belongs to a window station, and
@@ -115,7 +117,7 @@ pub const POINTER_ARGUMENT: &str = "--follow-the-pointer";
 /// Like the pointer above, it reads for a while rather than doing one
 /// thing, and ends by itself. Unlike it, it writes too: what was copied
 /// on the far computer is put on this one from here.
-pub const CLIPBOARD_ARGUMENT: &str = "--carry-the-clipboard";
+const CLIPBOARD_ARGUMENT: &str = "--carry-the-clipboard";
 
 /// What the first of those carries when a session wants the desk noted
 /// and nothing moved, which is what « keep your own screen » asks for.
@@ -123,6 +125,98 @@ pub const CLIPBOARD_ARGUMENT: &str = "--carry-the-clipboard";
 /// A word and not an absent argument: an errand that names what it wants
 /// and an errand that lost its argument on the way must not look alike.
 const NOTHING_WANTED: &str = "none";
+
+/// What this program was started for, with what each purpose carries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StartedFor {
+    /// Being the engine of one session, over the link the service named.
+    Serving(String),
+    /// Moving this computer's speakers, quiet or playing.
+    Speakers(bool),
+    /// Locking this computer's screen.
+    Locking,
+    /// Doing that to this computer's desk.
+    Desk(Desk),
+    /// Reading the shape of this computer's pointer, for a while.
+    FollowingThePointer,
+    /// Reading and writing this computer's clipboard, for a while.
+    CarryingTheClipboard,
+}
+
+impl StartedFor {
+    /// The arguments that start this program for that: the word naming
+    /// it, followed by what it carries.
+    fn arguments(&self) -> Vec<String> {
+        let (word, carrying) = match self {
+            Self::Serving(link) => (SERVE_ARGUMENT, Some(link.clone())),
+            Self::Speakers(quiet) => (
+                SPEAKERS_ARGUMENT,
+                Some(
+                    if *quiet {
+                        SPEAKERS_QUIET
+                    } else {
+                        SPEAKERS_PLAYING
+                    }
+                    .to_string(),
+                ),
+            ),
+            Self::Locking => (LOCK_ARGUMENT, None),
+            Self::Desk(Desk::Hold(wanted)) => (
+                DESK_ARGUMENT,
+                Some(
+                    wanted.map_or_else(|| NOTHING_WANTED.to_string(), |screen| screen.to_string()),
+                ),
+            ),
+            Self::Desk(Desk::Back) => (DESK_BACK_ARGUMENT, None),
+            Self::Desk(Desk::Borrow(screen)) => (DESK_GROWN_ARGUMENT, Some(screen.to_string())),
+            Self::FollowingThePointer => (POINTER_ARGUMENT, None),
+            Self::CarryingTheClipboard => (CLIPBOARD_ARGUMENT, None),
+        };
+        std::iter::once(word.to_string()).chain(carrying).collect()
+    }
+
+    /// What those arguments start this program for, if anything.
+    ///
+    /// Nothing for the ordinary commands, which go on reaching clap
+    /// untouched, and nothing for a purpose whose word is there without
+    /// what it carries: a link that is not named is no link at all, and
+    /// a size that will not read is no size.
+    fn named_in(arguments: impl Iterator<Item = String>) -> Option<Self> {
+        let arguments: Vec<String> = arguments.collect();
+        let named = |word: &str| arguments.iter().any(|argument| argument == word);
+        let after = |word: &str| after_the_word(&arguments, word);
+        after(SERVE_ARGUMENT)
+            .filter(|link| !link.is_empty())
+            .map(Self::Serving)
+            .or_else(|| match after(SPEAKERS_ARGUMENT)?.as_str() {
+                SPEAKERS_QUIET => Some(Self::Speakers(true)),
+                SPEAKERS_PLAYING => Some(Self::Speakers(false)),
+                _ => None,
+            })
+            .or_else(|| named(LOCK_ARGUMENT).then_some(Self::Locking))
+            .or_else(|| the_desk_named_in(&arguments).map(Self::Desk))
+            .or_else(|| named(POINTER_ARGUMENT).then_some(Self::FollowingThePointer))
+            .or_else(|| named(CLIPBOARD_ARGUMENT).then_some(Self::CarryingTheClipboard))
+    }
+}
+
+/// What this very program was started for, when the service started it
+/// for one of those.
+pub fn started_for() -> Option<StartedFor> {
+    StartedFor::named_in(std::env::args())
+}
+
+/// Where this program says what it has to say when the service started
+/// it: the service's own journal, under that tag.
+///
+/// It is the same program, and what it has to say belongs in the same
+/// journal. Nothing when that will not open, which leaves an errand with
+/// nobody to tell and nothing else to do about it.
+pub fn into_the_service_journal(tag: &'static str) -> Option<Log> {
+    Log::open(&paths::service_log())
+        .ok()
+        .map(|log| log.about(tag))
+}
 
 /// Starts the engine of each incoming session in the session attached
 /// to the screen.
@@ -140,7 +234,7 @@ impl ServingInSession {
 impl Launcher for ServingInSession {
     fn launch(&self, link: &str) -> io::Result<Box<dyn Launched>> {
         let ourselves = std::env::current_exe()?;
-        let arguments = [SERVE_ARGUMENT.to_string(), link.to_string()];
+        let arguments = StartedFor::Serving(link.to_string()).arguments();
         let console = paths::logs_dir().join(ENGINE_CONSOLE);
         let launch = Launch {
             exe: &ourselves,
@@ -170,20 +264,6 @@ impl Launched for SessionProcess {
     }
 }
 
-/// The link this program was started to serve a session on, if that is
-/// what it was started for.
-pub fn the_link_to_serve() -> Option<String> {
-    the_link_named_in(std::env::args())
-}
-
-/// The same, over any list of arguments, so it can be read without
-/// starting a program to hold them.
-fn the_link_named_in(arguments: impl Iterator<Item = String>) -> Option<String> {
-    let mut after = arguments.skip_while(|a| a != SERVE_ARGUMENT);
-    after.next()?;
-    after.next().filter(|link| !link.is_empty())
-}
-
 /// Moves this computer's speakers, and says whether they really moved.
 ///
 /// From the session that owns the screen, like everything else here, and
@@ -195,33 +275,11 @@ fn the_link_named_in(arguments: impl Iterator<Item = String>) -> Option<String> 
 /// `true` means they were doing the opposite a moment ago and are now
 /// doing what was asked, which is also « something is owed back ».
 pub fn set_the_speakers(quiet: bool) -> io::Result<bool> {
-    let way = if quiet {
-        SPEAKERS_QUIET
-    } else {
-        SPEAKERS_PLAYING
-    };
     let refused = "the speakers could not be reached from the session on screen";
-    match zyr_system::errand_code(&[SPEAKERS_ARGUMENT.to_string(), way.to_string()], refused)? {
+    match zyr_system::errand_code(&StartedFor::Speakers(quiet).arguments(), refused)? {
         (SPEAKERS_MOVED, _) => Ok(true),
         (SPEAKERS_ALREADY, _) => Ok(false),
         _ => Err(io::Error::other(refused)),
-    }
-}
-
-/// Whether this program was started to move the speakers, and which way.
-pub fn asked_about_the_speakers() -> Option<bool> {
-    the_way_named_in(std::env::args())
-}
-
-/// The same, over any list of arguments, so it can be checked without
-/// starting a program to hold them.
-fn the_way_named_in(arguments: impl Iterator<Item = String>) -> Option<bool> {
-    let mut after = arguments.skip_while(|a| a != SPEAKERS_ARGUMENT);
-    after.next()?;
-    match after.next()?.as_str() {
-        SPEAKERS_QUIET => Some(true),
-        SPEAKERS_PLAYING => Some(false),
-        _ => None,
     }
 }
 
@@ -234,8 +292,8 @@ fn the_way_named_in(arguments: impl Iterator<Item = String>) -> Option<bool> {
 /// number would tell nobody which of them happened.
 pub fn move_the_speakers(quiet: bool) -> u32 {
     let said = |what: String| {
-        if let Ok(log) = zyr_proto::log::Log::open(&paths::service_log()) {
-            log.about(TAG).write(&what);
+        if let Some(log) = into_the_service_journal(TAG) {
+            log.write(&what);
         }
     };
     let already = match zyr_sound::speakers_muted() {
@@ -268,7 +326,7 @@ pub fn move_the_speakers(quiet: bool) -> u32 {
 /// down, from outside the desk it belongs to.
 pub fn lock_the_screen() -> io::Result<Errand> {
     zyr_system::errand(
-        &[LOCK_ARGUMENT.to_string()],
+        &StartedFor::Locking.arguments(),
         "the screen could not be locked from the session that owns it",
     )
 }
@@ -290,12 +348,8 @@ pub fn lock_the_screen() -> io::Result<Errand> {
 /// asked for, which is a session slightly wrong and not a session
 /// missing, and the sentences saying why go into this computer's journal.
 pub fn hold_the_desk_for(wanted: Option<WantedScreen>) -> io::Result<Errand> {
-    let asked = match wanted {
-        Some(screen) => screen.to_string(),
-        None => NOTHING_WANTED.to_string(),
-    };
     zyr_system::errand(
-        &[DESK_ARGUMENT.to_string(), asked],
+        &StartedFor::Desk(Desk::Hold(wanted)).arguments(),
         "this computer's desk could not be set from the session that owns the screen",
     )
 }
@@ -308,7 +362,7 @@ pub fn hold_the_desk_for(wanted: Option<WantedScreen>) -> io::Result<Errand> {
 /// desktop stays where its owner left it.
 pub fn take_the_grown_screen(wanted: WantedScreen) -> io::Result<Errand> {
     zyr_system::errand(
-        &[DESK_GROWN_ARGUMENT.to_string(), wanted.to_string()],
+        &StartedFor::Desk(Desk::Borrow(wanted)).arguments(),
         "this computer's desktop could not be moved onto the screen it grew for itself",
     )
 }
@@ -316,12 +370,10 @@ pub fn take_the_grown_screen(wanted: WantedScreen) -> io::Result<Errand> {
 /// Starts a helper in the session that owns the screen, to read the
 /// shape of this computer's pointer.
 pub fn start_reading_the_pointer() -> io::Result<()> {
-    zyr_system::start_a_helper(&[POINTER_ARGUMENT.to_string()], Whose::TheService)
-}
-
-/// Whether this program was started to read the pointer.
-pub fn asked_to_follow_the_pointer() -> bool {
-    std::env::args().any(|argument| argument == POINTER_ARGUMENT)
+    zyr_system::start_a_helper(
+        &StartedFor::FollowingThePointer.arguments(),
+        Whose::TheService,
+    )
 }
 
 /// Starts a helper in that same session, to read and write this
@@ -339,12 +391,10 @@ pub fn asked_to_follow_the_pointer() -> bool {
 /// one way, and what this computer offered was invisible going the other,
 /// which is precisely the two halves that never worked.
 pub fn start_carrying_the_clipboard() -> io::Result<()> {
-    zyr_system::start_a_helper(&[CLIPBOARD_ARGUMENT.to_string()], Whose::ThePerson)
-}
-
-/// Whether this program was started to carry the clipboard.
-pub fn asked_to_carry_the_clipboard() -> bool {
-    std::env::args().any(|argument| argument == CLIPBOARD_ARGUMENT)
+    zyr_system::start_a_helper(
+        &StartedFor::CarryingTheClipboard.arguments(),
+        Whose::ThePerson,
+    )
 }
 
 /// Puts the desk back the way it was noted, from the session that owns
@@ -357,15 +407,9 @@ pub fn asked_to_carry_the_clipboard() -> bool {
 /// the way a stranger left them.
 pub fn give_the_desk_back() -> io::Result<Errand> {
     zyr_system::errand(
-        &[DESK_BACK_ARGUMENT.to_string()],
+        &StartedFor::Desk(Desk::Back).arguments(),
         "this computer's desk could not be put back from the session that owns the screen",
     )
-}
-
-/// What this program was started to do to the desk, if that is what it
-/// was started for.
-pub fn the_desk_asked_for() -> Option<Desk> {
-    the_desk_named_in(std::env::args())
 }
 
 /// One errand about this computer's desk.
@@ -381,17 +425,15 @@ pub enum Desk {
     Borrow(WantedScreen),
 }
 
-/// The same, over any list of arguments, so it can be read without
-/// starting a program to hold them.
-fn the_desk_named_in(arguments: impl Iterator<Item = String>) -> Option<Desk> {
-    let arguments: Vec<String> = arguments.collect();
+/// What those arguments ask of the desk, if anything.
+fn the_desk_named_in(arguments: &[String]) -> Option<Desk> {
     if arguments.iter().any(|a| a == DESK_BACK_ARGUMENT) {
         return Some(Desk::Back);
     }
-    if let Some(asked) = after_the_word(&arguments, DESK_GROWN_ARGUMENT) {
+    if let Some(asked) = after_the_word(arguments, DESK_GROWN_ARGUMENT) {
         return asked.parse().ok().map(Desk::Borrow);
     }
-    let asked = after_the_word(&arguments, DESK_ARGUMENT)?;
+    let asked = after_the_word(arguments, DESK_ARGUMENT)?;
     if asked == NOTHING_WANTED {
         return Some(Desk::Hold(None));
     }
@@ -428,37 +470,71 @@ pub fn do_this_to_the_desk(asked: Desk) {
             (screen.wide, screen.high, screen.scale),
         ),
     };
-    if let Ok(log) = zyr_proto::log::Log::open(&paths::service_log()) {
-        let log = log.about(TAG);
+    if let Some(log) = into_the_service_journal(TAG) {
         for line in said {
             log.write(&line);
         }
     }
 }
 
-/// Whether this program was started to lock the screen.
-pub fn asked_to_lock_the_screen() -> bool {
-    std::env::args().any(|a| a == LOCK_ARGUMENT)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn named(arguments: &[&str]) -> Option<StartedFor> {
+        StartedFor::named_in(
+            std::iter::once("zyrdeskd.exe")
+                .chain(arguments.iter().copied())
+                .map(str::to_string),
+        )
+    }
+
     #[test]
-    fn the_link_to_serve_is_read_from_the_arguments() {
-        let said = |arguments: &[&str]| the_link_named_in(arguments.iter().map(|a| a.to_string()));
-        let link = r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1";
-        assert_eq!(
-            said(&["zyrdeskd.exe", SERVE_ARGUMENT, link]),
-            Some(link.to_string())
-        );
-        // Started for anything else, this program serves no session:
-        // the ordinary commands must go on reaching clap untouched.
-        assert_eq!(said(&["zyrdeskd.exe", "status"]), None);
-        assert_eq!(said(&["zyrdeskd.exe"]), None);
-        // And a link that is not named is no link at all.
-        assert_eq!(said(&["zyrdeskd.exe", SERVE_ARGUMENT]), None);
-        assert_eq!(said(&["zyrdeskd.exe", SERVE_ARGUMENT, ""]), None);
+    fn every_purpose_reads_back_as_it_was_started() {
+        // The two ends of each argument: what the service starts this
+        // program with, and what this program then reads it was started
+        // for. One going without the other is an errand that runs and
+        // does nothing, or never runs at all.
+        let screen = WantedScreen {
+            wide: 2560,
+            high: 1440,
+            scale: 125,
+        };
+        for purpose in [
+            StartedFor::Serving(r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1".to_string()),
+            StartedFor::Speakers(true),
+            StartedFor::Speakers(false),
+            StartedFor::Locking,
+            StartedFor::Desk(Desk::Hold(None)),
+            StartedFor::Desk(Desk::Hold(Some(screen))),
+            StartedFor::Desk(Desk::Back),
+            StartedFor::Desk(Desk::Borrow(screen)),
+            StartedFor::FollowingThePointer,
+            StartedFor::CarryingTheClipboard,
+        ] {
+            let arguments = purpose.arguments();
+            let words: Vec<&str> = arguments.iter().map(String::as_str).collect();
+            assert_eq!(named(&words), Some(purpose), "{words:?}");
+        }
+    }
+
+    #[test]
+    fn the_ordinary_commands_are_started_for_none_of_it() {
+        // They must go on reaching clap untouched.
+        assert_eq!(named(&["status"]), None);
+        assert_eq!(named(&[]), None);
+    }
+
+    #[test]
+    fn a_word_without_what_it_carries_starts_nothing() {
+        // A link that is not named is no link at all.
+        assert_eq!(named(&[SERVE_ARGUMENT]), None);
+        assert_eq!(named(&[SERVE_ARGUMENT, ""]), None);
+        // Nor is a way the speakers do not go.
+        assert_eq!(named(&[SPEAKERS_ARGUMENT, "louder"]), None);
+        // And a size that will not read is not « nothing asked for »: the
+        // errand was meant to move a screen and cannot say where to.
+        assert_eq!(named(&[DESK_ARGUMENT, "big"]), None);
+        assert_eq!(named(&[DESK_GROWN_ARGUMENT]), None);
     }
 }

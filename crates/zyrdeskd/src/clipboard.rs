@@ -583,15 +583,15 @@ fn say_once(last: &mut Option<String>, what: &str) {
 /// Writes into the service's own journal from the helper, which has no
 /// journal of its own.
 fn said(what: &str) {
-    if let Ok(log) = Log::open(&paths::service_log()) {
-        log.about(TAG).write(what);
+    if let Some(log) = crate::errands::into_the_service_journal(TAG) {
+        log.write(what);
     }
 }
 
 /// The same, in the voice only a hunt wants.
 fn hunted(what: impl FnOnce() -> String) {
-    if let Ok(log) = Log::open(&paths::service_log()) {
-        log.about(TAG).debug(what);
+    if let Some(log) = crate::errands::into_the_service_journal(TAG) {
+        log.debug(what);
     }
 }
 
