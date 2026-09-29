@@ -15,6 +15,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use zyr_broker::rest::Access;
+use zyr_proto::clipboard::HowFar;
 use zyr_proto::fact::Fact;
 use zyr_proto::fields::{packed, unpacked};
 use zyr_proto::fingerprint::Fingerprint;
@@ -27,7 +28,7 @@ use zyr_proto::session::{Preferred, WantedScreen};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 33;
+pub const PROTOCOL: u32 = 34;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -177,6 +178,12 @@ pub enum Request {
     /// for until somebody says otherwise. Its engine changes screen where
     /// it stands, so this is answered like any other order carried out.
     FilmFarScreen { way: WayId, id: Option<String> },
+    /// How far the files being pasted on this computer have got.
+    ///
+    /// Asked five times a second by whoever draws the bar, while a
+    /// session runs: the service is the one bringing the bytes in, and
+    /// the only one that knows.
+    FilesComing,
     /// Ties an open way to the process using it: the way closes on its
     /// own once that process is gone, whatever became of whoever asked.
     Hold { way: WayId, process: u32 },
@@ -359,6 +366,7 @@ impl Request {
                     named => Some(named.to_string()),
                 },
             }),
+            "files-coming" => Ok(Request::FilesComing),
             "hold" => Ok(Request::Hold {
                 way: WayId(fields.parsed("way")?),
                 process: fields.parsed("process")?,
@@ -471,6 +479,7 @@ impl fmt::Display for Request {
                 "filmfar way={way} screen={}",
                 id.as_deref().unwrap_or("main")
             ),
+            Request::FilesComing => f.write_str("files-coming"),
             Request::Hold { way, process } => write!(f, "hold way={way} process={process}"),
             Request::Release { way } => write!(f, "release way={way}"),
             Request::Peers => f.write_str("peers"),
@@ -817,6 +826,9 @@ pub enum Answer {
     },
     /// The shape the far computer's pointer has right now.
     Pointer(zyr_proto::session::Pointer),
+    /// How far the files being pasted on this computer have got, or
+    /// nothing when none are on their way.
+    Coming(Option<HowFar>),
     /// The screens the far computer is showing on, one to a line.
     ///
     /// Folded onto one line to travel, like the journal below and for the
@@ -919,6 +931,14 @@ impl Answer {
             // A shape this build does not know is the ordinary
             // arrow: reading cannot fail.
             "pointer" => Ok(Answer::Pointer(rest.trim().parse().unwrap_or_default())),
+            "coming" => Ok(Answer::Coming(match rest.trim() {
+                "none" => None,
+                _ => Some(HowFar {
+                    done: fields.parsed("done")?,
+                    whole: fields.parsed("whole")?,
+                    files: fields.parsed("files")?,
+                }),
+            })),
             "screens" => Ok(Answer::Screens(unfolded(rest.trim()))),
             "journal" => Ok(Answer::Journal(unfolded(rest.trim()))),
             "done" => Ok(Answer::Done),
@@ -1037,6 +1057,12 @@ impl fmt::Display for Answer {
                 None => f.write_str("showing size=none"),
             },
             Answer::Pointer(shape) => write!(f, "pointer {shape}"),
+            Answer::Coming(None) => f.write_str("coming none"),
+            Answer::Coming(Some(far)) => write!(
+                f,
+                "coming done={} whole={} files={}",
+                far.done, far.whole, far.files
+            ),
             Answer::Screens(listed) => write!(f, "screens {}", folded(listed)),
             Answer::Journal(text) => write!(f, "journal {}", folded(text)),
             Answer::Done => f.write_str("done"),
@@ -1307,6 +1333,7 @@ mod tests {
             },
             Request::FarPointer { way: WayId(7) },
             Request::FarScreens { way: WayId(7) },
+            Request::FilesComing,
             // Nothing named means the main screen, and it is what every
             // session asks for as long as nobody has said otherwise.
             Request::FilmFarScreen {
@@ -1541,6 +1568,12 @@ mod tests {
                     .to_string(),
             ),
             Answer::Screens(String::new()),
+            Answer::Coming(None),
+            Answer::Coming(Some(HowFar {
+                done: 1_250_000,
+                whole: 4_000_000_000,
+                files: 3,
+            })),
             Answer::Done,
             Answer::Refused(
                 Fact::new("reach.not_opened")

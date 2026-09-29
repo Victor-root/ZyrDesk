@@ -24,6 +24,7 @@ use crate::account::{self, Attaching};
 use crate::known;
 use crate::machine::Machine;
 use crate::supervisor::{StopOrder, Wiring};
+use crate::transfer;
 use crate::ways::Knock;
 
 /// The desk, open. Dropping it closes the channel.
@@ -487,6 +488,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 Err(reason) => Answer::Refused(reason),
             }
         }
+        Request::FilesComing => Answer::Coming(transfer::how_far()),
         Request::Hold { way, process } => {
             if answering.machine.ways.hold(way, process) {
                 Answer::Done

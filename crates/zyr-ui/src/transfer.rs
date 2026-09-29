@@ -21,13 +21,14 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
+use zyr_control::{Answer, Request};
 use zyr_proto::clipboard::HowFar;
 
-/// How many times a second the bar is read again.
+/// How many times a second the bar is asked for again.
 ///
-/// The service only rewrites what it wrote when the hundredth changes,
-/// so reading more often would show nothing more; reading less often
-/// would make a bar that moves in jumps.
+/// A bar is drawn in hundredths: asking more often would show nothing
+/// anybody can see, and asking less often would make a bar that moves
+/// in jumps.
 const LOOK_EVERY: Duration = Duration::from_millis(200);
 
 /// What the counter holds when nothing is arriving.
@@ -77,7 +78,7 @@ async fn keep_up(app: &crate::app::App) {
         if !crate::floating::a_session_is_up(app) {
             return;
         }
-        say(coming_in().map_or(NOTHING, |far| far.hundredths()));
+        say(coming_in().await.map_or(NOTHING, |far| far.hundredths()));
     }
 }
 
@@ -89,14 +90,18 @@ fn say(hundredths: u32) {
     }
 }
 
-/// What the service has written about the files arriving, if any are.
+/// What the service says of the files arriving, if any are.
 ///
-/// No file means nothing on the way: it is the service that removes it
-/// when everything is there, and that is what makes the bar disappear
-/// without anyone having to say it is over.
-fn coming_in() -> Option<HowFar> {
-    let said = std::fs::read_to_string(zyr_proto::paths::files_coming()).ok()?;
-    HowFar::read(&said).ok()
+/// Nothing on the way is also what it answers once every byte is here,
+/// and that is what makes the bar disappear without anyone having to
+/// say it is over. Any other answer draws nothing either, and is not
+/// written down: it would be written five times a second, and a service
+/// that is not answering is already said on the home screen.
+async fn coming_in() -> Option<HowFar> {
+    match crate::service::ask(&Request::FilesComing).await {
+        Ok(Answer::Coming(far)) => far,
+        _ => None,
+    }
 }
 
 #[cfg(test)]

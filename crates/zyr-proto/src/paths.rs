@@ -226,20 +226,6 @@ pub fn clipboard_standing() -> PathBuf {
     data_dir().join("clipboard-standing.txt")
 }
 
-/// Where the service writes how far the files being pasted have got, for
-/// the floating button to draw.
-///
-/// One line and three numbers, rewritten only when the hundredth it draws
-/// changes: a bar is what somebody watches while they wait, and a bar
-/// that moves in steps nobody can see is a file rewritten forty times a
-/// second for nothing.
-///
-/// It is not there when nothing is coming in, which is how the button
-/// knows to draw nothing at all.
-pub fn files_coming() -> PathBuf {
-    data_dir().join("files-coming.txt")
-}
-
 /// The folder the far computer's files land in while they are being
 /// pasted.
 ///
@@ -321,7 +307,6 @@ mod tests {
             clipboard_wanted(),
             clipboard_files(),
             clipboard_standing(),
-            files_coming(),
             pasted(),
             beside(&clipboard_here()),
             beside(&clipboard_wanted()),

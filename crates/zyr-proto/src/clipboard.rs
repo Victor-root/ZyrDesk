@@ -391,10 +391,9 @@ impl Listing {
 
 /// How far a transfer of copied files has got.
 ///
-/// Written by whoever is bringing them in and read by whoever draws it,
-/// which are two programs: the service carries the bytes, the interface
-/// shows the person how far they are. One line in one file, for the
-/// reason everything between those two is a file.
+/// Held by whoever is bringing them in and asked for by whoever draws
+/// it, which are two programs: the service carries the bytes, the
+/// interface shows the person how far they are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HowFar {
     pub done: u64,
@@ -413,21 +412,6 @@ impl HowFar {
             return 100;
         }
         ((self.done.min(self.whole) as u128 * 100) / self.whole as u128) as u32
-    }
-
-    /// The one line it is written as: the three numbers, in that order.
-    pub fn written(&self) -> String {
-        format!("{} {} {}\n", self.done, self.whole, self.files)
-    }
-
-    /// Reads what the line above wrote.
-    pub fn read(said: &str) -> Result<Self, Unreadable> {
-        let mut numbers = said.split_whitespace();
-        let mut next = || numbers.next().ok_or(Unreadable);
-        let done = next()?.parse().map_err(|_| Unreadable)?;
-        let whole = next()?.parse().map_err(|_| Unreadable)?;
-        let files = next()?.parse().map_err(|_| Unreadable)?;
-        Ok(Self { done, whole, files })
     }
 }
 

@@ -82,11 +82,6 @@ struct Coming {
     /// when it starts, when it ends, and at each tenth of the way, and
     /// not four times a second.
     said: u8,
-    /// And what was last drawn of it, for the same reason and at the
-    /// hundredth rather than the tenth: what the button shows is a bar,
-    /// and a bar is worth writing again when it has moved by something
-    /// somebody can see.
-    drawn: u32,
 }
 
 /// Starts bringing those files in, unless they are already coming.
@@ -125,10 +120,6 @@ pub fn coming_in(stamp: Stamp, listed: &Listing, log: &Log) -> Result<(), String
         since: Instant::now(),
         last_piece: Instant::now(),
         said: 0,
-        // A hundred and one, which no hundredth ever is: the first piece
-        // to land is what draws the bar, and nought would have it look
-        // already drawn.
-        drawn: u32::MAX,
     });
     say_how_far(held.as_mut().expect("the transfer just opened"), false, log);
     Ok(())
@@ -218,10 +209,21 @@ fn write_it(coming: &Coming, file: &Listed, given: &Given) -> Result<(), String>
         .map_err(|e| format!("{} cannot be written: {e}", file.path()))
 }
 
-/// How far a transfer has got, off the one in hand.
+/// How far the files being pasted here have got, while their bytes are
+/// still on their way.
 ///
-/// Read by nobody here: what watches this is the interface, in another
-/// program, and what it reads is the line `say_how_far` writes.
+/// What the interface draws its bar from, asking for it on the control
+/// channel. Nothing once every byte is here: what is left to wait for is
+/// Windows' own copying, which has a window of its own, and a bar left
+/// full would say a transfer is still under way.
+pub fn how_far() -> Option<HowFar> {
+    let coming = COMING.lock().expect("transfer under way");
+    let coming = coming.as_ref()?;
+    coming.listed.at(coming.at)?;
+    Some(reached(coming))
+}
+
+/// How far a transfer has got, off the one in hand.
 fn reached(coming: &Coming) -> HowFar {
     HowFar {
         done: coming.done.iter().sum(),
@@ -266,43 +268,21 @@ pub fn forget(log: &Log) {
 /// The one way a transfer ends before its time, said in the words of
 /// whichever thing ended it.
 fn drop_it(held: &mut Option<Coming>, why: &str, log: &Log) {
-    // Taken away whether or not anything was on its way. No file rather
-    // than a bar left at where it stopped: what the button draws while
-    // this is there is a transfer under way, and after this there is
-    // none, including the one a session before this left written down.
-    let _ = std::fs::remove_file(paths::files_coming());
     if let Some(coming) = held.take() {
         let _ = std::fs::remove_dir_all(&coming.where_they_land);
         log.write(&format!("what was coming in {why}"));
     }
 }
 
-/// Says where a transfer has got to, to the two that want to know.
+/// Says in the journal where a transfer has got to.
 ///
-/// The button is told whenever the bar it draws would move, which is a
-/// hundred times over the whole of a transfer however many pieces it
-/// takes: what is being watched is a bar, and one written again without
-/// having moved is a file rewritten forty times a second for nothing.
-///
-/// The journal is told at each tenth, which is less again for the reason
-/// it always is: a file of a gigabyte is four thousand pieces, and a
-/// journal with four thousand lines of one transfer in it has nothing
-/// else in it. Not never either: a transfer is the one thing here that
-/// takes minutes, and minutes of silence read as nothing happening.
+/// At each tenth, and no more often: a file of a gigabyte is four
+/// thousand pieces, and a journal with four thousand lines of one
+/// transfer in it has nothing else in it. Not never either: a transfer
+/// is the one thing here that takes minutes, and minutes of silence read
+/// as nothing happening.
 fn say_how_far(coming: &mut Coming, over: bool, log: &Log) {
     let reached = reached(coming);
-    let hundredths = reached.hundredths();
-    if over {
-        // Taken away rather than left full. What the button draws while
-        // this is there is a transfer under way, and the bytes being all
-        // here is the end of that: what is left to wait for is Windows'
-        // own copying, which has a window of its own.
-        let _ = std::fs::remove_file(paths::files_coming());
-    } else if hundredths != coming.drawn {
-        coming.drawn = hundredths;
-        let _ = zyr_proto::files::replace(&paths::files_coming(), &reached.written());
-    }
-
     let done = reached.done;
     let whole = reached.whole;
     let tenths = if whole == 0 {
@@ -360,12 +340,6 @@ mod tests {
         Given { rank, from, bytes }
     }
 
-    /// How far the transfer has got, read where the button
-    /// reads it.
-    fn drawn() -> Option<HowFar> {
-        HowFar::read(&std::fs::read_to_string(paths::files_coming()).ok()?).ok()
-    }
-
     /// A copy that is not any other copy, which is all these tests ask of
     /// a stamp: what it really is comes from the far computer's clip.
     fn a_copy(named: &str) -> Stamp {
@@ -395,10 +369,13 @@ mod tests {
         // The first one is full, so the second one is what is
         // wanted.
         assert_eq!(what_is_still_wanted().unwrap().rank, 1);
-        assert_eq!(drawn().unwrap().done, 3);
+        assert_eq!(how_far().unwrap().done, 3);
 
         assert!(take(&given(1, 0, b"de".to_vec()), &log).unwrap());
         assert_eq!(what_is_still_wanted(), None, "nothing left to ask for");
+        // And no bar: a bar left full would say a transfer is still under
+        // way, when what is left is Windows' own copying.
+        assert_eq!(how_far(), None);
         assert_eq!(std::fs::read(landed.join("one.txt")).unwrap(), b"abc");
         assert_eq!(
             std::fs::read(landed.join("folder").join("two.bin")).unwrap(),
@@ -427,7 +404,7 @@ mod tests {
         take(&given(0, 0, vec![b'a'; A_PIECE]), &log).unwrap();
         coming_in(same, &listed, &log).unwrap();
         assert_eq!(
-            drawn().unwrap().done,
+            how_far().unwrap().done,
             A_PIECE as u64,
             "the transfer started over from zero"
         );
@@ -435,7 +412,7 @@ mod tests {
         // Another copy, though, starts over: it is no longer the
         // same one.
         coming_in(a_copy("another"), &listed, &log).unwrap();
-        assert_eq!(drawn().unwrap().done, 0);
+        assert_eq!(how_far().unwrap().done, 0);
 
         forget(&log);
         std::fs::remove_dir_all(&folder).ok();
@@ -462,7 +439,7 @@ mod tests {
         // The next byte is what is waited for: the piece that starts
         // again from zero is dropped.
         assert!(!take(&given(0, 0, b"zzz".to_vec()), &log).unwrap());
-        assert_eq!(drawn().unwrap().done, A_PIECE as u64);
+        assert_eq!(how_far().unwrap().done, A_PIECE as u64);
         assert!(take(&given(0, A_PIECE as u64, b"def".to_vec()), &log).unwrap());
 
         let mut whole_of_it = first;
@@ -520,14 +497,14 @@ mod tests {
     }
 
     #[test]
-    fn without_a_transfer_nothing_is_wanted_and_nothing_is_drawn() {
+    fn without_a_transfer_nothing_is_wanted_and_nothing_is_on_its_way() {
         // This is what a computer where nobody is pasting answers, and
         // it is what tells the other end it may stop sending.
         let _alone = alone();
         let (log, folder) = a_log("nothing");
         forget(&log);
         assert_eq!(what_is_still_wanted(), None);
-        assert_eq!(drawn(), None);
+        assert_eq!(how_far(), None);
         std::fs::remove_dir_all(&folder).ok();
     }
 
