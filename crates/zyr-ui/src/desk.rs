@@ -11,12 +11,9 @@
 // compiled and checked, it is simply called by nobody.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use std::path::PathBuf;
-
 use zyr_control::{Account, Answer, Attach, Device, Holdup, OfAccount, Request};
 use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
-use zyr_proto::paths;
 
 use crate::service;
 
@@ -330,7 +327,7 @@ pub async fn set_at_boot(on: bool) -> Result<(), Fact> {
         Answer::Done => {}
         other => return Err(other.unexpected()),
     }
-    if let Err(e) = crate::startup::with_windows(on) {
+    if let Err(e) = zyr_launch::start_with_windows(on) {
         // The two halves move together or not at all: the service half
         // is put back before the failure is reported, or the computer
         // would answer at power-on with no window anywhere to say so.
@@ -416,12 +413,11 @@ pub async fn forget(fingerprint: String) -> Result<(), Fact> {
 /// computer reachable before anybody has signed in, and Windows lets no
 /// program register one on its own.
 pub async fn start_service() -> Result<(), Fact> {
-    let program = service_program()?;
-    note(&format!("setting the service up: {}", program.display()));
+    note("setting the service up");
 
     // On a thread where waiting is allowed: this holds until the person
     // has answered the elevation prompt and the service has started.
-    let outcome = tokio::task::spawn_blocking(move || set_up(&program))
+    let outcome = tokio::task::spawn_blocking(zyr_launch::set_the_service_up)
         .await
         .map_err(|e| {
             // What broke is a thread of ours, in words meant for a log:
@@ -442,32 +438,6 @@ pub fn fingerprint_of(typed: &str) -> Result<Fingerprint, Fact> {
         .trim()
         .parse()
         .map_err(|_| Fact::new("window.fingerprint_malformed"))
-}
-
-/// The service program, beside this one.
-///
-/// The two are built and shipped together, so this is where it is;
-/// looking for it anywhere else would be guessing.
-fn service_program() -> Result<PathBuf, Fact> {
-    let here = crate::app::this_program()?;
-    let program = here.with_file_name(paths::executable_name("zyrdeskd"));
-    if !program.is_file() {
-        return Err(Fact::new("window.service_missing").with("path", program.display()));
-    }
-    Ok(program)
-}
-
-#[cfg(windows)]
-fn set_up(program: &std::path::Path) -> Result<(), Fact> {
-    crate::elevated::run(program, "setup")
-}
-
-/// Outside Windows there is no service to install: the product is a
-/// Windows one, and this exists so the rest stays compiled and checked
-/// everywhere.
-#[cfg(not(windows))]
-fn set_up(_program: &std::path::Path) -> Result<(), Fact> {
-    Err(Fact::new("window.windows_only"))
 }
 
 async fn asked() -> Result<Standing, Fact> {

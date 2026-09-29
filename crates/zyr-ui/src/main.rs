@@ -65,7 +65,6 @@ mod service;
 mod session;
 mod settings;
 mod shortcuts;
-mod startup;
 // The figures of a session, in the corner of its picture. What is
 // written compiles everywhere; the card is a window, so Windows'.
 mod statistics;
@@ -86,9 +85,6 @@ mod badges;
 // The picture of a session, in a window of ours. What a message means
 // compiles everywhere; the window is Windows'.
 mod video;
-
-#[cfg(windows)]
-mod elevated;
 
 // What every window of this program says to Windows the same way.
 #[cfg(windows)]

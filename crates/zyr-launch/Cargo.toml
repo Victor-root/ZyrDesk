@@ -1,0 +1,11 @@
+[package]
+name = "zyr-launch"
+description = "How ZyrDesk's programs come to be running: the service, started or set up, and the window, at sign-in"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zyr-proto.workspace = true
+zyr-system.workspace = true

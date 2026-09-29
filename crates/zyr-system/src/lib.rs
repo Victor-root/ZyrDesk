@@ -1,4 +1,4 @@
-//! What the service asks of Windows itself.
+//! What ZyrDesk asks of Windows itself.
 //!
 //! A service lives in a session with no screen, no desktop and nobody in
 //! front of it. What it does to the computer somebody is sitting at goes
@@ -10,6 +10,10 @@
 //! else; asking the Wi-Fi to put a session first; and reading the shape
 //! the pointer has on the desktop this program stands on.
 //!
+//! And what gets a program running at all: with no console flashing up,
+//! with administrator rights asked of the person, or when the person
+//! signs in.
+//!
 //! This crate knows Windows and nothing about ZyrDesk: which errand is
 //! which, and when one is worth running, is decided by whoever asks.
 //! Outside Windows everything still compiles and says what is true
@@ -18,25 +22,33 @@
 
 #[cfg(windows)]
 mod attention;
+#[cfg(windows)]
+mod elevated;
 #[cfg(not(windows))]
 mod elsewhere;
 #[cfg(windows)]
 mod onscreen;
 #[cfg(windows)]
 mod pointer;
+#[cfg(windows)]
+mod sign_in;
 mod wifi;
 
 use std::fmt;
+use std::io;
 use std::path::Path;
+use std::process::{Command, Output};
 use std::time::Duration;
 
 #[cfg(windows)]
 pub use attention::{forget_it, let_it_be_pressed, press};
+#[cfg(windows)]
+pub use elevated::run_as_administrator;
 #[cfg(not(windows))]
 pub use elsewhere::{
-    SessionProcess, errand, errand_code, lock_this_desktop, pointer_shape, press, runs_in,
-    session_on_screen, somebody_signed_in, start_a_helper, start_in_session, still_running,
-    whoever_this_is,
+    SessionProcess, errand, errand_code, lock_this_desktop, pointer_shape, press,
+    run_as_administrator, runs_in, session_on_screen, somebody_signed_in, start_a_helper,
+    start_at_sign_in, start_in_session, still_running, whoever_this_is,
 };
 #[cfg(windows)]
 pub use onscreen::{
@@ -45,6 +57,8 @@ pub use onscreen::{
 };
 #[cfg(windows)]
 pub use pointer::pointer_shape;
+#[cfg(windows)]
+pub use sign_in::start_at_sign_in;
 pub use wifi::{Favouring, favour_latency};
 #[cfg(windows)]
 pub use zyr_win32::still_running;
@@ -98,4 +112,36 @@ pub enum Whose {
     /// programs on one desk may only speak to each other when they are
     /// the same person at the same level.
     ThePerson,
+}
+
+/// Why a program could not be run with administrator rights, or could not
+/// be seen through.
+#[derive(Debug)]
+pub enum Refusal {
+    /// The person turned the prompt down.
+    Declined,
+    /// Windows did not start it, and why.
+    NotStarted(io::Error),
+    /// Windows started it and handed back nothing to watch it by.
+    Unwatched,
+    /// Waiting for it to finish failed.
+    NotWaited,
+    /// It finished without Windows saying how.
+    NoExitCode,
+}
+
+/// Runs a program and waits for what it says, with no console window
+/// flashing up on the screen of whoever asked.
+pub fn run_unseen(program: &Path, arguments: &[&str]) -> io::Result<Output> {
+    let mut command = Command::new(program);
+    command.args(arguments);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        /// What keeps the console window from being made at all.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command.output()
 }

@@ -29,6 +29,9 @@ zyr-clipboard.workspace = true
 # What every window of this program is painted with.
 zyr-draw.workspace = true
 zyr-control.workspace = true
+# How the service is started or set up, and this window started with
+# Windows.
+zyr-launch.workspace = true
 # The player of a session, which draws its picture into a window of
 # ours and hears its keyboard and mouse from there.
 zyr-player.workspace = true
@@ -52,9 +55,6 @@ windows-sys = { version = "0.61.2", features = [
     # asked not to round them for the length of a session.
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
-    "Win32_System_Com",
-    # SHELLEXECUTEINFOW holds a registry field, so windows-sys files the
-    # whole ShellExecuteEx family behind this feature.
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
     # MK_LBUTTON and the other buttons a mouse message says are down.

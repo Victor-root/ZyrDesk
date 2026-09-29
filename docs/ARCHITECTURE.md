@@ -161,13 +161,14 @@ ZyrDesk/
 │  ├─ zyr-clipboard/           # le presse-papiers de l'ordinateur : ce qu'il porte, ce qu'on lui donne, les images en PNG, et la place tenue aux fichiers d'en face
 │  ├─ zyr-control/             # le dialecte entre la fenêtre et le service, sur le tube de commande
 │  ├─ zyr-session/             # ouverture d'une session de bout en bout, partagée par l'interface et la ligne de commande, la session menée jusqu'au bout et reprise quand elle tombe, et ce que ses mesures disent de sa santé (ce qui allume les voyants)
+│  ├─ zyr-launch/              # comment les programmes du produit se mettent en route : le service démarré sans rien demander ou mis en place avec les droits administrateur, et la fenêtre qui revient à l'ouverture de session
 │  ├─ zyr-lan/                 # annonce mDNS de cet ordinateur, appel direct, découverte des autres
 │  ├─ zyr-broker/              # ce que le service et le serveur se disent : messages, tickets et laissez-passer signés
 │  ├─ zyr-account/             # le lien de compte, le rattachement, le canal vivant, la présence, le rendez-vous
 │  ├─ zyr-draw/                # ce avec quoi le produit est dessiné : la toile (Direct2D et DirectWrite), la charte graphique lue dans design.css, les icônes et la lecture de leurs tracés, la marque ZyrDesk, le rythme de ce qui bouge
 │  ├─ zyr-screen/              # l'écran virtuel : pilote, réveil, sommeil, arrangement des écrans, et le bureau prêté à une session puis rendu tel qu'il était noté
 │  ├─ zyr-sound/               # le son de la session, dans le mélangeur de Windows
-│  ├─ zyr-system/              # ce que le service demande à Windows lui-même : la session qui tient l'écran et qui y est, y lancer ce programme (le moteur d'une session, une course, un assistant), verrouiller, Ctrl+Alt+Suppr, le Wi-Fi qui passe la session d'abord, la forme du pointeur
+│  ├─ zyr-system/              # ce que le service demande à Windows lui-même : la session qui tient l'écran et qui y est, y lancer ce programme (le moteur d'une session, une course, un assistant), verrouiller, Ctrl+Alt+Suppr, le Wi-Fi qui passe la session d'abord, la forme du pointeur, et ce qui met un programme en route (sans console, avec les droits administrateur, à l'ouverture de session)
 │  ├─ zyr-win32/               # la façon de Windows de dire les choses, pour toutes les briques qui lui parlent : texte, codes d'erreur, poignées, processus
 │  ├─ zyr-cli/                 # doctor, session sans fenêtre, banc de mesure, identité, compte
 │  ├─ zyr-ui/                  # l'application : cœur Rust, écrans dessinés par le produit, image de la session, journal, bouton flottant
@@ -194,7 +195,7 @@ Les briques sont rangées en couches, et chacune n'utilise que des briques de sa
 | Couche | Briques | Rôle |
 |---|---|---|
 | Programmes | `zyr-ui`, `zyrdeskd`, `zyr-cli`, `zyr-server` | Assemblent le reste ; rien ne les utilise |
-| Produit | `zyr-control`, `zyr-session`, `zyr-clipboard`, `zyr-service` | Le produit qui se parle à lui-même : la fenêtre et le service, l'ouverture d'une session, le presse-papiers, ce que fait le service |
+| Produit | `zyr-control`, `zyr-session`, `zyr-clipboard`, `zyr-launch`, `zyr-service` | Le produit qui se parle à lui-même : la fenêtre et le service, l'ouverture d'une session, le presse-papiers, la mise en route des programmes, ce que fait le service |
 | Réseau et comptes | `zyr-transport`, `zyr-tunnel`, `zyr-lan`, `zyr-broker`, `zyr-account` | La connexion entre deux ordinateurs, le réseau local, le serveur |
 | Moteur | `zyr-media`, `zyr-codec`, `zyr-link`, `zyr-host`, `zyr-player` | L'image, le son et les entrées, de l'écran filmé à l'image affichée, et le tube de chaque moitié vers son service |
 | Plateforme | `zyr-draw`, `zyr-screen`, `zyr-sound`, `zyr-system`, `zyr-win32` | Ce que Windows fait pour le produit, ce avec quoi le produit est dessiné, et la façon de Windows de dire les choses |

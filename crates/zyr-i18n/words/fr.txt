@@ -154,7 +154,7 @@ player.windows_only = le lecteur ne dessine dans une fenêtre que sous Windows
 
 # The window, and what it asks of this computer.
 window.windows_only = ZyrDesk ne fait cela que sous Windows
-window.no_location = ce programme ne sait pas où il est : {detail}
+window.setup_interrupted = la mise en service ne s'est pas terminée. Le journal dit pourquoi.
 window.gone = la fenêtre de ZyrDesk n'est plus là
 window.not_answering = la fenêtre de ZyrDesk n'a pas répondu : {detail}
 window.picture_refused = la fenêtre de l'image n'a pas pu s'ouvrir (erreur {code})
@@ -170,16 +170,16 @@ window.shortcuts_unreadable = les raccourcis clavier n'ont pas pu être lus : {d
 window.shortcuts_not_saved = les raccourcis clavier n'ont pas pu être enregistrés : {detail}
 
 # Setting the service up, and starting with Windows.
-window.service_missing = le service ZyrDesk est introuvable à côté de cette fenêtre :\n  {path}
-window.setup_interrupted = la mise en service ne s'est pas terminée. Le journal dit pourquoi.
-window.elevation_refused = les droits administrateur ont été refusés.
-window.elevation_failed = Windows n'a pas lancé le service : {detail}
-window.elevation_silent = Windows n'a rien dit de ce qu'il a lancé
-window.setup_wait_failed = l'attente de la mise en service a échoué
-window.setup_no_code = la mise en service n'a pas dit comment elle s'est terminée
-window.setup_crashed = le service s'est arrêté brutalement pendant sa mise en place (0x{code}), sans rien écrire.\n  Lancez-le à la main dans une fenêtre administrateur pour voir ce qu'il dit :\n  zyrdeskd setup
-window.setup_failed = la mise en service a échoué (code {code}).\n  Le journal en dit plus.
-window.startup_not_saved = le démarrage avec Windows n'a pas pu être enregistré : {detail}
+launch.no_location = ce programme ne sait pas où il est : {detail}
+launch.service_missing = le service ZyrDesk est introuvable à côté de cette fenêtre :\n  {path}
+launch.elevation_refused = les droits administrateur ont été refusés.
+launch.elevation_failed = Windows n'a pas lancé le service : {detail}
+launch.elevation_silent = Windows n'a rien dit de ce qu'il a lancé
+launch.setup_wait_failed = l'attente de la mise en service a échoué
+launch.setup_no_code = la mise en service n'a pas dit comment elle s'est terminée
+launch.setup_crashed = le service s'est arrêté brutalement pendant sa mise en place (0x{code}), sans rien écrire.\n  Lancez-le à la main dans une fenêtre administrateur pour voir ce qu'il dit :\n  zyrdeskd setup
+launch.setup_failed = la mise en service a échoué (code {code}).\n  Le journal en dit plus.
+launch.startup_not_saved = le démarrage avec Windows n'a pas pu être enregistré : {detail}
 
 # A session, as the window opens and plays it.
 window.no_session = aucune session en cours

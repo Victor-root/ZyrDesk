@@ -9,7 +9,7 @@ use std::time::Duration;
 use zyr_proto::log::Log;
 use zyr_proto::session::Pointer;
 
-use crate::{Errand, Launch, Whose};
+use crate::{Errand, Launch, Refusal, Whose};
 
 fn not_here() -> io::Error {
     io::Error::new(
@@ -84,4 +84,18 @@ pub fn pointer_shape() -> Pointer {
 
 pub fn still_running(_process: u32) -> bool {
     false
+}
+
+pub fn run_as_administrator(_program: &Path, _arguments: &str) -> Result<u32, Refusal> {
+    Err(Refusal::NotStarted(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "this is not Windows: there are no administrator rights to ask for here",
+    )))
+}
+
+pub fn start_at_sign_in(_entry: &str, _command: Option<&str>) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "this is not Windows: nothing is started at sign-in here",
+    ))
 }

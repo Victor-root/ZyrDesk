@@ -12,6 +12,7 @@ members = [
     "crates/zyr-clipboard",
     "crates/zyr-draw",
     "crates/zyr-control",
+    "crates/zyr-launch",
     "crates/zyr-link",
     "crates/zyr-session",
     "crates/zyr-lan",
@@ -47,6 +48,7 @@ zyr-tunnel = { path = "crates/zyr-tunnel" }
 zyr-clipboard = { path = "crates/zyr-clipboard" }
 zyr-draw = { path = "crates/zyr-draw" }
 zyr-control = { path = "crates/zyr-control" }
+zyr-launch = { path = "crates/zyr-launch" }
 zyr-link = { path = "crates/zyr-link" }
 zyr-session = { path = "crates/zyr-session" }
 zyr-lan = { path = "crates/zyr-lan" }

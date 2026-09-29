@@ -1,6 +1,6 @@
 [package]
 name = "zyr-system"
-description = "What the service asks of Windows itself: the session that holds the screen, and what is started there"
+description = "What ZyrDesk asks of Windows itself: the session that holds the screen, what is started there, and what gets a program running at all"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -19,6 +19,9 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_NetworkManagement_WiFi",
     "Win32_Security",
     "Win32_Storage_FileSystem",
+    # The shell asked to run a program with administrator rights expects
+    # COM on the thread that asks.
+    "Win32_System_Com",
     "Win32_System_Environment",
     "Win32_System_JobObjects",
     "Win32_System_LibraryLoader",
@@ -28,5 +31,7 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_StationsAndDesktops",
     "Win32_System_Threading",
     "Win32_System_WindowsProgramming",
+    # The one verb that raises the administrator prompt.
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }

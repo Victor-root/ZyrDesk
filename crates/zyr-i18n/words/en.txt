@@ -157,7 +157,7 @@ player.windows_only = the player only draws into a window on Windows
 
 # The window, and what it asks of this computer.
 window.windows_only = ZyrDesk only does this on Windows
-window.no_location = this program does not know where it is: {detail}
+window.setup_interrupted = setting the service up did not finish. The journal says why.
 window.gone = ZyrDesk's window is no longer there
 window.not_answering = ZyrDesk's window did not answer: {detail}
 window.picture_refused = the picture's window could not open (error {code})
@@ -173,16 +173,16 @@ window.shortcuts_unreadable = the keyboard shortcuts could not be read: {detail}
 window.shortcuts_not_saved = the keyboard shortcuts could not be saved: {detail}
 
 # Setting the service up, and starting with Windows.
-window.service_missing = the ZyrDesk service cannot be found beside this window:\n  {path}
-window.setup_interrupted = setting the service up did not finish. The journal says why.
-window.elevation_refused = administrator rights were refused.
-window.elevation_failed = Windows did not start the service: {detail}
-window.elevation_silent = Windows said nothing of what it started
-window.setup_wait_failed = waiting for the service to be set up failed
-window.setup_no_code = setting the service up did not say how it ended
-window.setup_crashed = the service stopped abruptly while being set up (0x{code}), without writing anything.\n  Run it by hand in an administrator window to see what it says:\n  zyrdeskd setup
-window.setup_failed = setting the service up failed (code {code}).\n  The journal says more.
-window.startup_not_saved = starting with Windows could not be saved: {detail}
+launch.no_location = this program does not know where it is: {detail}
+launch.service_missing = the ZyrDesk service cannot be found beside this window:\n  {path}
+launch.elevation_refused = administrator rights were refused.
+launch.elevation_failed = Windows did not start the service: {detail}
+launch.elevation_silent = Windows said nothing of what it started
+launch.setup_wait_failed = waiting for the service to be set up failed
+launch.setup_no_code = setting the service up did not say how it ended
+launch.setup_crashed = the service stopped abruptly while being set up (0x{code}), without writing anything.\n  Run it by hand in an administrator window to see what it says:\n  zyrdeskd setup
+launch.setup_failed = setting the service up failed (code {code}).\n  The journal says more.
+launch.startup_not_saved = starting with Windows could not be saved: {detail}
 
 # A session, as the window opens and plays it.
 window.no_session = no session under way

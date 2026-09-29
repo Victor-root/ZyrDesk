@@ -60,47 +60,11 @@ pub fn wake_the_service() {
             return;
         }
         note("service silent, start asked for");
-        let outcome = crate::app::spawn_blocking(started).await;
+        let outcome = crate::app::spawn_blocking(zyr_launch::start_the_service).await;
         note(&match outcome {
             Ok(Ok(())) => "service asked to start".to_string(),
             Ok(Err(e)) => format!("service not started: {e}"),
             Err(e) => format!("service not started: {e}"),
         });
     });
-}
-
-/// Asks the service program to start the service.
-///
-/// The program beside this one, which is where it is: the two are built
-/// and shipped together.
-#[cfg(windows)]
-fn started() -> std::io::Result<()> {
-    use std::os::windows::process::CommandExt;
-
-    /// Keeps a console window from flashing up behind the interface.
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-    let here = std::env::current_exe()?;
-    let program = here.with_file_name(zyr_proto::paths::executable_name("zyrdeskd"));
-    let said = std::process::Command::new(program)
-        .arg("start")
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()?;
-    if said.status.success() {
-        return Ok(());
-    }
-    // Failures land on the error output; the ordinary one is read only
-    // when there is nothing there, so the reason is never an empty line.
-    let mut words = String::from_utf8_lossy(&said.stderr).trim().to_string();
-    if words.is_empty() {
-        words = String::from_utf8_lossy(&said.stdout).trim().to_string();
-    }
-    Err(std::io::Error::other(words))
-}
-
-#[cfg(not(windows))]
-fn started() -> std::io::Result<()> {
-    Err(std::io::Error::other(
-        "the ZyrDesk service only exists on Windows",
-    ))
 }

@@ -16,7 +16,8 @@
 //!   `zyr-lan`, `zyr-broker` and `zyr-account`;
 //! - the product speaking to itself: `zyr-control`, the conversation
 //!   between the window and the service, `zyr-session`, which opens a
-//!   session, `zyr-clipboard`, and `zyr-service`, what the service does;
+//!   session, `zyr-clipboard`, `zyr-launch`, how the product's programs
+//!   are started, and `zyr-service`, what the service does;
 //! - the programs, which assemble the rest and are used by nothing: the
 //!   window `zyr-ui`, the service `zyrdeskd`, the command line `zyr-cli`
 //!   and the server `zyr-server`.
@@ -108,6 +109,7 @@ mod tests {
             &["zyr-broker", "zyr-proto", "zyr-transport"],
         ),
         ("zyr-clipboard", Product, &["zyr-proto"]),
+        ("zyr-launch", Product, &["zyr-proto", "zyr-system"]),
         (
             "zyr-control",
             Product,
@@ -147,6 +149,7 @@ mod tests {
                 "zyr-control",
                 "zyr-draw",
                 "zyr-i18n",
+                "zyr-launch",
                 "zyr-player",
                 "zyr-proto",
                 "zyr-session",
