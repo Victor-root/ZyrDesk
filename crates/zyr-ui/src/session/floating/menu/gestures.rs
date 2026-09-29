@@ -19,10 +19,11 @@ pub(super) unsafe extern "system" fn answer(
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         DefWindowProcW, HTCLIENT, IDC_ARROW, IDC_HAND, LoadCursorW, SetCursor, WM_LBUTTONDOWN,
-        WM_LBUTTONUP, WM_MOUSEMOVE, WM_SETCURSOR,
+        WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_SETCURSOR,
     };
 
     match message {
+        WM_MOUSEACTIVATE => crate::session::floating::NO_ACTIVATION,
         WM_MOUSEMOVE => {
             if !HAND_INSIDE.swap(true, Ordering::Relaxed) {
                 // Asked for as soon as a hand arrives: without that
@@ -342,4 +343,18 @@ fn released(window: windows_sys::Win32::Foundation::HWND, rank: usize) {
         return;
     };
     choose(&app, slider.setting, value);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows_sys::Win32::UI::WindowsAndMessaging::WM_MOUSEACTIVATE;
+
+    #[test]
+    fn a_click_on_the_card_goes_through_without_making_it_the_active_window() {
+        // SAFETY: the answer to this message is given before any window is
+        // looked at, so the null one is never touched.
+        let answered = unsafe { answer(std::ptr::null_mut(), WM_MOUSEACTIVATE, 0, 0) };
+        assert_eq!(answered, crate::session::floating::NO_ACTIVATION);
+    }
 }

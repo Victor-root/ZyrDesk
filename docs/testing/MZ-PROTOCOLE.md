@@ -91,11 +91,13 @@ Sur le **PC client**, dans l'accueil, cliquer sur la carte du PC hôte.
 **Attendu.**
 
 - L'écran d'ouverture s'affiche, puis l'image du bureau de l'hôte apparaît **dans la fenêtre de ZyrDesk**, en quelques secondes au plus. Pas de deuxième fenêtre.
-- Le logo ZyrDesk est posé en haut à droite de l'image. Un clic dessus ouvre le menu de la session.
+- Le logo ZyrDesk est posé en haut à droite de l'image. Un clic dessus ouvre le menu de la session, et la barre de titre de la fenêtre garde sa couleur de fenêtre active : avant le clic, menu ouvert, et après ([D247](../DECISIONS.md)).
 - L'image est nette et bouge avec fluidité quand on déplace une fenêtre sur l'hôte.
 - Dans le journal du client (voir la fin du document), une ligne dit combien de temps l'image a mis : `image à l'écran … ms après la demande`. **Noter ce chiffre** : c'est le seuil G-start, qui demande 4 secondes au plus en réseau local. Le mieux est de refaire l'ouverture dix fois et de noter les dix.
 
 **Ce qu'il ne faut pas voir.** Une image noire qui ne part pas, un message d'erreur, ou la fenêtre qui revient à l'accueil. Dans ces cas, aller directement à la fin du document et envoyer les journaux : c'est l'essai le plus important de tous, et le reste en dépend.
+
+Et une barre de titre qui grise au clic sur le logo : sur le **PC client**, dans la boîte de tri du journal, taper `floating window`, puis **Copier le tri**. La ligne `floating button clicked, the front is …` dit qui tient le premier plan après le clic.
 
 ## Z3. La souris
 

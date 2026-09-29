@@ -1042,6 +1042,16 @@ fn end_the_session(app: &App) -> Result<(), Fact> {
 
 /* ---- What belongs to Windows ----------------------------------------- */
 
+/// What a window of the button answers when the system asks whether a
+/// click should make it the active window: no, and the click goes through.
+///
+/// The style that marks these windows as never active does not settle it.
+/// Left to the system, a click on the button still made ZyrDesk's own
+/// window lose the front, and its title bar was drawn as inactive.
+#[cfg(windows)]
+pub const NO_ACTIVATION: isize =
+    windows_sys::Win32::UI::WindowsAndMessaging::MA_NOACTIVATE as isize;
+
 /// Lays the button where the picture is now.
 ///
 /// Called at every turn of the watch and at every step of a drag, so

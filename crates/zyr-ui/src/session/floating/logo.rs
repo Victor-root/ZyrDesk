@@ -561,10 +561,11 @@ unsafe extern "system" fn answer(
         TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        DefWindowProcW, HTCLIENT, WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_SETCURSOR,
+        DefWindowProcW, HTCLIENT, WM_LBUTTONDOWN, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_SETCURSOR,
     };
 
     match message {
+        WM_MOUSEACTIVATE => crate::session::floating::NO_ACTIVATION,
         WM_MOUSEMOVE => {
             if !UNDER.swap(true, Ordering::Relaxed) {
                 // Asked for once a hand arrives: without it nothing ever
@@ -671,10 +672,31 @@ fn taken(window: windows_sys::Win32::Foundation::HWND) {
         let plain = crate::session::floating::grabbed().await;
         TAKEN.store(false, Ordering::Relaxed);
         head_for(handle as windows_sys::Win32::Foundation::HWND);
+        // Who holds the front is written down after each gesture: one that
+        // costs ZyrDesk's window the front has to show, with who took it.
+        note(&format!(
+            "floating button {}, the front is {}",
+            if plain { "clicked" } else { "moved" },
+            crate::session::picture::the_front_in_words()
+        ));
         // A plain click opens and closes the menu; a drag does not, or
         // the button would open its menu every time it was put down.
         if plain {
             crate::session::floating::menu::show(!crate::session::floating::menu::is_open());
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows_sys::Win32::UI::WindowsAndMessaging::WM_MOUSEACTIVATE;
+
+    #[test]
+    fn a_click_on_the_logo_goes_through_without_making_it_the_active_window() {
+        // SAFETY: the answer to this message is given before any window is
+        // looked at, so the null one is never touched.
+        let answered = unsafe { answer(std::ptr::null_mut(), WM_MOUSEACTIVATE, 0, 0) };
+        assert_eq!(answered, crate::session::floating::NO_ACTIVATION);
+    }
 }

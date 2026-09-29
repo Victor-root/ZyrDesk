@@ -3946,6 +3946,27 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows. Le journal de la première session, celle qui a fini en désordre, arrivait tronqué de son début : ce qu'elle a laissé est déduit du code et de la session suivante, non lu. Ce que Windows fait d'un écran retiré quand on lui demande de le rattacher n'est pas vu non plus. Si le désordre revient, les lignes qui tranchent sont celles de la fin de la session, triées sur `gateway screen desk` : `nobody is watching this computer any more, what a session lent goes back`, puis `the desk was put back from the session on screen` et `virtual screen asleep, this machine has its own screens back`, ou la raison du refus qui les remplace.
 
+## D247. Un clic sur le bouton flottant ne change plus la fenêtre active (2026-09-29, pendant MZ)
+
+> Tient la promesse de [D16](#d16-le-bouton-flottant-est-une-fenêtre-à-nous-et-les-sessions-souvrent-sans-bordure-2026-08-08-pendant-m4) : les fenêtres du bouton ne prennent jamais le premier plan. Même famille que [D30](#d30-redonner-le-clavier-au-bouton-flottant-redonne-aussi-le-premier-plan-2026-08-23-pendant-m4) et [D33](#d33-le-premier-plan-est-suivi-et-non-plus-sondé-2026-08-23-pendant-m4), où c'était le focus donné au bouton qui faisait partir le premier plan.
+
+**Le relevé.** Dit par Victor : en session, la barre de titre de la fenêtre ZyrDesk est active ; au clic sur le bouton flottant elle passe en inactif, « alors que non, on est toujours sur ZyrDesk ».
+
+**Ce que dit le code, et ce qu'il ne dit pas.** Le logo et la carte du menu sont deux fenêtres à nous, possédées par la fenêtre de ZyrDesk et marquées pour ne jamais être activées. Rien dans le produit ne demande le premier plan ou le focus pour elles. Mais ce marquage ne répond pas à la question que Windows pose à une fenêtre cliquée : « ce clic doit-il vous activer ? ». Laissée sans réponse, elle reçoit la réponse par défaut, oui, et Windows cherche à activer une fenêtre qui est marquée pour ne l'être jamais. La documentation de Windows ne connaît qu'une façon d'éviter cela : répondre que la fenêtre n'est pas activée et que le clic, lui, est bien remis. C'est le défaut que D33 avait vu avec le focus (« notre propre fenêtre qui perd le premier plan sans que rien ne l'ait pris »), par une autre porte : le clic à la place du focus.
+
+**Ce qui est fait.**
+
+- Le logo et la carte répondent à cette question par « non, et le clic passe ». La réponse est écrite une fois, à un seul endroit (`NO_ACTIVATION`, dans `floating`), et les deux fenêtres l'utilisent. Les autres fenêtres du bouton, les voyants et le bandeau des chiffres, ne se cliquent pas, le clic les traverse : la question ne leur est jamais posée.
+- Le journal dit, à la fin de chaque geste sur le bouton (un clic, ou un déplacement), qui tient le premier plan : `floating button clicked, the front is ZyrDesk's`, ou le nom du programme qui l'a. C'est la ligne qui tranche si la barre grise encore.
+
+**Ce qui se voit.** La barre de titre garde sa couleur de fenêtre active quand on clique sur le bouton, pendant que le menu est ouvert et quand on le referme. L'image garde le clavier : le clic ne le lui prend plus.
+
+**Ce que ça coûte.** Cliquer sur le bouton alors que ZyrDesk est derrière une autre fenêtre ne la ramène pas devant : le bouton ne touche jamais au premier plan, ni pour le donner ni pour le prendre ([D30](#d30-redonner-le-clavier-au-bouton-flottant-redonne-aussi-le-premier-plan-2026-08-23-pendant-m4)). Un clic sur l'image ou sur la barre des tâches la ramène.
+
+**Les essais.** Pour chacune des deux fenêtres, la réponse à la question d'activation est « non, et le clic passe ». Ils n'existent que sous Windows, comme les fenêtres, et tournent sur la CI Windows. Essayés aussi sous Wine : les deux échouent quand la réponse est retirée du code et passent quand elle y est.
+
+**Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows, et Wine n'est pas Windows. La cause est déduite de la documentation et de D33, pas lue dans un journal. Si la barre grise encore, la ligne qui tranche est celle de la fin du geste (tri : `floating window`). `ZyrDesk's` veut dire que le premier plan est resté à une fenêtre de ZyrDesk ; avec une barre grise, c'est alors une des fenêtres du bouton qui le tient. Le nom d'un autre programme veut dire qu'il est parti ailleurs, comme l'`explorer.exe` de D33.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
