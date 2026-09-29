@@ -4126,6 +4126,26 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows, sauf sous Wine, qui répond avec ses propres valeurs. La liste des cartes vient du registre et peut garder une carte retirée ; le pilote générique de Windows est écarté quand une autre carte est là. La charge de la carte graphique n'est pas lue : les temps de décodage et d'encodage de chaque image disent déjà si elle ne suit plus.
 
+## D256. Le journal suit la connexion Wi-Fi pendant la session (2026-09-29, pendant MZ)
+
+> Sixième étape de l'inventaire du journal ([D255](#d255-le-journal-dit-ce-quest-lordinateur-et-ce-que-le-processus-a-obtenu-de-windows-2026-09-29-pendant-mz)). Le service demandait déjà à la carte Wi-Fi de ne pas aller regarder les autres réseaux pendant une session ([D230](#d230-le-wi-fi-reste-sur-son-canal-pendant-une-session-et-laffichage-ne-se-fie-plus-aux-numéros-de-windows-2026-09-25-pendant-mz)) ; il ne disait rien de la façon dont la connexion se portait.
+
+**Le constat.** Une session qui saccade sur Wi-Fi laisse la même trace qu'une session qui saccade sur câble : rien dans le journal ne distinguait un signal qui faiblit, une carte qui change de point d'accès, une carte qui se déconnecte une seconde et se reconnecte, ou une carte qui va regarder les autres réseaux pendant cent millisecondes. Ce sont pourtant les causes les plus courantes de « des coupures même en local » quand un des deux ordinateurs est sur Wi-Fi.
+
+**Ce qui est fait.** Le fil du service qui parle déjà à la carte pour la session écoute et regarde, avec la même poignée ouverte sur le service Wi-Fi de Windows :
+
+- Il écoute maintenant aussi les notifications de la carte elle-même, en plus de celles du service de configuration. Chaque fois que la carte se connecte, échoue à se connecter, se déconnecte (avec le code de raison que Windows donne), passe d'un point d'accès à un autre, signale une liaison dégradée ou améliorée, ou voit sa radio changer d'état, une ligne (`wifi`) le dit. Chaque fois qu'elle regarde les autres réseaux autour, une ligne de chasse le dit : c'est ce qui la rend sourde un moment, et ce que d'autres programmes lui font faire quand ils demandent une liste de réseaux.
+- Toutes les deux secondes, tant qu'une session est ouverte, une ligne de chasse (`wifi`) dit où en est la connexion de chaque carte connectée : qualité du signal sur cent, force reçue en dBm quand le pilote la donne, canal, norme (802.11ac, ax...), débits négocié en réception et en émission, et si le point d'accès a changé depuis la ligne d'avant. Ni le nom du réseau ni l'adresse du point d'accès ne sont écrits.
+- Rien de cela n'est demandé à la carte au-delà de ce qu'un outil comme `netsh wlan show interfaces` lit : ce sont des questions de lecture, tous les deux secondes.
+
+**Ce qui se voit.** Rien à l'écran. Dans le journal du service, tri `wifi`. Une ligne ressemble à : `the Wi-Fi card Intel(R) Wi-Fi 6 AX200 160MHz: signal 87 %, -52 dBm, channel 36, 802.11ac, receiving at 866 Mb/s and sending at 780 Mb/s`.
+
+**Comment la lire.** Un signal sous 50 % ou une force reçue sous -70 dBm : la liaison est faible, et des pertes en sont la suite normale. Un débit négocié qui s'effondre d'une ligne à l'autre : la carte a changé de modulation parce que le signal s'est dégradé. « another access point » ou un mouvement de point d'accès : la carte a changé de borne, et elle est sourde pendant ce temps. « finished looking around at the other networks » dans une seconde de coupure : quelqu'un a demandé la liste des réseaux.
+
+**Les essais.** Les mots de chaque ligne, le classement de ce qui est un événement de la session et de ce qui n'est que la carte qui regarde autour d'elle, le code de raison écrit en hexadécimal et omis quand il est nul, et le nom de chaque norme s'essaient sur tout système. La lecture de Windows et l'écoute n'ont pas pu être essayées : les ordinateurs d'essai n'ont pas de carte Wi-Fi.
+
+**Ce qui n'est pas sûr.** Rien de cela n'a tourné sur une vraie carte Wi-Fi. Certains pilotes ne donnent pas la force reçue ou le canal : la ligne ne les porte alors pas. Deux secondes est un choix prudent pour ne pas déranger la carte, pas une mesure ; si des coupures apparaissaient aux mêmes instants que ces lectures, le premier réflexe serait de les espacer.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

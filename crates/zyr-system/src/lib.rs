@@ -7,10 +7,10 @@
 //! a short errand whose exit code is its answer, or as a helper left to
 //! read for a while; locking that screen from inside it; pressing
 //! Ctrl+Alt+Del, which Windows takes from a service and from nothing
-//! else; asking the Wi-Fi to put a session first; reading the shape
-//! the pointer has on the desktop this program stands on; counting
-//! how busy the computer is and what its network has carried and lost;
-//! and saying what the computer is.
+//! else; asking the Wi-Fi to put a session first and saying how it
+//! fares; reading the shape the pointer has on the desktop this program
+//! stands on; counting how busy the computer is and what its network
+//! has carried and lost; and saying what the computer is.
 //!
 //! And what gets a program running at all: with no console flashing up,
 //! with administrator rights asked of the person, or when the person
@@ -43,6 +43,8 @@ mod reading;
 #[cfg(windows)]
 mod sign_in;
 mod wifi;
+#[cfg(any(windows, test))]
+mod wifi_told;
 
 use std::fmt;
 use std::io;

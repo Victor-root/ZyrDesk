@@ -1,5 +1,5 @@
 //! This computer's Wi-Fi, asked to put the session first for as long as
-//! one is open.
+//! one is open, and watched while it is.
 //!
 //! A Wi-Fi card connected to its network still leaves it now and then to
 //! look at the others around, and while it listens elsewhere nothing of
@@ -26,6 +26,14 @@
 //! runs as the system. The Wi-Fi library is looked for at run time, since
 //! a Windows Server without its wireless service has none, and a service
 //! linked to it would not even start there.
+//!
+//! While a session is open the same handle also listens, and looks. A
+//! card that leaves its network, moves to another access point or looks
+//! around at the others is deaf for a while, and that is said as it
+//! happens; and every couple of seconds the strength of the signal, the
+//! channel and the rates negotiated are written down. A session that
+//! stutters on Wi-Fi is otherwise a fault nothing in the journal can
+//! tell from the network's. How each is worded is in `wifi_told.rs`.
 
 use zyr_proto::log::Log;
 
@@ -57,17 +65,26 @@ mod mechanism {
     use std::io;
     use std::ptr;
     use std::sync::OnceLock;
-    use std::sync::mpsc::{self, Receiver, Sender};
+    use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
     use std::thread;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     use windows_sys::Win32::Foundation::{ERROR_SUCCESS, FreeLibrary, HANDLE, HMODULE};
     use windows_sys::Win32::NetworkManagement::WiFi::{
-        L2_NOTIFICATION_DATA, WLAN_API_VERSION_2_0, WLAN_INTERFACE_INFO, WLAN_INTERFACE_INFO_LIST,
+        L2_NOTIFICATION_DATA, WLAN_API_VERSION_2_0, WLAN_CONNECTION_ATTRIBUTES,
+        WLAN_CONNECTION_NOTIFICATION_DATA, WLAN_INTERFACE_INFO, WLAN_INTERFACE_INFO_LIST,
         WLAN_INTF_OPCODE, WLAN_NOTIFICATION_CALLBACK, WLAN_NOTIFICATION_SOURCE_ACM,
-        WLAN_NOTIFICATION_SOURCE_NONE, WLAN_NOTIFICATION_SOURCES, WLAN_OPCODE_VALUE_TYPE,
-        wlan_interface_state_connected, wlan_intf_opcode_background_scan_enabled,
-        wlan_intf_opcode_media_streaming_mode, wlan_notification_acm_connection_complete,
+        WLAN_NOTIFICATION_SOURCE_MSM, WLAN_NOTIFICATION_SOURCE_NONE, WLAN_NOTIFICATION_SOURCES,
+        WLAN_OPCODE_VALUE_TYPE, wlan_interface_state_connected,
+        wlan_intf_opcode_background_scan_enabled, wlan_intf_opcode_channel_number,
+        wlan_intf_opcode_current_connection, wlan_intf_opcode_media_streaming_mode,
+        wlan_intf_opcode_rssi, wlan_notification_acm_connection_attempt_fail,
+        wlan_notification_acm_connection_complete, wlan_notification_acm_connection_start,
+        wlan_notification_acm_disconnected, wlan_notification_acm_disconnecting,
+        wlan_notification_acm_scan_complete, wlan_notification_acm_scan_fail,
+        wlan_notification_acm_scan_list_refresh, wlan_notification_msm_link_degraded,
+        wlan_notification_msm_link_improved, wlan_notification_msm_radio_state_change,
+        wlan_notification_msm_roaming_end, wlan_notification_msm_roaming_start,
     };
     use windows_sys::Win32::System::LibraryLoader::{
         GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW,
@@ -76,6 +93,12 @@ mod mechanism {
     use zyr_proto::log::Log;
     use zyr_win32::{read_wide, with_its_code};
 
+    use crate::wifi_told::{Link, Moved};
+
+    /// How often the connection of each card is looked at while a session
+    /// is open.
+    const LOOKED_AT_EVERY: Duration = Duration::from_secs(2);
+
     /// What the thread that speaks to the Wi-Fi hears.
     enum Told {
         Opened,
@@ -83,6 +106,9 @@ mod mechanism {
         /// That card finished connecting, and has forgotten what it was
         /// asked.
         Connected(GUID),
+        /// That card's connection went through something, and the reason
+        /// Windows gave when it gave one.
+        Moved(GUID, Moved, Option<u32>),
     }
 
     /// Where that thread hears from. The first session starts it, and it
@@ -111,33 +137,53 @@ mod mechanism {
     }
 
     /// Asks the cards when the first session opens, hands them back when
-    /// the last one ends, and asks a card again whenever it connects in
-    /// between.
+    /// the last one ends, asks a card again whenever it connects in
+    /// between, and while they are asked, says what the cards go through
+    /// and how their connections stand.
     ///
     /// A thread of its own, because Windows takes about a second over
     /// each switch of each card: the driver is told, and answers.
     fn keep(heard: &Receiver<Told>, log: &Log) {
         let mut open = 0usize;
         let mut asking: Option<Asking> = None;
-        for told in heard {
+        let mut next_look = Instant::now();
+        loop {
+            let told = match &asking {
+                Some(_) => heard.recv_timeout(next_look.saturating_duration_since(Instant::now())),
+                None => heard.recv().map_err(|_| RecvTimeoutError::Disconnected),
+            };
             match told {
-                Told::Opened => {
+                Ok(Told::Opened) => {
                     open += 1;
                     if open == 1 {
                         asking = Asking::start(log);
+                        next_look = Instant::now() + LOOKED_AT_EVERY;
                     }
                 }
-                Told::Ended => {
+                Ok(Told::Ended) => {
                     open = open.saturating_sub(1);
                     if open == 0 && asking.take().is_some() {
                         log.debug("the Wi-Fi cards are handed back to Windows");
                     }
                 }
-                Told::Connected(card) => {
+                Ok(Told::Connected(card)) => {
                     if let Some(asking) = &asking {
                         asking.ask(Some(card), log);
                     }
                 }
+                Ok(Told::Moved(card, moved, reason)) => {
+                    if let Some(asking) = &asking {
+                        asking.went_through(&card, moved, reason, log);
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => return,
+            }
+            if let Some(asking) = &mut asking
+                && Instant::now() >= next_look
+            {
+                asking.look(log);
+                next_look = Instant::now() + LOOKED_AT_EVERY;
             }
         }
     }
@@ -150,12 +196,84 @@ mod mechanism {
         let Some(data) = (unsafe { data.as_ref() }) else {
             return;
         };
+        let Some(mailbox) = MAILBOX.get() else {
+            return;
+        };
         if data.NotificationSource == WLAN_NOTIFICATION_SOURCE_ACM
             && data.NotificationCode == wlan_notification_acm_connection_complete as u32
-            && let Some(mailbox) = MAILBOX.get()
         {
             let _ = mailbox.send(Told::Connected(data.InterfaceGuid));
+        } else if let Some(moved) = moved_by(data.NotificationSource, data.NotificationCode) {
+            let reason = matches!(moved, Moved::Disconnected | Moved::CouldNotConnect)
+                .then(|| reason_of(data))
+                .flatten();
+            let _ = mailbox.send(Told::Moved(data.InterfaceGuid, moved, reason));
         }
+    }
+
+    /// What the notifications of the auto-configuration service say
+    /// happened, among those the journal keeps.
+    const ACM_MOVES: [(i32, Moved); 7] = [
+        (wlan_notification_acm_connection_start, Moved::Connecting),
+        (
+            wlan_notification_acm_connection_attempt_fail,
+            Moved::CouldNotConnect,
+        ),
+        (wlan_notification_acm_disconnecting, Moved::Disconnecting),
+        (wlan_notification_acm_disconnected, Moved::Disconnected),
+        (wlan_notification_acm_scan_complete, Moved::Scanned),
+        (wlan_notification_acm_scan_fail, Moved::ScanFailed),
+        (
+            wlan_notification_acm_scan_list_refresh,
+            Moved::NetworksListed,
+        ),
+    ];
+
+    /// And those of the media specific module, which is the card's own.
+    const MSM_MOVES: [(i32, Moved); 5] = [
+        (wlan_notification_msm_roaming_start, Moved::RoamingStarted),
+        (wlan_notification_msm_roaming_end, Moved::RoamingEnded),
+        (wlan_notification_msm_link_degraded, Moved::LinkDegraded),
+        (wlan_notification_msm_link_improved, Moved::LinkImproved),
+        (
+            wlan_notification_msm_radio_state_change,
+            Moved::RadioChanged,
+        ),
+    ];
+
+    /// What a notification of a card's connection says happened, when it
+    /// is one of the things the journal keeps.
+    fn moved_by(source: WLAN_NOTIFICATION_SOURCES, code: u32) -> Option<Moved> {
+        let known: &[(i32, Moved)] = if source == WLAN_NOTIFICATION_SOURCE_ACM {
+            &ACM_MOVES
+        } else if source == WLAN_NOTIFICATION_SOURCE_MSM {
+            &MSM_MOVES
+        } else {
+            return None;
+        };
+        known
+            .iter()
+            .find(|(each, _)| *each == code as i32)
+            .map(|(_, moved)| *moved)
+    }
+
+    /// The reason a disconnection, or a connection that failed, comes
+    /// with: a code of Windows' own, read from the data of the
+    /// notification.
+    fn reason_of(data: &L2_NOTIFICATION_DATA) -> Option<u32> {
+        const AT: usize = std::mem::offset_of!(WLAN_CONNECTION_NOTIFICATION_DATA, wlanReasonCode);
+        if data.pData.is_null() || (data.dwDataSize as usize) < AT + size_of::<u32>() {
+            return None;
+        }
+        // SAFETY: data Windows keeps valid for the call, of the size it
+        // says, and long enough to hold the number read from it.
+        Some(unsafe {
+            data.pData
+                .cast::<u8>()
+                .add(AT)
+                .cast::<u32>()
+                .read_unaligned()
+        })
     }
 
     /// A handle on the Wi-Fi service, for as long as a session is open:
@@ -163,6 +281,8 @@ mod mechanism {
     struct Asking {
         wlan: Wlan,
         handle: HANDLE,
+        /// The access point each card was last seen on.
+        access_points: Vec<(GUID, [u8; 6])>,
     }
 
     impl Asking {
@@ -197,13 +317,17 @@ mod mechanism {
                 ));
                 return None;
             }
-            let asking = Self { wlan, handle };
+            let asking = Self {
+                wlan,
+                handle,
+                access_points: Vec::new(),
+            };
             // SAFETY: the function's own type; the handle just opened, and
             // a function that lasts as long as the program.
             let listening = unsafe {
                 (asking.wlan.register_notification)(
                     handle,
-                    WLAN_NOTIFICATION_SOURCE_ACM,
+                    WLAN_NOTIFICATION_SOURCE_ACM | WLAN_NOTIFICATION_SOURCE_MSM,
                     1,
                     Some(heard),
                     ptr::null(),
@@ -214,7 +338,7 @@ mod mechanism {
             if listening != ERROR_SUCCESS {
                 log.write(&format!(
                     "a Wi-Fi card that connects again during the session will not be asked \
-                     again ({})",
+                     again, and what it goes through will not be told ({})",
                     refused("WlanRegisterNotification", listening)
                 ));
             }
@@ -299,6 +423,77 @@ mod mechanism {
             }
         }
 
+        /// Says what a card went through, as an event when it concerns the
+        /// session and as a line of the hunt when it is the card's own
+        /// looking around.
+        fn went_through(&self, card: &GUID, moved: Moved, reason: Option<u32>, log: &Log) {
+            let told = moved.told(&self.name_of(card), reason);
+            if moved.is_an_event() {
+                log.write(&told);
+            } else {
+                log.debug(&told);
+            }
+        }
+
+        /// Writes how the connection of every card connected stands.
+        fn look(&mut self, log: &Log) {
+            let Ok(cards) = self.cards() else {
+                return;
+            };
+            for card in cards
+                .iter()
+                .filter(|card| card.isState == wlan_interface_state_connected)
+            {
+                if let Some(link) = self.link_of(&card.InterfaceGuid) {
+                    log.debug(&link.told(&read_wide(&card.strInterfaceDescription)));
+                }
+            }
+        }
+
+        /// How that card's connection stands, when it has one.
+        fn link_of(&mut self, card: &GUID) -> Option<Link> {
+            // SAFETY: this operation gives the attributes of a connection.
+            let connection: WLAN_CONNECTION_ATTRIBUTES =
+                unsafe { self.read(card, wlan_intf_opcode_current_connection) }.ok()?;
+            let association = connection.wlanAssociationAttributes;
+            let access_point = association.dot11Bssid;
+            let moved = match self
+                .access_points
+                .iter_mut()
+                .find(|(each, _)| same(each, card))
+            {
+                Some((_, before)) => std::mem::replace(before, access_point) != access_point,
+                None => {
+                    self.access_points.push((*card, access_point));
+                    false
+                }
+            };
+            Some(Link {
+                signal: association.wlanSignalQuality,
+                // SAFETY: this operation gives a signed number.
+                strength: unsafe { self.read::<i32>(card, wlan_intf_opcode_rssi) }.ok(),
+                // SAFETY: this operation gives an unsigned number.
+                channel: unsafe { self.read::<u32>(card, wlan_intf_opcode_channel_number) }.ok(),
+                standard: association.dot11PhyType,
+                receiving: association.ulRxRate,
+                sending: association.ulTxRate,
+                moved,
+            })
+        }
+
+        /// What a card is called, for a line that has only its identifier.
+        fn name_of(&self, card: &GUID) -> String {
+            self.cards()
+                .ok()
+                .and_then(|cards| {
+                    cards
+                        .iter()
+                        .find(|each| same(&each.InterfaceGuid, card))
+                        .map(|each| read_wide(&each.strInterfaceDescription))
+                })
+                .unwrap_or_else(|| "(unknown)".to_string())
+        }
+
         /// Asks a card to hold one switch `on` or off, then reads what it
         /// holds: a driver may take the question and keep to its own way.
         fn switch(&self, card: &GUID, switch: WLAN_INTF_OPCODE, on: bool) -> Result<bool, String> {
@@ -318,16 +513,26 @@ mod mechanism {
             if set != ERROR_SUCCESS {
                 return Err(refused("WlanSetInterface", set));
             }
+            // SAFETY: these switches hold a BOOL.
+            unsafe { self.read::<BOOL>(card, switch) }.map(|held| held != 0)
+        }
+
+        /// Reads what the service holds for a card under an operation.
+        ///
+        /// # Safety
+        ///
+        /// `T` must be the plain data that operation gives.
+        unsafe fn read<T>(&self, card: &GUID, operation: WLAN_INTF_OPCODE) -> Result<T, String> {
             let mut size = 0u32;
             let mut held: *mut c_void = ptr::null_mut();
             let mut kind: WLAN_OPCODE_VALUE_TYPE = 0;
-            // SAFETY: the function's own type; the same handle, card and
-            // switch, and places for what the service makes.
+            // SAFETY: the function's own type; the open handle, a card it
+            // listed, and places for what the service makes.
             let read = unsafe {
                 (self.wlan.query_interface)(
                     self.handle,
                     card,
-                    switch,
+                    operation,
                     ptr::null(),
                     &mut size,
                     &mut held,
@@ -341,10 +546,10 @@ mod mechanism {
                 return Err("WlanQueryInterface answered nothing".to_string());
             }
             // SAFETY: the value the service made, read if it is as large as
-            // the BOOL these switches hold, and freed once.
+            // the type the caller vouches for, and freed once.
             unsafe {
-                let value = (size as usize >= size_of::<BOOL>())
-                    .then(|| held.cast::<BOOL>().read_unaligned() != 0);
+                let value =
+                    (size as usize >= size_of::<T>()).then(|| held.cast::<T>().read_unaligned());
                 (self.wlan.free_memory)(held);
                 value.ok_or_else(|| format!("WlanQueryInterface answered {size} bytes"))
             }
