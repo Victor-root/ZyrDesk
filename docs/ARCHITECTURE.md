@@ -156,7 +156,7 @@ ZyrDesk/
 │  ├─ zyr-link/                # le tube entre chaque moitié du moteur et le service de sa machine, et ce que tous les tubes du produit partagent sous Windows
 │  ├─ zyr-host/                # le moteur hôte : capture, conversion, encodage, son, clavier et souris injectés
 │  ├─ zyr-player/              # le lecteur : réassemblage, décodage, affichage, son
-│  ├─ zyr-transport/           # la connexion QUIC (quinn n'est nommé que dans ce crate), identité de l'appareil, confiance TLS et épinglage, l'aiguilleur et ses sondes signées, la branche de relais et la porte sur laquelle un serveur pose le sien, contrôleur média, budget des datagrammes
+│  ├─ zyr-transport/           # la connexion QUIC (quinn n'est nommé que dans ce crate), identité de l'appareil, confiance TLS et épinglage, l'aiguilleur et ses sondes signées, la branche de relais, tenue ouverte tant qu'une session la veut, et la porte sur laquelle un serveur pose le sien, la course entre plusieurs adresses où la première qui répond gagne, contrôleur média, budget des datagrammes
 │  ├─ zyr-tunnel/              # le passage entre le tube du moteur et la connexion : flux du moteur, datagrammes d'image et de son, canal ZyrDesk
 │  ├─ zyr-clipboard/           # le presse-papiers de l'ordinateur : ce qu'il porte, ce qu'on lui donne, les images en PNG, et la place tenue aux fichiers d'en face
 │  ├─ zyr-control/             # le dialecte entre la fenêtre et le service, sur le tube de commande

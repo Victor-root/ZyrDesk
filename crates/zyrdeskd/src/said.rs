@@ -26,9 +26,12 @@
 // compiled and tested everywhere.
 #![cfg_attr(not(windows), allow(dead_code))]
 
+use std::sync::Arc;
 use std::time::Duration;
 
+use zyr_proto::log::Log;
 use zyr_transport::Carrying;
+use zyr_transport::junction::{Aloud, Say};
 use zyr_tunnel::Reading;
 
 /// Round trip below which a change is not worth a line.
@@ -162,6 +165,17 @@ impl Said {
 
         said
     }
+}
+
+/// What the transport says, written into that journal: what it says of
+/// itself as it happens, and what it only counts in the voice a hunt
+/// wants.
+pub fn into_the_journal(log: &Log) -> Say {
+    let log = log.clone();
+    Arc::new(move |aloud, line: &str| match aloud {
+        Aloud::Says => log.write(line),
+        Aloud::Hunts => log.debug(|| line.to_string()),
+    })
 }
 
 /// Everything one session carried, for the line written when it ends.

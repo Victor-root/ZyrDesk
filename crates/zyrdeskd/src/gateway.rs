@@ -46,7 +46,6 @@ use zyr_proto::net::{EVERY_INTERFACE, TUNNEL_PORT};
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
 use zyr_proto::sifting::Sifting;
-use zyr_transport::junction::{Aloud, Say};
 use zyr_transport::{
     AllowedPeers, Bytes, Connection, EndpointError, Identity, Junction, Knocking, Media,
     TunnelEndpoint, authorized, is_card,
@@ -953,13 +952,7 @@ impl Gateway {
         // reached through a card, and everything else comes in as it
         // always did.
         let identity = Arc::new(identity);
-        let say: Say = Arc::new({
-            let log = log.clone();
-            move |aloud, line: &str| match aloud {
-                Aloud::Says => log.write(line),
-                Aloud::Hunts => log.debug(|| line.to_string()),
-            }
-        });
+        let say = said::into_the_journal(log);
         // On the product's own port unless asked otherwise: a port the
         // system picks is only reachable through a meeting the server
         // arranges, which names it, and that is what the switch is for.

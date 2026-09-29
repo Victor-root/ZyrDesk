@@ -47,10 +47,12 @@ use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
-use zyr_transport::{Branch, Identity, Junction, Marking, Media, Sending, Wanted};
+use zyr_transport::relay::{Holding, hold_a_branch};
+use zyr_transport::{Identity, Sending};
 
 use crate::machine::{Door, Hosting};
 use crate::preferences::Remembered;
+use crate::said;
 use crate::ways::Ways;
 
 /// What this module's lines are filed under.
@@ -66,26 +68,6 @@ const RENDEZVOUS_PATIENCE: Duration = Duration::from_secs(10);
 /// the server was last told, and the ways opened by a meeting looked
 /// over.
 const TICK: Duration = Duration::from_secs(1);
-
-/// Pause before opening a branch of relay again.
-///
-/// A relay being restarted is back in a second or two, and a session
-/// wants its fallback back the moment it is there. Short enough for
-/// that, long enough that a relay that has gone for good is not asked
-/// hundreds of times a minute for the length of a session.
-const BRANCH_RETRY: Duration = Duration::from_secs(2);
-
-/// Longest that pause grows to, for a branch that will not hold.
-///
-/// A branch that dies the instant it opens will not hold because it was
-/// asked again at once: whatever killed it is still there. On the fourth
-/// of September a computer whose packets left by two public addresses in
-/// turn could not keep one for a whole second, and the guardian reopened
-/// it thirty times in two: thirty connections at the relay for one
-/// session, on a relay that carries a fixed number of them. Each attempt
-/// that dies young therefore waits twice as long as the one before, up
-/// to this, and a branch that held goes back to the short pause.
-const BRANCH_PATIENCE: Duration = Duration::from_secs(30);
 
 /// The road to that device of the account, as a card carries it.
 pub fn road_to(device: &str) -> String {
@@ -828,9 +810,11 @@ impl Account {
                 // the way: whichever road answers first carries the
                 // session, and the far computer is the one knocking.
                 if let Some(relay) = start.relay.clone() {
-                    runtime.spawn(hold_a_relay_branch(
+                    runtime.spawn(hold_a_branch(
                         Holding {
-                            relay,
+                            relay: relay.address,
+                            fingerprint: relay.fingerprint,
+                            pass: relay.pass.to_bytes(),
                             identity: identity.clone(),
                             junction: junction.clone(),
                             card,
@@ -841,7 +825,7 @@ impl Account {
                             media: door.media(),
                             marking,
                         },
-                        inner.log.clone(),
+                        said::into_the_journal(&inner.log),
                     ));
                 }
                 let server = held.link.server.clone();
@@ -1039,175 +1023,6 @@ async fn mirror_of(server: &str, udp_port: Option<u16>) -> Option<SocketAddr> {
         .next()
 }
 
-/// What one session needs to keep a branch of relay open.
-pub(crate) struct Holding {
-    pub relay: Relay,
-    pub identity: Arc<Identity>,
-    pub junction: Junction,
-    /// The card the far computer is expected behind, and the session it
-    /// is held for: together they say when this may stop.
-    pub card: SocketAddr,
-    pub session: String,
-    /// What this computer sends, which is what the branch's own queue is
-    /// sized on.
-    pub sending: Sending,
-    pub media: Media,
-    /// Whether the branch's packets leave with their congestion mark.
-    pub marking: Marking,
-}
-
-/// Keeps a branch of relay open towards that card, and hands each one
-/// to the junction as one more road.
-///
-/// Meant to be spawned and never waited on: the session leaves at once,
-/// by whichever road answers first. In the ordinary case a direct road
-/// is validated before the first branch is even connected, and the relay
-/// carries nothing at all; where no direct road exists, this is the
-/// session.
-///
-/// Held for as long as the session wants it, and not merely opened once.
-/// A relay that restarts, a server that is updated, a box that drops its
-/// translation: all of them end a branch under a session still running,
-/// and what was written down as « the relay is kept warm all session, so
-/// a direct road that dies comes back to it » was true only until the
-/// first of those. It ends when the junction no longer holds the card
-/// for this session, which is what the far side of a finished session
-/// looks like from here.
-///
-/// One limit is known and not answered here: the pass a session was
-/// handed lives five minutes, so a branch reopened long after that is
-/// refused however healthy the relay is. The journal says so when it
-/// happens. Asking the server for another pass mid-session is a word
-/// this dialect does not have.
-pub(crate) async fn hold_a_relay_branch(held: Holding, log: Log) {
-    let mut opened = 0u32;
-    let mut wait = BRANCH_RETRY;
-    while held.junction.still_expects(held.card, &held.session) {
-        match open_a_branch(&held, &log, opened).await {
-            Some(branch) => {
-                opened += 1;
-                let held_since = std::time::Instant::now();
-                held.junction.relay_through(held.card, branch.clone());
-                // Held rather than read: reading it is the junction's
-                // work, and two readers of one connection would take
-                // each other's packets. And let go of when the session
-                // is: the junction gives its own copy back the moment it
-                // stops expecting the card, and this one would otherwise
-                // keep the connection, and the relay's place with it, for
-                // as long as the service runs. A relay carries a fixed
-                // number of sessions, and on the fourth of September it
-                // was turning everybody away at the tenth, every one of
-                // them a session long over.
-                tokio::select! {
-                    () = branch.broken() => {}
-                    () = no_longer_expected(&held) => return,
-                }
-                // One that held is a road that works and was cut; one
-                // that died young is a road that cannot carry a branch
-                // yet, and asking it again at once is what turned two
-                // seconds into thirty connections.
-                wait = if held_since.elapsed() >= BRANCH_PATIENCE {
-                    BRANCH_RETRY
-                } else {
-                    (wait * 2).min(BRANCH_PATIENCE)
-                };
-                log.write(&format!(
-                    "the branch to the relay at {} is gone after {} ms, and this session still \
-                     wants one: another in {} ms",
-                    branch.address(),
-                    held_since.elapsed().as_millis(),
-                    wait.as_millis()
-                ));
-            }
-            None => wait = (wait * 2).min(BRANCH_PATIENCE),
-        }
-        tokio::time::sleep(wait).await;
-    }
-}
-
-/// Waits until the junction no longer holds the card for this session.
-async fn no_longer_expected(held: &Holding) {
-    while held.junction.still_expects(held.card, &held.session) {
-        tokio::time::sleep(BRANCH_RETRY).await;
-    }
-}
-
-/// Opens one branch, racing every address the relay's name leads to.
-///
-/// A name leads to as many addresses as the relay published, and the
-/// first of them is not always one this computer can take: a machine
-/// whose IPv6 is configured and broken is handed the IPv6 address of
-/// every name it resolves, and reaches nothing behind it. So they are
-/// all tried at once and the first branch open wins, the others being
-/// dropped where they stand. Taking them in turn would cost the whole
-/// patience of the transport for every address that leads nowhere, and
-/// that wait falls on the very sessions the relay exists for.
-async fn open_a_branch(held: &Holding, log: &Log, opened: u32) -> Option<Branch> {
-    let Holding {
-        relay,
-        identity,
-        card,
-        sending,
-        media,
-        marking,
-        ..
-    } = held;
-    let Ok(leads) = tokio::net::lookup_host(&relay.address).await else {
-        log.write(&format!(
-            "no relay: {} is not an address this computer can resolve",
-            relay.address
-        ));
-        return None;
-    };
-    let started = std::time::Instant::now();
-    let mut trying = tokio::task::JoinSet::new();
-    for address in leads {
-        let wanted = Wanted {
-            address,
-            fingerprint: relay.fingerprint,
-            pass: relay.pass.to_bytes(),
-        };
-        let identity = identity.clone();
-        let media = media.clone();
-        let sending = *sending;
-        let marking = *marking;
-        trying.spawn(async move {
-            (
-                address,
-                Branch::open(&wanted, &identity, sending, media, marking).await,
-            )
-        });
-    }
-    if trying.is_empty() {
-        log.write(&format!("no relay: {} leads nowhere", relay.address));
-        return None;
-    }
-    while let Some(tried) = trying.join_next().await {
-        let Ok((address, opening)) = tried else {
-            continue;
-        };
-        match opening {
-            Ok(branch) => {
-                log.write(&format!(
-                    "card {card}: the relay at {address} took the pass after {} ms, {} ms to it",
-                    started.elapsed().as_millis(),
-                    branch.round_trip().as_millis()
-                ));
-                return Some(branch);
-            }
-            // The pass a session was handed lives five minutes, and a
-            // branch reopened after that is refused however healthy the
-            // relay is: that is what this line will say, and there is
-            // nothing here that can ask for another one.
-            Err(e) => log.write(&format!(
-                "no relay branch through {address}{}: {e}",
-                if opened > 0 { ", reopening" } else { "" }
-            )),
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1215,6 +1030,7 @@ mod tests {
     use zyr_broker::rest::Registration;
     use zyr_control::Attach;
     use zyr_server::config::Config;
+    use zyr_transport::Marking;
     use zyr_transport::identity::public_key_fingerprint;
 
     /// Past this, something that should have happened has not.

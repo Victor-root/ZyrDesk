@@ -37,9 +37,10 @@ use zyr_proto::net::EVERY_INTERFACE;
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
-use zyr_transport::junction::{Aloud, Say};
+use zyr_transport::relay::{Holding, hold_a_branch};
 use zyr_transport::{
     Connection, Identity, Junction, Media, MediaProfile, Road, Sending, TunnelEndpoint,
+    first_to_answer,
 };
 use zyr_tunnel::{Presence, ServiceEnd, Tunnel, aside, nudge, service_channel};
 #[cfg(windows)]
@@ -550,18 +551,12 @@ impl Ways {
         // A junction of its own, on a socket of its own: the addresses
         // the far computer will see this one at belong to that socket,
         // and no other will carry the tunnel.
-        let say: Say = Arc::new({
-            let log = self.log.clone();
-            move |aloud, line: &str| match aloud {
-                Aloud::Says => log.write(line),
-                Aloud::Hunts => log.debug(|| line.to_string()),
-            }
-        });
+        let say = said::into_the_journal(&self.log);
         let marking = self.remembered.wire().marking;
         let junction = Junction::bind(
             SocketAddr::new(EVERY_INTERFACE, 0),
             identity.clone(),
-            say,
+            say.clone(),
             marking,
         )
         .map_err(not_prepared)?;
@@ -605,9 +600,11 @@ impl Ways {
         // below does not wait for it: whichever road answers first
         // carries the session.
         let relaying = relay.map(|relay| {
-            Aborting(tokio::spawn(account::hold_a_relay_branch(
-                account::Holding {
-                    relay,
+            Aborting(tokio::spawn(hold_a_branch(
+                Holding {
+                    relay: relay.address,
+                    fingerprint: relay.fingerprint,
+                    pass: relay.pass.to_bytes(),
                     identity: identity.clone(),
                     junction: junction.clone(),
                     card,
@@ -618,7 +615,7 @@ impl Ways {
                     media: carried.clone(),
                     marking,
                 },
-                self.log.clone(),
+                say,
             )))
         });
 
@@ -1272,42 +1269,28 @@ async fn tell_the_player(
 /// first, dropping the rest.
 ///
 /// A computer on the same desk often has several addresses, and they are
-/// not worth the same at all: one is the cable between the two machines,
-/// another belongs to a virtual adapter or a VPN that wraps the traffic
-/// up and sends it somewhere far away before bringing it back. Sixty
-/// milliseconds of latency between two computers on one desk is what the
-/// second kind costs, and no session survives that pleasantly.
-///
-/// Nothing here can tell them apart by looking: an address is four
-/// numbers, and which of them leads through a tunnel is not written
-/// anywhere. So they are all tried at once and the fastest to answer
-/// wins, which is the same answer arrived at by measuring instead of
-/// guessing. The losers are dropped the moment there is a winner.
+/// not worth the same at all: sixty milliseconds of latency between two
+/// computers on one desk is what a detour through a virtual adapter or a
+/// VPN costs, and no session survives that pleasantly.
 async fn race(
     endpoint: &TunnelEndpoint,
     candidates: &[SocketAddr],
 ) -> Result<(Connection, u128, SocketAddr), String> {
     let started = Instant::now();
-    let mut running = tokio::task::JoinSet::new();
-    for address in candidates {
-        let towards = endpoint.clone();
-        let address = *address;
-        running.spawn(async move { (address, towards.connect(address).await) });
-    }
-
     let mut refused = Vec::new();
-    while let Some(finished) = running.join_next().await {
-        let Ok((address, outcome)) = finished else {
-            continue;
-        };
-        match outcome {
-            Ok(connection) => {
-                return Ok((connection, started.elapsed().as_millis(), address));
-            }
-            Err(e) => refused.push(format!("{address}: {e}")),
-        }
+    let won = first_to_answer(
+        candidates.iter().copied(),
+        |address| {
+            let towards = endpoint.clone();
+            async move { towards.connect(address).await }
+        },
+        |address, e| refused.push(format!("{address}: {e}")),
+    )
+    .await;
+    match won {
+        Some((address, connection)) => Ok((connection, started.elapsed().as_millis(), address)),
+        None => Err(refused.join("; ")),
     }
-    Err(refused.join("; "))
 }
 
 /// Where the tunnel has to knock to reach a computer named by its

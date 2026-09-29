@@ -25,7 +25,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::{Context, Poll};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use quinn::udp::{RecvMeta, Transmit};
 use quinn::{AsyncUdpSocket, UdpPoller};
@@ -34,9 +34,10 @@ use zyr_proto::fingerprint::Fingerprint;
 use crate::congestion::{Media, Sending};
 use crate::endpoint::{Bytes, Connection, EndpointError, GUARANTEED_MTU, TunnelEndpoint};
 use crate::identity::Identity;
-use crate::junction::bind_socket;
+use crate::junction::{Aloud, Junction, Say, bind_socket};
 use crate::marking::Marking;
 use crate::probe;
+use crate::race::first_to_answer;
 use crate::sifting;
 
 /// How long a device gets to present its pass once it is connected.
@@ -48,6 +49,26 @@ const LONGEST_WORD: usize = 4096;
 
 /// The relay's answer: the pass is taken, and packets may flow.
 const TAKEN: u8 = 1;
+
+/// Pause before opening a branch of relay again.
+///
+/// A relay being restarted is back in a second or two, and a session
+/// wants its fallback back the moment it is there. Short enough for
+/// that, long enough that a relay that has gone for good is not asked
+/// hundreds of times a minute for the length of a session.
+const BRANCH_RETRY: Duration = Duration::from_secs(2);
+
+/// Longest that pause grows to, for a branch that will not hold.
+///
+/// A branch that dies the instant it opens will not hold because it was
+/// asked again at once: whatever killed it is still there. On the fourth
+/// of September a computer whose packets left by two public addresses in
+/// turn could not keep one for a whole second, and the guardian reopened
+/// it thirty times in two: thirty connections at the relay for one
+/// session, on a relay that carries a fixed number of them. Each attempt
+/// that dies young therefore waits twice as long as the one before, up
+/// to this, and a branch that held goes back to the short pause.
+const BRANCH_PATIENCE: Duration = Duration::from_secs(30);
 
 /// Why a branch towards a relay did not open.
 #[derive(Debug)]
@@ -284,6 +305,174 @@ impl Branch {
     pub async fn broken(&self) {
         self.inner.connection.closed().await;
     }
+}
+
+/// What one session needs to keep a branch of relay open.
+pub struct Holding {
+    /// The relay's name, as the server gave it.
+    pub relay: String,
+    /// The fingerprint of the certificate it presents, from the server.
+    pub fingerprint: Fingerprint,
+    /// The pass, exactly as the server sealed it.
+    pub pass: Vec<u8>,
+    pub identity: Arc<Identity>,
+    pub junction: Junction,
+    /// The card the far computer is expected behind, and the session it
+    /// is held for: together they say when this may stop.
+    pub card: SocketAddr,
+    pub session: String,
+    /// What this computer sends, which is what the branch's own queue is
+    /// sized on.
+    pub sending: Sending,
+    pub media: Media,
+    /// Whether the branch's packets leave with their congestion mark.
+    pub marking: Marking,
+}
+
+/// Keeps a branch of relay open towards that card, and hands each one
+/// to the junction as one more road.
+///
+/// Meant to be spawned and never waited on: the session leaves at once,
+/// by whichever road answers first. In the ordinary case a direct road
+/// is validated before the first branch is even connected, and the relay
+/// carries nothing at all; where no direct road exists, this is the
+/// session.
+///
+/// Held for as long as the session wants it, and not merely opened once.
+/// A relay that restarts, a server that is updated, a box that drops its
+/// translation: all of them end a branch under a session still running,
+/// and what was written down as « the relay is kept warm all session, so
+/// a direct road that dies comes back to it » was true only until the
+/// first of those. It ends when the junction no longer holds the card
+/// for this session, which is what the far side of a finished session
+/// looks like from here.
+///
+/// One limit is known and not answered here: the pass a session was
+/// handed lives five minutes, so a branch reopened long after that is
+/// refused however healthy the relay is. The journal says so when it
+/// happens. Asking the server for another pass mid-session is a word
+/// this dialect does not have.
+pub async fn hold_a_branch(held: Holding, say: Say) {
+    let mut opened = 0u32;
+    let mut wait = BRANCH_RETRY;
+    while held.junction.still_expects(held.card, &held.session) {
+        match open_a_branch(&held, &say, opened).await {
+            Some(branch) => {
+                opened += 1;
+                let held_since = Instant::now();
+                held.junction.relay_through(held.card, branch.clone());
+                // Held rather than read: reading it is the junction's
+                // work, and two readers of one connection would take
+                // each other's packets. And let go of when the session
+                // is: the junction gives its own copy back the moment it
+                // stops expecting the card, and this one would otherwise
+                // keep the connection, and the relay's place with it, for
+                // as long as the service runs. A relay carries a fixed
+                // number of sessions, and on the fourth of September it
+                // was turning everybody away at the tenth, every one of
+                // them a session long over.
+                tokio::select! {
+                    () = branch.broken() => {}
+                    () = no_longer_expected(&held) => return,
+                }
+                // One that held is a road that works and was cut; one
+                // that died young is a road that cannot carry a branch
+                // yet, and asking it again at once is what turned two
+                // seconds into thirty connections.
+                wait = if held_since.elapsed() >= BRANCH_PATIENCE {
+                    BRANCH_RETRY
+                } else {
+                    (wait * 2).min(BRANCH_PATIENCE)
+                };
+                say(
+                    Aloud::Says,
+                    &format!(
+                        "the branch to the relay at {} is gone after {} ms, and this session \
+                         still wants one: another in {} ms",
+                        branch.address(),
+                        held_since.elapsed().as_millis(),
+                        wait.as_millis()
+                    ),
+                );
+            }
+            None => wait = (wait * 2).min(BRANCH_PATIENCE),
+        }
+        tokio::time::sleep(wait).await;
+    }
+}
+
+/// Waits until the junction no longer holds the card for this session.
+async fn no_longer_expected(held: &Holding) {
+    while held.junction.still_expects(held.card, &held.session) {
+        tokio::time::sleep(BRANCH_RETRY).await;
+    }
+}
+
+/// Opens one branch, racing every address the relay's name leads to.
+///
+/// A name leads to as many addresses as the relay published, and the
+/// first of them is not always one this computer can take: a machine
+/// whose IPv6 is configured and broken is handed the IPv6 address of
+/// every name it resolves, and reaches nothing behind it. So they are
+/// all tried at once and the first branch open wins.
+async fn open_a_branch(held: &Holding, say: &Say, opened: u32) -> Option<Branch> {
+    let Ok(leads) = tokio::net::lookup_host(&held.relay).await else {
+        say(
+            Aloud::Says,
+            &format!(
+                "no relay: {} is not an address this computer can resolve",
+                held.relay
+            ),
+        );
+        return None;
+    };
+    let leads: Vec<SocketAddr> = leads.collect();
+    if leads.is_empty() {
+        say(
+            Aloud::Says,
+            &format!("no relay: {} leads nowhere", held.relay),
+        );
+        return None;
+    }
+    let started = Instant::now();
+    let (address, branch) = first_to_answer(
+        leads,
+        |address| {
+            let wanted = Wanted {
+                address,
+                fingerprint: held.fingerprint,
+                pass: held.pass.clone(),
+            };
+            let identity = held.identity.clone();
+            let media = held.media.clone();
+            let (sending, marking) = (held.sending, held.marking);
+            async move { Branch::open(&wanted, &identity, sending, media, marking).await }
+        },
+        // The pass a session was handed lives five minutes, and a branch
+        // reopened after that is refused however healthy the relay is:
+        // that is what this line will say, and there is nothing here that
+        // can ask for another one.
+        |address, e| {
+            say(
+                Aloud::Says,
+                &format!(
+                    "no relay branch through {address}{}: {e}",
+                    if opened > 0 { ", reopening" } else { "" }
+                ),
+            );
+        },
+    )
+    .await?;
+    say(
+        Aloud::Says,
+        &format!(
+            "card {}: the relay at {address} took the pass after {} ms, {} ms to it",
+            held.card,
+            started.elapsed().as_millis(),
+            branch.round_trip().as_millis()
+        ),
+    );
+    Some(branch)
 }
 
 /// A device at a relay's door, with its pass read and its answer owed.
