@@ -180,26 +180,34 @@ mod mechanism {
     pub type Heard = Conversation<UnixStream>;
     pub type Spoken = Conversation<UnixStream>;
 
-    /// Where a channel of that name lives, among the product's files.
+    /// Where a channel of that name lives: the temporary folder, where
+    /// the tests that run on this system leave nothing in the repository.
     fn address(channel: &str) -> PathBuf {
-        zyr_proto::paths::data_dir().join(format!("{channel}.sock"))
+        std::env::temp_dir().join(format!("{channel}.sock"))
     }
 
     pub struct Door {
         listener: UnixListener,
+        path: PathBuf,
+    }
+
+    impl Drop for Door {
+        fn drop(&mut self) {
+            // A socket file outlives its listener: the door that closes
+            // takes its name with it.
+            let _ = std::fs::remove_file(&self.path);
+        }
     }
 
     impl Door {
         pub fn open(channel: &str) -> io::Result<Self> {
             let path = address(channel);
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
             // A socket file outlives the program that made it: left
             // behind by a crash, it would refuse every later start.
             let _ = std::fs::remove_file(&path);
             Ok(Self {
                 listener: UnixListener::bind(&path)?,
+                path,
             })
         }
 
