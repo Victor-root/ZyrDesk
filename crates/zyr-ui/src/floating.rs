@@ -975,8 +975,8 @@ pub async fn ask(app: &App, act: Act) -> Result<(), Fact> {
         }
         Act::Stats => show_the_figures(app),
         Act::MouseMode => change_the_mouse(app),
-        Act::SecureAttention => press_ctrl_alt_del_over_there().await,
-        Act::LockScreen => lock_over_there().await,
+        Act::SecureAttention => crate::session::press_ctrl_alt_del_over_there().await,
+        Act::LockScreen => crate::session::lock_over_there().await,
         Act::Sound => hush_the_session(),
         Act::SystemKeys => change_the_keyboard().await,
         Act::Clipboard => share_the_clipboard(app).await,
@@ -998,68 +998,6 @@ fn the_menu_is_open() -> bool {
     {
         false
     }
-}
-
-/// Presses Ctrl+Alt+Del on the far computer.
-///
-/// It goes nowhere near the picture, and could not. Windows keeps that
-/// combination for itself at both ends of a session: this computer never
-/// sees it, because its own Windows takes it before any program does, and
-/// the far computer cannot be made to feel it by an engine, because the
-/// way an engine types is exactly the way Windows refuses for this one.
-///
-/// So it travels on the product's own channel, from this service to the
-/// one over there, which presses it on its own machine. That is why this
-/// is handled here rather than among the keystrokes: it has no letter and
-/// no place on a keyboard, and never will.
-///
-async fn press_ctrl_alt_del_over_there() -> Result<(), Fact> {
-    let way = the_way_of_this_session().await?;
-    crate::service::ask(&zyr_control::Request::SecureAttention { way })
-        .await
-        .map(|_| ())
-}
-
-/// Puts the far computer's lock screen up.
-///
-/// What stands in for Windows+L, and it exists because that combination
-/// itself cannot be made to travel. Windows handles it where no program
-/// can see it, on purpose: it is one of the two gestures that hand a
-/// machine back to whoever is sitting at it. Pressed here it locks this
-/// computer whatever a session is doing, and there is no way to type it
-/// over there either.
-///
-/// So it goes round the same way Ctrl+Alt+Del does, and for the same
-/// reason: some things a session needs have no letter, no place on a
-/// keyboard, and never will.
-async fn lock_over_there() -> Result<(), Fact> {
-    let way = the_way_of_this_session().await?;
-    // Timed from here because here is where the picture is watched. The
-    // far computer says what its own half cost, and the two together say
-    // whether a picture that stands still for a second is standing still
-    // on the road or on the machine.
-    let asked_at = std::time::Instant::now();
-    let answer = crate::service::ask(&zyr_control::Request::LockScreen { way }).await;
-    note(&format!(
-        "far computer's lock screen: {} in {} ms",
-        if answer.is_ok() { "done" } else { "refused" },
-        asked_at.elapsed().as_millis()
-    ));
-    answer.map(|_| ())
-}
-
-/// The way this window's own session runs on.
-///
-/// Asked of the service, which knows every session of this computer: the
-/// one this program holds, and failing that the first.
-async fn the_way_of_this_session() -> Result<zyr_control::WayId, Fact> {
-    let sessions = crate::session::sessions().await;
-    let ours = sessions
-        .iter()
-        .find(|session| session.process == std::process::id())
-        .or_else(|| sessions.first())
-        .ok_or_else(none_under_way)?;
-    Ok(zyr_control::WayId(ours.way))
 }
 
 /// Ends the session: the player says goodbye to the far computer, and

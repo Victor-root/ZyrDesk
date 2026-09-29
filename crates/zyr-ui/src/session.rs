@@ -12,8 +12,9 @@
 //! into a window of ours, and that thread follows what it says until the
 //! session ends.
 //!
-//! Asking the service what it holds is what lets the rest of the window
-//! name the session, and reach the far computer through its way.
+//! Asking the service what it holds is what lets the home screen name the
+//! sessions of this computer. The session this window plays keeps its
+//! own way, which everything asked of the far computer goes through.
 
 // Changing the far computer's screen and finding out which way a
 // session travels are only asked for from the floating button's menu,
@@ -26,7 +27,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::time::{Duration, Instant};
 
 use crate::app::App;
-use zyr_control::{Answer, Request};
+use zyr_control::{Answer, Request, WayId};
 use zyr_player::{Ending, Event, Measures, Player, Surface};
 use zyr_proto::fact::Fact;
 use zyr_proto::log::Log;
@@ -54,23 +55,12 @@ pub struct Ongoing {
     pub fingerprint: String,
     /// How long the picture has been up, in seconds.
     pub since: u64,
-    /// The program playing it.
-    pub process: u32,
-    /// The link its player is connected to.
-    pub at: String,
     /// The real address the packets go to right now, whether it is the
     /// server's relay, and how long that road takes to come back, in
     /// milliseconds.
     pub via: String,
     pub relayed: bool,
     pub round_trip_ms: u64,
-    /// The way the service holds towards that computer.
-    ///
-    /// Carried because some things a session asks travel on the
-    /// product's own channel rather than through the player, and that
-    /// channel is reached by naming the way: pressing Ctrl+Alt+Del
-    /// over there.
-    pub way: u64,
 }
 
 /// The sessions this computer is holding.
@@ -84,12 +74,9 @@ pub async fn sessions() -> Vec<Ongoing> {
             towards: session.towards,
             fingerprint: session.peer.to_string(),
             since: session.since.as_secs(),
-            process: session.process,
-            at: session.at,
             via: session.via,
             relayed: session.relayed,
             round_trip_ms: session.round_trip_ms,
-            way: session.way.0,
         }),
         _ => None,
     })
@@ -97,19 +84,17 @@ pub async fn sessions() -> Vec<Ongoing> {
     .unwrap_or_default()
 }
 
-/// The way the session in progress is held on, or nothing.
+/// The way the session this window plays travels on, or nothing.
 ///
-/// Asked of the service rather than remembered here: the way belongs to
-/// the service, which lists it once the session's first picture is up.
-///
-/// The first, when there are several. Only one session at a time can be
-/// opened from this window, so there is only ever one; a second would be
-/// somebody else's, and its far computer is not the one on screen here.
-pub async fn the_way_in_use() -> Option<zyr_control::WayId> {
-    sessions()
-        .await
-        .first()
-        .map(|session| zyr_control::WayId(session.way))
+/// Kept from its opening rather than asked of the service: this window
+/// opened it, and the list of every session this computer holds would
+/// only have to be searched for the one already known here.
+pub fn the_way() -> Option<WayId> {
+    PLAYING
+        .lock()
+        .expect("played session")
+        .as_ref()
+        .map(|playing| playing.way)
 }
 
 /// Set from the moment a session is asked for to the moment it is over.
@@ -140,6 +125,8 @@ enum Heard {
 /// The session this window plays.
 struct Playing {
     player: Player,
+    /// The way it travels on.
+    way: WayId,
     /// What the player was last asked for, in the session's own terms:
     /// every change made while it plays starts from here, and the player
     /// is told the whole of it each time.
@@ -215,6 +202,53 @@ pub fn what_the_far_computer_encodes() -> Option<zyr_player::CodecSet> {
     player().and_then(|player| player.encodable())
 }
 
+/// Presses Ctrl+Alt+Del on the far computer.
+///
+/// It goes nowhere near the picture, and could not. Windows keeps that
+/// combination for itself at both ends of a session: this computer never
+/// sees it, because its own Windows takes it before any program does, and
+/// the far computer cannot be made to feel it by an engine, because the
+/// way an engine types is exactly the way Windows refuses for this one.
+///
+/// So it travels on the product's own channel, from this service to the
+/// one over there, which presses it on its own machine. That is why this
+/// is handled here rather than among the keystrokes: it has no letter and
+/// no place on a keyboard, and never will.
+pub async fn press_ctrl_alt_del_over_there() -> Result<(), Fact> {
+    let way = the_way().ok_or_else(none_under_way)?;
+    service::ask(&Request::SecureAttention { way })
+        .await
+        .map(|_| ())
+}
+
+/// Puts the far computer's lock screen up.
+///
+/// What stands in for Windows+L, and it exists because that combination
+/// itself cannot be made to travel. Windows handles it where no program
+/// can see it, on purpose: it is one of the two gestures that hand a
+/// machine back to whoever is sitting at it. Pressed here it locks this
+/// computer whatever a session is doing, and there is no way to type it
+/// over there either.
+///
+/// So it goes round the same way Ctrl+Alt+Del does, and for the same
+/// reason: some things a session needs have no letter, no place on a
+/// keyboard, and never will.
+pub async fn lock_over_there() -> Result<(), Fact> {
+    let way = the_way().ok_or_else(none_under_way)?;
+    // Timed from here because here is where the picture is watched. The
+    // far computer says what its own half cost, and the two together say
+    // whether a picture that stands still for a second is standing still
+    // on the road or on the machine.
+    let asked_at = Instant::now();
+    let answer = service::ask(&Request::LockScreen { way }).await;
+    note(&format!(
+        "far computer's lock screen: {} in {} ms",
+        if answer.is_ok() { "done" } else { "refused" },
+        asked_at.elapsed().as_millis()
+    ));
+    answer.map(|_| ())
+}
+
 /// Which of the far computer's screens this session is served from.
 ///
 /// Empty is that computer's main screen, which is what every session
@@ -277,7 +311,7 @@ pub fn ask_for_the_far_screen(id: Option<String>) {
 /// The picture is on the other screen within the second, and the session
 /// never stops.
 pub async fn watch_the_far_screen(id: Option<String>) -> Result<(), Fact> {
-    let way = the_way_in_use().await.ok_or_else(none_under_way)?;
+    let way = the_way().ok_or_else(none_under_way)?;
     match crate::service::ask(&Request::FilmFarScreen {
         way,
         id: id.clone(),
@@ -403,7 +437,7 @@ pub async fn take_where_it_stands(
 /// first, then the player. Our own window takes the new shape when the
 /// player says the new stream has it.
 async fn become_that_size(app: &App, preferred: Preferred) -> Result<(), Fact> {
-    let Some(way) = the_way_in_use().await else {
+    let Some(way) = the_way() else {
         return Ok(());
     };
     let (guessed, magnification) = what_to_ask_for(app, preferred);
@@ -640,6 +674,7 @@ impl Showing {
         crate::video::play_a_game(app, !settings.absolute_mouse);
         *PLAYING.lock().expect("played session") = Some(Playing {
             player: player.clone(),
+            way: way.way(),
             settings,
             steady,
             drive: said,

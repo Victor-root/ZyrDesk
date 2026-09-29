@@ -106,7 +106,6 @@ pub fn follow(app: &App) {
 /// The loop itself, and what it saw go by.
 async fn keep_it_in_step(app: &App) -> Seen {
     let mut seen = Seen::default();
-    let mut way = None;
     let mut talking = None;
     let mut refused = 0;
     loop {
@@ -115,19 +114,10 @@ async fn keep_it_in_step(app: &App) -> Seen {
             seen.why = "the session is over";
             return seen;
         }
-        // The way is looked for at every turn for as long as it is
-        // missing, and not once at the start. The service only lists a
-        // session once its first picture is up, and this loop can start
-        // just before.
-        let asking = match way {
-            Some(known) => known,
-            None => match crate::session::the_way_in_use().await {
-                Some(found) => {
-                    way = Some(found);
-                    found
-                }
-                None => continue,
-            },
+        // Read again at every turn: a picture that came back travels on
+        // a way of its own.
+        let Some(way) = crate::session::the_way() else {
+            continue;
         };
         // In game mode, the game draws its own pointer and the one here
         // is hidden: asking for a shape nobody will show would be twenty
@@ -136,19 +126,16 @@ async fn keep_it_in_step(app: &App) -> Seen {
         if crate::video::in_a_game() {
             continue;
         }
-        match asked(&mut talking, asking).await {
+        match asked(&mut talking, way).await {
             Ok(shape) => {
                 refused = 0;
                 seen.saw(shape);
                 keep(shape);
             }
             Err(reason) => {
-                // The connection is thrown away, and the way forgotten:
-                // a refusal often comes from a service that has
-                // restarted or a picture that came back, and the way is
-                // then a different one.
+                // The connection is thrown away: a refusal often comes
+                // from a service that has restarted.
                 talking = None;
-                way = None;
                 refused += 1;
                 seen.first_refusal.get_or_insert(reason);
                 if refused >= REFUSALS_BEFORE_GIVING_UP {

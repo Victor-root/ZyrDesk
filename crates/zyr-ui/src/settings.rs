@@ -288,7 +288,7 @@ fn beyond(can: zyr_player::CodecSet) -> Vec<String> {
 /// computer with one screen would otherwise carry a menu line that can
 /// only be set to what it already is.
 pub async fn the_far_computers_screens() -> Vec<OfferedScreen> {
-    let Some(way) = crate::session::the_way_in_use().await else {
+    let Some(way) = crate::session::the_way() else {
         return Vec::new();
     };
     let Ok(Answer::Screens(listed)) = service::ask(&Request::FarScreens { way }).await else {

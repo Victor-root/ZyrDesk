@@ -493,6 +493,12 @@ impl Driving {
         ))
     }
 
+    /// The way, as the service names it: what everything asked of the far
+    /// computer during the session is asked through.
+    pub fn way(&self) -> WayId {
+        self.way
+    }
+
     /// Ties the way to this process, once its player plays.
     ///
     /// Until then the way is an attempt under way, which the service
