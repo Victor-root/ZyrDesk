@@ -2,6 +2,8 @@
 
 Le plan de la fenêtre principale, refaite depuis une page vierge quand Victor lancera le chantier. La direction visuelle vient d'une maquette choisie par Victor : le résultat doit en être très proche, sans la recopier au pixel.
 
+**À lire avec la maquette.** Au lancement du chantier, Victor redonnera la maquette (une capture d'écran) dans la conversation : c'est elle qui fait foi pour le visuel (placement, proportions, formes, ambiance), et ce document pour le contenu et ce qui marche ou non. Travailler en l'ayant sous les yeux, et la redemander si elle manque.
+
 Règle de ce plan : **tout ce qui est prévu se voit dès le premier jour.** Ce qui ne marche pas encore est dessiné à sa place, grisé, avec une bulle « Bientôt » au survol. L'accueil sert ainsi de carte de ce qui reste à faire.
 
 ## 1. Principes
