@@ -41,6 +41,15 @@ pub mod stretched;
 #[cfg(windows)]
 mod vouching;
 
+/// Nothing outside Windows draws at a magnification of its own, and
+/// saying so is what lets the desk's logic run, and be tried, anywhere.
+#[cfg(not(windows))]
+mod magnify {
+    pub fn magnify(screen: &str, percent: u32) -> String {
+        format!("this computer has no {screen} to magnify to {percent} %")
+    }
+}
+
 use std::fmt;
 use std::path::Path;
 

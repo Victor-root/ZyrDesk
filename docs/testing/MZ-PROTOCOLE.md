@@ -31,6 +31,7 @@ Vocabulaire : **PC hôte** = celui qu'on contrôle. **PC client** = celui depuis
 | **Z9** | L'écran de verrouillage et l'invite administrateur de l'hôte, vus et utilisés à distance |
 | **Z10** | La fin de la session |
 | **Z11** | Le réseau coupé 10 secondes, et la reprise |
+| **Z12** | Un ordinateur dont aucun écran n'est allumé : l'écran virtuel se lève, quelle que soit la résolution choisie |
 
 ### Confirmé
 
@@ -203,6 +204,22 @@ Pendant une session, **débrancher le câble réseau** du PC client, compter 10 
 - Aucune touche ne reste enfoncée sur l'hôte.
 
 **Ce qu'il ne faut pas voir.** La session qui se termine avec un message d'erreur, ou une image qui ne repart jamais.
+
+## Z12. Un ordinateur dont aucun écran n'est allumé
+
+Débrancher l'écran de l'hôte (ou l'éteindre au point que Windows le croie parti), puis ouvrir une session depuis le client : une première fois avec **Résolution : Client**, une seconde fois avec **Résolution : Hôte** ([D244](../DECISIONS.md)).
+
+**Attendu.** Dans les deux cas l'image arrive, et c'est le bureau de l'hôte : à la taille de l'écran du client en résolution Client, en 1920x1080 en résolution Hôte.
+
+**Dans le journal de l'hôte** (tri : `gateway screen desk engine`), dans cet ordre :
+
+```
+none of this computer's own screens is switched on, so the one it grew for itself is woken for this session at …
+virtual screen on the desktop after … ms
+filming VDD by MTT (…)
+```
+
+**Ce qu'il ne faut pas voir.** Une image noire. Ou bien `this computer's own screen serves this session: its main screen shows …` alors que l'écran était bien débranché : c'est que la note des écrans est restée périmée. Ou `capture trouble` : le moteur n'a trouvé aucun écran à filmer.
 
 ---
 

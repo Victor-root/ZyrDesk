@@ -51,6 +51,7 @@ use zyr_win32::with_its_code;
 use crate::engine::{Engine, Film};
 use crate::machine::{Door, Machine};
 use crate::said::{self, Said};
+use crate::screen::Call;
 
 /// What this module's lines are filed under.
 const TAG: &str = "gateway";
@@ -218,10 +219,10 @@ impl Answers for Attending {
     /// The screen this computer grew for itself is the exception on both
     /// counts. It is woken from here rather than from the session on
     /// screen, and this session's engine is told to film it: on a
-    /// computer with no screen at all, because there is nothing else to
-    /// film; and on one whose own screens draw nothing larger than
-    /// themselves, whose desktop moves onto it for the length of the
-    /// session.
+    /// computer with no screen at all, whatever the session asks, because
+    /// there is nothing else to film; and on one whose own screens draw
+    /// nothing larger than themselves, whose desktop moves onto it for the
+    /// length of the session.
     ///
     /// A refusal is written down rather than swallowed, and the session
     /// goes on anyway at the other end: a computer that will not take the
@@ -306,28 +307,29 @@ impl Answers for Attending {
         // Two computers need it, and they need different things of it. One
         // has nothing plugged in at all, so the grown screen is the only
         // thing there is to film and Windows puts the desktop on it
-        // unasked. The other has screens that draw nothing larger than
-        // themselves, so it is woken at the size asked for and the desktop
-        // is moved onto it, which is the errand below.
-        let showing = zyr_screen::desk::showing_now(&paths::virtual_screen_dir());
-        let grown = match wanted {
-            Some(screen) if showing.is_none() => {
-                self.log.write(
-                    "no screen is plugged into this computer, so the one it grew for itself is \
-                     woken for this session",
-                );
+        // unasked, whatever the session asks: nobody sits there to have
+        // anything left as it was. The other has screens that draw nothing
+        // larger than themselves, so it is woken at the size asked for and
+        // the desktop is moved onto it, which is the errand below.
+        let own = crate::screen::how_the_screens_stand(&paths::virtual_screen_dir());
+        let grown = match crate::screen::what_the_session_calls_for(wanted, own) {
+            Call::GrownAlone(screen) => {
+                self.log.write(&format!(
+                    "{own}, so the one it grew for itself is woken for this session at {}x{}",
+                    screen.wide, screen.high
+                ));
                 self.wake_the_one_it_grew(screen).map(|()| {
                     self.film_the_grown_screen();
                     (screen.wide, screen.high)
                 })
             }
-            Some(screen)
-                if showing != Some((screen.wide, screen.high))
-                    && zyr_screen::desk::the_main_screen_is_stuck(&paths::virtual_screen_dir()) =>
-            {
-                self.grow_one_for_this_session(screen)
+            Call::GrownInstead(screen) => self.grow_one_for_this_session(screen),
+            Call::OwnScreen => {
+                self.log.write(&format!(
+                    "this computer's own screen serves this session: {own}"
+                ));
+                None
             }
-            _ => None,
         };
         if grown.is_none()
             && let Err(e) = self.engine.no_longer_the_grown_screen()

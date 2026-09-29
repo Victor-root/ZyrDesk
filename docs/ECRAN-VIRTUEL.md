@@ -132,6 +132,18 @@ moteur de le filmer dès qu'il le voit : c'est le seul écran de cette
 machine, il n'y a rien à éteindre et rien à déplacer. Il le rendort
 quand plus personne ne regarde.
 
+« Sans écran » veut dire qu'aucun écran de la machine n'est allumé aux
+yeux de Windows, un écran débranché par exemple. Le service le sait par
+la note que la session de l'écran écrit à l'ouverture de chaque session
+(`showing.txt`), et qu'elle écrit aussi quand elle ne trouve rien
+d'allumé : sans cela, la note de la dernière session qui avait un écran
+continuerait à dire que la machine en a un ([D244](DECISIONS.md)). Et
+c'est vrai quelle que soit la résolution demandée : en « Résolution de
+l'hôte », qui ne demande aucune taille, l'écran naît en 1920x1080, la
+taille commune, mais seulement si la note dit que rien n'est allumé. Une
+note absente dit seulement que personne n'a encore regardé, et ne fait
+rien pousser sous quelqu'un qui pourrait avoir un écran.
+
 **Pendant une session, sur une machine dont l'écran refuse la taille.**
 Trois pas, chacun défait si le suivant ne passe pas : le service réveille
 l'écran poussé à la taille demandée, la session qui tient l'écran y

@@ -3879,6 +3879,29 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Rien dans le produit. `Path::Degraded` gagne un champ, que le banc de mesure laisse vide. Sur GitHub, les vérifications ne doivent plus rougir sur un envoi qui n'a rien cassé.
 
+## D244. Un ordinateur sans écran allumé n'avait rien à filmer : la note périmée, et le mode qui n'y pensait pas (2026-09-29, pendant MZ)
+
+> Reprend [D91](#d91-on-ne-touche-pas-aux-écrans-de-quelquun-on-lui-rend-son-bureau-2026-08-29-pendant-m4) : l'écran virtuel sert à la machine sans écran.
+
+**Le relevé.** Depuis le moteur natif, prendre en main un ordinateur dont aucun écran n'est actif donne un écran noir chez le client, alors qu'avant l'écran virtuel se lançait.
+
+**Ce qui a été fait pour le comprendre, et ce qui n'a pas pu l'être.** Le trajet est relu de bout en bout, du service qui réveille l'écran jusqu'à la capture du moteur, et comparé à celui d'avant le moteur natif. Aucun journal de l'ordinateur en cause n'était sous la main, et rien de cela n'a tourné sur un vrai Windows sans écran : ce qui suit est ce que le code dit, pas ce qu'un journal a montré.
+
+**Deux trous, tous deux dans le service, qui laissent un tel ordinateur sans rien à filmer.**
+
+- *La note qui dit si un écran est allumé n'était jamais remise à jour quand plus aucun ne l'était.* Le service ne voit pas les écrans ([D91](#d91-on-ne-touche-pas-aux-écrans-de-quelquun-on-lui-rend-son-bureau-2026-08-29-pendant-m4)) : la session de l'écran écrit ce que l'ordinateur montre à l'ouverture de chaque session, et il la lit. Mais quand elle ne trouvait aucun écran allumé, elle le disait à son journal et repartait sans rien écrire. La note de la dernière session qui avait un écran restait donc en place, et le service, qui s'y fie, tenait l'ordinateur pour pourvu d'un écran de 1920x1080. Il ne faisait pousser l'écran virtuel que pour une taille que cet écran avait déjà refusée de dessiner ; pour tout autre cas, la session partait sans écran à filmer. La note est maintenant écrite dans ce cas aussi. Un essai le garde, et il échoue sans la correction.
+- *Le mode « Résolution de l'hôte » ne réveillait jamais l'écran virtuel.* Il ne demande aucune taille, et l'écran n'était réveillé que pour une session qui en demandait une. Or « laisser l'écran de l'hôte tel qu'il est » n'a pas de sens quand il n'y en a aucun d'allumé : personne n'est assis devant, et il n'y a rien d'autre à filmer. L'écran pousse maintenant dans ce mode aussi, en 1920x1080, la taille commune. Seulement quand la note dit que rien n'est allumé : une note absente dit qu'aucune session n'a encore regardé, et ne fait rien pousser sous quelqu'un qui pourrait avoir un écran.
+
+**Ce qui est fait aussi.**
+
+- La décision « que faut-il faire des écrans pour cette session » sort de la longue fonction qui la portait : c'est `what_the_session_calls_for`, dans `zyr-service`, une fonction pure que des essais parcourent sur tout système.
+- `hold_the_desk_for`, dans `zyr-screen`, s'exécute désormais sur tout système, sur un bureau qu'on lui donne, pour que ce cas s'essaie ailleurs que sous Windows.
+- Le journal du service dit, à chaque session, ce que l'ordinateur savait de ses écrans et ce qu'il en a fait : `none of this computer's own screens is switched on, so the one it grew for itself is woken for this session at 1920x1080`, ou `this computer's own screen serves this session: its main screen shows 1920x1080`. Une session qui n'aurait pas réveillé l'écran virtuel dit maintenant pourquoi.
+
+**Ce qui se voit.** Rien sur un ordinateur qui a un écran. Sur un ordinateur sans écran allumé, une session ouvre l'écran virtuel quelle que soit la résolution choisie.
+
+**Ce qui n'est pas sûr.** Si l'image reste noire avec cette version, ce n'est pas ce trou-là, ou pas lui seul. Les lignes qui tranchent sont celles de l'ordinateur sans écran, triées sur `gateway screen desk engine` (voir la fin de [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.md)) : la décision ci-dessus, `virtual screen on the desktop after … ms`, `filming … (…)` pour l'écran que le moteur a réellement pris, et `capture trouble` s'il n'en a pas trouvé.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

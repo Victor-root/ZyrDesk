@@ -34,6 +34,9 @@ const BEFORE: &str = "desk-before.txt";
 /// there, this computer has no screens and no sizes, which is exactly
 /// what it used to answer a session that asked what it was showing. So
 /// the session on screen writes it down and the service reads it.
+///
+/// Written at every look, and also when no screen is switched on: that is
+/// how the service learns a computer has none.
 const SHOWING: &str = "showing.txt";
 
 fn before_path(home: &Path) -> PathBuf {
@@ -51,14 +54,35 @@ pub fn noted_before(home: &Path) -> Vec<Seat> {
         .unwrap_or_default()
 }
 
+/// The screens as the session on screen last wrote them down, when it
+/// wrote them at all.
+fn last_written(home: &Path) -> Option<Vec<Seat>> {
+    std::fs::read_to_string(showing_path(home))
+        .ok()
+        .map(|text| arrangement::read(&text))
+}
+
+/// The screen a desk is served from: its main one, if it is switched on.
+fn its_main_screen(desk: &[Seat]) -> Option<&Seat> {
+    desk.iter().find(|seat| seat.main && seat.on)
+}
+
 /// What this computer's main screen is showing, as the session on screen
 /// last wrote it down.
 pub fn showing_now(home: &Path) -> Option<(u32, u32)> {
-    let text = std::fs::read_to_string(showing_path(home)).ok()?;
-    arrangement::read(&text)
-        .into_iter()
-        .find(|seat| seat.main && seat.on)
-        .map(|seat| (seat.wide, seat.high))
+    let desk = last_written(home)?;
+    its_main_screen(&desk).map(|seat| (seat.wide, seat.high))
+}
+
+/// Whether the session on screen last found none of this computer's own
+/// screens switched on.
+///
+/// Not the same question as « showing nothing ». A note that was never
+/// written is a session that never got to look, and says nothing about
+/// what is plugged in; only a note that was written, and lists no screen
+/// that is on, says this computer has none.
+pub fn nothing_is_switched_on(home: &Path) -> bool {
+    last_written(home).is_some_and(|desk| its_main_screen(&desk).is_none())
 }
 
 /// Notes this computer's desk, puts its main screen at the size and
@@ -71,10 +95,18 @@ pub fn showing_now(home: &Path) -> Option<(u32, u32)> {
 /// Nothing here fails a session. A computer that will not take the size
 /// serves the one it has and the picture is stretched at the other end,
 /// which is what every session did before any of this existed.
-#[cfg(windows)]
 pub fn hold_the_desk_for(home: &Path, wanted: Option<(u32, u32, u32)>) -> Vec<String> {
+    hold_this_desk(home, arrangement::as_it_stands(), wanted)
+}
+
+/// [`hold_the_desk_for`] on a desk already read, so that it can be tried
+/// on desks the machine at hand does not have.
+fn hold_this_desk(
+    home: &Path,
+    mut desk: Vec<Seat>,
+    wanted: Option<(u32, u32, u32)>,
+) -> Vec<String> {
     let mut said = Vec::new();
-    let mut desk = arrangement::as_it_stands();
     // Before anything else is done with it, and in that order: what can
     // be read is remembered, then what cannot is filled in from what was
     // remembered before. This is what keeps somebody who chose 150 % on a
@@ -91,7 +123,14 @@ pub fn hold_the_desk_for(home: &Path, wanted: Option<(u32, u32, u32)>) -> Vec<St
         said.extend(remember_what_can_be_read(home, &desk));
     }
     said.extend(fill_in_what_cannot(home, &mut desk));
-    let Some(main) = desk.iter().find(|seat| seat.main && seat.on).cloned() else {
+    let Some(main) = its_main_screen(&desk).cloned() else {
+        // Written all the same, and that is why this branch does more
+        // than say so. What the service reads is the last thing written
+        // here: a note left by a session that found a screen would go on
+        // saying this computer has one for as long as nobody wrote
+        // another, and the service, which trusts it, would never grow the
+        // screen a computer with nothing switched on has to be filmed on.
+        said.extend(note_what_is_showing(home, &desk));
         said.push(
             "no screen of this computer's own is switched on, so there is nothing to put at a \
              size; the session is served what the engine finds"
@@ -159,13 +198,19 @@ pub fn hold_the_desk_for(home: &Path, wanted: Option<(u32, u32, u32)>) -> Vec<St
     // Read again rather than worked out: what was asked for and what
     // Windows did are two different things, and the far end is told the
     // second.
-    let now = arrangement::as_it_stands();
-    if let Err(e) = write_beside(home, SHOWING, &arrangement::written(&now)) {
-        said.push(format!(
-            "what this computer is showing was not written down: {e}"
-        ));
-    }
+    said.extend(note_what_is_showing(home, &arrangement::as_it_stands()));
     said
+}
+
+/// Writes down what this computer's screens are doing, for the service
+/// to read, and says so if it could not.
+fn note_what_is_showing(home: &Path, desk: &[Seat]) -> Vec<String> {
+    match write_beside(home, SHOWING, &arrangement::written(desk)) {
+        Ok(()) => Vec::new(),
+        Err(e) => vec![format!(
+            "what this computer is showing was not written down: {e}"
+        )],
+    }
 }
 
 /// Moves this computer's desktop onto the screen it grew for itself, at
@@ -207,12 +252,7 @@ pub fn take_the_grown_screen_for(home: &Path, wanted: (u32, u32, u32)) -> Vec<St
     // Read again rather than worked out, as everywhere else: the far end
     // is told what this computer ended up showing and never what it was
     // asked for.
-    let now = arrangement::as_it_stands();
-    if let Err(e) = write_beside(home, SHOWING, &arrangement::written(&now)) {
-        said.push(format!(
-            "what this computer is showing was not written down: {e}"
-        ));
-    }
+    said.extend(note_what_is_showing(home, &arrangement::as_it_stands()));
     said
 }
 
@@ -241,17 +281,13 @@ fn stuck_at_its_size(home: &Path, screen: &str) -> bool {
 /// Asked when a session asks for its size: a computer whose main screen
 /// is stuck serves that session from the screen it grows for itself.
 pub fn the_main_screen_is_stuck(home: &Path) -> bool {
-    std::fs::read_to_string(showing_path(home))
-        .map(|text| arrangement::read(&text))
-        .unwrap_or_default()
-        .into_iter()
-        .any(|seat| {
-            seat.main && seat.on && !seat.screen.is_empty() && stuck_at_its_size(home, &seat.screen)
-        })
+    last_written(home).is_some_and(|desk| {
+        its_main_screen(&desk)
+            .is_some_and(|seat| !seat.screen.is_empty() && stuck_at_its_size(home, &seat.screen))
+    })
 }
 
 /// Writes that down, saying so once and never again.
-#[cfg(windows)]
 fn remember_it_is_stuck(home: &Path, main: &Seat) -> Vec<String> {
     if main.screen.is_empty() || stuck_at_its_size(home, &main.screen) {
         return Vec::new();
@@ -306,10 +342,8 @@ pub fn give_the_desk_back(home: &Path) -> Vec<String> {
 /// the only answer left is the one Windows recommends, and somebody who
 /// deliberately chose otherwise gets handed the default instead of their
 /// own desk.
-#[cfg(windows)]
 const KNOWN: &str = "screen-scales.txt";
 
-#[cfg(windows)]
 fn known_path(home: &Path) -> PathBuf {
     home.join(KNOWN)
 }
@@ -320,7 +354,6 @@ fn known_path(home: &Path) -> PathBuf {
 /// A line each, `screen percent`, and a line that will not read is
 /// skipped rather than failing the rest: this is a memory, and half a
 /// memory beats none.
-#[cfg(windows)]
 fn what_was_known(home: &Path) -> Vec<(String, u32)> {
     let Ok(text) = std::fs::read_to_string(known_path(home)) else {
         return Vec::new();
@@ -339,7 +372,6 @@ fn what_was_known(home: &Path) -> Vec<(String, u32)> {
 /// Says nothing at all when nothing changed, which is nearly every time:
 /// this runs at the opening of every session, and a line each would bury
 /// the journal.
-#[cfg(windows)]
 fn remember_what_can_be_read(home: &Path, desk: &[Seat]) -> Vec<String> {
     let mut known = what_was_known(home);
     let mut changed = false;
@@ -383,7 +415,6 @@ fn remember_what_can_be_read(home: &Path, desk: &[Seat]) -> Vec<String> {
 /// it is in that state would carry no magnification for it and put none
 /// back. What it was is not lost, it was simply not asked for at the
 /// right moment, and this is the moment.
-#[cfg(windows)]
 fn fill_in_what_cannot(home: &Path, desk: &mut [Seat]) -> Vec<String> {
     let known = what_was_known(home);
     let mut said = Vec::new();
@@ -405,21 +436,15 @@ fn fill_in_what_cannot(home: &Path, desk: &mut [Seat]) -> Vec<String> {
 
 /// Writes one of this folder's notes whole, making the folder if it is
 /// not there yet: a note caught half written would be read as another.
-#[cfg(windows)]
 fn write_beside(home: &Path, name: &str, text: &str) -> std::io::Result<()> {
     zyr_proto::files::replace(&home.join(name), text)
 }
 
-/// Outside Windows there is no desk to lend, and saying so is the whole
-/// of what can be done about it.
+/// Outside Windows there is no desk to move or put back, and saying so is
+/// the whole of what can be done about it.
 #[cfg(not(windows))]
 fn no_desk_here() -> Vec<String> {
     vec!["this is not Windows: there is no desk here to set or put back".to_string()]
-}
-
-#[cfg(not(windows))]
-pub fn hold_the_desk_for(_home: &Path, _wanted: Option<(u32, u32, u32)>) -> Vec<String> {
-    no_desk_here()
 }
 
 #[cfg(not(windows))]
@@ -430,4 +455,94 @@ pub fn take_the_grown_screen_for(_home: &Path, _wanted: (u32, u32, u32)) -> Vec<
 #[cfg(not(windows))]
 pub fn give_the_desk_back(_home: &Path) -> Vec<String> {
     no_desk_here()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn a_folder(what: &str) -> PathBuf {
+        let folder = std::env::temp_dir().join(format!(
+            "zyr-screen-desk-{}-{what}",
+            zyr_proto::random::alphanumeric_string(8)
+        ));
+        std::fs::create_dir_all(&folder).unwrap();
+        folder
+    }
+
+    fn a_screen(adapter: &str, on: bool, main: bool) -> Seat {
+        Seat {
+            adapter: adapter.to_string(),
+            screen: if on {
+                format!(r"MONITOR\GSM5B7F\{{4d36e96e}}\{adapter}")
+            } else {
+                String::new()
+            },
+            on,
+            wide: if on { 1920 } else { 0 },
+            high: if on { 1080 } else { 0 },
+            refresh: if on { 60 } else { 0 },
+            at: (0, 0),
+            turned: 0,
+            main,
+            scale: if on { 100 } else { 0 },
+        }
+    }
+
+    fn note(home: &Path, desk: &[Seat]) {
+        write_beside(home, SHOWING, &arrangement::written(desk)).unwrap();
+    }
+
+    #[test]
+    fn a_note_never_written_says_nothing_about_what_is_plugged_in() {
+        let home = a_folder("unwritten");
+        assert_eq!(showing_now(&home), None);
+        assert!(!nothing_is_switched_on(&home));
+        assert!(!the_main_screen_is_stuck(&home));
+    }
+
+    #[test]
+    fn a_screen_that_is_on_is_what_the_note_says_this_computer_shows() {
+        let home = a_folder("on");
+        note(&home, &[a_screen(r"\\.\DISPLAY1", true, true)]);
+        assert_eq!(showing_now(&home), Some((1920, 1080)));
+        assert!(!nothing_is_switched_on(&home));
+    }
+
+    #[test]
+    fn a_computer_with_no_screen_on_stops_saying_it_has_one() {
+        let home = a_folder("unplugged");
+        // What the last session found, while the screen was plugged in.
+        note(&home, &[a_screen(r"\\.\DISPLAY1", true, true)]);
+        assert_eq!(showing_now(&home), Some((1920, 1080)));
+
+        // Then the screen is unplugged: its adapter is still listed, off.
+        let said = hold_this_desk(
+            &home,
+            vec![a_screen(r"\\.\DISPLAY1", false, true)],
+            Some((1920, 1080, 100)),
+        );
+
+        assert_eq!(showing_now(&home), None);
+        assert!(nothing_is_switched_on(&home));
+        assert!(!the_main_screen_is_stuck(&home));
+        assert!(
+            said.iter()
+                .any(|line| line.contains("no screen of this computer's own is switched on")),
+            "{said:?}"
+        );
+        // And nothing was noted to be given back: nothing was touched.
+        assert!(noted_before(&home).is_empty());
+    }
+
+    #[test]
+    fn a_computer_that_lists_no_screen_at_all_has_none_on_either() {
+        let home = a_folder("empty");
+        note(&home, &[a_screen(r"\\.\DISPLAY1", true, true)]);
+
+        hold_this_desk(&home, Vec::new(), None);
+
+        assert!(nothing_is_switched_on(&home));
+        assert_eq!(showing_now(&home), None);
+    }
 }

@@ -251,6 +251,11 @@ pub enum Asked {
     /// that is not rearranged by being looked at. The size is not known
     /// here until that computer says it, which it does when the session
     /// opens.
+    ///
+    /// Except a computer with no screen switched on at all: nobody sits in
+    /// front of anything to be disturbed, and the screen it grows is the
+    /// only thing there is to film, so that computer grows it all the
+    /// same, at the common size.
     Host,
     /// This size, whatever either screen is.
     Fixed(u32, u32),
@@ -347,7 +352,8 @@ impl Asked {
     ///
     /// False for its own screen alone: that is the whole of what that
     /// choice means, and it is what keeps a machine from being rearranged
-    /// by being looked at.
+    /// by being looked at. A machine that has none switched on is the one
+    /// exception, and it is decided over there, not asked for from here.
     pub fn wants_a_screen_over_there(self) -> bool {
         self != Asked::Host
     }
