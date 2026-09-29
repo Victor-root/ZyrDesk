@@ -138,7 +138,8 @@ pleine session, sans rien relancer.
 l'écran poussé à la taille demandée quand la session arrive, puis dit au
 moteur de le filmer dès qu'il le voit : c'est le seul écran de cette
 machine, il n'y a rien à éteindre et rien à déplacer. Il le rendort
-quand plus personne ne regarde.
+quand plus personne ne regarde, même sans aucun bureau à rendre
+([D246](DECISIONS.md)).
 
 « Sans écran » veut dire qu'aucun écran de la machine n'est allumé aux
 yeux de Windows, un écran débranché par exemple. Le service le sait par
@@ -164,17 +165,32 @@ allumé. C'est le moteur qui le voit. Un écran qui marche donne son image
 à l'instant où on le filme ; un écran qui n'a rendu ni image ni mouvement
 de curseur au bout d'une seconde et demie est dit au service, une fois
 par écran visé (`Silent`). Le service fait alors ce qu'il fait pour un
-écran qui refuse la taille : il réveille l'écran poussé (à la taille
-demandée, ou à celle que le moteur filmait), note le bureau si personne ne
-l'avait fait, y déplace le bureau et prie le moteur de le filmer. Une
-seule fois par session, et seulement quand l'écran filmé est l'écran
-principal : un écran choisi à la main dans le menu n'est pas touché.
+écran qui refuse la taille : il note le bureau si personne ne l'avait
+fait, puis réveille l'écran poussé (à la taille demandée, ou à celle que
+le moteur filmait), y déplace le bureau et prie le moteur de le filmer.
+Le bureau est noté avant le réveil et pas après : réveillé, l'écran poussé
+fait partie du bureau, et la fin de la session le remettrait allumé
+([D246](DECISIONS.md)). Une seule fois par session, et seulement quand
+l'écran filmé est l'écran principal : un écran choisi à la main dans le
+menu n'est pas touché.
 
 Rien n'en est retenu d'une session à l'autre. Un commutateur peut revenir
 vers la machine à tout moment, et la session suivante regarde de nouveau.
 Pour que l'écran poussé, levé en pleine session, soit proposé au service
 aussitôt, le moteur demande aussi toutes les demi-secondes, pendant que
 les images partent, si la liste des écrans a changé.
+
+**À la fin.** Le service ne laisse rien de prêté. Quand plus aucune
+session n'est ouverte, il remet le bureau comme il a été noté, puis
+rendort l'écran poussé, dans cet ordre, et recommence tant que l'un ou
+l'autre ne passe pas : toutes les deux secondes d'abord, puis de moins en
+moins souvent jusqu'à une fois par minute. Un écran absent, un moniteur
+commuté sur un autre ordinateur, refuse aussi longtemps qu'il est parti,
+et réessayer sans cesse pendant des heures, c'est demander à Windows de
+réorganiser le bureau trente fois par minute. Ni l'un ni l'autre n'est
+tenu pour fait tant qu'il ne l'est pas : un bureau revenu dont l'écran
+poussé n'a pas voulu dormir, c'est un deuxième écran que personne n'a
+demandé, à côté du premier quand le moniteur revient.
 
 Ailleurs, une machine qui a un écran à elle n'entend jamais parler de
 l'écran virtuel : le moteur filme l'écran principal, celui où est le

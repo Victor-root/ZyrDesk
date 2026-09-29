@@ -140,24 +140,7 @@ fn hold_this_desk(
     };
     // Noted before anything is touched.
     if wanted.is_some() {
-        match write_the_desk_down(home, &desk) {
-            // The main screen is spelled out beside the count, because it
-            // is the one the session changes and the one whose way back
-            // is read out of this note. A count alone says a note was
-            // written; this says what it will put back.
-            Ok(true) => said.push(format!(
-                "this computer's desk is written down before the session touches it ({} screens); \
-                 the one it will change is {main}",
-                desk.len()
-            )),
-            Ok(false) => {}
-            // Worth saying loudly. Everything else here can be undone by
-            // hand in a minute; this is the note that says what to undo.
-            Err(e) => said.push(format!(
-                "this computer's desk could not be written down, so a session must not change it: \
-                 {e}"
-            )),
-        }
+        said.extend(note_before_touching(home, &desk));
     }
     if let Some((wide, high, scale)) = wanted.filter(|_| before_path(home).exists()) {
         if (wide, high) != (main.wide, main.high) {
@@ -213,6 +196,52 @@ fn write_the_desk_down(home: &Path, desk: &[Seat]) -> std::io::Result<bool> {
     write_beside(home, BEFORE, &arrangement::written(desk)).map(|()| true)
 }
 
+/// Writes the desk down before a session touches it, and says so.
+///
+/// The main screen is spelled out beside the count, because it is the one
+/// the session changes and the one whose way back is read out of this
+/// note. A count alone says a note was written; this says what it will put
+/// back. Nothing is said when the note was there already.
+fn note_before_touching(home: &Path, desk: &[Seat]) -> Vec<String> {
+    match write_the_desk_down(home, desk) {
+        Ok(true) => {
+            let changing = its_main_screen(desk).map_or_else(String::new, |main| {
+                format!("; the one it will change is {main}")
+            });
+            vec![format!(
+                "this computer's desk is written down before the session touches it ({} \
+                 screens){changing}",
+                desk.len()
+            )]
+        }
+        Ok(false) => Vec::new(),
+        // Worth saying loudly. Everything else here can be undone by hand
+        // in a minute; this is the note that says what to undo.
+        Err(e) => vec![format!(
+            "this computer's desk could not be written down, so a session must not change it: {e}"
+        )],
+    }
+}
+
+/// Writes this computer's desk down and moves nothing.
+///
+/// For the session that asked to keep this computer's own screen and finds
+/// out afterwards that it cannot, and is about to be served from the
+/// screen this computer grows. That screen is woken after this, and a desk
+/// written down with it in would put it back on, beside the others, when
+/// the session ends. Runs in the session that owns the screens, like
+/// everything that reads them.
+pub fn note_the_desk(home: &Path) -> Vec<String> {
+    note_this_desk(home, arrangement::as_it_stands())
+}
+
+/// [`note_the_desk`] on a desk already read.
+fn note_this_desk(home: &Path, mut desk: Vec<Seat>) -> Vec<String> {
+    let mut said = fill_in_what_cannot(home, &mut desk);
+    said.extend(note_before_touching(home, &desk));
+    said
+}
+
 /// Writes down what this computer's screens are doing, for the service
 /// to read, and says so if it could not.
 fn note_what_is_showing(home: &Path, desk: &[Seat]) -> Vec<String> {
@@ -240,37 +269,23 @@ fn note_what_is_showing(home: &Path, desk: &[Seat]) -> Vec<String> {
 #[cfg(windows)]
 pub fn take_the_grown_screen_for(home: &Path, wanted: (u32, u32, u32)) -> Vec<String> {
     let (wide, high, scale) = wanted;
-    // Noted first if nobody did. A session that asked for a size has
-    // written the desk down already; one that left this computer as it
-    // was has not, and finding its main screen gives nothing is the first
-    // time it has to be. Refused outright when it cannot be, rather than
-    // half done: without the note there is nothing that says how to put
-    // this computer back, and moving a desktop with no way back is the
-    // one thing none of this may do.
-    let mut desk = arrangement::as_it_stands();
-    let mut said = fill_in_what_cannot(home, &mut desk);
-    match write_the_desk_down(home, &desk) {
-        Ok(true) => {
-            said.push("this computer's desk is written down before its desktop moves".to_string())
-        }
-        Ok(false) => {}
-        Err(e) => {
-            return vec![format!(
-                "this computer's desk could not be written down, so its desktop is not moved \
-                 anywhere: {e}"
-            )];
-        }
+    // Refused outright rather than half done: without the note there is
+    // nothing that says how to put this computer back, and moving a
+    // desktop with no way back is the one thing none of this may do.
+    if !before_path(home).exists() {
+        return vec![
+            "this computer's desk was never written down, so its desktop is not moved anywhere"
+                .to_string(),
+        ];
     }
     let Some(grown) = crate::desktop::the_screen_the_driver_grew(crate::shipped()) else {
-        said.push(
+        return vec![
             "the screen this computer grows for itself is not among its screens, so the desktop \
              stays where it is"
                 .to_string(),
-        );
-        return said;
+        ];
     };
-    let (moved, moving) = arrangement::put_the_desktop_alone_on(&grown, wide, high);
-    said.extend(moving);
+    let (moved, mut said) = arrangement::put_the_desktop_alone_on(&grown, wide, high);
     if moved {
         said.push(crate::magnify::magnify(&grown, scale));
     }
@@ -569,6 +584,53 @@ mod tests {
 
         assert!(nothing_is_switched_on(&home));
         assert_eq!(showing_now(&home), None);
+    }
+
+    #[test]
+    fn the_desk_noted_before_the_grown_screen_wakes_does_not_have_it_in() {
+        let home = a_folder("before-the-wake");
+        let own = a_screen(r"\\.\DISPLAY1", true, true);
+        let said = note_this_desk(&home, vec![own.clone()]);
+        assert!(
+            said.iter()
+                .any(|line| line.contains("written down before the session touches it (1 screens)")),
+            "{said:?}"
+        );
+
+        // The screen this computer grows wakes afterwards, and one more look
+        // at the desk finds it in: what is put back at the end must not.
+        let grown = Seat {
+            at: (1920, 0),
+            ..a_screen(r"\\.\DISPLAY31", true, false)
+        };
+        assert!(note_this_desk(&home, vec![own.clone(), grown]).is_empty());
+        assert_eq!(noted_before(&home), vec![own]);
+    }
+
+    #[test]
+    fn a_screen_that_cannot_say_how_large_it_draws_is_noted_at_the_size_it_drew_last() {
+        let home = a_folder("scales");
+        let own = Seat {
+            scale: 125,
+            ..a_screen(r"\\.\DISPLAY1", true, true)
+        };
+        // What a session before this one read, when the screen could say.
+        remember_what_can_be_read(&home, std::slice::from_ref(&own));
+
+        let said = note_this_desk(
+            &home,
+            vec![Seat {
+                scale: 0,
+                ..own.clone()
+            }],
+        );
+
+        assert_eq!(noted_before(&home), vec![own]);
+        assert!(
+            said.iter()
+                .any(|line| line.contains("what it drew at last time is used: 125 %")),
+            "{said:?}"
+        );
     }
 
     #[test]

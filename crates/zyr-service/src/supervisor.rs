@@ -73,6 +73,23 @@ const COMING_BACK: Duration = Duration::from_secs(60);
 /// is refused again for a while.
 const SCREEN_WATCH: Duration = Duration::from_secs(2);
 
+/// How seldom it is tried again at the most, once it keeps being refused.
+const SCREEN_WATCH_AT_MOST: Duration = Duration::from_secs(60);
+
+/// How long to wait before putting back what a session lent, again, after
+/// so many refusals in a row.
+///
+/// The pace of the watch at first, so that a refusal of a moment is over
+/// in a moment, and slower after. A computer whose screen is away, a
+/// monitor switched to another computer, refuses for as long as it is
+/// away, and trying every two seconds for hours is asking Windows to
+/// rearrange the desktop thirty times a minute.
+fn retry_after(refused: u32) -> Duration {
+    SCREEN_WATCH
+        .saturating_mul(1 << refused.min(5))
+        .min(SCREEN_WATCH_AT_MOST)
+}
+
 /// What the screen shows of ZyrDesk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Seen {
@@ -164,30 +181,40 @@ impl Watched {
 }
 
 /// Puts this computer's desk back the way it was noted before a session
-/// took it, from the session that owns the screen.
+/// took it, and the screen it grows back to sleep.
 ///
-/// Answers whether it really went back: a refusal has to be tried again,
-/// and the caller is the only one that knows when.
-fn put_the_desk_back(log: &Log) -> bool {
-    // The desk first and the grown screen after it, and that order is the
-    // whole of the safety. A session that borrowed the grown screen has
-    // this computer's desktop on it: taking that screen away first leaves
-    // Windows to decide where the desktop lands, and the arrangement put
-    // back a moment later would be fighting whatever it decided. Put back
-    // first, the desktop is already home on a screen its owner can see,
-    // and the grown one goes away with nothing on it.
-    //
-    // The computer with nothing plugged into it never had a desk noted,
-    // and there is nothing to put back before its grown screen goes.
-    let back = if zyr_screen::desk::noted_before(&paths::virtual_screen_dir()).is_empty() {
-        true
-    } else {
-        the_desk_as_it_was(log)
-    };
-    if !crate::screen::asleep() {
-        crate::screen::back_to_sleep(log, &|| true);
-    }
-    back
+/// Answers whether all of it really went back: a refusal has to be tried
+/// again, and the caller is the only one that knows when.
+fn put_the_desk_back(log: &Log, still_nobody: &dyn Fn() -> bool) -> bool {
+    put_back_what_was_lent(
+        || {
+            // The computer with nothing plugged into it never had a desk
+            // noted, and there is nothing to put back before its grown
+            // screen goes.
+            zyr_screen::desk::noted_before(&paths::virtual_screen_dir()).is_empty()
+                || the_desk_as_it_was(log)
+        },
+        || crate::screen::asleep() || crate::screen::back_to_sleep(log, still_nobody),
+    )
+}
+
+/// The desk first and the grown screen after it, and that order is the
+/// whole of the safety. A session that borrowed the grown screen has this
+/// computer's desktop on it: taking that screen away first leaves Windows
+/// to decide where the desktop lands, and the arrangement put back a
+/// moment later would be fighting whatever it decided. Put back first,
+/// the desktop is already home on a screen its owner can see, and the
+/// grown one goes away with nothing on it.
+///
+/// Both are tried whatever became of the first, and both have to be done
+/// for it to be over. A desk that will not come back is no reason to
+/// leave a screen awake, and a desk that came back is none to forget it:
+/// that is a second screen nobody asked for, sitting beside the first
+/// when the monitor comes back.
+fn put_back_what_was_lent(desk: impl FnOnce() -> bool, screen: impl FnOnce() -> bool) -> bool {
+    let back = desk();
+    let asleep = screen();
+    back && asleep
 }
 
 /// Puts back what was noted, saying whether it really went back.
@@ -617,7 +644,7 @@ fn one_door_life(session: u32, around: &Around<'_>) -> Result<Closed, String> {
             "a desk was left the way a session left it by a run that did not finish, putting it \
              back",
         );
-        put_the_desk_back(log);
+        put_the_desk_back(log, &|| true);
     } else if !crate::screen::asleep() {
         log.write("a screen was left awake by a run that did not finish, putting it back");
         crate::screen::back_to_sleep(log, &|| true);
@@ -657,6 +684,8 @@ fn watch_the_door(
     // Apart from the one above: this one paces trying again after a
     // refusal, and the two would otherwise reset each other.
     let mut last_sleep_try = Instant::now() - SCREEN_WATCH;
+    // How many times in a row what a session lent was refused.
+    let mut refused = 0;
     let mut watched = Watched::default();
     let mut coming_back = false;
     loop {
@@ -724,10 +753,10 @@ fn watch_the_door(
             log,
         );
 
-        // And the desk follows the same rule for the same reason. A
-        // session that ends properly says so and this never fires; this
-        // is the net under the ones that do not, which is every session
-        // whose computer was closed, unplugged or crashed, and without it
+        // And the desk follows the same rule for the same reason, with
+        // the screen this computer grows for itself: this is what puts
+        // them back, after a session that ended properly as much as after
+        // one whose computer was closed, unplugged or crashed. Without it
         // such a session would leave a screen on this machine's desk
         // until somebody noticed.
         //
@@ -735,14 +764,21 @@ fn watch_the_door(
         // half. A refusal counted as done would leave somebody's screens
         // the way a stranger left them, with nothing ever looking at them
         // again, which is the one outcome this must never have.
-        if gateway.the_desk_is_held_for_nobody() && last_sleep_try.elapsed() >= SCREEN_WATCH {
-            last_sleep_try = Instant::now();
-            log.write(
-                "nobody is watching this computer any more, its desk goes back the way it was",
-            );
-            if put_the_desk_back(log) {
-                gateway.the_desk_came_back();
+        if gateway.something_is_lent_to_nobody() {
+            if last_sleep_try.elapsed() >= retry_after(refused) {
+                last_sleep_try = Instant::now();
+                log.write(
+                    "nobody is watching this computer any more, what a session lent goes back",
+                );
+                if put_the_desk_back(log, &|| !gateway.a_session_is_open()) {
+                    gateway.what_was_lent_came_back();
+                    refused = 0;
+                } else {
+                    refused += 1;
+                }
             }
+        } else {
+            refused = 0;
         }
 
         if zyr_system::session_on_screen() != Some(session) {
@@ -770,6 +806,55 @@ fn wait(delay: Duration, order: &StopOrder) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_was_lent_goes_back_desk_first_and_screen_after_it() {
+        let order = std::cell::RefCell::new(Vec::new());
+        let everything = put_back_what_was_lent(
+            || {
+                order.borrow_mut().push("desk");
+                true
+            },
+            || {
+                order.borrow_mut().push("screen");
+                true
+            },
+        );
+        assert!(everything);
+        assert_eq!(*order.borrow(), ["desk", "screen"]);
+    }
+
+    #[test]
+    fn a_desk_that_will_not_come_back_leaves_no_screen_awake_and_is_tried_again() {
+        let asleep = std::cell::Cell::new(false);
+        let everything = put_back_what_was_lent(
+            || false,
+            || {
+                asleep.set(true);
+                true
+            },
+        );
+        assert!(asleep.get(), "the screen went to sleep all the same");
+        assert!(!everything, "and the desk is not back");
+    }
+
+    #[test]
+    fn a_screen_that_will_not_sleep_is_tried_again_though_the_desk_is_back() {
+        // The desk came back, the screen refused: the watch used to call it
+        // done, and the screen stayed awake as a second one.
+        assert!(!put_back_what_was_lent(|| true, || false));
+    }
+
+    #[test]
+    fn a_refusal_is_tried_again_at_once_and_then_ever_less_often() {
+        assert_eq!(retry_after(0), SCREEN_WATCH);
+        assert_eq!(retry_after(1), SCREEN_WATCH * 2);
+        assert!(retry_after(3) > retry_after(2));
+        // But never so seldom that a desk stays away for the length of an
+        // evening.
+        assert_eq!(retry_after(5), SCREEN_WATCH_AT_MOST);
+        assert_eq!(retry_after(500), SCREEN_WATCH_AT_MOST);
+    }
 
     #[test]
     fn the_stop_order_is_shared_between_two_hands() {

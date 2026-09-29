@@ -220,6 +220,13 @@ virtual screen on the desktop after … ms
 filming VDD by MTT (…)
 ```
 
+**À la fin de la session** (D246) : se déconnecter, puis remettre l'écran sur l'hôte. Il n'a que ses propres écrans, un seul s'il n'en avait qu'un, comme avant la session. Dans le journal de l'hôte, quelques secondes après la déconnexion :
+
+```
+nobody is watching this computer any more, what a session lent goes back
+virtual screen asleep, this machine has its own screens back
+```
+
 **Ce qu'il ne faut pas voir.** Une image noire. Ou bien `this computer's main screen shows …, so its own screen serves this session` alors que l'écran était bien débranché : c'est que la note des écrans est restée périmée (si l'image finit par venir après quelques secondes, c'est Z13 qui a pris le relais). Ou `capture trouble` : le moteur n'a trouvé aucun écran à filmer.
 
 ## Z13. Un écran que Windows dit allumé et qui ne donne rien
@@ -240,7 +247,17 @@ the desktop was moved from the session on screen (…)
 filming VDD by MTT (…)
 ```
 
-**Ce qu'il ne faut pas voir.** Une image noire qui dure. Sans la ligne `has given no picture …`, le moteur a reçu des images de l'écran, et le noir vient d'ailleurs. Avec elle et sans les lignes qui suivent, le service n'a pas réagi. `this computer's desktop was left where it is` ou `is not among its screens` disent que l'écran poussé ne s'est pas levé, ou que le bureau n'a pas pu s'y poser.
+**À la fin de la session** (D246) : se déconnecter, **puis** remettre le commutateur sur l'hôte. L'hôte n'a que son propre écran, un seul et le premier, comme avant la session. Dans le journal de l'hôte, quelques secondes après la déconnexion :
+
+```
+nobody is watching this computer any more, what a session lent goes back
+the desk was put back from the session on screen (…)
+virtual screen asleep, this machine has its own screens back
+```
+
+Si l'écran de l'hôte est absent à ce moment-là, le bureau peut être refusé : la ligne le dit, et il est réessayé de moins en moins souvent, jusqu'à ce que l'écran revienne. L'écran poussé, lui, dort déjà.
+
+**Ce qu'il ne faut pas voir.** Deux écrans sur l'hôte une fois déconnecté, ou un écran poussé qui reste éveillé : les lignes de la fin de session, ci-dessus, disent lesquelles manquent. Une image noire qui dure. Sans la ligne `has given no picture …`, le moteur a reçu des images de l'écran, et le noir vient d'ailleurs. Avec elle et sans les lignes qui suivent, le service n'a pas réagi. `this computer's desktop was left where it is` ou `is not among its screens` disent que l'écran poussé ne s'est pas levé, ou que le bureau n'a pas pu s'y poser.
 
 **Et l'essai inverse.** Remettre le commutateur sur l'hôte et ouvrir une session : l'image arrive tout de suite, sans écran poussé et sans ligne `has given no picture`. Un écran qui marche ne doit jamais être remplacé.
 

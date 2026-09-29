@@ -80,6 +80,7 @@ const LOCK_ARGUMENT: &str = "--lock-the-screen";
 /// answer a session that asked what it was showing.
 const DESK_ARGUMENT: &str = "--hold-the-desk";
 const DESK_BACK_ARGUMENT: &str = "--give-the-desk-back";
+const DESK_NOTE_ARGUMENT: &str = "--note-the-desk";
 
 /// And a third, for the computer whose own screens cannot draw the size
 /// a session asked for: the desktop moves onto the screen this computer
@@ -90,6 +91,11 @@ const DESK_BACK_ARGUMENT: &str = "--give-the-desk-back";
 /// device is administrator work, so the service wakes the screen; putting
 /// a desktop on it is window station work, so the session on screen does
 /// that. One cannot wait for the other inside a single errand.
+///
+/// A fourth, `DESK_NOTE_ARGUMENT`, writes the desk down and moves
+/// nothing, for the session that asked to keep this computer's own screen
+/// and finds out afterwards that it cannot. It runs before that wake,
+/// which the desk written down must not contain.
 const DESK_GROWN_ARGUMENT: &str = "--take-the-grown-screen";
 
 /// And the same for the shape of this computer's pointer; see
@@ -169,6 +175,7 @@ impl StartedFor {
                 ),
             ),
             Self::Desk(Desk::Back) => (DESK_BACK_ARGUMENT, None),
+            Self::Desk(Desk::Note) => (DESK_NOTE_ARGUMENT, None),
             Self::Desk(Desk::Borrow(screen)) => (DESK_GROWN_ARGUMENT, Some(screen.to_string())),
             Self::FollowingThePointer => (POINTER_ARGUMENT, None),
             Self::CarryingTheClipboard => (CLIPBOARD_ARGUMENT, None),
@@ -361,6 +368,20 @@ pub fn hold_the_desk_for(wanted: Option<WantedScreen>) -> io::Result<Errand> {
     )
 }
 
+/// Writes this computer's desk down and touches nothing, from the session
+/// that owns the screen.
+///
+/// For a session that asked to keep this computer's own screen and finds
+/// out that screen gives it nothing: the desk is noted before the screen
+/// this computer grows is woken, since woken, it is one more screen of the
+/// desk and would be put back on at the end.
+pub fn note_the_desk() -> io::Result<Errand> {
+    zyr_system::errand(
+        &StartedFor::Desk(Desk::Note).arguments(),
+        "this computer's desk could not be written down from the session that owns the screen",
+    )
+}
+
 /// Moves this computer's desktop onto the screen it grew for itself, at
 /// the size a session asked for, from the session that owns the screen.
 ///
@@ -427,6 +448,8 @@ pub enum Desk {
     Hold(Option<WantedScreen>),
     /// Put it back the way it was noted.
     Back,
+    /// Note it and move nothing, unless it is noted already.
+    Note,
     /// Move the desktop onto the screen this computer grew for itself,
     /// at that size, this computer's own screens having refused it.
     Borrow(WantedScreen),
@@ -436,6 +459,9 @@ pub enum Desk {
 fn the_desk_named_in(arguments: &[String]) -> Option<Desk> {
     if arguments.iter().any(|a| a == DESK_BACK_ARGUMENT) {
         return Some(Desk::Back);
+    }
+    if arguments.iter().any(|a| a == DESK_NOTE_ARGUMENT) {
+        return Some(Desk::Note);
     }
     if let Some(asked) = after_the_word(arguments, DESK_GROWN_ARGUMENT) {
         return asked.parse().ok().map(Desk::Borrow);
@@ -472,6 +498,7 @@ pub fn do_this_to_the_desk(asked: Desk) {
             wanted.map(|screen| (screen.wide, screen.high, screen.scale)),
         ),
         Desk::Back => zyr_screen::desk::give_the_desk_back(&paths::virtual_screen_dir()),
+        Desk::Note => zyr_screen::desk::note_the_desk(&paths::virtual_screen_dir()),
         Desk::Borrow(screen) => zyr_screen::desk::take_the_grown_screen_for(
             &paths::virtual_screen_dir(),
             (screen.wide, screen.high, screen.scale),
@@ -515,6 +542,7 @@ mod tests {
             StartedFor::Desk(Desk::Hold(None)),
             StartedFor::Desk(Desk::Hold(Some(screen))),
             StartedFor::Desk(Desk::Back),
+            StartedFor::Desk(Desk::Note),
             StartedFor::Desk(Desk::Borrow(screen)),
             StartedFor::FollowingThePointer,
             StartedFor::CarryingTheClipboard,

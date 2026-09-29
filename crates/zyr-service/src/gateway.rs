@@ -643,6 +643,10 @@ impl Attending {
     /// Wakes the screen this computer grew, at that size, saying what
     /// came of it.
     fn wake_the_one_it_grew(&self, screen: WantedScreen) -> Option<()> {
+        // Before the wake and not after it: a wake that goes wrong half
+        // way leaves a device awake all the same, and putting it back is
+        // the watch's business.
+        self.sessions.grown_awake.store(true, Ordering::Relaxed);
         match crate::screen::wake_for_a_session((screen.wide, screen.high)) {
             Ok(said) => {
                 for line in said {
@@ -662,10 +666,11 @@ impl Attending {
     /// Moves this session onto the screen this computer grew, its own
     /// screens being of no use to it.
     ///
-    /// Three steps, and each undone when the next will not go: the screen
-    /// is woken at the size asked for, the desktop is moved onto it, and
-    /// the engine is told to film it.
+    /// Four steps, and each undone when the next will not go: the desk is
+    /// written down, the screen is woken at the size asked for, the
+    /// desktop is moved onto it, and the engine is told to film it.
     fn grow_one_for_this_session(&self, screen: WantedScreen) -> Option<(u32, u32)> {
+        self.note_the_desk()?;
         self.wake_the_one_it_grew(screen)?;
         let Some(showing) = self.move_the_desktop_onto_it(screen) else {
             self.put_the_grown_screen_away();
@@ -673,6 +678,43 @@ impl Attending {
         };
         self.film_the_grown_screen();
         Some(showing)
+    }
+
+    /// Has this computer's desk written down, from the session that owns
+    /// the screens, before the screen it grows is woken.
+    ///
+    /// Before and not after: woken, that screen is one more of this
+    /// computer's screens, and a desk written down with it in would put it
+    /// back on, beside the others, when the session ends. Held from here,
+    /// the note being what says somebody's screens are not the way they
+    /// left them. Answers nothing when it could not be written, since a
+    /// desktop moved with no way back is the one thing none of this may
+    /// do. Nothing to ask for when a session that wanted a size has done
+    /// it already.
+    fn note_the_desk(&self) -> Option<()> {
+        let home = paths::virtual_screen_dir();
+        if zyr_screen::desk::noted_before(&home).is_empty() {
+            match crate::errands::note_the_desk() {
+                Ok(took) => self.log.write(&format!(
+                    "the desk was written down from the session on screen ({took})"
+                )),
+                Err(e) => {
+                    self.log.write(&format!(
+                        "this computer's desk was not written down, so its desktop is left where \
+                         it is: {e}"
+                    ));
+                    return None;
+                }
+            }
+        }
+        let noted = !zyr_screen::desk::noted_before(&home).is_empty();
+        self.sessions.desk_held.store(noted, Ordering::Relaxed);
+        if !noted {
+            self.log.write(
+                "this computer's desk is not written down, so its desktop is left where it is",
+            );
+        }
+        noted.then_some(())
     }
 
     /// Tells this session's engine to film the screen this computer grew,
@@ -697,33 +739,36 @@ impl Attending {
     /// decides where the desktop lands and the arrangement put back a
     /// moment earlier is undone.
     fn put_the_grown_screen_away(&self) {
-        if crate::screen::asleep() {
-            return;
-        }
-        // Nobody is asked whether somebody wants it: the session asking
-        // for this computer's own screen is the one that wants it gone,
-        // and it is being answered right now.
-        match crate::screen::sleep_after_a_session(&|| true) {
-            Ok(said) => {
-                for line in said {
-                    self.log.write(&line);
-                }
-            }
-            Err(refused) => self.log.write(&format!(
-                "the screen this computer grew would not go to sleep: {refused}"
-            )),
-        }
-        // Asked of the device rather than taken on trust, because a
-        // refusal has a consequence somebody will see: this computer is
-        // filmed on that screen, and a screen left awake with nothing on
-        // it is a session served a bare wallpaper. Said plainly here, so
-        // the journal explains what the person is looking at.
         if !crate::screen::asleep() {
-            self.log.write(
-                "the screen this computer grew is still awake, so this session is served that \
-                 screen rather than the desktop; it goes away when the last session does",
-            );
+            // Nobody is asked whether somebody wants it: the session
+            // asking for this computer's own screen is the one that wants
+            // it gone, and it is being answered right now.
+            match crate::screen::sleep_after_a_session(&|| true) {
+                Ok(said) => {
+                    for line in said {
+                        self.log.write(&line);
+                    }
+                }
+                Err(refused) => self.log.write(&format!(
+                    "the screen this computer grew would not go to sleep: {refused}"
+                )),
+            }
+            // Asked of the device rather than taken on trust, because a
+            // refusal has a consequence somebody will see: this computer
+            // is filmed on that screen, and a screen left awake with
+            // nothing on it is a session served a bare wallpaper. Said
+            // plainly here, so the journal explains what the person is
+            // looking at.
+            if !crate::screen::asleep() {
+                self.log.write(
+                    "the screen this computer grew is still awake, so this session is served \
+                     that screen rather than the desktop; it goes away when the last session \
+                     does",
+                );
+                return;
+            }
         }
+        self.sessions.grown_awake.store(false, Ordering::Relaxed);
     }
 
     /// Moves this computer's desktop onto that screen, from the session
@@ -745,13 +790,6 @@ impl Attending {
                 return None;
             }
         }
-        // Held from here, whether the session asked for a size or left
-        // the computer alone: the errand wrote the desk down before it
-        // moved anything, and it is given back when the session ends.
-        self.sessions.desk_held.store(
-            !zyr_screen::desk::noted_before(&paths::virtual_screen_dir()).is_empty(),
-            Ordering::Relaxed,
-        );
         zyr_screen::desk::showing_now(&paths::virtual_screen_dir())
     }
 }
@@ -821,6 +859,24 @@ struct Sessions {
     /// by the watch that holds the door, on its own thread, which is
     /// where it is acted on.
     desk_held: AtomicBool,
+    /// Whether a session woke the screen this computer grows for itself
+    /// and nothing has put it back to sleep since.
+    ///
+    /// Apart from the desk on purpose: a computer with nothing plugged
+    /// into it serves its sessions from that screen alone, has no desk to
+    /// hold, and would otherwise keep the screen awake for good, as a
+    /// second screen for whoever plugs one in.
+    grown_awake: AtomicBool,
+}
+
+impl Sessions {
+    /// Whether a session left something of this computer lent with
+    /// nobody left to use it: its desk not back, or the screen it grows
+    /// still awake.
+    fn lent_to_nobody(&self) -> bool {
+        self.open.load(Ordering::Relaxed) == 0
+            && (self.desk_held.load(Ordering::Relaxed) || self.grown_awake.load(Ordering::Relaxed))
+    }
 }
 
 /// One session, counted for as long as it lasts.
@@ -1012,24 +1068,24 @@ impl Gateway {
         self.sessions.hushing.load(Ordering::Relaxed)
     }
 
-    /// Whether a session still has this computer's desk with nobody left
-    /// watching it.
+    /// Whether a session left this computer's desk, or the screen it
+    /// grows, lent with nobody left watching.
     ///
     /// Asked by the watch that holds the door, which is on a thread where
-    /// rearranging a desktop is allowed to take its time. A session that
-    /// ends properly says so itself and this never fires; this is for the
-    /// sessions that do not, which is every one whose computer was closed,
-    /// unplugged or crashed, and those are exactly the ones after which
-    /// somebody's screens would stay the way a stranger left them.
-    pub fn the_desk_is_held_for_nobody(&self) -> bool {
-        self.sessions.desk_held.load(Ordering::Relaxed)
-            && self.sessions.open.load(Ordering::Relaxed) == 0
+    /// rearranging a desktop is allowed to take its time. It is what puts
+    /// them back, after a session that ended properly as much as after
+    /// one whose computer was closed, unplugged or crashed, and those are
+    /// exactly the ones after which somebody's screens would stay the way
+    /// a stranger left them.
+    pub fn something_is_lent_to_nobody(&self) -> bool {
+        self.sessions.lent_to_nobody()
     }
 
-    /// Says the desk is back, so it is not asked for again on the next
-    /// turn of that watch.
-    pub fn the_desk_came_back(&self) {
+    /// Says what was lent is back, so it is not asked for again on the
+    /// next turn of that watch.
+    pub fn what_was_lent_came_back(&self) {
         self.sessions.desk_held.store(false, Ordering::Relaxed);
+        self.sessions.grown_awake.store(false, Ordering::Relaxed);
     }
 }
 
@@ -2049,5 +2105,29 @@ mod tests {
         // the port the next door opens on.
         assert!(dropped.load(Ordering::Relaxed));
         let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn what_a_session_lent_is_owed_back_once_nobody_is_being_served() {
+        let sessions = Sessions::default();
+        assert!(!sessions.lent_to_nobody(), "nothing lent, nothing owed");
+
+        // A computer with nothing plugged into it serves its sessions from
+        // the screen it grows: no desk to give back, and that screen still
+        // has to go back to sleep.
+        sessions.grown_awake.store(true, Ordering::Relaxed);
+        assert!(sessions.lent_to_nobody());
+        sessions.open.fetch_add(1, Ordering::Relaxed);
+        assert!(
+            !sessions.lent_to_nobody(),
+            "while somebody is served it is theirs"
+        );
+        sessions.open.fetch_sub(1, Ordering::Relaxed);
+        assert!(sessions.lent_to_nobody());
+
+        sessions.grown_awake.store(false, Ordering::Relaxed);
+        assert!(!sessions.lent_to_nobody());
+        sessions.desk_held.store(true, Ordering::Relaxed);
+        assert!(sessions.lent_to_nobody());
     }
 }
