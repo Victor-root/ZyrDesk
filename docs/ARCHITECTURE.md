@@ -164,7 +164,7 @@ ZyrDesk/
 │  ├─ zyr-lan/                 # annonce mDNS de cet ordinateur, appel direct, découverte des autres
 │  ├─ zyr-broker/              # ce que le service et le serveur se disent : messages, tickets et laissez-passer signés
 │  ├─ zyr-account/             # le lien de compte, le rattachement, le canal vivant, la présence, le rendez-vous
-│  ├─ zyr-screen/              # l'écran virtuel : pilote, réveil, sommeil, arrangement des écrans
+│  ├─ zyr-screen/              # l'écran virtuel : pilote, réveil, sommeil, arrangement des écrans, et le bureau prêté à une session puis rendu tel qu'il était noté
 │  ├─ zyr-sound/               # le son de la session, dans le mélangeur de Windows
 │  ├─ zyr-system/              # ce que le service demande à Windows lui-même : la session qui tient l'écran et qui y est, y lancer ce programme (le moteur d'une session, une course, un assistant), verrouiller, Ctrl+Alt+Suppr, le Wi-Fi qui passe la session d'abord, la forme du pointeur
 │  ├─ zyr-win32/               # la façon de Windows de dire les choses, pour toutes les briques qui lui parlent : texte, codes d'erreur, poignées, processus

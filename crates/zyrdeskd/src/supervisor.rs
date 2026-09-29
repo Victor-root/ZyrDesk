@@ -236,7 +236,7 @@ fn put_the_desk_back(log: &Log) -> bool {
     //
     // The computer with nothing plugged into it never had a desk noted,
     // and there is nothing to put back before its grown screen goes.
-    let back = if crate::screen::noted_before().is_empty() {
+    let back = if zyr_screen::desk::noted_before(&paths::virtual_screen_dir()).is_empty() {
         true
     } else {
         the_desk_as_it_was(log)
@@ -259,7 +259,7 @@ fn the_desk_as_it_was(log: &Log) -> bool {
             // there, since that is the only place it can be known. What
             // is known here is only that the errand ran, and the note
             // itself is what says whether there is still work to do.
-            crate::screen::noted_before().is_empty()
+            zyr_screen::desk::noted_before(&paths::virtual_screen_dir()).is_empty()
         }
         Err(e) => {
             log.write(&format!("this computer's desk was not put back: {e}"));
@@ -637,7 +637,7 @@ fn one_door_life(session: u32, around: &Around<'_>) -> Result<Closed, String> {
     // progress. Put back before anybody can come in, the desk first and
     // the grown screen after it, which is the order everything here puts
     // them back in.
-    if !crate::screen::noted_before().is_empty() {
+    if !zyr_screen::desk::noted_before(&paths::virtual_screen_dir()).is_empty() {
         log.write(
             "a desk was left the way a session left it by a run that did not finish, putting it \
              back",

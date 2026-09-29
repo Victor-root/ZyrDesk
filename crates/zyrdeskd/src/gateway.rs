@@ -269,7 +269,9 @@ impl Answers for Attending {
         // computer's own screen gets this computer's own screen, and what
         // that costs a second viewer is a picture changing size, against a
         // first viewer served the wrong screen altogether.
-        if wanted.is_none() && !crate::screen::noted_before().is_empty() {
+        if wanted.is_none()
+            && !zyr_screen::desk::noted_before(&paths::virtual_screen_dir()).is_empty()
+        {
             self.log.write(
                 "this session wants this computer's own screen, so the desk an earlier one took is \
                  given back first",
@@ -295,9 +297,10 @@ impl Answers for Attending {
             // nothing behind to put back, and claiming otherwise has the
             // watch announce a desk coming home that never left.
             Ok(took) => {
-                self.sessions
-                    .desk_held
-                    .store(!crate::screen::noted_before().is_empty(), Ordering::Relaxed);
+                self.sessions.desk_held.store(
+                    !zyr_screen::desk::noted_before(&paths::virtual_screen_dir()).is_empty(),
+                    Ordering::Relaxed,
+                );
                 self.log.write(&format!(
                     "the desk was set from the session on screen ({took})"
                 ));
@@ -321,7 +324,7 @@ impl Answers for Attending {
         // unasked. The other has screens that draw nothing larger than
         // themselves, so it is woken at the size asked for and the desktop
         // is moved onto it, which is the errand below.
-        let showing = crate::screen::showing_now();
+        let showing = zyr_screen::desk::showing_now(&paths::virtual_screen_dir());
         let grown = match wanted {
             Some(screen) if showing.is_none() => {
                 self.log.write(
@@ -335,7 +338,7 @@ impl Answers for Attending {
             }
             Some(screen)
                 if showing != Some((screen.wide, screen.high))
-                    && crate::screen::the_main_screen_is_stuck() =>
+                    && zyr_screen::desk::the_main_screen_is_stuck(&paths::virtual_screen_dir()) =>
             {
                 self.grow_one_for_this_session(screen)
             }
@@ -354,7 +357,7 @@ impl Answers for Attending {
         // service cannot see a screen to tell them apart. The grown
         // screen is the exception and has to be: it is not on any desk a
         // session could have looked at.
-        let showing = grown.or_else(crate::screen::showing_now);
+        let showing = grown.or_else(|| zyr_screen::desk::showing_now(&paths::virtual_screen_dir()));
         self.log.write(&match showing {
             Some((wide, high)) => format!("this computer is showing {wide}x{high}"),
             None => "this computer could not say what it is showing, so the session keeps what it \
@@ -698,7 +701,7 @@ impl Attending {
                 return None;
             }
         }
-        crate::screen::showing_now()
+        zyr_screen::desk::showing_now(&paths::virtual_screen_dir())
     }
 }
 

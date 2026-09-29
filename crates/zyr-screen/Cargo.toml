@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+# The desk's notes are written whole or not at all, like every file of
+# the product.
+zyr-proto.workspace = true
 zyr-win32.workspace = true
 windows-sys = { version = "0.61.2", features = [
     "Win32_Devices_DeviceAndDriverInstallation",

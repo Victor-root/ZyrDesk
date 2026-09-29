@@ -70,7 +70,7 @@ mod tests {
     const MAP: &[(&str, Layer, &[&str])] = &[
         ("zyr-proto", Base, &[]),
         ("zyr-i18n", Base, &["zyr-proto"]),
-        ("zyr-screen", Platform, &["zyr-win32"]),
+        ("zyr-screen", Platform, &["zyr-proto", "zyr-win32"]),
         ("zyr-sound", Platform, &[]),
         ("zyr-system", Platform, &["zyr-proto", "zyr-win32"]),
         ("zyr-win32", Platform, &[]),

@@ -418,13 +418,15 @@ fn after_the_word(arguments: &[String], word: &str) -> Option<String> {
 /// of them happened.
 pub fn do_this_to_the_desk(asked: Desk) {
     let said = match asked {
-        Desk::Hold(wanted) => crate::screen::hold_the_desk_for(
+        Desk::Hold(wanted) => zyr_screen::desk::hold_the_desk_for(
+            &paths::virtual_screen_dir(),
             wanted.map(|screen| (screen.wide, screen.high, screen.scale)),
         ),
-        Desk::Back => crate::screen::give_the_desk_back(),
-        Desk::Borrow(screen) => {
-            crate::screen::take_the_grown_screen_for((screen.wide, screen.high, screen.scale))
-        }
+        Desk::Back => zyr_screen::desk::give_the_desk_back(&paths::virtual_screen_dir()),
+        Desk::Borrow(screen) => zyr_screen::desk::take_the_grown_screen_for(
+            &paths::virtual_screen_dir(),
+            (screen.wide, screen.high, screen.scale),
+        ),
     };
     if let Ok(log) = zyr_proto::log::Log::open(&crate::service::log_path()) {
         let log = log.about(TAG);

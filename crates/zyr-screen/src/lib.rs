@@ -26,6 +26,7 @@
 //! [`mtt`], not touching anything here or anywhere else in the product.
 
 pub mod arrangement;
+pub mod desk;
 pub mod driver;
 pub mod mtt;
 

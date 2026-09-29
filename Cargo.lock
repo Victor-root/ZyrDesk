@@ -3210,6 +3210,7 @@ name = "zyr-screen"
 version = "0.1.0"
 dependencies = [
  "windows-sys 0.61.2",
+ "zyr-proto",
  "zyr-win32",
 ]
 
