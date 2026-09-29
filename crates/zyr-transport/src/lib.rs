@@ -23,7 +23,7 @@ pub use endpoint::{
     Traffic, TunnelEndpoint,
 };
 pub use identity::{AllowedPeers, Identity, signed_by};
-pub use junction::{Junction, Road, card_of, is_card};
+pub use junction::{Junction, Road, Room, card_of, is_card, room_said};
 pub use marking::Marking;
 pub use mtu::datagram_budget;
 pub use path::{Lapses, Path};

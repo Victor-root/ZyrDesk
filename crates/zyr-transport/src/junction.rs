@@ -1005,17 +1005,8 @@ impl Junction {
             quinn::default_runtime().ok_or_else(|| io::Error::other("no async runtime"))?;
         let socket = bind_socket(listen)?;
         let ipv6 = socket.local_addr()?.is_ipv6();
-        let room = arriving_room(&socket);
-        if room < ARRIVING_ROOM {
-            say(
-                Aloud::Says,
-                &format!(
-                    "the system holds {room} bytes of what arrives on this socket, not the \
-                     {ARRIVING_ROOM} asked for: what comes in faster than this program is given \
-                     the processor is lost before anything can count it"
-                ),
-            );
-        }
+        let (how, line) = room_said(&room_of(&socket));
+        say(how, &line);
         let socket = marking.applied(runtime.wrap_udp_socket(socket)?);
         let me = identity.fingerprint();
         let inner = Arc::new(Inner {
@@ -1990,7 +1981,7 @@ pub fn bind_socket(listen: SocketAddr) -> io::Result<std::net::UdpSocket> {
 ///
 /// Best effort on purpose: a system that grants less is not a reason to
 /// refuse a session, and what it really granted is read back and said.
-fn make_room(socket: &std::net::UdpSocket) {
+pub fn make_room(socket: &std::net::UdpSocket) {
     let _ = socket2::SockRef::from(socket).set_recv_buffer_size(ARRIVING_ROOM);
 }
 
@@ -1999,6 +1990,50 @@ pub fn arriving_room(socket: &std::net::UdpSocket) -> usize {
     socket2::SockRef::from(socket)
         .recv_buffer_size()
         .unwrap_or(0)
+}
+
+/// What the system holds for a socket: of what arrives before anything
+/// reads it, and of what leaves before the network takes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Room {
+    pub arriving: usize,
+    pub leaving: usize,
+}
+
+/// What the system really holds for that socket, both ways.
+pub fn room_of(socket: &std::net::UdpSocket) -> Room {
+    Room {
+        arriving: arriving_room(socket),
+        leaving: socket2::SockRef::from(socket)
+            .send_buffer_size()
+            .unwrap_or(0),
+    }
+}
+
+/// What the journal says of the room a socket holds: an event when it is
+/// less than was asked for, since what comes in faster than the program
+/// is given the processor is then lost before anything can count it, and
+/// a line for the hunt when it is what was asked for.
+pub fn room_said(room: &Room) -> (Aloud, String) {
+    let Room { arriving, leaving } = *room;
+    if arriving < ARRIVING_ROOM {
+        (
+            Aloud::Says,
+            format!(
+                "the system holds {arriving} bytes of what arrives on this socket, not the \
+                 {ARRIVING_ROOM} asked for, and {leaving} of what leaves: what comes in faster \
+                 than this program is given the processor is lost before anything can count it"
+            ),
+        )
+    } else {
+        (
+            Aloud::Hunts,
+            format!(
+                "the system holds {arriving} bytes of what arrives on this socket, and \
+                 {leaving} of what leaves"
+            ),
+        )
+    }
 }
 
 fn bind_both(port: u16) -> io::Result<std::net::UdpSocket> {
@@ -2981,6 +3016,31 @@ mod tests {
         expected.look_over(now);
         assert!(expected.elect(now).is_none());
         assert_eq!(expected.elected, Some(relay));
+    }
+
+    #[test]
+    fn a_socket_that_holds_less_than_asked_says_so_as_an_event() {
+        let (how, line) = room_said(&Room {
+            arriving: 65_536,
+            leaving: 65_536,
+        });
+        assert_eq!(how, Aloud::Says);
+        assert!(
+            line.contains(
+                "holds 65536 bytes of what arrives on this socket, not the 8388608 asked for"
+            ),
+            "{line}"
+        );
+        let (how, line) = room_said(&Room {
+            arriving: ARRIVING_ROOM,
+            leaving: 65_536,
+        });
+        assert_eq!(how, Aloud::Hunts);
+        assert_eq!(
+            line,
+            "the system holds 8388608 bytes of what arrives on this socket, and 65536 of what \
+             leaves"
+        );
     }
 
     #[test]

@@ -4034,6 +4034,23 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows. Les autres étages (réseau et service, hôte, charge des machines, Wi-Fi) ont leurs propres étapes, dans les décisions qui suivent.
 
+## D251. La connexion directe garde de la place pour ce qui arrive, et le journal dit combien (2026-09-29, pendant MZ)
+
+> Deuxième étape de l'inventaire du journal ([D250](#d250-le-journal-du-lecteur-dit-pourquoi-une-image-est-perdue-et-combien-de-temps-on-a-attendu-la-suivante-2026-09-29-pendant-mz)). Étend aux prises de la connexion directe ce que la jonction fait depuis toujours pour les siennes : demander au système de garder de la place pour ce qui arrive avant que le programme ne le lise.
+
+**Le constat.** Le journal d'une session de Victor sur son réseau local dit : « 192.168.1.5 was asked for on this network alone: no account, no meeting, no relay ». C'est la connexion directe, sans compte, et son bout qui va, celui du lecteur, ouvrait sa prise avec la taille que Windows lui donne. La jonction, elle, demande huit mégaoctets et le dit dans son code : par défaut le système garde de quoi contenir une dizaine de millisecondes d'image, et toute pause du programme coûte des paquets « perdus avant que quoi que ce soit ici puisse même les compter ». Or une image part en rafale, un peu plus d'une centaine de paquets pour une image clé, tous en moins de deux millisecondes sur un câble : c'est le pire cas pour une petite réserve. Le lecteur d'une connexion directe est justement celui qui reçoit l'image.
+
+**Ce qui est fait.**
+
+- Toute prise que le transport ouvre pour lui-même, bout qui attend, bout qui va, bout qui va vers un relais, demande maintenant la même place que la jonction (huit mégaoctets), au lieu de la taille du système. La prise est liée comme le faisait le transport, sur les deux versions d'IP pour un bout qui va en version six.
+- La place réellement obtenue, à l'arrivée et au départ, est lue et écrite dans le journal chaque fois qu'une prise est ouverte : la jonction (`way` côté client, `service` côté hôte), la connexion directe (`way`) et la branche vers le relais. Un événement quand le système donne moins que demandé, une ligne de chasse sinon.
+
+**Ce qui se voit.** Rien à l'écran. Dans le journal, une ligne « the system holds N bytes of what arrives on this socket » à chaque ouverture de session, sur les deux ordinateurs.
+
+**Les essais.** Le bout que le transport ouvre pour lui-même garde plus de place que ne le fait une prise ordinaire (échoue quand la demande est retirée du code), et la phrase du journal change de voix selon que le système a donné ce qu'on demandait ou moins.
+
+**Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows, et personne n'a établi que ce soit la cause d'une perte de Victor : la session dont le journal a servi à cet examen n'avait perdu aucun paquet, 29450 envoyés et 29450 reçus. C'est une réserve qui manquait, pas une perte mesurée. Les lignes de la machine de l'étape suivante compteront les datagrammes que Windows jette faute de place : si elles restent à zéro, cette hypothèse est écartée.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

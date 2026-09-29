@@ -523,6 +523,10 @@ impl Ways {
                     SocketAddr::new(EVERY_INTERFACE, 0),
                 )
                 .map_err(not_prepared)?;
+                if let Some(room) = endpoint.room() {
+                    let (how, line) = zyr_transport::room_said(&room);
+                    said::into_the_journal(&self.log)(how, &line);
+                }
                 let (connection, took, through) =
                     race(&endpoint, &candidates).await.map_err(|e| {
                         Fact::new("reach.port_silent")

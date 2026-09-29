@@ -16,7 +16,7 @@ use zyr_proto::fingerprint::Fingerprint;
 
 use crate::congestion::{Media, MediaController, Sending};
 use crate::identity::{AllowedPeers, AnyPeer, Identity, PinnedPeer};
-use crate::junction::Junction;
+use crate::junction::{Junction, Room, make_room, room_of};
 use crate::marking::Marking;
 use crate::path::{DegradedPath, Path};
 
@@ -306,49 +306,73 @@ fn pinned_host(
     )
 }
 
+/// Binds the socket of an endpoint of our own, and asks the system to
+/// hold room for what arrives on it as it does for a junction's.
+///
+/// The endpoint the transport binds for itself leaves that room at
+/// whatever the system felt like, a few dozen kilobytes on Windows: a
+/// picture is sent as a burst of a hundred packets or more, and any
+/// moment this program is not given the processor costs some of them
+/// before anything here can count them.
+///
+/// An end that goes is bound as the transport binds it for itself, on
+/// both IP versions when it listens on version six.
+fn bind_with_room(
+    listen: SocketAddr,
+    going: bool,
+) -> Result<(std::net::UdpSocket, Room), EndpointError> {
+    use socket2::{Domain, Protocol, Socket, Type};
+
+    let socket = Socket::new(
+        Domain::for_address(listen),
+        Type::DGRAM,
+        Some(Protocol::UDP),
+    )?;
+    if going && listen.is_ipv6() {
+        // Best effort: a system that keeps it to version six is not a
+        // reason to refuse.
+        let _ = socket.set_only_v6(false);
+    }
+    socket.bind(&listen.into())?;
+    let socket = std::net::UdpSocket::from(socket);
+    make_room(&socket);
+    let room = room_of(&socket);
+    Ok((socket, room))
+}
+
 /// Opens the endpoint on the requested path.
 fn open(
     listen: SocketAddr,
     server: Option<ServerConfig>,
     path: Path,
-) -> Result<Endpoint, EndpointError> {
-    let Path::Degraded {
-        loss_per_thousand,
-        lapses,
-    } = path
-    else {
-        return Ok(match server {
-            Some(config) => Endpoint::server(config, listen)?,
-            None => Endpoint::client(listen)?,
-        });
-    };
-
+) -> Result<(Endpoint, Room), EndpointError> {
     let runtime = quinn::default_runtime()
         .ok_or_else(|| EndpointError::Configuration("no async runtime".to_string()))?;
-    let socket = runtime.wrap_udp_socket(std::net::UdpSocket::bind(listen)?)?;
-    let degraded = Arc::new(DegradedPath::new(socket, loss_per_thousand, lapses));
-
-    Ok(Endpoint::new_with_abstract_socket(
+    let (socket, room) = bind_with_room(listen, server.is_none())?;
+    let socket = runtime.wrap_udp_socket(socket)?;
+    let socket: Arc<dyn AsyncUdpSocket> = match path {
+        Path::Direct => socket,
+        Path::Degraded {
+            loss_per_thousand,
+            lapses,
+        } => Arc::new(DegradedPath::new(socket, loss_per_thousand, lapses)),
+    };
+    let endpoint = Endpoint::new_with_abstract_socket(
         quinn::EndpointConfig::default(),
         server,
-        degraded,
+        socket,
         runtime,
-    )?)
+    )?;
+    Ok((endpoint, room))
 }
 
 /// Opens a going endpoint on a socket of its own, marked or not.
-///
-/// The transport binds its own socket when the mark is left on, which
-/// is its ordinary road; taking the mark off means standing between the
-/// two, so the socket is bound here and handed over wrapped.
-fn open_marked(listen: SocketAddr, marking: Marking) -> Result<Endpoint, EndpointError> {
-    let Marking::None = marking else {
-        return Ok(Endpoint::client(listen)?);
-    };
+fn open_marked(listen: SocketAddr, marking: Marking) -> Result<(Endpoint, Room), EndpointError> {
     let runtime = quinn::default_runtime()
         .ok_or_else(|| EndpointError::Configuration("no async runtime".to_string()))?;
-    let socket = runtime.wrap_udp_socket(std::net::UdpSocket::bind(listen)?)?;
-    open_on(marking.applied(socket), None)
+    let (socket, room) = bind_with_room(listen, true)?;
+    let socket = marking.applied(runtime.wrap_udp_socket(socket)?);
+    Ok((open_on(socket, None)?, room))
 }
 
 /// Opens the endpoint on a socket somebody else holds: a junction, or
@@ -375,6 +399,10 @@ fn open_on(
 #[derive(Clone)]
 pub struct TunnelEndpoint {
     endpoint: Endpoint,
+    /// What the system holds for the socket this end bound for itself.
+    /// Nothing when the socket is somebody else's, a junction's, which
+    /// tells it on its own.
+    room: Option<Room>,
 }
 
 impl TunnelEndpoint {
@@ -404,8 +432,10 @@ impl TunnelEndpoint {
             allowed,
             transport_discovering(media.into(), Sending::Pictures),
         )?;
+        let (endpoint, room) = open(listen, Some(config), path)?;
         Ok(Self {
-            endpoint: open(listen, Some(config), path)?,
+            endpoint,
+            room: Some(room),
         })
     }
 
@@ -425,6 +455,7 @@ impl TunnelEndpoint {
         )?;
         Ok(Self {
             endpoint: open_on(Arc::new(junction.clone()), Some(config))?,
+            room: None,
         })
     }
 
@@ -446,6 +477,7 @@ impl TunnelEndpoint {
         )?;
         Ok(Self {
             endpoint: open_on(socket, Some(config))?,
+            room: None,
         })
     }
 
@@ -473,9 +505,12 @@ impl TunnelEndpoint {
             PROTOCOL,
             transport_discovering(media.into(), Sending::Inputs),
         )?;
-        let mut endpoint = open(listen, None, path)?;
+        let (mut endpoint, room) = open(listen, None, path)?;
         endpoint.set_default_client_config(config);
-        Ok(Self { endpoint })
+        Ok(Self {
+            endpoint,
+            room: Some(room),
+        })
     }
 
     /// The end that goes, on a junction: what it connects to is the
@@ -494,7 +529,10 @@ impl TunnelEndpoint {
         )?;
         let mut endpoint = open_on(Arc::new(junction.clone()), None)?;
         endpoint.set_default_client_config(config);
-        Ok(Self { endpoint })
+        Ok(Self {
+            endpoint,
+            room: None,
+        })
     }
 
     /// The end that goes towards a relay.
@@ -516,13 +554,22 @@ impl TunnelEndpoint {
             RELAY_PROTOCOL,
             transport_towards_a_relay(media.into(), sending),
         )?;
-        let mut endpoint = open_marked(listen, marking)?;
+        let (mut endpoint, room) = open_marked(listen, marking)?;
         endpoint.set_default_client_config(config);
-        Ok(Self { endpoint })
+        Ok(Self {
+            endpoint,
+            room: Some(room),
+        })
     }
 
     pub fn local_address(&self) -> Result<SocketAddr, EndpointError> {
         Ok(self.endpoint.local_addr()?)
+    }
+
+    /// What the system holds for the socket this end bound for itself,
+    /// if it did.
+    pub fn room(&self) -> Option<Room> {
+        self.room
     }
 
     /// Goes to the remote device.
@@ -846,6 +893,26 @@ mod tests {
             host_side: host_side.unwrap(),
             client_side: client_side.unwrap(),
         }
+    }
+
+    #[tokio::test]
+    async fn an_end_of_our_own_holds_more_room_than_a_plain_socket_gets() {
+        let plain = std::net::UdpSocket::bind(local()).unwrap();
+        let by_default = room_of(&plain).arriving;
+        let host = TunnelEndpoint::host(
+            &Identity::generate().unwrap(),
+            Identity::generate().unwrap().fingerprint(),
+            MediaProfile::default(),
+            local(),
+        )
+        .unwrap();
+        let room = host.room().expect("it bound its own socket");
+        assert!(
+            room.arriving > by_default,
+            "{} bytes held, {by_default} by default",
+            room.arriving
+        );
+        assert!(room.leaving > 0);
     }
 
     impl Pair {

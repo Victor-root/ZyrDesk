@@ -34,7 +34,7 @@ use zyr_proto::fingerprint::Fingerprint;
 use crate::congestion::{Media, Sending};
 use crate::endpoint::{Bytes, Connection, EndpointError, GUARANTEED_MTU, TunnelEndpoint};
 use crate::identity::Identity;
-use crate::junction::{Aloud, Junction, Say, bind_socket};
+use crate::junction::{Aloud, Junction, Room, Say, bind_socket, room_said};
 use crate::marking::Marking;
 use crate::probe;
 use crate::race::first_to_answer;
@@ -131,6 +131,8 @@ pub struct Branch {
 struct Held {
     /// Kept because it owns the socket the branch speaks on.
     _endpoint: TunnelEndpoint,
+    /// What the system holds for that socket.
+    room: Option<Room>,
     connection: Connection,
     address: SocketAddr,
     sent: AtomicU64,
@@ -214,6 +216,7 @@ impl Branch {
         }
         Ok(Self {
             inner: Arc::new(Held {
+                room: endpoint.room(),
                 _endpoint: endpoint,
                 connection,
                 address: wanted.address,
@@ -226,6 +229,11 @@ impl Branch {
     /// Where the relay carrying this branch listens.
     pub fn address(&self) -> SocketAddr {
         self.inner.address
+    }
+
+    /// What the system holds for the socket this branch speaks on.
+    pub fn room(&self) -> Option<Room> {
+        self.inner.room
     }
 
     /// How long the road to the relay itself is, which is half of what a
@@ -472,6 +480,13 @@ async fn open_a_branch(held: &Holding, say: &Say, opened: u32) -> Option<Branch>
             branch.round_trip().as_millis()
         ),
     );
+    if let Some(room) = branch.room() {
+        let (how, line) = room_said(&room);
+        say(
+            how,
+            &format!("card {}: the branch to the relay, {line}", held.card),
+        );
+    }
     Some(branch)
 }
 
