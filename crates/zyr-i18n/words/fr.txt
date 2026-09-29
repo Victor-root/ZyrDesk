@@ -115,6 +115,13 @@ session.ffmpeg_missing = FFmpeg introuvable, l'image ne peut pas être décodée
 session.abandoned = ouverture abandonnée avant l'image
 session.not_prepared = la session n'a pas pu être préparée : {detail}
 
+# How a session ends, and its picture brought back.
+session.link_lost = La connexion avec l'ordinateur distant a été perdue.
+session.link_lost_early = La connexion avec l'ordinateur distant a été perdue avant la première image.
+session.host_left_early = L'ordinateur distant a fermé la session avant la première image.
+session.did_not_hold = La session n'a pas tenu : l'image a été reprise {times} fois de suite sans que la session tienne.\n  Le réseau entre les deux ordinateurs ne la porte pas en ce moment.
+session.picture_not_back = {because}\n  L'image a été reprise {times} fois de suite sans que la session tienne.
+
 # What the engine of the far computer tells the viewer.
 engine.display_changed = L'écran filmé n'est plus là : la session montre maintenant {screen}.
 engine.codec_unavailable = Le codec {asked} n'est pas possible pour cette session : l'image passe en {chosen}.
@@ -180,11 +187,6 @@ window.session_already_open = une session est déjà en cours
 window.no_journal = le journal de la fenêtre ne s'ouvre pas, le lecteur n'a pas où écrire
 window.far_getting_ready = Tunnel établi, l'ordinateur distant se prépare…
 window.no_sound_here = Cet ordinateur n'a pas de sortie audio : la session sera muette.
-window.link_lost = La connexion avec l'ordinateur distant a été perdue.
-window.link_lost_early = La connexion avec l'ordinateur distant a été perdue avant la première image.
-window.host_left_early = L'ordinateur distant a fermé la session avant la première image.
-window.session_did_not_hold = La session n'a pas tenu : l'image a été reprise {times} fois de suite sans que la session tienne.\n  Le réseau entre les deux ordinateurs ne la porte pas en ce moment.
-window.picture_not_back = {because}\n  L'image a été reprise {times} fois de suite sans que la session tienne.
 
 # The keys held in a keyboard shortcut, as the keyboard names them.
 key.ctrl = Ctrl

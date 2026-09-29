@@ -115,10 +115,10 @@ Sur un réseau local, les étapes 2 et 3 se passent du broker : les deux service
 ## 7. Flux : reprise et résilience
 
 - Coupure réseau courte : le tunnel l'absorbe. Une image dont des paquets manquent est réparée par la correction d'erreurs du moteur, sans rien redemander ; une image irréparable coûte une seule demande d'image clé, et le lecteur garde la dernière image juste en attendant. La connexion survit à trente secondes de silence, une seule patience pour tout le produit ([D138](DECISIONS.md)) : l'aiguilleur garde la dernière route, et le moteur hôte relâche tout ce qui est enfoncé si le lecteur se tait aussi longtemps.
-- Coupure plus longue, ou session tombée pour une autre raison : la fenêtre rouvre la session d'elle-même, dans la même fenêtre, après trois secondes de pause, en affichant « Connexion perdue, reprise en cours… ». Au plus cinq reprises de suite, et deux ouvertures manquées, avant de le dire à la personne ([D174](DECISIONS.md)).
+- Coupure plus longue, ou session tombée pour une autre raison : la session se rouvre d'elle-même, dans la même fenêtre, après trois secondes de pause, et la fenêtre affiche « Connexion perdue, reprise en cours… ». Au plus cinq reprises de suite, et deux ouvertures manquées, avant de le dire à la personne ([D174](DECISIONS.md)). C'est la brique de session (`zyr-session`) qui en décide et qui mène la reprise ; la fenêtre ne fait que jouer l'image et l'afficher.
 - Verrouillage, invite d'administration, écran de connexion côté hôte : le moteur suit le bureau qui reçoit les entrées, sans rien relancer. Déconnexion ou changement d'utilisateur : la session qui tient l'écran change, le service referme sa porte et la rouvre dans la nouvelle une seconde plus tard, et le client rouvre la session de lui-même comme ci-dessus.
 - Fin d'une session : le service ferme le tube du moteur, lui laisse deux secondes pour relâcher les touches et les boutons encore tenus, et l'arrête s'il est encore là. Un moteur qui s'arrête ferme son tube, ce qui termine sa session. Ce qu'un bout dit en partant (son au revoir, ou pourquoi il abandonne) traverse le tunnel avant la fermeture, deux secondes au plus : c'est ce qui dit à l'autre bout comment la session a fini.
-- Le lecteur rapporte des faits, pas un diagnostic : fin demandée, hôte parti, lien perdu, moteur en échec avec sa raison. Classer une panne en « perte réseau » ou « erreur fatale » est une décision de la fenêtre.
+- Le lecteur rapporte des faits, pas un diagnostic : fin demandée, hôte parti, lien perdu, moteur en échec avec sa raison. Classer une panne en « perte réseau » ou « erreur fatale » est une décision de la brique de session, que la fenêtre met en mots.
 
 ## 8. États dégradés : détectés et expliqués
 
@@ -160,7 +160,7 @@ ZyrDesk/
 │  ├─ zyr-tunnel/              # le passage entre le tube du moteur et la connexion : flux du moteur, datagrammes d'image et de son, canal ZyrDesk
 │  ├─ zyr-clipboard/           # le presse-papiers de l'ordinateur : ce qu'il porte, ce qu'on lui donne, les images en PNG, et la place tenue aux fichiers d'en face
 │  ├─ zyr-control/             # le dialecte entre la fenêtre et le service, sur le tube de commande
-│  ├─ zyr-session/             # ouverture d'une session de bout en bout, partagée par l'interface et la ligne de commande, et ce que ses mesures disent de sa santé (ce qui allume les voyants)
+│  ├─ zyr-session/             # ouverture d'une session de bout en bout, partagée par l'interface et la ligne de commande, la session menée jusqu'au bout et reprise quand elle tombe, et ce que ses mesures disent de sa santé (ce qui allume les voyants)
 │  ├─ zyr-lan/                 # annonce mDNS de cet ordinateur, appel direct, découverte des autres
 │  ├─ zyr-broker/              # ce que le service et le serveur se disent : messages, tickets et laissez-passer signés
 │  ├─ zyr-account/             # le lien de compte, le rattachement, le canal vivant, la présence, le rendez-vous

@@ -17,10 +17,15 @@
 //! opening a way takes seconds, and a window with nothing to say for all
 //! of them looks stuck.
 //!
-//! Once open, what the player measures says how the session is doing,
-//! and [`health`] reads it the same way for whoever shows it.
+//! Once open, a session is played to its end by [`see_it_through`], which
+//! brings its picture back when it falls over on its own; and what its
+//! player measures says how it is doing, which [`health`] reads the same
+//! way for whoever shows it.
 
 pub mod health;
+mod playing;
+#[cfg(test)]
+mod testing;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -32,6 +37,8 @@ use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::paths;
 use zyr_proto::session::{SessionSettings, WantedScreen};
+
+pub use playing::{Stage, see_it_through};
 
 /// What is being asked for.
 pub struct Wanted {
@@ -598,126 +605,13 @@ impl Drop for Driving {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
     use std::time::Instant;
 
-    use zyr_control::{Door, Reached};
     use zyr_player::CodecChoice;
     use zyr_proto::session::Codec;
 
     use super::*;
-
-    fn wanted() -> Wanted {
-        Wanted {
-            host: "192.168.1.20".to_string(),
-            peer: "0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237"
-                .parse()
-                .unwrap(),
-            settings: SessionSettings::default(),
-            hush_the_far_speakers: true,
-            wants_a_screen_over_there: true,
-            far_magnification: 150,
-            far_screen: Some(r"MONITOR\GSM5B7F\0003".to_string()),
-            only_here: false,
-        }
-    }
-
-    /// A service of its own for a test, on a channel of its own, which
-    /// answers each request as `answering` says and writes down what it
-    /// was asked, in order.
-    fn a_service(
-        what: &str,
-        answering: impl Fn(&Request) -> Option<Answer> + Send + 'static,
-    ) -> (String, Arc<Mutex<Vec<Request>>>) {
-        let channel = format!("zyr-session-test-{}-{what}", std::process::id());
-        let listening = channel.clone();
-        let asked = Arc::new(Mutex::new(Vec::new()));
-        let writing = Arc::clone(&asked);
-        let (opened, when_open) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("the test service's runtime starts");
-            runtime.block_on(async move {
-                let mut door = Door::open(&listening).expect("the test channel opens");
-                opened.send(()).expect("the test channel is announced");
-                let mut heard = door.accept().await.expect("a call");
-                while let Ok(Some(line)) = heard.hear().await {
-                    let request = Request::parse(&line).expect("a readable request");
-                    let answer = answering(&request);
-                    writing.lock().unwrap().push(request);
-                    match answer {
-                        Some(answer) => heard
-                            .say(&answer.to_string())
-                            .await
-                            .expect("the answer is sent"),
-                        // Held without an answer: a service still
-                        // chasing the far computer.
-                        None => std::future::pending::<()>().await,
-                    }
-                }
-            });
-        });
-        when_open.recv().expect("the test channel is open");
-        (channel, asked)
-    }
-
-    /// What an ordinary far computer answers.
-    fn willing(request: &Request) -> Option<Answer> {
-        Some(match request {
-            Request::Reach { .. } => Answer::Reached(Reached {
-                way: WayId(7),
-                link: r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1".to_string(),
-            }),
-            Request::Hush { .. } => Answer::Refused(nobody_signed_in()),
-            Request::FarScreen { .. } => Answer::Showing {
-                size: Some((2560, 1440)),
-            },
-            _ => Answer::Done,
-        })
-    }
-
-    /// What a far computer with nobody signed in answers when asked to
-    /// silence its speakers.
-    fn nobody_signed_in() -> Fact {
-        Fact::new("far.hush_failed").with("detail", "nobody is signed in on this computer")
-    }
-
-    /// Waits for the service to have been asked `count` things.
-    fn until_asked(asked: &Mutex<Vec<Request>>, count: usize) -> Vec<Request> {
-        let began = Instant::now();
-        loop {
-            let so_far = asked.lock().unwrap().clone();
-            if so_far.len() >= count || began.elapsed() > Duration::from_secs(5) {
-                return so_far;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-
-    /// A folder holding FFmpeg, as far as looking for it goes: empty
-    /// files under the names its libraries are opened by. Gone with the
-    /// test.
-    struct FfmpegHere(PathBuf);
-
-    impl FfmpegHere {
-        fn new(what: &str) -> Self {
-            let folder = std::env::temp_dir()
-                .join(format!("zyr-session-ffmpeg-{}-{what}", std::process::id()));
-            std::fs::create_dir_all(&folder).expect("the test folder is made");
-            for file in Ffmpeg::missing_from(&folder) {
-                std::fs::write(file, b"").expect("a test file is written");
-            }
-            Self(folder)
-        }
-    }
-
-    impl Drop for FfmpegHere {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
+    use crate::testing::{FfmpegHere, a_service, nobody_signed_in, until_asked, wanted, willing};
 
     #[test]
     fn a_missing_ffmpeg_is_reported_before_anything_is_asked() {

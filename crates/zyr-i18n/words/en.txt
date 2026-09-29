@@ -118,6 +118,13 @@ session.ffmpeg_missing = FFmpeg is missing, the picture cannot be decoded withou
 session.abandoned = opening abandoned before the picture
 session.not_prepared = the session could not be prepared: {detail}
 
+# How a session ends, and its picture brought back.
+session.link_lost = The connection with the far computer was lost.
+session.link_lost_early = The connection with the far computer was lost before the first picture.
+session.host_left_early = The far computer closed the session before the first picture.
+session.did_not_hold = The session did not hold: the picture was brought back {times} times in a row without the session holding.\n  The network between the two computers cannot carry it right now.
+session.picture_not_back = {because}\n  The picture was brought back {times} times in a row without the session holding.
+
 # What the engine of the far computer tells the viewer.
 engine.display_changed = The filmed screen is gone: the session now shows {screen}.
 engine.codec_unavailable = The {asked} codec is not possible for this session: the picture goes to {chosen}.
@@ -183,11 +190,6 @@ window.session_already_open = a session is already under way
 window.no_journal = the window's journal does not open, the player has nowhere to write
 window.far_getting_ready = Tunnel up, the far computer is getting ready…
 window.no_sound_here = This computer has no audio output: the session will be silent.
-window.link_lost = The connection with the far computer was lost.
-window.link_lost_early = The connection with the far computer was lost before the first picture.
-window.host_left_early = The far computer closed the session before the first picture.
-window.session_did_not_hold = The session did not hold: the picture was brought back {times} times in a row without the session holding.\n  The network between the two computers cannot carry it right now.
-window.picture_not_back = {because}\n  The picture was brought back {times} times in a row without the session holding.
 
 # The keys held in a keyboard shortcut, as the keyboard names them.
 key.ctrl = Ctrl

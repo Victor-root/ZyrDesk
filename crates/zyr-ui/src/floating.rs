@@ -398,24 +398,18 @@ fn leave_it_there() {
 
 impl Floating {
     /// Says a close is being asked for, or that none is any more.
-    fn closing(app: &App, asked: bool) {
+    pub fn closing(app: &App, asked: bool) {
         app.floating().closing.store(asked, Ordering::Relaxed);
     }
 
-    /// Whether a close has been asked for, without forgetting it.
+    /// Whether a close has been asked for.
     ///
     /// Asked while a session is still opening, which lets go where it
-    /// stands, and during the pause before a picture comes back. Left
-    /// standing for `was_closed_on_purpose` to take, since that is what
-    /// the session reads once it is over.
+    /// stands, during the pause before a picture comes back, and once the
+    /// session is over, which tells a session closed from one that broke.
+    /// Left standing until the next session is asked for.
     pub fn a_close_was_asked_for(app: &App) -> bool {
         app.floating().closing.load(Ordering::Relaxed)
-    }
-
-    /// Whether the session that just ended was closed on purpose, and
-    /// forgets it either way.
-    pub fn was_closed_on_purpose(app: &App) -> bool {
-        app.floating().closing.swap(false, Ordering::Relaxed)
     }
 }
 
