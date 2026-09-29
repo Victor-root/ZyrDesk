@@ -6,9 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+# Every push is checked to the end, even when another one follows it a
+# minute later: a run cut short leaves a commit that nobody checked, and
+# the one that broke something is then found by guesswork.
 
 permissions:
   contents: read
@@ -30,9 +30,9 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets
 
-  # Most of the engine (capture, hardware encoders, the player's drawing,
-  # the service's sessions) only compiles on Windows: the analysis above
-  # never sees it.
+  # The window, most of the engine (capture, hardware encoders, the
+  # player's drawing) and what the platform bricks ask of Windows only
+  # compile on Windows: the analysis above never sees them.
   quality-windows:
     name: Analyse statique (Windows)
     runs-on: windows-latest
