@@ -112,13 +112,27 @@ pub fn h264(count: usize, keys: &[usize]) -> (Vec<Encoded>, Vec<u64>) {
 
 /// The datagrams of one frame, as the host engine sends them.
 pub fn datagrams(stream: u16, frame: u32, packet: &Encoded, captured_us: u32) -> Vec<Vec<u8>> {
+    sent(stream, frame, packet, captured_us, false)
+}
+
+/// The datagrams of a frame the host sends again, its screen unchanged.
+pub fn datagrams_again(
+    stream: u16,
+    frame: u32,
+    packet: &Encoded,
+    captured_us: u32,
+) -> Vec<Vec<u8>> {
+    sent(stream, frame, packet, captured_us, true)
+}
+
+fn sent(stream: u16, frame: u32, packet: &Encoded, captured_us: u32, repeat: bool) -> Vec<Vec<u8>> {
     let mut packets = Packets::new();
     Packetizer::new(1161, 20)
         .packetize(
             &OutgoingFrame {
                 data: &packet.0,
                 key: packet.1,
-                repeat: false,
+                repeat,
                 stream,
                 frame,
                 captured_us,

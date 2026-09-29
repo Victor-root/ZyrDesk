@@ -3989,6 +3989,29 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui reste ouvert.** La carte ne capture pas la souris pendant le geste. Une main qui sort de la fenêtre de la carte en tenant le curseur et lâche dehors ne finit pas le geste : rien n'est écrit, et le curseur suit le pointeur au retour, sans bouton enfoncé, jusqu'au prochain clic.
 
+## D249. Une image que l'hôte répète ne compte plus comme une image en retard (2026-09-29, pendant MZ)
+
+> Corrige le témoin du lien de [D177](#d177-lavertissement-sur-le-lien-était-peint-dans-limage-et-arrivait-après-coup-2026-09-11-pendant-m6) et complète [D229](#d229-la-carte-de-lhôte-reste-à-pleine-vitesse-et-laffichage-rend-la-latence-que-la-cadence-avait-prise-2026-09-25-pendant-mz) : les répétitions de l'hôte cèdent la place aux images neuves, et ce n'est pas une perte.
+
+**Le relevé.** Dit par Victor : l'icône « wifi » du bouton flottant reste allumée presque toute la session, sur le réseau local, avec deux PC en câble.
+
+**La cause.** Le journal d'une de ses sessions dit que 6,8 % des images décodées y étaient comptées « en retard », que 0 image était perdue, et que l'aller-retour restait entre 0,3 et 1,9 ms. Toutes ces images en retard étaient des répétitions : quand son écran ne change pas, l'hôte renvoie la dernière image, et dès qu'une image neuve arrive, la répétition qui attendait, ou qui venait d'être posée pour le même rafraîchissement, lui cède la place ([D229](#d229-la-carte-de-lhôte-reste-à-pleine-vitesse-et-laffichage-rend-la-latence-que-la-cadence-avait-prise-2026-09-25-pendant-mz)). Ce départ est voulu et ne coûte rien : l'image neuve montre tout ce que la répétition montrait. Mais le témoin du lien comptait ces départs comme des images arrivées trop tard, au même titre qu'une image jetée parce que le réseau l'a livrée en rafale, et 5 % suffisaient pour allumer l'icône. Plus l'écran de l'hôte est calme, plus les répétitions sont nombreuses, et plus l'icône s'allumait à tort.
+
+**Ce qui est fait.**
+
+- La cadence du lecteur dit maintenant, pour chaque image qui n'a pas été montrée, laquelle des deux choses lui est arrivée : une répétition qui a cédé sa place, ou une vraie image que personne n'a vue (jetée parce que plusieurs sont arrivées ensemble, ou pour reprendre un rafraîchissement de retard, ou remplacée dans le décodeur).
+- Le témoin du lien, et donc l'icône, ne comptent plus que les vraies images. Les répétitions qui cèdent leur place ne changent rien à ce que la personne voit ni à ce que dit l'icône.
+- Les compteurs de fin de session gardent tout : `unshown` (les vraies images jetées) et `gave way` (les répétitions qui ont cédé), et le total reste juste : images montrées + `unshown` + `gave way` = images décodées.
+- La ligne d'une seconde d'affichage (`flow`, « on screen ») dit les deux : `N replaced before their turn, N sent again gave way to a newer one`. La ligne de la cadence (`pacing`) disait déjà les deux.
+
+**Ce qui se voit.** L'icône du lien ne s'allume plus quand l'écran de l'hôte est calme et que le réseau est sain. Elle s'allume toujours pour une image figée, des images perdues, ou de vraies images jetées faute de place.
+
+**Les essais.** La cadence dit séparément les répétitions qui cèdent et les images jetées, dans chacun de ses cas (rafale, reprise d'un rafraîchissement, répétition attendante, répétition déjà posée). Une session simulée de 41 images dont 20 répétitions qui cèdent affiche 0 % d'images en retard (48,8 % avant la correction, essayé en la retirant), et les compteurs restent justes.
+
+**Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows. Si l'icône reste allumée après cette correction, ce sera pour une cause réelle, et la ligne du voyant dans le journal (tri : `badges`) dit laquelle : `badge.late` (images jetées), `badge.lost` (images perdues) ou `badge.frozen` (image figée).
+
+**Ce qui reste ouvert.** Les images jetées pour reprendre un rafraîchissement de retard, et celles qu'une rafale écrase, comptent toujours comme « en retard » : ce sont de vraies images que la personne n'a pas vues. Un hôte qui enverrait plus d'images par seconde que l'écran d'ici ne sait en montrer (120 pour un écran à 60 Hz) les compterait toutes, et l'icône s'allumerait. Ce cas n'a pas été vu.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -145,7 +145,18 @@ pub(crate) struct Turn<T> {
     pub(crate) due: Option<Instant>,
     /// Pictures never to be shown because of it: dropped while waiting,
     /// or presented for the same refresh and replaced before it.
-    pub(crate) unshown: u64,
+    pub(crate) unshown: Unshown,
+}
+
+/// Decoded pictures that will never be shown, told apart by whether the
+/// person lost anything.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Unshown {
+    /// Sent again by the host, its screen unchanged: the newer picture
+    /// that took their place shows all they did.
+    pub(crate) gave_way: u64,
+    /// Any other, which nobody saw.
+    pub(crate) dropped: u64,
 }
 
 /// Refreshes of the screen: when one was, and how long each lasts.
@@ -297,9 +308,9 @@ impl<T> Pacer<T> {
     }
 
     /// A picture decoded at `ready`, a `repeat` if the host sent it again.
-    /// Says how many waiting pictures were dropped for it: before the
+    /// Says which waiting pictures were left out for it: before the
     /// refreshes are known, only the newest waits.
-    pub(crate) fn ready(&mut self, picture: T, ready: Instant, repeat: bool) -> u64 {
+    pub(crate) fn ready(&mut self, picture: T, ready: Instant, repeat: bool) -> Unshown {
         self.seconds.started(ready);
         let before = self.waiting.len();
         self.waiting.retain(|waiting| !waiting.repeat);
@@ -333,7 +344,10 @@ impl<T> Pacer<T> {
             self.second.gave_way += gave_way;
             self.second.piled_up += piled_up;
         }
-        gave_way + piled_up
+        Unshown {
+            gave_way,
+            dropped: piled_up,
+        }
     }
 
     /// The picture to present at `now`, if one is due.
@@ -345,7 +359,7 @@ impl<T> Pacer<T> {
             return Some(Turn {
                 picture: waiting.picture,
                 due: None,
-                unshown: 0,
+                unshown: Unshown::default(),
             });
         };
         if self.waiting.is_empty() {
@@ -363,23 +377,24 @@ impl<T> Pacer<T> {
         {
             return None;
         }
-        let mut unshown = 0;
+        let mut unshown = Unshown::default();
         if again {
             // The picture presented for this refresh is replaced before it
             // shows, on purpose: not a miss. Either way the refresh is
             // taken back.
-            unshown = 1;
             self.pending
                 .retain(|pending| !refreshes.same(pending.due, due));
             if self.served_repeat {
+                unshown.gave_way = 1;
                 self.second.gave_way += 1;
             } else {
+                unshown.dropped = 1;
                 self.second.caught_up += 1;
             }
             self.catching_up = false;
         } else if self.catching_up && self.waiting.len() > 1 {
             self.waiting.pop_front();
-            unshown = 1;
+            unshown.dropped = 1;
             self.second.caught_up += 1;
             self.catching_up = false;
         }
@@ -942,7 +957,8 @@ mod tests {
         /// Every picture presented, for when the refresh it was meant for
         /// is.
         presented: Vec<(u32, Option<Instant>)>,
-        unshown: u64,
+        /// Every picture left out, by what became of it.
+        unshown: Unshown,
         /// The pictures the host sent again, by number.
         repeats: Vec<usize>,
     }
@@ -954,7 +970,7 @@ mod tests {
                 compositor,
                 late,
                 presented: Vec::new(),
-                unshown: 0,
+                unshown: Unshown::default(),
                 repeats: Vec::new(),
             }
         }
@@ -967,11 +983,12 @@ mod tests {
             while now <= until {
                 while next < decoded.len() && decoded[next] <= now {
                     let repeat = self.repeats.contains(&next);
-                    self.unshown += self.pacer.ready(next as u32, decoded[next], repeat);
+                    let left_out = self.pacer.ready(next as u32, decoded[next], repeat);
+                    self.count(left_out);
                     next += 1;
                 }
                 if let Some(turn) = self.pacer.due(now) {
-                    self.unshown += turn.unshown;
+                    self.count(turn.unshown);
                     self.compositor.presents.push((now, turn.picture));
                     self.presented.push((turn.picture, turn.due));
                     let screen = self.compositor.displayed(now);
@@ -987,6 +1004,11 @@ mod tests {
                         at.max(now + Duration::from_micros(1))
                     });
             }
+        }
+
+        fn count(&mut self, left_out: Unshown) {
+            self.unshown.gave_way += left_out.gave_way;
+            self.unshown.dropped += left_out.dropped;
         }
 
         /// Per refresh from `first` to `last`, how far the picture moved
@@ -1109,7 +1131,7 @@ mod tests {
         for (refresh, picture) in (10..).zip(shown) {
             assert_eq!(picture, Some(refresh as u32 - 2));
         }
-        assert_eq!(thread.unshown, 0);
+        assert_eq!(thread.unshown, Unshown::default());
     }
 
     #[test]
@@ -1197,7 +1219,7 @@ mod tests {
         thread.pacer.look(start + Duration::from_secs(7));
         let written = journal.written();
         assert!(written.contains("one every 6.944 ms"), "{written}");
-        assert_eq!(thread.unshown, 0);
+        assert_eq!(thread.unshown, Unshown::default());
         let mut meant: Vec<u64> = thread
             .presented
             .iter()
@@ -1428,7 +1450,8 @@ mod tests {
         let at = Instant::now();
         pacer.after(None, at, Some(&said(1, 1_000, at)));
         assert!(pacer.refreshes.is_some());
-        assert_eq!(pacer.ready(7u32, at + Duration::from_millis(1), false), 0);
+        let left_out = pacer.ready(7u32, at + Duration::from_millis(1), false);
+        assert_eq!(left_out, Unshown::default());
         let later = at + Duration::from_millis(2);
         pacer.after(None, later, Some(&said(2, 5, later)));
         // Counted afresh from the refresh just timed.
@@ -1462,11 +1485,20 @@ mod tests {
         let journal = testing::OwnLog::new("pacing-unknown");
         let mut pacer = Pacer::new(&journal.log);
         let now = Instant::now();
-        assert_eq!(pacer.ready(1u32, now, false), 0);
-        assert_eq!(pacer.ready(2, now, false), 1);
+        assert_eq!(pacer.ready(1u32, now, false), Unshown::default());
+        assert_eq!(
+            pacer.ready(2, now, false),
+            Unshown {
+                dropped: 1,
+                gave_way: 0
+            }
+        );
         assert_eq!(pacer.next_wakeup(now), None);
         let turn = pacer.due(now).unwrap();
-        assert_eq!((turn.picture, turn.due, turn.unshown), (2, None, 0));
+        assert_eq!(
+            (turn.picture, turn.due, turn.unshown),
+            (2, None, Unshown::default())
+        );
         assert!(pacer.due(now).is_none());
     }
 
@@ -1537,7 +1569,13 @@ mod tests {
         assert_eq!(shown[108], Some(105));
         assert_eq!(shown[109], Some(106));
         assert_eq!(shown[150], Some(147));
-        assert_eq!(thread.unshown, 5);
+        assert_eq!(
+            thread.unshown,
+            Unshown {
+                dropped: 5,
+                gave_way: 0
+            }
+        );
         assert!(
             journal
                 .written()
@@ -1579,7 +1617,13 @@ mod tests {
         assert_eq!(shown[102], Some(99));
         assert_eq!(shown[103], Some(101));
         assert_eq!(shown[250], Some(248));
-        assert_eq!(thread.unshown, 1);
+        assert_eq!(
+            thread.unshown,
+            Unshown {
+                dropped: 0,
+                gave_way: 1
+            }
+        );
         assert!(
             journal
                 .written()
@@ -1597,9 +1641,15 @@ mod tests {
         pacer.after(None, at, Some(&said(1, 1_000, at)));
         // Both decoded after the window of refresh 1001 closed.
         let ms = Duration::from_millis;
-        assert_eq!(pacer.ready(1u32, at + ms(12), true), 0);
+        assert_eq!(pacer.ready(1u32, at + ms(12), true), Unshown::default());
         assert!(pacer.due(at + ms(12)).is_none());
-        assert_eq!(pacer.ready(2, at + ms(14), false), 1);
+        assert_eq!(
+            pacer.ready(2, at + ms(14), false),
+            Unshown {
+                dropped: 0,
+                gave_way: 1
+            }
+        );
         let turn = pacer.due(at + ms(18)).unwrap();
         let two_refreshes_on = at + Duration::from_nanos(2 * SIXTY_HZ);
         assert_eq!((turn.picture, turn.due), (2, Some(two_refreshes_on)));

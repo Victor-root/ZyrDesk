@@ -23,6 +23,9 @@ pub struct PictureTallies {
     pub shown: u64,
     /// Decoded, then replaced by a newer picture before being shown.
     pub unshown: u64,
+    /// Sent again by the host, its screen unchanged, and replaced by a
+    /// newer picture before being shown: nothing the person could see.
+    pub gave_way: u64,
     /// Whole frames passed over while waiting for a key frame.
     pub skipped: u64,
     /// Times the player fell so far behind the host that it dropped what
@@ -84,11 +87,11 @@ impl fmt::Display for Tallies {
             f,
             "video packets {} (duplicate {}, late {}, unneeded {}, malformed {}, overflow {}, \
              crowded {}), frames whole {} (repaired {}, parity used {}), lost {}, superseded {}; \
-             pictures decoded {}, shown {}, unshown {}, skipped {}, fallen behind {}, broken {}, \
-             undrawn {}, key frames asked {}, redrawn {}, renewed {}; sound packets {} (late {}, \
-             duplicate {}, dropped {}, crowded {}, unplayed {}, malformed {}), decoded {}, \
-             concealed {}, broken {}, underruns {}; control unreadable {}; input sent {}, \
-             pressed again {}, too early {}",
+             pictures decoded {}, shown {}, unshown {}, gave way {}, skipped {}, fallen behind {}, \
+             broken {}, undrawn {}, key frames asked {}, redrawn {}, renewed {}; sound packets {} \
+             (late {}, duplicate {}, dropped {}, crowded {}, unplayed {}, malformed {}), \
+             decoded {}, concealed {}, broken {}, underruns {}; control unreadable {}; input sent \
+             {}, pressed again {}, too early {}",
             a.packets,
             a.duplicates,
             a.late,
@@ -104,6 +107,7 @@ impl fmt::Display for Tallies {
             p.decoded,
             p.shown,
             p.unshown,
+            p.gave_way,
             p.skipped,
             p.behind,
             p.broken,

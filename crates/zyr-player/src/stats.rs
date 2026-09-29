@@ -132,6 +132,10 @@ impl Tally {
     /// Pictures decoded that a newer one replaced before they were
     /// shown.
     ///
+    /// Not the ones the host sent again, its screen unchanged: they show
+    /// nothing the newer picture does not, and a session on a still
+    /// screen would read as a link that shakes.
+    ///
     /// Not counted before the first picture is shown: the surface is
     /// still being made then, and the pictures it lets pass are the
     /// start of the session, not ones the link brought too late.

@@ -70,6 +70,7 @@ struct Second {
     arrivals: String,
     presented: u32,
     unshown: u64,
+    gave_way: u64,
     present_every: Spread,
     waited: Spread,
     presenting: Spread,
@@ -194,6 +195,12 @@ impl Flow {
     /// Pictures decoded that a newer one replaced before their turn.
     pub(crate) fn unshown(&mut self, count: u64) {
         self.second.unshown += count;
+    }
+
+    /// Pictures the host sent again that a newer one replaced before
+    /// their turn: the screen had not changed, so nothing was lost.
+    pub(crate) fn gave_way(&mut self, count: u64) {
+        self.second.gave_way += count;
     }
 
     /// A picture whole at `whole` was presented from `started` to `done`,
@@ -345,9 +352,14 @@ impl Drop for Flow {
 /// What was presented, and what the screen made of it.
 fn screen_line(frames: &str, second: &Second) -> String {
     let mut line = format!(
-        "{frames} on screen: {} presented every {} ms, {} replaced before their turn; whole to \
-         presented {} ms, presenting {} ms",
-        second.presented, second.present_every, second.unshown, second.waited, second.presenting,
+        "{frames} on screen: {} presented every {} ms, {} replaced before their turn, {} sent \
+         again gave way to a newer one; whole to presented {} ms, presenting {} ms",
+        second.presented,
+        second.present_every,
+        second.unshown,
+        second.gave_way,
+        second.waited,
+        second.presenting,
     );
     if second.screen_seen {
         let _ = write!(
@@ -443,6 +455,8 @@ mod tests {
             );
         }
         flow.lost(at + period * 5);
+        flow.unshown(1);
+        flow.gave_way(2);
         flow.look(at + Duration::from_secs(5));
 
         let written = journal.written();
@@ -462,7 +476,10 @@ mod tests {
             "{written}"
         );
         assert!(
-            written.contains("3 presented every 16.7/16.7/16.7 ms"),
+            written.contains(
+                "3 presented every 16.7/16.7/16.7 ms, 1 replaced before their turn, 2 sent \
+                 again gave way to a newer one"
+            ),
             "{written}"
         );
         // Two pictures reached the screen after the first was seen, one

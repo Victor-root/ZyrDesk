@@ -34,7 +34,7 @@ use zyr_proto::log::{Log, Seldom};
 
 use crate::flow::Flow;
 use crate::lock;
-use crate::pacing::Pacer;
+use crate::pacing::{Pacer, Unshown};
 use crate::present::{Fault, Presenter, Rect};
 use crate::stats::Tally;
 use crate::tallies::{PictureTallies, Tallies};
@@ -494,8 +494,8 @@ impl<P: Presenter> Video<P> {
                             captured_us: frame.captured_us,
                             whole: frame.last_packet,
                         };
-                        let dropped = self.pacer.ready(ready, Instant::now(), frame.repeat);
-                        self.unshown(now, dropped);
+                        let left_out = self.pacer.ready(ready, Instant::now(), frame.repeat);
+                        self.unshown(now, left_out);
                     }
                     self.assembler.recycle(frame.data);
                 }
@@ -544,7 +544,13 @@ impl<P: Presenter> Video<P> {
                 self.flow.decoded(took);
                 self.counters.decoded += 1;
                 self.recovery.decoded(frame.frame);
-                self.unshown(now, replaced);
+                self.unshown(
+                    now,
+                    Unshown {
+                        dropped: replaced,
+                        ..Unshown::default()
+                    },
+                );
                 picture
             }
             Decoded::Broken(reason) => {
@@ -669,13 +675,18 @@ impl<P: Presenter> Video<P> {
         self.said.push(Said::Recover(recover));
     }
 
-    fn unshown(&mut self, now: Instant, count: u64) {
-        if count == 0 {
+    /// Pictures a newer one took the place of. Only the ones the person
+    /// would have seen count as lost: a picture sent again gave way to a
+    /// newer one that shows all it did.
+    fn unshown(&mut self, now: Instant, unshown: Unshown) {
+        self.counters.gave_way += unshown.gave_way;
+        self.flow.gave_way(unshown.gave_way);
+        if unshown.dropped == 0 {
             return;
         }
-        self.counters.unshown += count;
-        lock(&self.tally).unshown(now, count);
-        self.flow.unshown(count);
+        self.counters.unshown += unshown.dropped;
+        lock(&self.tally).unshown(now, unshown.dropped);
+        self.flow.unshown(unshown.dropped);
         self.hushed.unshown.note(&self.log, now, |times| {
             format!("a newer picture took the place of one not yet shown ({times} since last said)")
         });
@@ -844,7 +855,30 @@ mod tests {
     }
 
     fn frame_in(video: &mut Video<Recording>, stream: u16, n: u32, packet: &Encoded, now: Instant) {
-        for datagram in testing::datagrams(stream, n, packet, n * 16_000) {
+        take_all(
+            video,
+            testing::datagrams(stream, n, packet, n * 16_000),
+            now,
+        );
+    }
+
+    /// A frame the host sends again, its screen unchanged.
+    fn frame_again_in(
+        video: &mut Video<Recording>,
+        stream: u16,
+        n: u32,
+        packet: &Encoded,
+        now: Instant,
+    ) {
+        take_all(
+            video,
+            testing::datagrams_again(stream, n, packet, n * 16_000),
+            now,
+        );
+    }
+
+    fn take_all(video: &mut Video<Recording>, datagrams: Vec<Vec<u8>>, now: Instant) {
+        for datagram in datagrams {
             video.take(&datagram, now, now);
         }
     }
@@ -943,6 +977,30 @@ mod tests {
         assert_eq!(video.counters.decoded, 4);
         assert_eq!(video.counters.unshown, 3);
         assert_eq!(video.counters.checksum, Some(looks[3]));
+    }
+
+    #[test]
+    fn pictures_sent_again_that_give_way_are_not_counted_as_late() {
+        // A still screen: the host sends the last picture again, and a
+        // real one comes before the repeat has been drawn. Nothing was
+        // lost, so the link must not look like it shakes.
+        let (packets, _) = h264(42, &[]);
+        let mut video = video(Recording::default());
+        let at = Instant::now();
+        frame_in(&mut video, 1, 0, &packets[0], at);
+        video.settle(at);
+        for pair in 0..20u32 {
+            let repeat = 1 + pair * 2;
+            frame_again_in(&mut video, 1, repeat, &packets[repeat as usize], at);
+            frame_in(&mut video, 1, repeat + 1, &packets[repeat as usize + 1], at);
+            video.settle(at);
+        }
+        assert_eq!(video.counters.decoded, 41);
+        assert_eq!(video.counters.shown, 21);
+        assert_eq!(video.counters.gave_way, 20);
+        assert_eq!(video.counters.unshown, 0);
+        let measures = lock(&video.tally).measures(at);
+        assert_eq!(measures.dropped_jitter_pct, Some(0.0));
     }
 
     #[test]

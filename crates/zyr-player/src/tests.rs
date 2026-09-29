@@ -330,7 +330,7 @@ fn a_whole_session_plays_and_ends_when_asked() {
     assert_eq!(tallies.pictures.recovers, 2);
     assert_eq!(tallies.assembly.frames_lost, 1);
     assert_eq!(
-        tallies.pictures.shown + tallies.pictures.unshown,
+        tallies.pictures.shown + tallies.pictures.unshown + tallies.pictures.gave_way,
         tallies.pictures.decoded
     );
     assert_eq!(tallies.pictures.checksum, Some(looks[11]));

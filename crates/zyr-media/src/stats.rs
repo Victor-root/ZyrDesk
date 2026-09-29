@@ -36,7 +36,8 @@ pub struct Measures {
     pub bitrate_mbps: Option<f64>,
     /// Frames lost, out of the frames expected.
     pub dropped_network_pct: Option<f64>,
-    /// Frames decoded but never shown, a newer one taking their turn.
+    /// Frames decoded but never shown, a newer one taking their turn:
+    /// not those the host sent again, its screen unchanged.
     pub dropped_jitter_pct: Option<f64>,
     /// Since the last frame reached the decoder, or since the host last
     /// said its screen had not changed from that frame.

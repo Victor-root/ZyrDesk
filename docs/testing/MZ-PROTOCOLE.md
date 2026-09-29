@@ -151,7 +151,7 @@ Menu de la session, entrée **Statistiques**. Un bandeau s'affiche collé en hau
 | **Décodage** | Le temps que met la carte graphique du client à décompresser une image |
 | **Affichage** | Le temps pour dessiner l'image dans la fenêtre |
 | **Débit** | Ce que l'image consomme sur le réseau, en mégabits par seconde |
-| **Pertes** | Les images perdues en route, puis celles arrivées trop tard, remplacées par une plus récente avant d'être montrées |
+| **Pertes** | Les images perdues en route, puis celles arrivées trop tard, remplacées par une plus récente avant d'être montrées. Les répétitions que l'hôte renvoie quand son écran ne change pas, et qui cèdent leur place à une image neuve, ne comptent pas ([D249](../DECISIONS.md)) |
 | **Latence de bout en bout** | **Le chiffre le plus important.** Le temps entre le moment où l'hôte a filmé une image et le moment où elle est posée à l'écran du client. C'est ce qu'on ressent quand on bouge une fenêtre. Il ne compte pas le temps que met l'écran lui-même à allumer ses pixels : seule la mesure au téléphone de [perf/GATES.md](../../perf/GATES.md) le voit |
 
 **Attendu.** Des chiffres stables. En réseau local, les pertes restent à 0 %, le réseau à quelques millisecondes, et la latence de bout en bout à un chiffre stable, de l'ordre d'une ou de quelques dizaines de millisecondes. **Noter la latence de bout en bout** sur un bureau qui bouge : c'est le chiffre que le jalon compare aux anciens moteurs.
