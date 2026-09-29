@@ -4164,6 +4164,20 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui reste ouvert.** Le journal ne date qu'à la seconde. Chaque ligne de chaque seconde porte les images par leur numéro, et les images perdues ou en retard se retrouvent par ce numéro entre l'hôte et le lecteur, mais deux événements de la même seconde ne se remettent pas dans l'ordre par l'heure.
 
+## D258. La croix de l'hôte renvoie le client, qui ne revient plus (2026-09-29, pendant MZ)
+
+> Dit par Victor : en prenant la main sur l'hôte et en cliquant la croix pour déconnecter le client, celui-ci est déconnecté puis reconnecté tout seul, en boucle. Impossible de vraiment l'exclure.
+
+**Le constat.** La croix demande au service de l'hôte de renvoyer l'ordinateur d'en face, et le service se bornait à fermer la connexion. Le client ne voit alors aucune parole de l'hôte : le lien avec son propre service se ferme, ce que le lecteur lit comme un lien perdu. Un lien perdu est un accident, et la reprise de session le ramène aussitôt. Un hôte qui dit « au revoir » (`ByeReason`) est, au contraire, une décision que le client ne défait pas : la reprise ne s'applique qu'au lien perdu et à l'échec du moteur.
+
+**Ce qui est fait.** Le service demande au moteur de la session de l'arrêter. Le moteur dit au revoir au lecteur sur le canal de contrôle, comme pour un arrêt du service, puis s'en va, et la session se ferme d'elle-même. La connexion n'est fermée d'office que si le moteur ne peut pas être prévenu, ou n'a pas fini au bout de trois secondes. Pour cela le registre des ordinateurs connectés garde le moteur de chaque session avec sa connexion.
+
+**Ce qui se voit.** Le client dit que l'hôte a mis fin à la session, et ne se reconnecte pas. Pour revenir, la personne le décide.
+
+**Les essais.** Un moteur prévenu reçoit l'ordre d'arrêt, et une session dont le moteur n'est pas là ne peut pas être renvoyée par lui, ce qui ramène à la fermeture de la connexion. Le reste (l'au revoir du moteur, sa lecture par le lecteur, l'absence de reprise) l'était déjà, par les essais de bout en bout de `zyr-host` et ceux de `zyr-session`. Rien de tout cela n'a tourné sur un vrai Windows.
+
+**Ce qui reste ouvert.** Le client peut toujours se reconnecter de lui-même à la main, et l'hôte ne garde pas la mémoire de l'avoir renvoyé : une exclusion qui dure, jusqu'à ce que l'hôte la lève, serait une autre décision, sur les appareils autorisés.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

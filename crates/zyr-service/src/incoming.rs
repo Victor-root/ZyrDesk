@@ -15,11 +15,17 @@
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use zyr_control::Watching;
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_transport::Connection;
+
+use crate::engine::Engine;
+
+/// How long a computer sent away has to say goodbye before its
+/// connection is closed from under it.
+const GOODBYE_WITHIN: Duration = Duration::from_secs(3);
 
 /// One computer connected to this one right now.
 struct Entry {
@@ -29,6 +35,8 @@ struct Entry {
     /// Kept only to be closed: the one thing an entry is for that a
     /// count could never be.
     connection: Connection,
+    /// The session's engine, which ends the session with a goodbye.
+    engine: Arc<Engine>,
 }
 
 /// Who is connected to this computer, shared between the door that
@@ -66,7 +74,13 @@ impl Drop for Held {
 impl Incoming {
     /// Writes a computer down as connected, and hands back what removes
     /// it again once the session that connected it is over.
-    pub fn arrived(&self, peer: Fingerprint, address: SocketAddr, connection: Connection) -> Held {
+    pub fn arrived(
+        &self,
+        peer: Fingerprint,
+        address: SocketAddr,
+        connection: Connection,
+        engine: Arc<Engine>,
+    ) -> Held {
         let id = connection.stable_id();
         self.entries
             .lock()
@@ -76,6 +90,7 @@ impl Incoming {
                 address,
                 since: Instant::now(),
                 connection,
+                engine,
             });
         Held {
             incoming: self.clone(),
@@ -98,18 +113,32 @@ impl Incoming {
             .collect()
     }
 
-    /// Closes every connection from that computer, and says whether
-    /// there was one to close.
+    /// Sends every session from that computer away, and says whether
+    /// there was one.
     ///
-    /// Closing is all this does: the entry itself is taken off the list
-    /// by the guard [`Held`] returned when it arrived, the moment its
-    /// session actually ends, which this triggers but does not wait for.
+    /// The engine is asked to end the session so that the computer sees
+    /// the host say goodbye: a connection closed with no word reads there
+    /// as a link lost, and a link lost is brought back. The connection is
+    /// closed all the same if the engine cannot be asked, or has not
+    /// finished within [`GOODBYE_WITHIN`].
+    ///
+    /// The entry itself is taken off the list by the guard [`Held`]
+    /// returned when it arrived, the moment its session actually ends,
+    /// which this triggers but does not wait for.
     pub fn kick(&self, peer: Fingerprint) -> bool {
         let entries = self.entries.lock().expect("connected computers");
         let mut found = false;
         for entry in entries.iter().filter(|entry| entry.peer == peer) {
-            entry.connection.close();
             found = true;
+            if entry.engine.send_away().is_ok() {
+                let connection = entry.connection.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(GOODBYE_WITHIN).await;
+                    connection.close();
+                });
+            } else {
+                entry.connection.close();
+            }
         }
         found
     }

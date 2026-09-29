@@ -1173,22 +1173,28 @@ async fn take_the_knock(
     // into a fingerprint, which authorisation itself already requires:
     // this never actually misses, and is not worth refusing a session
     // over if it ever did.
-    let _held = connection
-        .peer_fingerprint()
-        .map(|peer| incoming.arrived(peer, connection.remote_address(), connection.clone()));
-    one_session(connection, junction, door, closing, log).await
+    let engine = Arc::new(Engine::default());
+    let _held = connection.peer_fingerprint().map(|peer| {
+        incoming.arrived(
+            peer,
+            connection.remote_address(),
+            connection.clone(),
+            engine.clone(),
+        )
+    });
+    one_session(connection, engine, junction, door, closing, log).await
 }
 
 /// One connection, from its first question to its end.
 async fn one_session(
     connection: Connection,
+    engine: Arc<Engine>,
     junction: Junction,
     door: Arc<AtTheDoor>,
     mut closing: watch::Receiver<bool>,
     log: Log,
 ) {
     let from = connection.remote_address();
-    let engine = Arc::new(Engine::default());
     let attending = Arc::new(door.attending(engine.clone()));
     let answering: Arc<dyn Answers> = attending.clone();
 
@@ -1926,7 +1932,14 @@ mod tests {
             log: log.clone(),
         });
         let (closing, closed) = watch::channel(false);
-        let session = tokio::spawn(one_session(taken.unwrap(), junction, door, closed, log));
+        let session = tokio::spawn(one_session(
+            taken.unwrap(),
+            Arc::new(Engine::default()),
+            junction,
+            door,
+            closed,
+            log,
+        ));
         Served {
             session,
             connection: reached.unwrap(),

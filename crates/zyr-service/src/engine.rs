@@ -98,6 +98,12 @@ impl Engine {
             .map_err(|_| "this session's engine no longer answers".to_string())
     }
 
+    /// Asks the engine to end the session: it says goodbye to the player
+    /// before it goes, which a connection closed from under it never does.
+    pub fn send_away(&self) -> Result<(), String> {
+        self.tell(&ToEngine::Stop)
+    }
+
     /// Decides which screen the session is served from, and tells the
     /// engine when that changes what it films.
     pub fn film(&self, wanted: Film) -> Result<(), String> {
@@ -349,6 +355,21 @@ mod tests {
         let (telling, told) = mpsc::channel(16);
         engine.connected(telling);
         (engine, told)
+    }
+
+    #[test]
+    fn a_session_sent_away_is_ended_through_its_engine() {
+        let (engine, mut told) = connected();
+        engine.send_away().unwrap();
+        assert_eq!(
+            ToEngine::decode(&told.try_recv().unwrap()).unwrap(),
+            ToEngine::Stop
+        );
+    }
+
+    #[test]
+    fn a_session_whose_engine_is_not_there_cannot_be_sent_away_through_it() {
+        assert!(Engine::default().send_away().is_err());
     }
 
     fn filmed(told: &mut mpsc::Receiver<Vec<u8>>) -> Vec<String> {
