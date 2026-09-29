@@ -661,6 +661,15 @@ impl Screen for DuplicatedScreen {
             .collect()
     }
 
+    fn screens_changed(&mut self) -> bool {
+        // SAFETY: a question to a live factory.
+        !unsafe { self.factory.IsCurrent() }.as_bool()
+    }
+
+    fn stopped(&self) -> bool {
+        self.lost.is_some()
+    }
+
     fn aim(&mut self, display: &str) -> Result<Aimed, ScreenError> {
         let screens = self.screens();
         let screen = chosen(screens, display)

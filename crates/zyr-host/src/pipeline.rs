@@ -61,6 +61,18 @@ const IDLE_LOOK: Duration = Duration::from_secs(2);
 /// How often the counts are written.
 const REPORT_EVERY: Duration = Duration::from_secs(10);
 
+/// How long a screen that is filmed may give nothing at all, neither an
+/// image nor a pointer moving, before the service is told.
+///
+/// A screen that works gives its first image as soon as its capture runs.
+/// One that gives none in this long shows nothing.
+const SILENT_AFTER: Duration = Duration::from_millis(1500);
+
+/// How often, while pictures go, the screens are asked whether they
+/// changed. A screen may arrive in the middle of a session, and be the
+/// one the service is waiting for.
+const LOOK_WHILE_STREAMING: Duration = Duration::from_millis(500);
+
 /// Fewest kilobits a second an encoder is given, whatever is asked.
 const LEAST_KBPS: u32 = 500;
 
@@ -354,6 +366,38 @@ impl Counts {
     }
 }
 
+/// What the screen aimed at has given since it was aimed at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Given {
+    /// Nothing yet, and no picture has waited for it yet.
+    Nothing,
+    /// Nothing yet, since a picture began to wait for it.
+    Waiting(Instant),
+    /// Nothing for long enough that the service was told.
+    Told,
+    /// An image, or the pointer moving: the screen works.
+    Something,
+}
+
+impl Given {
+    /// Where things stand after a wait that gave nothing, at `now`, and
+    /// how long the screen has been silent when the service is to be told.
+    ///
+    /// Only a capture that runs can be silent: one being taken up again
+    /// gives nothing for a reason of its own, and the wait starts over
+    /// when it is back.
+    fn after_nothing(self, now: Instant, stopped: bool) -> (Self, Option<Duration>) {
+        match self {
+            Given::Nothing | Given::Waiting(_) if stopped => (Given::Nothing, None),
+            Given::Nothing => (Given::Waiting(now), None),
+            Given::Waiting(since) if now.duration_since(since) >= SILENT_AFTER => {
+                (Given::Told, Some(now.duration_since(since)))
+            }
+            Given::Waiting(_) | Given::Told | Given::Something => (self, None),
+        }
+    }
+}
+
 struct Pipeline {
     screen: Box<dyn Screen>,
     shared: Shared,
@@ -372,6 +416,8 @@ struct Pipeline {
     /// Whether the viewer was told the capture fails, since it last
     /// worked.
     told_capture: bool,
+    given: Given,
+    screens_looked_at: Instant,
     troubles: Seldom,
     crowded: Seldom,
     oversized: Seldom,
@@ -395,6 +441,8 @@ impl Pipeline {
             last_stream: 0,
             counts: Counts::default(),
             told_capture: false,
+            given: Given::Nothing,
+            screens_looked_at: Instant::now(),
             troubles: Seldom::default(),
             crowded: Seldom::default(),
             oversized: Seldom::default(),
@@ -556,6 +604,7 @@ impl Pipeline {
     fn took(&mut self, aimed: Aimed) {
         let before = self.aimed.replace(aimed.clone());
         self.told_capture = false;
+        self.given = Given::Nothing;
         let display = &aimed.display;
         self.shared.log.write(&format!(
             "filming {} ({}), {}x{} at {},{}",
@@ -945,7 +994,12 @@ impl Pipeline {
             .unwrap_or(now + LOOKING)
         };
         let draw_pointer = streaming.wanted.draw_pointer;
-        match self.screen.wait(until) {
+        self.look_at_new_screens(now);
+        let waited = self.screen.wait(until);
+        if matches!(waited, Ok(Captured::Image { .. } | Captured::Pointer)) {
+            self.given = Given::Something;
+        }
+        match waited {
             Ok(Captured::Image { at }) => {
                 self.timeline.captured(at, Instant::now());
                 self.captured(Going::Fresh(at), at);
@@ -963,6 +1017,7 @@ impl Pipeline {
                 }
             }
             Ok(Captured::Nothing) => {
+                self.look_for_silence(Instant::now());
                 if key_now {
                     self.captured(Going::Repeat, now);
                 }
@@ -1203,6 +1258,42 @@ impl Pipeline {
         }
     }
 
+    /// Tells the service when the screen filmed has given nothing for too
+    /// long, once for each aim.
+    ///
+    /// Windows can list a screen that shows nothing, a monitor switched
+    /// off behind a cable that keeps its place among them, and the capture
+    /// of it neither fails nor gives an image: every picture sent is then
+    /// the same black one. The engine does not arrange screens, so it
+    /// says so and the product decides.
+    fn look_for_silence(&mut self, now: Instant) {
+        let (given, silent_for) = self.given.after_nothing(now, self.screen.stopped());
+        self.given = given;
+        let (Some(silent_for), Some(aimed)) = (silent_for, &self.aimed) else {
+            return;
+        };
+        self.shared.log.write(&format!(
+            "{} ({}) has given no picture and no pointer for {} ms: the service is told",
+            aimed.display.name,
+            aimed.display.id,
+            silent_for.as_millis()
+        ));
+        self.shared.outbox.service(&ToService::Silent {
+            display: aimed.display.id.clone(),
+        });
+    }
+
+    /// While pictures go, says when the screens change.
+    fn look_at_new_screens(&mut self, now: Instant) {
+        if now.duration_since(self.screens_looked_at) < LOOK_WHILE_STREAMING {
+            return;
+        }
+        self.screens_looked_at = now;
+        if self.screen.screens_changed() {
+            self.look_at_the_screens();
+        }
+    }
+
     /// While nobody watches, says when the screens change.
     fn look_at_the_screens(&mut self) {
         let displays = self.screen.displays();
@@ -1342,6 +1433,50 @@ mod tests {
         keys.ask();
         assert!(!keys.due(start + KEY_FLOOR / 2));
         assert!(keys.due(start + KEY_FLOOR));
+    }
+
+    #[test]
+    fn a_screen_is_told_silent_once_it_has_given_nothing_for_long_enough() {
+        let start = Instant::now();
+        let ms = Duration::from_millis(1);
+        let (given, told) = Given::Nothing.after_nothing(start, false);
+        assert_eq!((given, told), (Given::Waiting(start), None));
+        let (given, told) = given.after_nothing(start + SILENT_AFTER - ms, false);
+        assert_eq!((given, told), (Given::Waiting(start), None));
+        let (given, told) = given.after_nothing(start + SILENT_AFTER, false);
+        assert_eq!((given, told), (Given::Told, Some(SILENT_AFTER)));
+        // Once for each aim.
+        let later = start + SILENT_AFTER * 10;
+        assert_eq!(given.after_nothing(later, false), (Given::Told, None));
+    }
+
+    #[test]
+    fn a_screen_that_gave_something_is_never_told_silent() {
+        let start = Instant::now();
+        let later = start + SILENT_AFTER * 10;
+        assert_eq!(
+            Given::Something.after_nothing(later, false),
+            (Given::Something, None)
+        );
+    }
+
+    #[test]
+    fn a_capture_being_taken_up_again_starts_the_wait_over() {
+        let start = Instant::now();
+        let (waiting, _) = Given::Nothing.after_nothing(start, false);
+        // Stopped for longer than a silence takes to be told.
+        let back = start + SILENT_AFTER * 2;
+        assert_eq!(waiting.after_nothing(back, true), (Given::Nothing, None));
+        // Back, the wait begins from there.
+        let (given, told) = Given::Nothing.after_nothing(back, false);
+        assert_eq!((given, told), (Given::Waiting(back), None));
+        let (given, told) = given.after_nothing(back + SILENT_AFTER, false);
+        assert_eq!((given, told), (Given::Told, Some(SILENT_AFTER)));
+        // A stop after the service was told does not tell it again.
+        assert_eq!(
+            given.after_nothing(back + SILENT_AFTER * 2, true),
+            (Given::Told, None)
+        );
     }
 
     /// Whether the frame cut into these datagrams is a key frame.

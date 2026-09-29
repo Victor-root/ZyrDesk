@@ -39,6 +39,13 @@ pub enum Own {
     /// The main screen is on and shows that size, and `stuck` says it has
     /// once refused a desktop larger than itself.
     Main { size: (u32, u32), stuck: bool },
+    /// The main screen is on, as far as Windows says, and gives the
+    /// engine that films it no picture at all.
+    ///
+    /// Not read from anything written down: a monitor switched off is off
+    /// for as long as it is, and the next session may find it on. It is
+    /// what a session's engine tells the service after it began.
+    Silent,
 }
 
 impl fmt::Display for Own {
@@ -48,12 +55,15 @@ impl fmt::Display for Own {
                 "nothing says whether this computer has a screen of its own switched on",
             ),
             Own::NoneOn => f.write_str("none of this computer's own screens is switched on"),
+            Own::Silent => {
+                f.write_str("this computer's main screen is on but gives no picture at all")
+            }
             Own::Main {
                 size: (wide, high),
                 stuck,
             } => write!(
                 f,
-                "its main screen shows {wide}x{high}{}",
+                "this computer's main screen shows {wide}x{high}{}",
                 if *stuck {
                     " and draws nothing larger than itself"
                 } else {
@@ -91,6 +101,15 @@ pub enum Call {
     GrownInstead(WantedScreen),
 }
 
+/// The screen woken for a session that asks for no size: the common one.
+fn the_common_screen() -> WantedScreen {
+    WantedScreen {
+        wide: UNKNOWN_SCREEN.0,
+        high: UNKNOWN_SCREEN.1,
+        scale: 0,
+    }
+}
+
 /// Works out what a session calls for, given what it asks and how this
 /// computer's own screens stand.
 ///
@@ -100,14 +119,15 @@ pub enum Call {
 /// from it only where it is known that nothing is switched on: with no
 /// screen at all there is nobody to leave anything as it was for, and a
 /// session with nothing to film is a session that never shows a picture.
+/// A main screen that turns out to give no picture is as good as none.
 pub fn what_the_session_calls_for(wanted: Option<WantedScreen>, own: Own) -> Call {
     match (wanted, own) {
         (Some(screen), Own::Unknown | Own::NoneOn) => Call::GrownAlone(screen),
-        (None, Own::NoneOn) => Call::GrownAlone(WantedScreen {
-            wide: UNKNOWN_SCREEN.0,
-            high: UNKNOWN_SCREEN.1,
-            scale: 0,
-        }),
+        (None, Own::NoneOn) => Call::GrownAlone(the_common_screen()),
+        // A screen that shows nothing serves no session, whatever size
+        // that session asks for or leaves alone.
+        (Some(screen), Own::Silent) => Call::GrownInstead(screen),
+        (None, Own::Silent) => Call::GrownInstead(the_common_screen()),
         (Some(screen), Own::Main { size, stuck: true }) if size != (screen.wide, screen.high) => {
             Call::GrownInstead(screen)
         }
@@ -283,6 +303,24 @@ mod tests {
         assert_eq!(
             what_the_session_calls_for(Some(asks(2560, 1440)), free),
             Call::OwnScreen
+        );
+    }
+
+    #[test]
+    fn a_main_screen_that_gives_no_picture_gives_way_to_the_grown_one() {
+        assert_eq!(
+            what_the_session_calls_for(Some(asks(2560, 1440)), Own::Silent),
+            Call::GrownInstead(asks(2560, 1440))
+        );
+        // Also for a session that asked for no size: the screen it films
+        // is woken at the common one, unless the caller knows better.
+        assert_eq!(
+            what_the_session_calls_for(None, Own::Silent),
+            Call::GrownInstead(WantedScreen {
+                wide: 1920,
+                high: 1080,
+                scale: 0,
+            })
         );
     }
 

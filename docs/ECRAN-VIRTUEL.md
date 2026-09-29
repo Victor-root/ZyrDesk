@@ -13,6 +13,14 @@ un bureau de 1920x1200. Le bureau passe alors sur l'écran poussé le
 temps de la session, les écrans de la machine sont éteints, et tout est
 remis comme avant à la fin.
 
+**Ou sur une machine dont l'écran principal est allumé aux yeux de
+Windows et ne donne aucune image** ([D245](DECISIONS.md)). Un écran relié
+par un commutateur (KVM) tourné vers un autre ordinateur, un moniteur
+éteint dont le câble reste branché : Windows le liste toujours, et la
+capture ne dit pas qu'elle échoue, elle ne rend rien. Le moteur le voit
+et le dit au service, le bureau passe sur l'écran poussé comme ci-dessus,
+après quelques secondes de noir.
+
 Partout ailleurs, une session règle la taille de l'écran principal de
 l'hôte et ne touche à rien d'autre. Ni écran éteint, ni écran déplacé, ni
 écran créé. Ce document décrit donc la moitié de secours du produit, pas
@@ -149,6 +157,24 @@ Trois pas, chacun défait si le suivant ne passe pas : le service réveille
 l'écran poussé à la taille demandée, la session qui tient l'écran y
 déplace le bureau, puis le moteur est prié de filmer celui-là. À la fin,
 le bureau revient d'où il vient et l'écran poussé se rendort.
+
+**Pendant une session, sur une machine dont l'écran allumé ne donne
+rien.** Aucune note ne peut le dire à l'avance : pour Windows, l'écran est
+allumé. C'est le moteur qui le voit. Un écran qui marche donne son image
+à l'instant où on le filme ; un écran qui n'a rendu ni image ni mouvement
+de curseur au bout d'une seconde et demie est dit au service, une fois
+par écran visé (`Silent`). Le service fait alors ce qu'il fait pour un
+écran qui refuse la taille : il réveille l'écran poussé (à la taille
+demandée, ou à celle que le moteur filmait), note le bureau si personne ne
+l'avait fait, y déplace le bureau et prie le moteur de le filmer. Une
+seule fois par session, et seulement quand l'écran filmé est l'écran
+principal : un écran choisi à la main dans le menu n'est pas touché.
+
+Rien n'en est retenu d'une session à l'autre. Un commutateur peut revenir
+vers la machine à tout moment, et la session suivante regarde de nouveau.
+Pour que l'écran poussé, levé en pleine session, soit proposé au service
+aussitôt, le moteur demande aussi toutes les demi-secondes, pendant que
+les images partent, si la liste des écrans a changé.
 
 Ailleurs, une machine qui a un écran à elle n'entend jamais parler de
 l'écran virtuel : le moteur filme l'écran principal, celui où est le

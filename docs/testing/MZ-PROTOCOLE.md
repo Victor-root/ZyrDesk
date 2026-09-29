@@ -32,6 +32,7 @@ Vocabulaire : **PC hôte** = celui qu'on contrôle. **PC client** = celui depuis
 | **Z10** | La fin de la session |
 | **Z11** | Le réseau coupé 10 secondes, et la reprise |
 | **Z12** | Un ordinateur dont aucun écran n'est allumé : l'écran virtuel se lève, quelle que soit la résolution choisie |
+| **Z13** | Un écran que Windows dit allumé et qui ne donne rien (commutateur tourné ailleurs) : l'écran virtuel se lève après quelques secondes de noir |
 
 ### Confirmé
 
@@ -219,7 +220,29 @@ virtual screen on the desktop after … ms
 filming VDD by MTT (…)
 ```
 
-**Ce qu'il ne faut pas voir.** Une image noire. Ou bien `this computer's own screen serves this session: its main screen shows …` alors que l'écran était bien débranché : c'est que la note des écrans est restée périmée. Ou `capture trouble` : le moteur n'a trouvé aucun écran à filmer.
+**Ce qu'il ne faut pas voir.** Une image noire. Ou bien `this computer's main screen shows …, so its own screen serves this session` alors que l'écran était bien débranché : c'est que la note des écrans est restée périmée (si l'image finit par venir après quelques secondes, c'est Z13 qui a pris le relais). Ou `capture trouble` : le moteur n'a trouvé aucun écran à filmer.
+
+## Z13. Un écran que Windows dit allumé et qui ne donne rien
+
+Le cas d'un écran relié à un commutateur HDMI (KVM) : le tourner vers un autre ordinateur, puis ouvrir une session sur l'hôte depuis le client, en **Résolution : Hôte**, puis une seconde fois en **Résolution : Client** ([D245](../DECISIONS.md)). Éteindre le moniteur en laissant son câble branché donne le même cas.
+
+**Attendu.** Quelques secondes de noir au début, puis le bureau de l'hôte. À la fin de la session, les écrans et le bureau de l'hôte sont comme avant.
+
+**Dans le journal de l'hôte** (tri : `gateway screen desk engine`), dans cet ordre :
+
+```
+this computer's main screen shows …, so its own screen serves this session
+… has given no picture and no pointer for … ms: the service is told
+the engine has been given no picture by …
+this computer's main screen is on but gives no picture at all, so the one it grew is woken, the desktop moves onto it and the engine films it
+virtual screen on the desktop after … ms
+the desktop was moved from the session on screen (…)
+filming VDD by MTT (…)
+```
+
+**Ce qu'il ne faut pas voir.** Une image noire qui dure. Sans la ligne `has given no picture …`, le moteur a reçu des images de l'écran, et le noir vient d'ailleurs. Avec elle et sans les lignes qui suivent, le service n'a pas réagi. `this computer's desktop was left where it is` ou `is not among its screens` disent que l'écran poussé ne s'est pas levé, ou que le bureau n'a pas pu s'y poser.
+
+**Et l'essai inverse.** Remettre le commutateur sur l'hôte et ouvrir une session : l'image arrive tout de suite, sans écran poussé et sans ligne `has given no picture`. Un écran qui marche ne doit jamais être remplacé.
 
 ---
 

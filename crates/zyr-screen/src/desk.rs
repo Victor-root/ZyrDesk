@@ -138,21 +138,19 @@ fn hold_this_desk(
         );
         return said;
     };
-    // Noted before anything is touched, and only once: a second session
-    // that follows the first must not note a desk the first one had
-    // already changed, or what is put back is the middle of a session
-    // rather than somebody's desk.
-    if wanted.is_some() && !before_path(home).exists() {
-        match write_beside(home, BEFORE, &arrangement::written(&desk)) {
+    // Noted before anything is touched.
+    if wanted.is_some() {
+        match write_the_desk_down(home, &desk) {
             // The main screen is spelled out beside the count, because it
             // is the one the session changes and the one whose way back
             // is read out of this note. A count alone says a note was
             // written; this says what it will put back.
-            Ok(()) => said.push(format!(
+            Ok(true) => said.push(format!(
                 "this computer's desk is written down before the session touches it ({} screens); \
                  the one it will change is {main}",
                 desk.len()
             )),
+            Ok(false) => {}
             // Worth saying loudly. Everything else here can be undone by
             // hand in a minute; this is the note that says what to undo.
             Err(e) => said.push(format!(
@@ -202,6 +200,19 @@ fn hold_this_desk(
     said
 }
 
+/// Writes the desk down before anything touches it, once, and says
+/// whether it was written now.
+///
+/// Only once: a second session that follows the first must not note a
+/// desk the first one had already changed, or what is put back is the
+/// middle of a session rather than somebody's desk.
+fn write_the_desk_down(home: &Path, desk: &[Seat]) -> std::io::Result<bool> {
+    if before_path(home).exists() {
+        return Ok(false);
+    }
+    write_beside(home, BEFORE, &arrangement::written(desk)).map(|()| true)
+}
+
 /// Writes down what this computer's screens are doing, for the service
 /// to read, and says so if it could not.
 fn note_what_is_showing(home: &Path, desk: &[Seat]) -> Vec<String> {
@@ -229,23 +240,37 @@ fn note_what_is_showing(home: &Path, desk: &[Seat]) -> Vec<String> {
 #[cfg(windows)]
 pub fn take_the_grown_screen_for(home: &Path, wanted: (u32, u32, u32)) -> Vec<String> {
     let (wide, high, scale) = wanted;
-    // Refused outright rather than half done: without the note there is
-    // nothing that says how to put this computer back, and moving a
-    // desktop with no way back is the one thing none of this may do.
-    if !before_path(home).exists() {
-        return vec![
-            "this computer's desk was never written down, so its desktop is not moved anywhere"
-                .to_string(),
-        ];
+    // Noted first if nobody did. A session that asked for a size has
+    // written the desk down already; one that left this computer as it
+    // was has not, and finding its main screen gives nothing is the first
+    // time it has to be. Refused outright when it cannot be, rather than
+    // half done: without the note there is nothing that says how to put
+    // this computer back, and moving a desktop with no way back is the
+    // one thing none of this may do.
+    let mut desk = arrangement::as_it_stands();
+    let mut said = fill_in_what_cannot(home, &mut desk);
+    match write_the_desk_down(home, &desk) {
+        Ok(true) => {
+            said.push("this computer's desk is written down before its desktop moves".to_string())
+        }
+        Ok(false) => {}
+        Err(e) => {
+            return vec![format!(
+                "this computer's desk could not be written down, so its desktop is not moved \
+                 anywhere: {e}"
+            )];
+        }
     }
     let Some(grown) = crate::desktop::the_screen_the_driver_grew(crate::shipped()) else {
-        return vec![
+        said.push(
             "the screen this computer grows for itself is not among its screens, so the desktop \
              stays where it is"
                 .to_string(),
-        ];
+        );
+        return said;
     };
-    let (moved, mut said) = arrangement::put_the_desktop_alone_on(&grown, wide, high);
+    let (moved, moving) = arrangement::put_the_desktop_alone_on(&grown, wide, high);
+    said.extend(moving);
     if moved {
         said.push(crate::magnify::magnify(&grown, scale));
     }
@@ -544,5 +569,19 @@ mod tests {
 
         assert!(nothing_is_switched_on(&home));
         assert_eq!(showing_now(&home), None);
+    }
+
+    #[test]
+    fn the_desk_is_written_down_once_and_the_first_note_is_kept() {
+        let home = a_folder("once");
+        let before = vec![a_screen(r"\\.\DISPLAY1", true, true)];
+        let changed = vec![a_screen(r"\\.\DISPLAY2", true, true)];
+
+        assert!(write_the_desk_down(&home, &before).unwrap());
+        // A second session finds the desk already lent: what it sees is the
+        // middle of the first one, never somebody's desk.
+        assert!(!write_the_desk_down(&home, &changed).unwrap());
+
+        assert_eq!(noted_before(&home), before);
     }
 }

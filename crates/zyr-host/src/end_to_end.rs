@@ -845,6 +845,187 @@ async fn a_link_that_falls_behind_gets_a_key_frame_and_nothing_undecodable() {
     assert_eq!(far.ended(), Ending::PlayerLeft);
 }
 
+/// A desktop that works and does not move: it gives its first image the
+/// moment it is asked, and nothing after.
+struct GivesOneImage {
+    inner: SyntheticScreen,
+    given: bool,
+}
+
+impl GivesOneImage {
+    fn new() -> Self {
+        Self {
+            inner: SyntheticScreen::new(60),
+            given: false,
+        }
+    }
+}
+
+impl Screen for GivesOneImage {
+    fn displays(&mut self) -> Vec<Display> {
+        self.inner.displays()
+    }
+
+    fn aim(&mut self, display: &str) -> Result<Aimed, ScreenError> {
+        self.inner.aim(display)
+    }
+
+    fn encoder_input(&self) -> Input {
+        self.inner.encoder_input()
+    }
+
+    fn vendor(&self) -> GpuVendor {
+        self.inner.vendor()
+    }
+
+    fn wait(&mut self, until: Instant) -> Result<Captured, ScreenError> {
+        if !self.given {
+            self.given = true;
+            return self.inner.wait(until);
+        }
+        thread::sleep(until.saturating_duration_since(Instant::now()));
+        Ok(Captured::Nothing)
+    }
+
+    fn draw(
+        &mut self,
+        encoder: &VideoEncoder,
+        feed: Feed,
+        drawing: &Drawing,
+    ) -> Result<Frame, ScreenError> {
+        self.inner.draw(encoder, feed, drawing)
+    }
+}
+
+/// The silences the service was told of, among what the engine said.
+fn silences(far: &Far) -> Vec<String> {
+    far.said
+        .iter()
+        .filter_map(|said| match said {
+            Said::Service(ToService::Silent { display }) => Some(display.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_screen_that_gives_nothing_is_told_to_the_service_once() {
+    // A screen Windows lists and that shows nothing: no image, no pointer.
+    let mut far = Far::start("silent", 0, Box::new(SilentSound)).await;
+    far.open(wanted()).await;
+    let display = far
+        .until(|said| match said {
+            Said::Service(ToService::Silent { display }) => Some(display.clone()),
+            _ => None,
+        })
+        .await;
+    assert_eq!(display, SyntheticScreen::screens()[0].0.id);
+    assert_eq!(far.journal.lines_with("given no picture").len(), 1);
+
+    // Once for each aim, not once a second.
+    far.read_for(Duration::from_secs(2)).await;
+    assert!(silences(&far).is_empty(), "{:?}", silences(&far));
+    far.player(ToEngineControl::Bye).await;
+    assert_eq!(far.ended(), Ending::PlayerLeft);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_desktop_that_works_and_does_not_move_is_never_told_as_silent() {
+    let screen: MakeScreen = Box::new(|| Ok(Box::new(GivesOneImage::new()) as Box<dyn Screen>));
+    let mut far = Far::filming("still-and-alive", screen, Box::new(SilentSound)).await;
+    far.open(wanted()).await;
+    // Longer than a silence takes to be told.
+    far.read_for(Duration::from_millis(2500)).await;
+    assert!(silences(&far).is_empty(), "{:?}", silences(&far));
+    assert!(far.journal.lines_with("given no picture").is_empty());
+    far.player(ToEngineControl::Bye).await;
+    assert_eq!(far.ended(), Ending::PlayerLeft);
+}
+
+/// A screen that shows one more screen once the session is going, as a
+/// monitor plugged in, or a virtual one woken, does.
+struct GainsAScreen {
+    inner: SyntheticScreen,
+    since: Instant,
+}
+
+impl GainsAScreen {
+    const AFTER: Duration = Duration::from_millis(700);
+
+    fn arrived(&self) -> bool {
+        self.since.elapsed() >= Self::AFTER
+    }
+}
+
+impl Screen for GainsAScreen {
+    fn displays(&mut self) -> Vec<Display> {
+        let mut displays = self.inner.displays();
+        if self.arrived() {
+            displays.push(Display {
+                id: r"FAKE\ARRIVED".to_string(),
+                main: false,
+                width: 1024,
+                height: 768,
+                name: "Arrived".to_string(),
+            });
+        }
+        displays
+    }
+
+    fn screens_changed(&mut self) -> bool {
+        self.arrived()
+    }
+
+    fn aim(&mut self, display: &str) -> Result<Aimed, ScreenError> {
+        self.inner.aim(display)
+    }
+
+    fn encoder_input(&self) -> Input {
+        self.inner.encoder_input()
+    }
+
+    fn vendor(&self) -> GpuVendor {
+        self.inner.vendor()
+    }
+
+    fn wait(&mut self, until: Instant) -> Result<Captured, ScreenError> {
+        self.inner.wait(until)
+    }
+
+    fn draw(
+        &mut self,
+        encoder: &VideoEncoder,
+        feed: Feed,
+        drawing: &Drawing,
+    ) -> Result<Frame, ScreenError> {
+        self.inner.draw(encoder, feed, drawing)
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_screen_that_arrives_in_the_middle_of_a_session_is_told_to_the_service() {
+    let screen: MakeScreen = Box::new(|| {
+        Ok(Box::new(GainsAScreen {
+            inner: SyntheticScreen::new(60),
+            since: Instant::now(),
+        }) as Box<dyn Screen>)
+    });
+    let mut far = Far::filming("arrival", screen, Box::new(SilentSound)).await;
+    far.open(wanted()).await;
+    let displays = far
+        .until(|said| match said {
+            Said::Service(ToService::Displays(displays)) => Some(displays.clone()),
+            _ => None,
+        })
+        .await;
+    assert!(
+        displays.iter().any(|display| display.name == "Arrived"),
+        "{displays:?}"
+    );
+    far.player(ToEngineControl::Bye).await;
+    assert_eq!(far.ended(), Ending::PlayerLeft);
+}
+
 /// A screen whose drawing stops on a bug.
 struct BuggyScreen(SyntheticScreen);
 

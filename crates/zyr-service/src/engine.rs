@@ -38,6 +38,8 @@ struct Heard {
     film: Film,
     /// The screen the engine was last told to film, as it was told.
     told: Option<String>,
+    /// The size of the screen the engine films, as it last said.
+    filming: Option<(u32, u32)>,
 }
 
 /// What a message from the engine comes to, for whoever holds it.
@@ -47,6 +49,9 @@ pub struct Said {
     pub lines: Vec<String>,
     /// What the engine now serves, for the window the tunnel holds open.
     pub serving: Option<MediaProfile>,
+    /// The screen the engine films gives it nothing: what to do about it
+    /// is for the product to work out, since the engine arranges nothing.
+    pub silent: bool,
 }
 
 /// The engine of one session.
@@ -67,6 +72,7 @@ impl Default for Engine {
                 displays: Vec::new(),
                 film: Film::Main,
                 told: None,
+                filming: None,
             }),
             telling: Mutex::new(None),
         }
@@ -129,6 +135,17 @@ impl Engine {
     /// which leaves no other screen to choose between.
     pub fn films_the_grown_screen(&self) -> bool {
         self.heard.lock().expect("session's engine").film == Film::Grown
+    }
+
+    /// Whether the session is served from this computer's main screen,
+    /// whichever it is: the one it gets unless somebody picked another.
+    pub fn films_the_main_screen(&self) -> bool {
+        self.heard.lock().expect("session's engine").film == Film::Main
+    }
+
+    /// The size of the screen the engine films, once it said.
+    pub fn size_it_films(&self) -> Option<(u32, u32)> {
+        self.heard.lock().expect("session's engine").filming
     }
 
     /// Serves the session from this computer's own screens again, if it
@@ -217,35 +234,38 @@ impl Heard {
                 self.displays = displays;
                 Said {
                     lines: vec![line],
-                    serving: None,
+                    ..Said::default()
                 }
             }
             ToService::Filming {
                 display,
                 width,
                 height,
-            } => Said {
-                lines: vec![format!(
-                    "the engine films {} at {width}x{height}",
-                    if display.is_empty() {
-                        "the main screen"
-                    } else {
-                        &display
-                    }
-                )],
-                serving: None,
-            },
+            } => {
+                self.filming = Some((width, height));
+                Said {
+                    lines: vec![format!(
+                        "the engine films {} at {width}x{height}",
+                        if display.is_empty() {
+                            "the main screen"
+                        } else {
+                            &display
+                        }
+                    )],
+                    ..Said::default()
+                }
+            }
             ToService::Displays(displays) => {
                 let line = format!("the screens changed: {}", listed(&displays));
                 self.displays = displays;
                 Said {
                     lines: vec![line],
-                    serving: None,
+                    ..Said::default()
                 }
             }
             ToService::Trouble { fact } => Said {
                 lines: vec![format!("the engine says: {fact}")],
-                serving: None,
+                ..Said::default()
             },
             ToService::Serving { kbps, fps } => Said {
                 lines: vec![format!(
@@ -256,6 +276,19 @@ impl Heard {
                     bits_per_second: u64::from(kbps) * 1_000,
                     frames_per_second: u32::from(fps),
                 }),
+                ..Said::default()
+            },
+            ToService::Silent { display } => Said {
+                lines: vec![format!(
+                    "the engine has been given no picture by {}",
+                    if display.is_empty() {
+                        "the main screen"
+                    } else {
+                        &display
+                    }
+                )],
+                silent: true,
+                ..Said::default()
             },
         }
     }
@@ -416,6 +449,43 @@ mod tests {
         );
         assert_eq!(said.lines.len(), 1);
         assert!(said.lines[0].contains("62872 kbps"), "{:?}", said.lines);
+    }
+
+    #[test]
+    fn an_engine_given_no_picture_says_so_and_the_size_it_films_is_kept() {
+        let (engine, _told) = connected();
+        engine.film_now().unwrap();
+        assert!(engine.films_the_main_screen());
+        assert_eq!(engine.size_it_films(), None);
+
+        engine.heard(ToService::Filming {
+            display: String::new(),
+            width: 2560,
+            height: 1440,
+        });
+        assert_eq!(engine.size_it_films(), Some((2560, 1440)));
+
+        let said = engine.heard(ToService::Silent {
+            display: MAIN.to_string(),
+        });
+        assert!(said.silent);
+        assert!(said.lines[0].contains("no picture"), "{:?}", said.lines);
+        // Nothing else the engine says is that.
+        let said = engine.heard(ToService::Serving { kbps: 1, fps: 1 });
+        assert!(!said.silent);
+    }
+
+    #[test]
+    fn only_a_session_served_from_the_main_screen_is_served_from_the_main_screen() {
+        let (engine, _told) = connected();
+        assert!(engine.films_the_main_screen());
+        // Somebody picked another screen: what it gives is theirs to see.
+        engine.film(Film::This(SIDE.to_string())).unwrap();
+        assert!(!engine.films_the_main_screen());
+        engine.film(Film::Grown).unwrap();
+        assert!(!engine.films_the_main_screen());
+        engine.film(Film::Main).unwrap();
+        assert!(engine.films_the_main_screen());
     }
 
     #[test]

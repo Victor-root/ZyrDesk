@@ -27,6 +27,20 @@ pub trait Screen {
     /// The screens that can be filmed now.
     fn displays(&mut self) -> Vec<Display>;
 
+    /// Whether the screens changed since they were last listed. Cheap
+    /// enough to be asked many times a second, since it is asked while
+    /// pictures go.
+    fn screens_changed(&mut self) -> bool {
+        false
+    }
+
+    /// Whether the capture is stopped and being taken up again. It gives
+    /// nothing then for a reason of its own, which is not a screen that
+    /// shows nothing.
+    fn stopped(&self) -> bool {
+        false
+    }
+
     /// Aims the capture at the screen whose [`Display::id`] is `display`,
     /// or at the main one for `""` or a screen that is not there.
     fn aim(&mut self, display: &str) -> Result<Aimed, ScreenError>;

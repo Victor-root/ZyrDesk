@@ -25,6 +25,7 @@
 //! 3 Displays  displays
 //! 4 Trouble   fact string (its line)
 //! 5 Serving   kbps u32, fps u16
+//! 6 Silent    display string
 //! displays: count u16, then each: id string, main u8, width u32,
 //!           height u32, name string
 //! ```
@@ -90,6 +91,15 @@ pub enum ToService {
     /// What the encoder serves now, sent after each start or change, for
     /// the service to size the tunnel's media window.
     Serving { kbps: u32, fps: u16 },
+    /// The screen filmed has given no picture at all since the capture was
+    /// aimed at it, and still gives none.
+    ///
+    /// Sent once for each aim, and only while a session is served. Windows
+    /// can list a screen that shows nothing, a monitor switched off behind
+    /// a cable that keeps its place among them, and no session can be
+    /// served a picture from it. What to do about it is not the engine's
+    /// to decide: screens are arranged by the product.
+    Silent { display: String },
 }
 
 /// What the service tells the player on the client.
@@ -142,6 +152,7 @@ const FILMING: u8 = 2;
 const DISPLAYS: u8 = 3;
 const TROUBLE: u8 = 4;
 const SERVING: u8 = 5;
+const SILENT: u8 = 6;
 
 impl ToService {
     pub fn encode(&self) -> Vec<u8> {
@@ -179,6 +190,10 @@ impl ToService {
                 out.extend_from_slice(&kbps.to_le_bytes());
                 out.extend_from_slice(&fps.to_le_bytes());
             }
+            ToService::Silent { display } => {
+                out.push(SILENT);
+                put_text(&mut out, display);
+            }
         }
         out
     }
@@ -206,6 +221,9 @@ impl ToService {
             SERVING => ToService::Serving {
                 kbps: reader.u32()?,
                 fps: reader.u16()?,
+            },
+            SILENT => ToService::Silent {
+                display: reader.text("display")?,
             },
             other => return Err(WireError::Kind(other)),
         };
@@ -339,6 +357,12 @@ mod tests {
             ToService::Serving {
                 kbps: 62_872,
                 fps: 144,
+            },
+            ToService::Silent {
+                display: displays()[0].id.clone(),
+            },
+            ToService::Silent {
+                display: String::new(),
             },
         ]
     }

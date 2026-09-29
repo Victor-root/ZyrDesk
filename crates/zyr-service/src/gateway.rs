@@ -26,8 +26,8 @@
 use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::runtime::Handle;
@@ -51,7 +51,7 @@ use zyr_win32::with_its_code;
 use crate::engine::{Engine, Film};
 use crate::machine::{Door, Machine};
 use crate::said::{self, Said};
-use crate::screen::Call;
+use crate::screen::{Call, Own};
 
 /// What this module's lines are filed under.
 const TAG: &str = "gateway";
@@ -130,6 +130,12 @@ struct Attending {
     /// The engine serving this session, once there is one.
     engine: Arc<Engine>,
     log: Log,
+    /// The screen this session last asked this computer for, kept for
+    /// the moment its engine says the screen it films gives it nothing.
+    wanted: Mutex<Option<WantedScreen>>,
+    /// Whether the screen this computer grew was already tried for this
+    /// session, because the one it films gave nothing.
+    tried_the_grown_screen: AtomicBool,
 }
 
 impl Answers for Attending {
@@ -232,6 +238,7 @@ impl Answers for Attending {
         &self,
         wanted: Option<WantedScreen>,
     ) -> Result<Option<(u32, u32)>, String> {
+        *self.wanted.lock().expect("what the session asked for") = wanted;
         // Said before the errand goes out, like the lock above. What
         // became of it is written from the session that owns the screen,
         // since that is the only place any of it can be known, and it
@@ -299,59 +306,8 @@ impl Answers for Attending {
                 .log
                 .write(&format!("this computer's desk was left as it was: {e}")),
         }
-        // The screen this computer grows for itself is woken from here
-        // rather than from the session on screen: starting a display
-        // device is administrator work, which a service has and a
-        // signed-in person may not.
-        //
-        // Two computers need it, and they need different things of it. One
-        // has nothing plugged in at all, so the grown screen is the only
-        // thing there is to film and Windows puts the desktop on it
-        // unasked, whatever the session asks: nobody sits there to have
-        // anything left as it was. The other has screens that draw nothing
-        // larger than themselves, so it is woken at the size asked for and
-        // the desktop is moved onto it, which is the errand below.
         let own = crate::screen::how_the_screens_stand(&paths::virtual_screen_dir());
-        let grown = match crate::screen::what_the_session_calls_for(wanted, own) {
-            Call::GrownAlone(screen) => {
-                self.log.write(&format!(
-                    "{own}, so the one it grew for itself is woken for this session at {}x{}",
-                    screen.wide, screen.high
-                ));
-                self.wake_the_one_it_grew(screen).map(|()| {
-                    self.film_the_grown_screen();
-                    (screen.wide, screen.high)
-                })
-            }
-            Call::GrownInstead(screen) => self.grow_one_for_this_session(screen),
-            Call::OwnScreen => {
-                self.log.write(&format!(
-                    "this computer's own screen serves this session: {own}"
-                ));
-                None
-            }
-        };
-        if grown.is_none()
-            && let Err(e) = self.engine.no_longer_the_grown_screen()
-        {
-            self.log.write(&format!(
-                "this session's engine could not be told to film this computer's own screen: {e}"
-            ));
-        }
-        // What this computer ends up showing, read from what the session
-        // on screen just wrote down rather than worked out here: what was
-        // asked for and what Windows did are two different things, and a
-        // service cannot see a screen to tell them apart. The grown
-        // screen is the exception and has to be: it is not on any desk a
-        // session could have looked at.
-        let showing = grown.or_else(|| zyr_screen::desk::showing_now(&paths::virtual_screen_dir()));
-        self.log.write(&match showing {
-            Some((wide, high)) => format!("this computer is showing {wide}x{high}"),
-            None => "this computer could not say what it is showing, so the session keeps what it \
-                     guessed"
-                .to_string(),
-        });
-        Ok(showing)
+        Ok(self.serve_from(wanted, own))
     }
 
     /// Hands this computer's journal over, whole.
@@ -579,6 +535,111 @@ impl Answers for Attending {
 }
 
 impl Attending {
+    /// Serves this session from the screen it is to be served from, given
+    /// how this computer's own screens stand, and answers what this
+    /// computer ends up showing.
+    ///
+    /// The screen this computer grows for itself is woken from here
+    /// rather than from the session on screen: starting a display device
+    /// is administrator work, which a service has and a signed-in person
+    /// may not.
+    ///
+    /// Three computers need it, and they need different things of it. One
+    /// has nothing plugged in at all, so the grown screen is the only
+    /// thing there is to film and Windows puts the desktop on it unasked,
+    /// whatever the session asks: nobody sits there to have anything left
+    /// as it was. Another has screens that draw nothing larger than
+    /// themselves, and a third a main screen that is on and gives no
+    /// picture, a monitor switched off among them: for both the grown
+    /// screen is woken at the size asked for and the desktop is moved onto
+    /// it, which is the errand below.
+    fn serve_from(&self, wanted: Option<WantedScreen>, own: Own) -> Option<(u32, u32)> {
+        let grown = match crate::screen::what_the_session_calls_for(wanted, own) {
+            Call::GrownAlone(screen) => {
+                self.log.write(&format!(
+                    "{own}, so the one it grew for itself is woken for this session at {}x{}",
+                    screen.wide, screen.high
+                ));
+                self.wake_the_one_it_grew(screen).map(|()| {
+                    self.film_the_grown_screen();
+                    (screen.wide, screen.high)
+                })
+            }
+            Call::GrownInstead(screen) => {
+                self.log.write(&format!(
+                    "{own}, so the one it grew is woken, the desktop moves onto it and the engine \
+                     films it"
+                ));
+                self.grow_one_for_this_session(screen)
+            }
+            Call::OwnScreen => {
+                self.log
+                    .write(&format!("{own}, so its own screen serves this session"));
+                None
+            }
+        };
+        if grown.is_none()
+            && let Err(e) = self.engine.no_longer_the_grown_screen()
+        {
+            self.log.write(&format!(
+                "this session's engine could not be told to film this computer's own screen: {e}"
+            ));
+        }
+        // What this computer ends up showing, read from what the session
+        // on screen just wrote down rather than worked out here: what was
+        // asked for and what Windows did are two different things, and a
+        // service cannot see a screen to tell them apart. The grown
+        // screen is the exception and has to be: it is not on any desk a
+        // session could have looked at.
+        let showing = grown.or_else(|| zyr_screen::desk::showing_now(&paths::virtual_screen_dir()));
+        self.log.write(&match showing {
+            Some((wide, high)) => format!("this computer is showing {wide}x{high}"),
+            None => "this computer could not say what it is showing, so the session keeps what it \
+                     guessed"
+                .to_string(),
+        });
+        showing
+    }
+
+    /// Serves this session from the screen this computer grew, its
+    /// engine having been given no picture by the one it films.
+    ///
+    /// Windows lists a monitor that is switched off, and the capture of
+    /// it neither fails nor gives an image: every picture sent is the
+    /// same black one, and no note about the screens says so, since as far
+    /// as Windows goes it is on. Only the engine finds out, by what the
+    /// screen gives it, and says so once.
+    ///
+    /// Done once for a session, and only for the main screen, which is
+    /// the one a session gets unless somebody picked another from the
+    /// menu: what another gives is theirs to look at, and the grown one
+    /// is already what it is.
+    fn the_screen_gives_nothing(&self) {
+        if !self.engine.films_the_main_screen() {
+            self.log.write(
+                "the screen this session's engine films gives it no picture, and it is left as it \
+                 is: it is not the main screen",
+            );
+            return;
+        }
+        if self.tried_the_grown_screen.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        // What the session asked for, else the size of the screen that
+        // gives nothing: the person asked to see this computer as it is.
+        let wanted = *self.wanted.lock().expect("what the session asked for");
+        let wanted = wanted.or_else(|| {
+            self.engine
+                .size_it_films()
+                .map(|(wide, high)| WantedScreen {
+                    wide,
+                    high,
+                    scale: 0,
+                })
+        });
+        self.serve_from(wanted, Own::Silent);
+    }
+
     /// Wakes the screen this computer grew, at that size, saying what
     /// came of it.
     fn wake_the_one_it_grew(&self, screen: WantedScreen) -> Option<()> {
@@ -599,16 +660,12 @@ impl Attending {
     }
 
     /// Moves this session onto the screen this computer grew, its own
-    /// screens drawing nothing larger than themselves.
+    /// screens being of no use to it.
     ///
     /// Three steps, and each undone when the next will not go: the screen
     /// is woken at the size asked for, the desktop is moved onto it, and
     /// the engine is told to film it.
     fn grow_one_for_this_session(&self, screen: WantedScreen) -> Option<(u32, u32)> {
-        self.log.write(
-            "this computer's own screen will not draw the size this session asks for, so the one \
-             it grew is woken, the desktop moves onto it and the engine films it",
-        );
         self.wake_the_one_it_grew(screen)?;
         let Some(showing) = self.move_the_desktop_onto_it(screen) else {
             self.put_the_grown_screen_away();
@@ -688,6 +745,13 @@ impl Attending {
                 return None;
             }
         }
+        // Held from here, whether the session asked for a size or left
+        // the computer alone: the errand wrote the desk down before it
+        // moved anything, and it is given back when the session ends.
+        self.sessions.desk_held.store(
+            !zyr_screen::desk::noted_before(&paths::virtual_screen_dir()).is_empty(),
+            Ordering::Relaxed,
+        );
         zyr_screen::desk::showing_now(&paths::virtual_screen_dir())
     }
 }
@@ -711,6 +775,8 @@ impl AtTheDoor {
             fingerprint: self.fingerprint,
             engine,
             log: self.log.clone(),
+            wanted: Mutex::new(None),
+            tried_the_grown_screen: AtomicBool::new(false),
         }
     }
 }
@@ -1067,7 +1133,8 @@ async fn one_session(
 ) {
     let from = connection.remote_address();
     let engine = Arc::new(Engine::default());
-    let answering: Arc<dyn Answers> = Arc::new(door.attending(engine.clone()));
+    let attending = Arc::new(door.attending(engine.clone()));
+    let answering: Arc<dyn Answers> = attending.clone();
 
     // Most connections ask a question or two and go; only the first word
     // of a session brings an engine up.
@@ -1150,6 +1217,7 @@ async fn one_session(
     tokio::spawn(listen_to_the_engine(
         running.from_engine,
         engine,
+        attending,
         door.machine.door.media(),
         log.clone(),
     ));
@@ -1286,6 +1354,7 @@ async fn bring_up_the_engine(
 async fn listen_to_the_engine(
     mut from_engine: mpsc::Receiver<Bytes>,
     engine: Arc<Engine>,
+    attending: Arc<Attending>,
     media: Media,
     log: Log,
 ) {
@@ -1306,6 +1375,12 @@ async fn listen_to_the_engine(
         }
         for line in said.lines {
             log.write(&line);
+        }
+        if said.silent {
+            // Arranging screens waits on Windows, and this task is the
+            // one that hears the engine.
+            let attending = attending.clone();
+            tokio::task::spawn_blocking(move || attending.the_screen_gives_nothing());
         }
     }
 }
