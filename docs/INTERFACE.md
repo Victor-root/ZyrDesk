@@ -14,6 +14,7 @@ Règle de ce plan : **tout ce qui est prévu se voit dès le premier jour.** Ce 
 - **Tous les textes passent par `zyr-i18n`**, anglais d'abord, français ensuite.
 - **Les données séparées du dessin** : ce que l'accueil affiche lui est donné (par le service, le compte, la session) ; le dessin ne va rien chercher lui-même.
 - **Fenêtre étroite** : la barre de gauche se replie derrière un bouton « menu » (trois traits) en haut à gauche ; les rangées de cartes passent à la ligne.
+- **Barre de titre : celle de Windows**, avec ses boutons réduire, agrandir et fermer, et non une barre dessinée par ZyrDesk (contrairement à la maquette). Elle prend la couleur d'accentuation **de Windows** (celle que la personne a choisie dans Windows, pas le doré), à la manière traditionnelle, et non la barre blanche par défaut de Windows 11 : ZyrDesk la demande lui-même à Windows, même si la personne n'a pas coché « Afficher la couleur d'accentuation sur les barres de titre ». Le texte du titre prend la couleur qui se lit sur ce fond, et la barre suit en direct un changement de couleur dans Windows. Sous Windows 10, qui ne laisse pas un programme choisir cette couleur, la barre suit le réglage de Windows.
 - **Images** : aucune photo d'illustration. Le bandeau porte une image abstraite dessinée pour ZyrDesk, déclinée en clair et en sombre.
 
 Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est dessiné mais attend sa fonction.
@@ -39,7 +40,7 @@ Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est des
 | Recherche « Rechercher un ordinateur, un contact… » avec Ctrl+K | Grisé | |
 | Filtre « Tous » | Grisé | |
 | Vue en grille ou en liste | Grisé | La grille est la vue du premier jour |
-| Réduire, agrandir, fermer | Oui | Boutons de la fenêtre, dessinés par ZyrDesk |
+| Réduire, agrandir, fermer | Oui | Ceux de la barre de titre de Windows (§1) |
 
 ## 4. Le bandeau
 
