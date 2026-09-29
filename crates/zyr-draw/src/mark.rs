@@ -24,7 +24,7 @@ mod drawing {
 
     use crate::design::Colour;
 
-    /// The outline, and the two fills, in the numbers everything that
+    /// The outline and the white fill, in the numbers everything that
     /// draws wants.
     const fn tint(red: u8, green: u8, blue: u8) -> Colour {
         Colour {
@@ -37,7 +37,9 @@ mod drawing {
 
     pub const LINE: Colour = tint(9, 13, 22);
     pub const WHITE: Colour = tint(255, 255, 255);
-    pub const GOLD: Colour = tint(239, 181, 54);
+    /// The gold, which is the design system's accent: the same to the
+    /// digit, and so written once, in `design.css`.
+    pub const GOLD: Colour = crate::design::DARK.accent;
 
     /// Half the stroke's width, which is how far it reaches either side
     /// of the path it is drawn on.
