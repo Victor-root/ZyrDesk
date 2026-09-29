@@ -3784,6 +3784,27 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Rien. Les arguments de la ligne de commande, les noms des fichiers écrits, les étiquettes et les lignes du journal restent les mêmes. L'emplacement du journal du service est seulement nommé une fois, dans la base, au lieu de deux dans le service.
 
+## D238. L'interface de session rangée, et ce qui n'est pas de l'interface en sort (2026-09-29, pendant MZ)
+
+> Étape 5 de [D233](#d233-les-briques-en-couches-et-les-moteurs-à-part-2026-09-28-pendant-mz).
+
+**Ce qui est fait.**
+
+- **La boîte à outils de dessin devient une brique**, `zyr-draw`, dans la couche plateforme : la toile (Direct2D et DirectWrite), la charte graphique lue dans `design.css`, les icônes, le rythme de ce qui bouge et la marque ZyrDesk. Elle ne dépend d'aucune autre brique du produit. La lecture des tracés d'icônes est séparée du dessin, essayée sur tout système, et un essai lit chaque tracé livré : ce qui remplace la ligne de journal écrite quand un tracé ne se lisait pas.
+- **Le diagnostic des voyants** passe dans `zyr-session` : ce qui dit qu'une image est figée, que des images se perdent ou arrivent trop tard, que l'ordinateur d'en face ou celui-ci ne suit plus, et ce qui garde un voyant allumé un instant pour qu'il ne clignote pas. La fenêtre garde ce qui se voit : la fenêtre des voyants, la bulle et ses mots.
+- **La reprise d'une session coupée** passe dans `zyr-session` : ouvrir la session, la jouer, décider si elle vaut d'être rouverte quand elle tombe, combien de fois de suite, après quelle pause, et quoi dire une fois qu'elle est finie. La fenêtre n'est plus que la scène où l'image se joue. Le parcours entier est essayé avec un service de test qui répond comme l'ordinateur d'en face.
+- **L'avancement des fichiers collés** passe par le canal de commande (question `files-coming`, dialecte 34) : la fenêtre ne lit plus un fichier que le service écrivait pour elle, le service répond de mémoire et n'écrit plus rien sur le disque pour ça.
+- **La mise en route du service sort de la fenêtre** : le démarrer sans rien demander, le mettre en place avec les droits administrateur, et faire revenir la fenêtre à l'ouverture de session. Ce qui le demande à Windows rejoint `zyr-system` ; ce qui décide quel programme, avec quel mot, et ce que sa réponse veut dire devient une petite brique du produit, `zyr-launch`, essayée sur tout système.
+- **Le bouton flottant passe par la session en cours.** La session que la fenêtre joue garde la voie qu'elle a ouverte, et tout ce qui est demandé à l'ordinateur d'en face passe par elle, au lieu de redemander au service la liste de toutes les sessions pour y retrouver la sienne.
+- **La fenêtre est rangée en trois dossiers** : la coquille (le programme, sa fenêtre, l'icône près de l'horloge, le journal, le thème, les réglages, les raccourcis, les questions au service), l'accueil, seulement déplacé puisqu'il sera refait de zéro, et l'interface de session. Le menu du bouton flottant, un fichier de 2 750 lignes, est découpé en cinq parties (ce qui est sur la carte, où chaque chose tombe, le dessin, les gestes, la fenêtre) autour de l'état qu'elles partagent, le code restant le même ligne pour ligne.
+- **Le doré n'est plus écrit qu'une fois**, dans la charte graphique : le logo le lit là au lieu d'un nombre écrit à la main.
+
+**Pourquoi c'est mieux.** Ce que la fenêtre décidait sans que rien ne puisse l'essayer (quand rouvrir une session, quand allumer un voyant, ce que veut dire la réponse de la mise en place) vit dans des briques essayées sur tout système. La fenêtre ne parle plus au service qu'en lui posant des questions, jamais en lisant ses fichiers. L'interface de session est définitive, à la couleur d'accentuation près, qui deviendra un choix de la personne.
+
+**Ce qui se voit.** Presque rien. La forme du pointeur d'en face est demandée dès que le lecteur démarre, sans attendre la première image : l'autre ordinateur répond la flèche ordinaire tant qu'il n'a rien lu. Sans journal de la fenêtre, une session est refusée avant de déranger l'ordinateur d'en face plutôt qu'après. Les messages de fin de session et de mise en service prennent le nom de la brique qui les dit (`session.*`, `launch.*`), avec le même texte.
+
+**Ce qui reste.** Le choix de la couleur d'accentuation : où la personne le fait, et si le logo la suit. L'icône du programme et le dessin du logo dans `packaging/brand` sont des fichiers livrés tels quels : ils restent dorés quoi qu'on choisisse.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
