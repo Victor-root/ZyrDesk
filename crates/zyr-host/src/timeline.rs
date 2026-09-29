@@ -234,45 +234,41 @@ impl Timeline {
             }
             _ => "no picture".to_string(),
         };
-        self.log.debug(|| {
-            format!(
-                "{frames}: {} out ({} fresh, {} held, {} repeats, {} key), {} datagrams, {} KB; \
-                 out every {} ms; host {} ms = waited {} + drawing {} + encoding {} + handing {}; \
-                 size {} KB; screen gave {} images every {} ms, woke {} ms after each, {} \
-                 pointer only; held out {} ms late, repeats {} ms late, {} stills; {} dropped \
-                 on a full link, {} left out for a key frame (ms and KB as median/95th/worst)",
-                second.fresh + second.held + second.repeats,
-                second.fresh,
-                second.held,
-                second.repeats,
-                second.keys,
-                second.datagrams,
-                second.bytes / 1024,
-                second.left_every,
-                second.host,
-                second.waited,
-                second.drawing,
-                second.encoding,
-                second.handing,
-                second.kilobytes,
-                second.captures,
-                second.capture_every,
-                second.woken,
-                second.pointer_only,
-                second.held_late,
-                second.repeat_late,
-                second.stills,
-                second.crowded,
-                second.skipped,
-            )
-        });
+        self.log.debug(&format!(
+            "{frames}: {} out ({} fresh, {} held, {} repeats, {} key), {} datagrams, {} KB; \
+             out every {} ms; host {} ms = waited {} + drawing {} + encoding {} + handing {}; \
+             size {} KB; screen gave {} images every {} ms, woke {} ms after each, {} \
+             pointer only; held out {} ms late, repeats {} ms late, {} stills; {} dropped \
+             on a full link, {} left out for a key frame (ms and KB as median/95th/worst)",
+            second.fresh + second.held + second.repeats,
+            second.fresh,
+            second.held,
+            second.repeats,
+            second.keys,
+            second.datagrams,
+            second.bytes / 1024,
+            second.left_every,
+            second.host,
+            second.waited,
+            second.drawing,
+            second.encoding,
+            second.handing,
+            second.kilobytes,
+            second.captures,
+            second.capture_every,
+            second.woken,
+            second.pointer_only,
+            second.held_late,
+            second.repeat_late,
+            second.stills,
+            second.crowded,
+            second.skipped,
+        ));
         if !nothing_left {
-            self.log.debug(|| {
-                format!(
-                    "{frames}, each as out every ms/host ms/KB, h held, r repeat, k key:{}",
-                    second.each
-                )
-            });
+            self.log.debug(&format!(
+                "{frames}, each as out every ms/host ms/KB, h held, r repeat, k key:{}",
+                second.each
+            ));
         }
     }
 }
@@ -331,17 +327,15 @@ impl Written {
         if self.pictures == 0 {
             return;
         }
-        self.log.debug(|| {
-            format!(
-                "link: {} pictures, {} datagrams, {} KB onto the local link; waited in its \
-                 queue {} ms, written in {} ms (median/95th/worst)",
-                self.pictures,
-                self.datagrams,
-                self.bytes / 1024,
-                self.queued,
-                self.writing,
-            )
-        });
+        self.log.debug(&format!(
+            "link: {} pictures, {} datagrams, {} KB onto the local link; waited in its \
+             queue {} ms, written in {} ms (median/95th/worst)",
+            self.pictures,
+            self.datagrams,
+            self.bytes / 1024,
+            self.queued,
+            self.writing,
+        ));
         self.pictures = 0;
         self.datagrams = 0;
         self.bytes = 0;

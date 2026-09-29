@@ -450,7 +450,7 @@ impl Pipeline {
             let now = Instant::now();
             self.timeline.look(now);
             if now >= report {
-                self.shared.log.debug(|| self.counts.said());
+                self.shared.log.debug(&self.counts.said());
                 self.counts.next_interval();
                 report = now + REPORT_EVERY;
             }

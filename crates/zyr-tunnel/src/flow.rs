@@ -164,7 +164,7 @@ pub(crate) async fn watch(connection: Connection, flow: Arc<Flow>, log: Log) {
         ticks.tick().await;
         let path = connection.traffic();
         if let Some(line) = flow.second(&path, &before) {
-            log.debug(|| line);
+            log.debug(&line);
         }
         before = path;
     }

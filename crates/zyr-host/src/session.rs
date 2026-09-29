@@ -300,12 +300,10 @@ impl Engine {
             }
             Asked::Recover { stream, frame } => {
                 if let Some(unsaid) = self.recovers.allow(Instant::now()) {
-                    self.log.debug(|| {
-                        format!(
-                            "player lost stream {stream} after frame {frame}: key frame asked \
-                             ({unsaid} more unsaid)"
-                        )
-                    });
+                    self.log.debug(&format!(
+                        "player lost stream {stream} after frame {frame}: key frame asked \
+                         ({unsaid} more unsaid)"
+                    ));
                 }
                 let _ = self.pipeline.send(pipeline::Command::Recover { stream });
                 None

@@ -363,12 +363,10 @@ pub fn carry_the_clipboard_here() {
     // Under whose name, because that decides what it is allowed to see:
     // a helper under the wrong one reads a clipboard that looks empty and
     // has no way at all of saying why.
-    hunted(|| {
-        format!(
-            "this helper is running as {}",
-            zyr_system::whoever_this_is()
-        )
-    });
+    hunted(&format!(
+        "this helper is running as {}",
+        zyr_system::whoever_this_is()
+    ));
     let until = Instant::now() + HELPER_LIVES;
     let mut counted: Option<u32> = None;
     // Whether this helper is the one holding the far computer's files.
@@ -585,7 +583,7 @@ fn said(what: &str) {
 }
 
 /// The same, in the voice only a hunt wants.
-fn hunted(what: impl FnOnce() -> String) {
+fn hunted(what: &str) {
     if let Some(log) = crate::errands::into_the_service_journal(TAG) {
         log.debug(what);
     }

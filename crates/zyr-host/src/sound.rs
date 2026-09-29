@@ -167,7 +167,7 @@ impl Listener {
             }
             let now = Instant::now();
             if now >= report {
-                self.shared.log.debug(|| self.counts.said());
+                self.shared.log.debug(&self.counts.said());
                 report = now + REPORT_EVERY;
             }
         }

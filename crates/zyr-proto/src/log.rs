@@ -170,17 +170,11 @@ impl Log {
     /// Writes a line nobody wants except while hunting something.
     ///
     /// What counts, measures, or narrates a piece of plumbing that
-    /// worked. It drowns everything else, and nothing about it helps
-    /// somebody whose session will not open, so it belongs to the build
-    /// made for hunting and to no other.
-    ///
-    /// Taken as something to call rather than as a message: while nothing
-    /// is being hunted the words are never put together at all, the
-    /// closure being dropped unread. A line that costs a `format!` at
-    /// every turn of a loop for a file nobody will ever hold is still a
-    /// cost.
-    pub fn debug(&self, message: impl FnOnce() -> String) {
-        self.said(HUNTS, &message());
+    /// worked. Written always, like the other voice: the letter it
+    /// carries is what sets it apart, for the sifting to leave it out or
+    /// to ask for it alone.
+    pub fn debug(&self, message: &str) {
+        self.said(HUNTS, message);
     }
 
     /// Puts one line down, in whichever voice.
@@ -386,7 +380,7 @@ mod tests {
         let log = Log::open(&path).unwrap();
 
         log.write("what the product did");
-        log.debug(|| "what only a hunt wants".to_string());
+        log.debug("what only a hunt wants");
 
         let contents = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = contents.lines().collect();

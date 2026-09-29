@@ -130,7 +130,7 @@ mod mechanism {
                 Told::Ended => {
                     open = open.saturating_sub(1);
                     if open == 0 && asking.take().is_some() {
-                        log.debug(|| "the Wi-Fi cards are handed back to Windows".to_string());
+                        log.debug("the Wi-Fi cards are handed back to Windows");
                     }
                 }
                 Told::Connected(card) => {

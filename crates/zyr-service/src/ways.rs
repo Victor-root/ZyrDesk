@@ -1237,7 +1237,7 @@ async fn tell_the_player(
                     relayed,
                 };
                 if service.to_link.try_send(told.encode()).is_err() {
-                    log.debug(|| format!(
+                    log.debug(&format!(
                         "way towards {host}: the player was not told how the tunnel stands, it \
                          is not reading what the service says"
                     ));

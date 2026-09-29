@@ -319,7 +319,7 @@ async fn one_stream(
         Ok(StreamChannel::ZyrDesk) => {
             if let (Err(e), Some(log)) = (aside::answer(sending, receiving, answering).await, &log)
             {
-                log.debug(|| format!("a question went unanswered: {e}"));
+                log.debug(&format!("a question went unanswered: {e}"));
             }
         }
         Ok(StreamChannel::Engine) => {
@@ -327,7 +327,7 @@ async fn one_stream(
             match handing {
                 Some(handing) => {
                     if let Some(log) = &log {
-                        log.debug(|| "the player opened the engine's stream".to_string());
+                        log.debug("the player opened the engine's stream");
                     }
                     // Refused only once the pumps are gone, which is the
                     // session ending anyway.

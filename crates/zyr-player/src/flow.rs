@@ -300,40 +300,36 @@ impl Flow {
             }
             _ => "no frame".to_string(),
         };
-        self.log.debug(|| {
-            format!(
-                "{frames}: {} whole ({} key, {} repeats, {} repaired), {} lost, {} passed over \
-                 waiting for a key frame, {} dropped behind, {} refused; {} datagrams, taken {} ms \
-                 after the link had them; whole every {} ms, capture to whole {} ms, first to last \
-                 packet {} ms, decoding {} ms (median/95th/worst)",
-                second.whole,
-                second.keys,
-                second.repeats,
-                second.repaired,
-                second.lost,
-                second.skipped,
-                second.behind,
-                second.refused,
-                second.datagrams,
-                second.lag,
-                second.every,
-                second.latency,
-                second.spread,
-                second.decoding,
-            )
-        });
+        self.log.debug(&format!(
+            "{frames}: {} whole ({} key, {} repeats, {} repaired), {} lost, {} passed over \
+             waiting for a key frame, {} dropped behind, {} refused; {} datagrams, taken {} ms \
+             after the link had them; whole every {} ms, capture to whole {} ms, first to last \
+             packet {} ms, decoding {} ms (median/95th/worst)",
+            second.whole,
+            second.keys,
+            second.repeats,
+            second.repaired,
+            second.lost,
+            second.skipped,
+            second.behind,
+            second.refused,
+            second.datagrams,
+            second.lag,
+            second.every,
+            second.latency,
+            second.spread,
+            second.decoding,
+        ));
         if !second.arrivals.is_empty() {
-            self.log.debug(|| {
-                format!(
-                    "{frames}, each as whole every ms/capture to whole ms/first to last packet \
-                     ms/decoding ms, k key, r repeat, p repaired, s passed over, b dropped \
-                     behind, x refused, L lost:{}",
-                    second.arrivals
-                )
-            });
+            self.log.debug(&format!(
+                "{frames}, each as whole every ms/capture to whole ms/first to last packet \
+                 ms/decoding ms, k key, r repeat, p repaired, s passed over, b dropped \
+                 behind, x refused, L lost:{}",
+                second.arrivals
+            ));
         }
         if second.presented > 0 {
-            self.log.debug(|| screen_line(&frames, &second));
+            self.log.debug(&screen_line(&frames, &second));
         }
     }
 }

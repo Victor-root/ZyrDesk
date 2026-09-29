@@ -140,7 +140,7 @@ impl Player {
                 heard = now;
             }
             if now >= report {
-                self.log.debug(|| self.counts.said());
+                self.log.debug(&self.counts.said());
                 report = now + REPORT_EVERY;
             }
         }

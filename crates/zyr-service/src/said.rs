@@ -169,7 +169,7 @@ pub fn into_the_journal(log: &Log) -> Say {
     let log = log.clone();
     Arc::new(move |aloud, line: &str| match aloud {
         Aloud::Says => log.write(line),
-        Aloud::Hunts => log.debug(|| line.to_string()),
+        Aloud::Hunts => log.debug(line),
     })
 }
 

@@ -79,7 +79,7 @@ pub fn run(mut sound: Sound, input: &Receiver<Bytes>, muted: &Muted, log: &Log) 
     let mut output = match Output::open(&devices, log) {
         Ok(output) => output,
         Err(Opening::Nothing(reason)) => {
-            log.debug(|| format!("no sound card to play on: {reason}"));
+            log.debug(&format!("no sound card to play on: {reason}"));
             return;
         }
         Err(Opening::Refused(reason)) => {

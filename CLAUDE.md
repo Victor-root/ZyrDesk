@@ -97,7 +97,7 @@ Une nouvelle brique ne naît que pour une responsabilité qui a sa propre raison
 - Les moteurs, le service, le compte et le serveur ne composent jamais de phrase pour la personne. Ils disent un fait, `zyr_proto::fact::Fact` : un code (mots anglais en minuscules reliés par des points, le premier nommant le sujet : `reach.silent`, `session.link_lost`) et des valeurs nommées. Un fait peut porter sa cause (`because`).
 - Seules la fenêtre et la ligne de commande choisissent les mots. Le code d'un fait est la clé de son texte.
 - Les essais de `zyr-i18n` refusent une langue qui ne dit pas tout ce que dit l'anglais, une clé demandée sans texte anglais et un texte que rien ne demande : retirer un fait, c'est retirer ses textes.
-- Le journal : `zyr_proto::log::Log`, horodaté en UTC, une étiquette par module (une constante `TAG`, un mot anglais court, posé par `log.about(TAG)`). `log.write` dit ce que le produit fait, refuse ou trouve ; `log.debug(|| ...)` raconte la plomberie qui marche.
+- Le journal : `zyr_proto::log::Log`, horodaté en UTC, une étiquette par module (une constante `TAG`, un mot anglais court, posé par `log.about(TAG)`). `log.write` dit ce que le produit fait, refuse ou trouve ; `log.debug` raconte la plomberie qui marche.
 - **Les lignes de débogage s'écrivent toujours**, dans toutes les versions, et se trient à la lecture (`level:debug`, `-level:debug`) : Victor copie le journal entier (D191). Ne jamais les conditionner à `cfg(debug_assertions)`, à un fichier ou à un réglage. Cette règle du projet remplace ici la règle générale de protéger les journaux de débogage.
 
 ## Les dialogues entre deux versions

@@ -1076,7 +1076,7 @@ async fn one_session(
     let opening = match opening {
         Ok(opening) => opening,
         Err(e) => {
-            log.debug(|| format!("{from} went without opening a session: {e}"));
+            log.debug(&format!("{from} went without opening a session: {e}"));
             return;
         }
     };

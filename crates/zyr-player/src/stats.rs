@@ -254,7 +254,7 @@ pub fn run(
         if now >= summary_at {
             summary_at = now + SUMMARY_EVERY;
             let counters = lock(tallies).clone();
-            log.debug(|| format!("so far: {counters}"));
+            log.debug(&format!("so far: {counters}"));
         }
     }
     log.write(&format!("at the end: {}", lock(tallies)));

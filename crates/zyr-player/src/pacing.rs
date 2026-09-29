@@ -716,29 +716,27 @@ impl<T> Pacer<T> {
             None => "the screen's refreshes are not known".to_string(),
         };
         let [one, two, three, more] = second.apart;
-        self.log.debug(|| {
-            format!(
-                "pacing: {paced} presented one a refresh ({} as soon as decoded, {} held for \
-                 their refresh, waiting {} ms), {} before the refreshes were known; {} dropped as \
-                 newer ones piled up, {} dropped to take a refresh back, {} sent again that gave \
-                 way to a newer one; refreshes from one picture to the next: {one} one, {two} \
-                 two, {three} three, {more} more; the screen showed {} at their refresh, {} later \
-                 ({} of them presented with half a refresh to spare), {} sooner, {} not judged \
-                 as the screen's count and clock disagreed; {screen}",
-                second.at_once,
-                second.held,
-                second.waited,
-                second.unpaced,
-                second.piled_up,
-                second.caught_up,
-                second.gave_way,
-                second.on_time,
-                second.late,
-                second.late_anyway,
-                second.early,
-                second.unjudged,
-            )
-        });
+        self.log.debug(&format!(
+            "pacing: {paced} presented one a refresh ({} as soon as decoded, {} held for \
+             their refresh, waiting {} ms), {} before the refreshes were known; {} dropped as \
+             newer ones piled up, {} dropped to take a refresh back, {} sent again that gave \
+             way to a newer one; refreshes from one picture to the next: {one} one, {two} \
+             two, {three} three, {more} more; the screen showed {} at their refresh, {} later \
+             ({} of them presented with half a refresh to spare), {} sooner, {} not judged \
+             as the screen's count and clock disagreed; {screen}",
+            second.at_once,
+            second.held,
+            second.waited,
+            second.unpaced,
+            second.piled_up,
+            second.caught_up,
+            second.gave_way,
+            second.on_time,
+            second.late,
+            second.late_anyway,
+            second.early,
+            second.unjudged,
+        ));
     }
 }
 
