@@ -3,6 +3,7 @@
 
 use std::convert::Infallible;
 use std::io;
+use std::net::IpAddr;
 use std::path::Path;
 use std::time::Duration;
 
@@ -20,6 +21,20 @@ fn not_here() -> io::Error {
 
 pub fn session_on_screen() -> Option<u32> {
     None
+}
+
+/// The computer's own counters, which are not read here.
+#[derive(Debug)]
+pub struct Vitals(Infallible);
+
+impl Vitals {
+    pub fn start() -> Option<Self> {
+        None
+    }
+
+    pub fn second(&mut self, _peer: Option<IpAddr>) -> Option<String> {
+        match self.0 {}
+    }
 }
 
 pub fn runs_in(_session: u32, _program: &Path) -> io::Result<bool> {

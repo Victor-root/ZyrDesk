@@ -141,6 +141,8 @@ struct Open {
     /// This computer's Wi-Fi putting the session first, for as long as the
     /// way lasts.
     _wifi: zyr_system::Favouring,
+    /// What this computer does, written down for as long as the way lasts.
+    _vitals: Option<crate::vitals::Sampling>,
     /// What tells the player how the tunnel stands, and hears it.
     _telling: Aborting,
 }
@@ -704,6 +706,11 @@ impl Ways {
             host.to_string(),
             self.log.clone(),
         )));
+        let vitals = crate::vitals::sample_session(
+            &self.log,
+            crossing.as_ref().map(|crossing| crossing.junction.clone()),
+            connection.remote_address(),
+        );
         let way = self.register.lock().expect("register of ways").settle(
             Towards {
                 host: host.to_string(),
@@ -718,6 +725,7 @@ impl Ways {
                 said: Said::from(opened_at),
                 _outside: crate::outside::watch(&self.log),
                 _wifi: zyr_system::favour_latency(&self.log),
+                _vitals: vitals,
                 _telling: telling,
             },
         );

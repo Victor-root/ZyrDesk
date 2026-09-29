@@ -1278,6 +1278,7 @@ async fn one_session(
         log.clone(),
     ));
     let named = from.to_string();
+    let _vitals = crate::vitals::sample_session(&log, Some(junction.clone()), from);
     let outcome = tokio::select! {
         outcome = watch_over(&mut tunnel, &watched, &junction, &named, &log) => Some(outcome),
         _ = closing.wait_for(|closing| *closing) => None,

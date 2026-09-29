@@ -13,6 +13,11 @@ zyr-proto.workspace = true
 zyr-win32.workspace = true
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
+    # What the network stack and the cards have counted, and which card
+    # reaches an address.
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
     # The Wi-Fi's types only: its functions are looked for at run time,
     # wlanapi.dll being missing from a Windows Server without its
     # wireless service.
@@ -22,6 +27,8 @@ windows-sys = { version = "0.61.2", features = [
     # The shell asked to run a program with administrator rights expects
     # COM on the thread that asks.
     "Win32_System_Com",
+    # Every program running, for how much of the processor each one uses.
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Environment",
     "Win32_System_JobObjects",
     "Win32_System_LibraryLoader",

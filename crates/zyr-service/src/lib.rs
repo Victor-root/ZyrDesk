@@ -36,6 +36,7 @@ mod screen;
 mod speakers;
 mod supervisor;
 mod transfer;
+mod vitals;
 mod ways;
 
 pub use clipboard::carry_the_clipboard_here;

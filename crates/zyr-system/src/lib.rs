@@ -7,8 +7,9 @@
 //! a short errand whose exit code is its answer, or as a helper left to
 //! read for a while; locking that screen from inside it; pressing
 //! Ctrl+Alt+Del, which Windows takes from a service and from nothing
-//! else; asking the Wi-Fi to put a session first; and reading the shape
-//! the pointer has on the desktop this program stands on.
+//! else; asking the Wi-Fi to put a session first; reading the shape
+//! the pointer has on the desktop this program stands on; and counting
+//! how busy the computer is and what its network has carried and lost.
 //!
 //! And what gets a program running at all: with no console flashing up,
 //! with administrator rights asked of the person, or when the person
@@ -22,6 +23,8 @@
 
 #[cfg(windows)]
 mod attention;
+#[cfg(any(windows, test))]
+mod counted;
 #[cfg(windows)]
 mod elevated;
 #[cfg(not(windows))]
@@ -30,6 +33,8 @@ mod elsewhere;
 mod onscreen;
 #[cfg(windows)]
 mod pointer;
+#[cfg(windows)]
+mod reading;
 #[cfg(windows)]
 mod sign_in;
 mod wifi;
@@ -46,7 +51,7 @@ pub use attention::{forget_it, let_it_be_pressed, press};
 pub use elevated::run_as_administrator;
 #[cfg(not(windows))]
 pub use elsewhere::{
-    SessionProcess, errand, errand_code, lock_this_desktop, pointer_shape, press,
+    SessionProcess, Vitals, errand, errand_code, lock_this_desktop, pointer_shape, press,
     run_as_administrator, runs_in, session_on_screen, somebody_signed_in, start_a_helper,
     start_at_sign_in, start_in_session, still_running, whoever_this_is,
 };
@@ -57,6 +62,8 @@ pub use onscreen::{
 };
 #[cfg(windows)]
 pub use pointer::pointer_shape;
+#[cfg(windows)]
+pub use reading::Vitals;
 #[cfg(windows)]
 pub use sign_in::start_at_sign_in;
 pub use wifi::{Favouring, favour_latency};

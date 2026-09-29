@@ -4051,6 +4051,27 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows, et personne n'a établi que ce soit la cause d'une perte de Victor : la session dont le journal a servi à cet examen n'avait perdu aucun paquet, 29450 envoyés et 29450 reçus. C'est une réserve qui manquait, pas une perte mesurée. Les lignes de la machine de l'étape suivante compteront les datagrammes que Windows jette faute de place : si elles restent à zéro, cette hypothèse est écartée.
 
+## D252. Le journal dit ce que fait l'ordinateur lui-même, seconde par seconde (2026-09-29, pendant MZ)
+
+> Troisième étape de l'inventaire du journal ([D251](#d251-la-connexion-directe-garde-de-la-place-pour-ce-qui-arrive-et-le-journal-dit-combien-2026-09-29-pendant-mz)). Le tunnel, le moteur et le lecteur disaient chacun ce qu'ils faisaient ; rien ne disait ce que faisait l'ordinateur sous eux.
+
+**Le constat.** Une session qui saccade laisse la même trace que la faute soit au réseau, à l'ordinateur d'en face ou à celui-ci. Ce qui départage, c'est ce que cet ordinateur faisait à cette seconde-là : occupé à autre chose, en train de jeter des datagrammes faute de place, ou sa carte réseau qui rejette des paquets. Le journal ne comptait rien de tout cela : pas un mot du processeur, ni de UDP côté Windows, ni de la carte. La seule mesure indépendante de la session était le test d'accès à Internet, qui ne dit rien du réseau local.
+
+**Ce qui est fait.**
+
+- Pendant une session, sur les deux ordinateurs, le service écrit chaque seconde une ligne (`vitals`) : la part de tous les processeurs utilisée, les programmes qui en utilisent le plus (jusqu'à quatre, au moins 2 % d'un processeur chacun, avec leur numéro pour retrouver le moteur ou la fenêtre de la session), ce que Windows a compté d'UDP et d'IP pendant la seconde, dont les datagrammes reçus et non délivrés, et ce que la carte réseau qui joint l'autre ordinateur a porté et perdu, avec sa vitesse négociée. La carte est celle que la table de routage désigne pour l'adresse par laquelle passe la session à cet instant, y compris quand la route change en cours de session.
+- Ce qui n'a pas pu être lu est simplement absent de la ligne, sans phrase d'excuse.
+- Le fil qui lit tourne à la plus basse priorité : parcourir tous les programmes de l'ordinateur prend quelques millisecondes, qu'il ne faut jamais prendre à une image.
+- Hors de Windows, rien n'est lu et rien n'est écrit.
+
+**Ce qui se voit.** Rien à l'écran. Dans le journal du service, tri `vitals`. Une ligne ressemble à : `over 1.0 s, the computer 23 % busy, of one processor zyrdeskd.exe (2210) 14 %, chrome.exe (9812) 6 %; UDP 2318 datagrams in, 0 of them failed and 0 unclaimed, 55 out; IP 2400 packets in, 0 discarded in and 0 out, 0 not reassembled; card Ethernet (Ethernet, 1000 Mb/s, up): in 2589 KB, 2318 packets, 0 discarded, 0 errors; out 31 KB, 55 packets, 0 discarded, 0 errors`.
+
+**Comment la lire.** Des datagrammes « failed » qui montent en même temps que des images perdues côté lecteur veulent dire que Windows les a jetés faute de place : c'est l'hypothèse de D251. Des paquets « discarded » sur la carte veulent dire que la carte ou son pilote les a rejetés. Un programme autre que ZyrDesk qui occupe un processeur entier à la seconde d'une saccade, c'est l'ordinateur et pas le réseau.
+
+**Les essais.** Le calcul de ce qu'un compteur a gagné, y compris quand il repart de zéro (les compteurs UDP sont sur 32 bits), quand un programme est remplacé sous le même numéro ou qu'une session change de carte, et les mots de la ligne, s'essaient sur tout système. La lecture de Windows s'essaie sous Windows (CI) : la première lecture ne dit rien, la deuxième dit le processeur, UDP, IP et la carte de la boucle locale, et l'écriture chaque seconde tant que la session tient.
+
+**Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows : le programme a été essayé sous Wine, qui invente des chiffres de processeur. Ce qu'il ne dit pas encore : la charge de la carte graphique, ni le signal du Wi-Fi (étape suivante).
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
