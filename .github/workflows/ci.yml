@@ -83,7 +83,12 @@ jobs:
       # Without --no-fail-fast, cargo stops at the first failing test
       # binary: a platform that breaks several things only reveals them one
       # at a time, a CI round trip each time.
+      #
+      # A test that waits forever is a failure like any other, and has to
+      # show as one: left alone, the job waits six hours for GitHub to cut
+      # it, and looks all that time like a run still going.
       - run: cargo test --workspace --all-targets --no-fail-fast
+        timeout-minutes: 30
         env:
           ZYR_FFMPEG_DIR: ${{ runner.os == 'Linux' && format('{0}/ffmpeg/lib', runner.temp) || '' }}
       - name: Diagnostic
