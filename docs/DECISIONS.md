@@ -3766,6 +3766,24 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 - Changer la taille en cours de session continue à la taille devinée quand l'ordinateur distant ne prépare pas son écran, au lieu d'abandonner le changement.
 - Partis parce que plus rien ne les atteignait : la description française des actions du bouton flottant, que seul un essai lisait, une seconde vérification de la fenêtre avant le plein écran, et la phrase qui disait pour l'interface où en était une copie de fichiers, que rien n'affichait.
 
+## D237. Le service allégé : sa logique devient une brique qu'on essaie seule (2026-09-29, pendant MZ)
+
+> Étape 4 de [D233](#d233-les-briques-en-couches-et-les-moteurs-à-part-2026-09-28-pendant-mz).
+
+**Ce qui est fait.**
+
+- **Une brique pour les petits outils Windows**, `zyr-win32` : un texte mis dans la forme que Windows lit, et relu depuis ce que Windows a écrit, une poignée fermée quoi qu'il arrive, le programme d'un processus et s'il tourne encore, un refus écrit avec le numéro du système. La fenêtre, la brique des écrans et le service s'en servent au lieu de les refaire. Les deux moitiés du moteur gardent les leurs : cette étape ne touche pas au moteur.
+- **La course « le premier qui répond gagne »** et la branche de relais, écrites chacune deux fois dans le service, vivent une seule fois dans `zyr-transport`, avec leurs essais.
+- **Ce que le service demande à Windows lui-même** passe dans une brique de plateforme, `zyr-system` : trouver la session qui tient l'écran et qui y est, y lancer ce programme (le moteur d'une session, une course, un assistant), verrouiller l'écran, appuyer sur Ctrl+Alt+Suppr, demander au Wi-Fi de passer la session d'abord, lire la forme du pointeur.
+- **La mémoire du bureau**, l'arrangement des écrans noté avant une session et rendu après, passe dans `zyr-screen`.
+- **Un seul gardien pour les assistants** du pointeur et du presse-papiers : les démarrer dans la session de l'écran tant que quelqu'un demande, en relancer un avant que le précédent ne s'arrête, et dire une seule fois pourquoi c'est impossible.
+- **Une seule liste des courses.** Les six raisons pour lesquelles le service relance son programme dans la session de l'écran portent chacune, au même endroit, les mots qui la demandent et la façon de les relire ; un essai vérifie que chaque demande se relit telle qu'elle a été faite.
+- **La logique du service devient la brique `zyr-service`**, dans la couche du produit. Le programme `zyrdeskd` ne fait plus qu'assembler : son démarrage par Windows, son installation (pare-feu, droits, écran virtuel, Ctrl+Alt+Suppr) et l'aiguillage de ce pour quoi il est relancé. Il branche la brique sur les deux choses qu'elle ne connaît pas : le moteur, qui dit si FFmpeg est là, et le gestionnaire de services de Windows, qui dit si le service démarre avec Windows et le change.
+
+**Pourquoi c'est mieux.** Les briques de plateforme répondent honnêtement hors de Windows, par un « pas ici ». La logique du service n'a donc plus de fonctions écrites en deux exemplaires, une version Windows et une version « ailleurs », ni les treize exceptions qui taisaient le code inutilisé hors de Windows : tout est compilé, vérifié et essayé sur les deux systèmes, et le compilateur cherche le code mort partout, sans en trouver. La brique du service ne dépend pas du moteur : changer le moteur ne la recompile pas.
+
+**Ce qui se voit.** Rien. Les arguments de la ligne de commande, les noms des fichiers écrits, les étiquettes et les lignes du journal restent les mêmes. L'emplacement du journal du service est seulement nommé une fois, dans la base, au lieu de deux dans le service.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

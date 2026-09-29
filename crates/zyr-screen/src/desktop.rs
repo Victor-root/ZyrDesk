@@ -18,6 +18,7 @@ use windows_sys::Win32::Devices::Display::{
     QDC_ONLY_ACTIVE_PATHS, QDC_VIRTUAL_MODE_AWARE, QueryDisplayConfig,
 };
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+use zyr_win32::read_wide;
 
 /// The desktop as Windows describes it, panels and desktops told apart.
 pub(crate) fn as_windows_has_it()
@@ -70,7 +71,7 @@ pub(crate) fn gdi_name(path: &DISPLAYCONFIG_PATH_INFO) -> Option<String> {
     if unsafe { DisplayConfigGetDeviceInfo((&raw mut about).cast()) } != ERROR_SUCCESS as i32 {
         return None;
     }
-    Some(ending_at_its_nought(&about.viewGdiDeviceName))
+    Some(read_wide(&about.viewGdiDeviceName))
 }
 
 /// What the screen on that path calls itself.
@@ -88,7 +89,7 @@ fn how_it_introduces_itself(path: &DISPLAYCONFIG_PATH_INFO) -> Option<String> {
     if unsafe { DisplayConfigGetDeviceInfo((&raw mut about).cast()) } != ERROR_SUCCESS as i32 {
         return None;
     }
-    Some(ending_at_its_nought(&about.monitorFriendlyDeviceName))
+    Some(read_wide(&about.monitorFriendlyDeviceName))
 }
 
 /// The screen this computer grew for itself, under the name Windows
@@ -121,12 +122,4 @@ pub fn how_the_screens_introduce_themselves() -> Vec<(String, String)> {
         .iter()
         .filter_map(|path| Some((gdi_name(path)?, how_it_introduces_itself(path)?)))
         .collect()
-}
-
-fn ending_at_its_nought(letters: &[u16]) -> String {
-    let end = letters
-        .iter()
-        .position(|letter| *letter == 0)
-        .unwrap_or(letters.len());
-    String::from_utf16_lossy(&letters[..end])
 }

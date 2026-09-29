@@ -9,7 +9,6 @@
 //! outside ever gets that far: an elevation is not a place for a value
 //! somebody else chose.
 
-use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
@@ -66,7 +65,7 @@ pub fn run(program: &Path, arguments: &str) -> Result<(), Fact> {
     let _com = Com::entered();
 
     let verb = zyr_win32::wide("runas");
-    let file: Vec<u16> = program.as_os_str().encode_wide().chain(Some(0)).collect();
+    let file = zyr_win32::wide(program);
     let words = zyr_win32::wide(arguments);
 
     let mut about: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
