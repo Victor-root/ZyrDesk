@@ -4072,6 +4072,18 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas sûr.** Rien de cela n'a tourné sur un vrai Windows : le programme a été essayé sous Wine, qui invente des chiffres de processeur. Ce qu'il ne dit pas encore : la charge de la carte graphique, ni le signal du Wi-Fi (étape suivante).
 
+## D253. Les essais du moteur hôte n'ouvrent plus deux encodeurs à la fois (2026-09-29, pendant MZ)
+
+> Poursuit [D243](#d243-les-essais-qui-rougissaient-github-sans-rien-avoir-cassé-sont-remis-daplomb-2026-09-29-pendant-mz), dont la mise en série ne suffisait pas : le blocage sous Windows revenait, dans un autre essai.
+
+**Le constat.** D243 avait mis en série les deux essais du codec qui lancent la sonde des encodeurs, en disant que c'était une mesure et que les passages suivants diraient si elle suffisait. Deux passages depuis (les envois `b57f14a` et `9ea4f3e`, qui ne touchaient ni l'un ni l'autre le moteur hôte) ont encore été coupés à trente minutes sous Windows. Le journal du dernier dit ce qui s'est passé : un essai de session (`sound_goes_out_as_numbered_opus_packets`) est tombé à sa limite de dix secondes, et à la même seconde l'essai `past_a_hole_nothing_goes_before_the_key_frame_that_closes_it` a commencé, puis n'a plus jamais rendu la main. Les sessions du moteur passent déjà l'une après l'autre, mais cet essai-là, qui sonde et ouvre lui aussi un encodeur, ne prenait pas leur tour : deux encodeurs de Media Foundation s'ouvraient en même temps, de deux fils, ce que le moteur ne fait jamais.
+
+**Ce qui est fait.** L'essai prend maintenant le même tour que les sessions. Il n'y en a pas d'autre dans le moteur hôte qui ouvre un encodeur.
+
+**Ce qui se voit.** Rien dans le produit. Sur GitHub, les vérifications sous Windows ne doivent plus être coupées à trente minutes.
+
+**Ce qui n'est pas sûr.** Comme pour D243, le blocage n'a pas pu être reproduit hors de GitHub : ce qui appuie cette cause, c'est que les deux essais en cause sont exactement ceux du journal, qu'ils s'ouvraient au même moment, et que le premier avait échoué au bout de son délai. Les passages qui suivent diront si elle suffit.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -86,8 +86,15 @@ pub(crate) use zyr_codec::testing::ffmpeg;
 /// Longest wait for anything from the engine.
 const PATIENCE: Duration = Duration::from_secs(10);
 
-/// Held by each session for as long as it lasts.
-static ALONE: Mutex<()> = Mutex::const_new(());
+/// Held by each session for as long as it lasts, and by any other test
+/// that opens an encoder.
+///
+/// Every Media Foundation encoder starts the platform when it opens and
+/// shuts it down when it closes, and the engine only ever does that from
+/// one thread. Two at once do it from two, and on Windows the pair has
+/// more than once never come back: a session that opened its encoder
+/// beside a test that opened another was the last hang of the runs.
+pub(crate) static ALONE: Mutex<()> = Mutex::const_new(());
 
 const BUDGET: u16 = 1161;
 

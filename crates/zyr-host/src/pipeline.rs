@@ -1487,6 +1487,8 @@ mod tests {
 
     #[test]
     fn past_a_hole_nothing_goes_before_the_key_frame_that_closes_it() {
+        // It opens an encoder, so it takes its turn beside the sessions.
+        let _alone = crate::end_to_end::ALONE.blocking_lock();
         let journal = TestLog::new("pipeline-hole");
         // Room for one picture, which the test takes out or leaves.
         let (outbox, spares, mut link) = link::detached(1);
