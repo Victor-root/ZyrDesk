@@ -733,7 +733,9 @@ pub fn parse_resolution(value: &str) -> Result<(u32, u32), InvalidResolution> {
 /// word enough. Anything outside it, a program that draws a pointer of
 /// its own, comes back as the arrow: it is the shape a system falls back
 /// to itself, and a session that showed nothing at all there would be
-/// worse than one that shows the ordinary pointer.
+/// worse than one that shows the ordinary pointer. The picture of such a
+/// pointer travels with the engine's, which says when it has one
+/// (`zyr_media::pointer`), and the computer watching puts it on instead.
 ///
 /// One word out of the list is not a shape but an answer of another
 /// kind, and it is the last one: see [`Pointer::Theirs`].

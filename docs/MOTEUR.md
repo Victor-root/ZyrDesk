@@ -57,13 +57,13 @@ L'hôte enregistre ce que la carte son joue, avant son propre volume et sa propr
 
 Le client envoie les touches par leur place sur le clavier (code de balayage), jamais par leur lettre : un A d'un clavier AZERTY reste la touche du A. Tout passe par un flux fiable et ordonné, pour qu'une touche relâchée ne se perde jamais. Le mode « Immersif » prend Alt+Tab, Windows, Impr. écran et Alt+F4 pour la session, sans jamais avaler Alt, Ctrl ou Maj, dont les raccourcis de ZyrDesk ont besoin ([CLAVIER.md](CLAVIER.md)). À la perte du clavier, à la fin de la session ou à la perte du lien, tout ce qui est enfoncé est relâché, des deux côtés : l'hôte relâche lui-même ce qu'il a appuyé si le lien se tait ([D198](DECISIONS.md)).
 
-La souris « Bureau » envoie une position absolue et le client montre son propre curseur, avec la forme de celui d'en face : pas d'aller-retour derrière la main. La souris « Jeu » envoie des déplacements relatifs lus directement sur la souris, et c'est l'hôte qui dessine son curseur dans l'image.
+La souris « Bureau » envoie une position absolue et le client montre son propre curseur, avec la forme de celui d'en face : pas d'aller-retour derrière la main. Un curseur qu'un programme dessine lui-même (la bulle de Chrome qui simule un doigt, un pinceau, un viseur) n'est aucune des formes du système : le moteur hôte en envoie alors l'image, et le client en fait son curseur, à l'échelle où l'écran d'en face est montré ([D260](DECISIONS.md)). La souris « Jeu » envoie des déplacements relatifs lus directement sur la souris, et c'est l'hôte qui dessine son curseur dans l'image.
 
 ## 7. Ce qui passe dans le tunnel
 
 | Canal | Contenu | Fiabilité |
 |---|---|---|
-| Flux « moteur » | Messages du lecteur et du moteur hôte : demande de session, changements en direct, demande d'image clé, écran immobile, touches et souris, mesure de l'aller-retour | Fiable et ordonné |
+| Flux « moteur » | Messages du lecteur et du moteur hôte : demande de session, changements en direct, demande d'image clé, écran immobile, touches et souris, image d'un curseur sans nom, mesure de l'aller-retour | Fiable et ordonné |
 | Datagrammes « vidéo » | Paquets d'images et paquets de réparation | Non fiable, réparé par la correction d'erreurs |
 | Datagrammes « son » | Tranches Opus numérotées | Non fiable, tranche perdue remplacée |
 | Canal ZyrDesk | Les questions du produit, inchangées : écran de l'hôte, débit, codecs, presse-papiers, fichiers, journal, Ctrl+Alt+Suppr, verrouillage | Fiable |

@@ -15,14 +15,21 @@
 //! A single connection to the service for the whole session, and not one
 //! per question as everywhere else in this window: elsewhere it is a
 //! question now and then, here it is twenty a second.
+//!
+//! A pointer that a program over there draws for itself has no shape to
+//! be named after. Its picture comes with the engine's instead, and is
+//! made here into a pointer of this computer, put on in place of the named
+//! one.
 
 // A session only exists on Windows, and this loop with it.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use zyr_control::{Answer, Request, Service, WayId};
+use zyr_player::PointerImage;
 use zyr_proto::fact::Fact;
 use zyr_proto::session::Pointer;
 
@@ -78,6 +85,83 @@ fn keep(shape: Pointer) {
         .unwrap_or(0) as u8;
     if SHAPE.swap(rank, Ordering::Relaxed) != rank {
         crate::session::video::the_pointer_changed();
+    }
+}
+
+/// The pointer made of the far one's picture, and the picture it was made
+/// of; nought where it could not be made.
+///
+/// Made once for each picture and not at every movement, which is twenty
+/// times a second. One at most is ever kept, whatever the number of
+/// sessions: it goes when the next one is made.
+static MADE: Mutex<Option<(Arc<PointerImage>, isize)>> = Mutex::new(None);
+
+/// Puts on the pointer made of the far one's picture; false when it could
+/// not be made, for the named shape to be put on instead.
+///
+/// Called on the thread of the picture's window, which puts every pointer
+/// on: the one it replaces is let go of there, once it is off.
+#[cfg(windows)]
+pub fn put_on_its_picture(image: Arc<PointerImage>) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyCursor, HCURSOR, SetCursor};
+
+    let mut made = MADE.lock().expect("the pointer made here");
+    let kept = made
+        .as_ref()
+        .filter(|(kept, _)| Arc::ptr_eq(kept, &image))
+        .map(|(_, cursor)| *cursor as HCURSOR);
+    let cursor = kept.unwrap_or_else(|| made_of(&image));
+    if cursor.is_null() && kept.is_none() {
+        note(&format!(
+            "the far pointer's picture ({}x{}) could not be made a pointer here",
+            image.width, image.height
+        ));
+    }
+    // SAFETY: a pointer made here, put on from the window's thread, then
+    // the one it replaces, made here as well and no longer on.
+    unsafe {
+        if !cursor.is_null() {
+            SetCursor(cursor);
+        }
+        if kept.is_none()
+            && let Some((_, before)) = made.replace((image, cursor as isize))
+            && before != 0
+        {
+            DestroyCursor(before as HCURSOR);
+        }
+    }
+    !cursor.is_null()
+}
+
+/// A pointer of this computer, of `image`; nought if it cannot be made.
+#[cfg(windows)]
+fn made_of(image: &PointerImage) -> windows_sys::Win32::UI::WindowsAndMessaging::HCURSOR {
+    use windows_sys::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, ICONINFO};
+
+    let (width, height) = (image.width as i32, image.height as i32);
+    // SAFETY: two bitmaps of the size and depth their bytes were made
+    // for, copied by the system into the pointer, then given back.
+    unsafe {
+        let mask = CreateBitmap(width, height, 1, 1, image.mask.as_ptr().cast());
+        let colour = CreateBitmap(width, height, 1, 32, image.colour.as_ptr().cast());
+        let cursor = if mask.is_null() || colour.is_null() {
+            std::ptr::null_mut()
+        } else {
+            CreateIconIndirect(&ICONINFO {
+                fIcon: 0,
+                xHotspot: image.hot_x,
+                yHotspot: image.hot_y,
+                hbmMask: mask,
+                hbmColor: colour,
+            })
+        };
+        for bitmap in [mask, colour] {
+            if !bitmap.is_null() {
+                DeleteObject(bitmap);
+            }
+        }
+        cursor
     }
 }
 

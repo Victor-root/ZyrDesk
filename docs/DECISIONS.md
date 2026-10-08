@@ -4203,6 +4203,25 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Passer à la résolution de l'hôte en pleine session remet l'image dans la seconde, et un écran qui refuse de se laisser dupliquer n'emballe plus le processeur.
 
+## D260. Un curseur qu'un programme dessine lui-même passe par son image (2026-10-08, pendant MZ)
+
+> Dit par Victor : avec les outils de développement de Chrome en mode mobile, le curseur de l'hôte devient une bulle ; Parsec la montre, ZyrDesk garde la flèche ordinaire.
+
+**Ce que [D151](#d151-la-forme-du-curseur-voyage-à-côté-de-limage-2026-09-05-pendant-m6) avait choisi, et son prix.** Le curseur qu'on voit est celui de l'ordinateur qui regarde, dans la forme de celui d'en face, nommée parmi les douze du système : « un mot et jamais une image ». Le prix était écrit : un curseur qu'un programme dessine lui-même ne ressemble à aucune des douze et rend la flèche. C'est lui qui se voyait ici. Faire passer une image demandait alors de patcher des moteurs empruntés ; le moteur est maintenant le nôtre, et son hôte lisait déjà l'image exacte du curseur à chaque changement de forme, pour la dessiner dans l'image en mode jeu.
+
+**Le mélange, choisi par Victor.** Parsec envoie l'image de tous les curseurs. ZyrDesk garde le nom pour les formes du système, que l'ordinateur qui regarde continue de dessiner lui-même, nettes et à sa taille, et n'envoie l'image que d'un curseur qu'aucune ne nomme. Le défaut de la route de Parsec, un curseur à la taille de l'écran d'en face, ne touche donc que ces curseurs-là, et il est corrigé : l'image est mise à l'échelle où l'écran d'en face est montré, comme ce qu'elle désigne, entre le quart et le quadruple de sa taille. Une image en couleurs est lissée ; un curseur qui inverse l'écran est agrandi pixel par pixel, un pixel entre deux inversions ne voulant rien dire.
+
+**Comment.**
+
+- À chaque changement de forme, le moteur hôte demande à Windows si le curseur est une des formes du système, comme le service le fait déjà pour la nommer (`zyr-system`). Si non, son image part au lecteur ; si oui, il dit seulement qu'il a un nom. Rien ne part tant que ça ne change pas : le sablier animé du système ne coûte rien.
+- L'image voyage sur le flux de contrôle du moteur, en morceaux qui tiennent dans un message (`PointerNamed`, `PointerPiece`). `MEDIA_VERSION` passe à 3 : les deux PC se mettent à jour ensemble.
+- Le lecteur rassemble l'image et en fait un curseur prêt pour Windows, à la bonne échelle. La fenêtre en fait un vrai curseur local, donc sans retard sur la main, une seule fois par image, et le met à la place de la forme nommée. Le mode jeu et le curseur que Windows dessine pendant qu'on déplace une fenêtre ([D152](#d152-le-curseur-den-face-réapparaissait-pendant-quon-déplace-une-fenêtre-et-cest-windows-qui-le-dessine-2026-09-06-pendant-m6)) passent avant.
+- Le moteur hôte s'appuie maintenant sur `zyr-system`, ce que les couches permettent au moteur ; la carte de `zyr-layers` le dit.
+
+**Ce qui se voit.** La bulle de Chrome, un pinceau, un viseur : le curseur a la forme que le programme lui donne, sans retard. Les curseurs ordinaires ne changent pas. Un curseur animé qu'un programme dessine envoie une image par étape de son animation, quelques kilo-octets chacune.
+
+**Les essais, et ce qui n'est pas prouvé.** Une image plus grosse qu'un message traverse une vraie session, du moteur hôte au lecteur, et arrive entière ; la mise à l'échelle, les masques et le rassemblement des morceaux sont essayés à part. Rien n'a tourné sur un vrai Windows : la comparaison avec les formes du système dans le moteur hôte et la fabrication du curseur par Windows se vérifient à l'usage. Le journal du client dit, à rythme mesuré, « the far pointer is drawn by its program » avec la taille de l'image reçue, et celui de l'hôte compte en fin de session les fois où le curseur est devenu nommé ou dessiné (« pointer told »).
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

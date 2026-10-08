@@ -955,8 +955,9 @@ fn read_the_mouse(with: isize) -> Vec<InputEvent> {
 }
 
 /// Draws the pointer over the picture: the far computer's shape on a
-/// desktop, none at all in a game or while the far computer draws its own
-/// into the picture.
+/// desktop, or the picture of the one a program drew for itself there;
+/// none at all in a game or while the far computer draws its own into the
+/// picture.
 #[cfg(windows)]
 fn put_on_the_pointer() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -965,10 +966,18 @@ fn put_on_the_pointer() {
     };
     use zyr_proto::session::Pointer;
 
+    let far = crate::session::pointer::the_far_shape();
+    if !in_a_game()
+        && far != Pointer::Theirs
+        && let Some(image) = crate::session::player().and_then(|player| player.far_pointer())
+        && crate::session::pointer::put_on_its_picture(image)
+    {
+        return;
+    }
     let shape = if in_a_game() {
         None
     } else {
-        match crate::session::pointer::the_far_shape() {
+        match far {
             Pointer::Arrow => Some(IDC_ARROW),
             Pointer::Text => Some(IDC_IBEAM),
             Pointer::Hand => Some(IDC_HAND),
