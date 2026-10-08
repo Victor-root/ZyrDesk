@@ -35,6 +35,7 @@ use zyr_media::clock::Clock;
 use zyr_media::codec::{CodecSet, VideoCodec, negotiate};
 use zyr_media::control::{NoticeKind, ToPlayer, Wanted};
 use zyr_media::pace::{Cadence, Due, Now};
+use zyr_media::pointer::PointerLook;
 use zyr_media::service::{Display, ToService};
 use zyr_media::video::{DEFAULT_FEC_PERCENT, OutgoingFrame, Packetizer};
 use zyr_proto::fact::Fact;
@@ -292,6 +293,10 @@ struct Counts {
     skipped: u64,
     draw_failed: u64,
     streams: u64,
+    /// Times the pointer became one of the system's shapes, and one a
+    /// program drew for itself, whose picture went to the player.
+    pointer_named: u64,
+    pointer_drawn: u64,
     /// From drawing to the packets being handed over, this interval.
     work: Spent,
     /// Its three parts: drawing into the encoder's frame, encoding until
@@ -344,7 +349,7 @@ impl Counts {
              {} repeats, {} key frames, {} recovers ({} for older streams), {} bytes in {} \
              datagrams, {} dropped on a full link, {} too large, {} left out until a key \
              frame, {} not drawn, {} streams; draw and encode {} (drawing {}, encoding {}, \
-             sending {})",
+             sending {}); pointer told {} times named, {} times drawn by its program",
             self.captured,
             self.pointer_only,
             self.held_replaced,
@@ -364,6 +369,8 @@ impl Counts {
             self.drawing,
             self.encoding,
             self.sending,
+            self.pointer_named,
+            self.pointer_drawn,
         )
     }
 }
@@ -1013,6 +1020,9 @@ impl Pipeline {
         if matches!(waited, Ok(Captured::Image { .. } | Captured::Pointer)) {
             self.given = Given::Something;
         }
+        if let Some(look) = self.screen.new_pointer_look() {
+            self.tell_the_pointer(&look);
+        }
         match waited {
             Ok(Captured::Image { at }) => {
                 let folded = self.screen.folded();
@@ -1043,6 +1053,17 @@ impl Pipeline {
                 self.screen_trouble(&e);
                 thread::sleep(LOOKING);
             }
+        }
+    }
+
+    /// Tells the player what the pointer looks like now.
+    fn tell_the_pointer(&mut self, look: &PointerLook) {
+        match look {
+            PointerLook::Named => self.counts.pointer_named += 1,
+            PointerLook::Drawn(_) => self.counts.pointer_drawn += 1,
+        }
+        for message in look.messages() {
+            self.shared.outbox.player(&message);
         }
     }
 

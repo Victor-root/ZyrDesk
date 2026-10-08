@@ -22,6 +22,7 @@ mod audio;
 mod flow;
 mod link;
 mod pacing;
+mod pointer;
 mod present;
 mod stats;
 mod tallies;
@@ -47,6 +48,7 @@ use zyr_proto::fact::Fact;
 use zyr_proto::log::Log;
 use zyr_proto::session::Codec;
 
+pub use pointer::PointerImage;
 pub use tallies::{LinkTallies, PictureTallies, SoundTallies, Tallies};
 /// FFmpeg as the player loads it: whoever starts a player, or wants to
 /// know whether it could, takes it from here and never from the codecs.
@@ -58,6 +60,7 @@ pub use zyr_media::stats::Measures;
 
 use audio::{Muted, Sound};
 use link::{Inner, Order};
+use pointer::FarPointer;
 use present::{Headless, Presenter, Rect};
 use stats::Tally;
 use video::{Said, Video, VideoInput};
@@ -93,6 +96,9 @@ pub enum Event {
     },
     /// The first picture is on the surface: once per player.
     FirstPicture,
+    /// The far pointer changed what it looks like: [`Player::far_pointer`]
+    /// says what it is now.
+    PointerChanged,
     /// Something the person is told, as a fact the window puts into
     /// words.
     Notice(Fact),
@@ -182,6 +188,7 @@ struct Shared {
     rect: Arc<Mutex<Option<Rect>>>,
     muted: Arc<Muted>,
     encodable: Arc<Mutex<Option<CodecSet>>>,
+    far_pointer: Arc<Mutex<FarPointer>>,
 }
 
 impl Player {
@@ -225,6 +232,7 @@ impl Player {
         let size = Arc::new(Mutex::new(None));
         let muted = Arc::new(Muted::default());
         let encodable = Arc::new(Mutex::new(None));
+        let far_pointer = Arc::new(Mutex::new(FarPointer::default()));
         let (orders, orders_in) = unbounded_channel();
         let (inner, inner_in) = unbounded_channel();
         let (video, video_in) = sync_channel(VIDEO_WAITING);
@@ -245,6 +253,7 @@ impl Player {
             tally: Arc::clone(&tally),
             tallies: Arc::clone(&tallies),
             encodable: Arc::clone(&encodable),
+            far_pointer: Arc::clone(&far_pointer),
             events: Arc::clone(&events),
             stats_stop,
             log: player_log.clone(),
@@ -292,6 +301,7 @@ impl Player {
                 rect,
                 muted,
                 encodable,
+                far_pointer,
             }),
         })
     }
@@ -433,6 +443,14 @@ impl Player {
     /// height, in the surface's pixels.
     pub fn picture_rect(&self) -> Option<(i32, i32, u32, u32)> {
         *lock(&self.shared.rect)
+    }
+
+    /// The far pointer, drawn here at the size the picture shows it, when a
+    /// program over there drew it for itself; nothing while it is one of
+    /// the system's own shapes, which the service names.
+    pub fn far_pointer(&self) -> Option<Arc<PointerImage>> {
+        let across = lock(&self.shared.rect).map_or(0, |(_, _, width, _)| width);
+        lock(&self.shared.far_pointer).image(across)
     }
 
     /// Says goodbye to the engine and ends the session, which

@@ -34,6 +34,8 @@
 //! 4  Notice     kind u8, fact (its line, UTF-8, the rest of the body)
 //! 5  Bye        reason u8
 //! 6  Still      stream u16, frame u32 (the last frame sent)
+//! 7  PointerNamed  (nothing: the pointer is one of the system's shapes)
+//! 8  PointerPiece  total u32, offset u32, a piece of a pointer's picture
 //! ```
 
 use std::marker::PhantomData;
@@ -223,6 +225,17 @@ pub enum ToPlayer {
         stream: u16,
         frame: u32,
     },
+    /// The pointer is one of the system's own shapes, which the computer
+    /// watching draws itself: any picture of it is past.
+    PointerNamed,
+    /// A piece of the picture of a pointer a program drew for itself,
+    /// `total` bytes in all, this one from `offset` (see
+    /// [`crate::pointer`]).
+    PointerPiece {
+        total: u32,
+        offset: u32,
+        bytes: Vec<u8>,
+    },
 }
 
 /// A message a [`ControlReader`] can read.
@@ -371,6 +384,8 @@ const PONG: u8 = 3;
 const NOTICE: u8 = 4;
 const PLAYER_BYE: u8 = 5;
 const STILL: u8 = 6;
+const POINTER_NAMED: u8 = 7;
+const POINTER_PIECE: u8 = 8;
 
 impl ToPlayer {
     /// Appends the message, framed, to what `out` holds.
@@ -414,6 +429,16 @@ impl ToPlayer {
             ToPlayer::Still { stream, frame } => framed(out, STILL, |out| {
                 out.extend_from_slice(&stream.to_le_bytes());
                 out.extend_from_slice(&frame.to_le_bytes());
+            }),
+            ToPlayer::PointerNamed => framed(out, POINTER_NAMED, |_| {}),
+            ToPlayer::PointerPiece {
+                total,
+                offset,
+                bytes,
+            } => framed(out, POINTER_PIECE, |out| {
+                out.extend_from_slice(&total.to_le_bytes());
+                out.extend_from_slice(&offset.to_le_bytes());
+                out.extend_from_slice(bytes);
             }),
         }
     }
@@ -462,6 +487,16 @@ impl ControlMessage for ToPlayer {
                 stream: reader.u16()?,
                 frame: reader.u32()?,
             },
+            POINTER_NAMED => ToPlayer::PointerNamed,
+            POINTER_PIECE => {
+                let total = reader.u32()?;
+                let offset = reader.u32()?;
+                return Ok(Some(ToPlayer::PointerPiece {
+                    total,
+                    offset,
+                    bytes: reader.rest().to_vec(),
+                }));
+            }
             _ => return Ok(None),
         };
         reader.finish()?;
@@ -470,8 +505,8 @@ impl ControlMessage for ToPlayer {
 }
 
 /// Appends one message: its length, its kind, and the body `body` writes,
-/// which is never longer than a message may be (the only body that could,
-/// a notice's, is cut to fit).
+/// which is never longer than a message may be (a notice's is cut to fit,
+/// and a pointer's picture travels in pieces that do).
 fn framed(out: &mut Vec<u8>, kind: u8, body: impl FnOnce(&mut Vec<u8>)) {
     let start = out.len();
     out.extend_from_slice(&[0, 0, kind]);
@@ -666,6 +701,12 @@ mod tests {
                 stream: 7,
                 frame: u32::MAX,
             },
+            ToPlayer::PointerNamed,
+            ToPlayer::PointerPiece {
+                total: 40_000,
+                offset: 16_375,
+                bytes: vec![1, 2, 3],
+            },
         ]
     }
 
@@ -791,12 +832,12 @@ mod tests {
     fn another_version_says_so() {
         let (mut hello, mut welcome) = (Vec::new(), Vec::new());
         framed(&mut hello, HELLO, |out| {
-            out.extend_from_slice(&[3, 0, 7, 7])
+            out.extend_from_slice(&[1, 0, 7, 7])
         });
         framed(&mut welcome, WELCOME, |out| out.extend_from_slice(&[9, 0]));
         let mut engine = ControlReader::<ToEngine>::new();
         engine.feed(&hello);
-        assert_eq!(engine.next(), Some(Err(WireError::Version(3))));
+        assert_eq!(engine.next(), Some(Err(WireError::Version(1))));
         let mut player = ControlReader::<ToPlayer>::new();
         player.feed(&welcome);
         assert_eq!(player.next(), Some(Err(WireError::Version(9))));

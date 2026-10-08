@@ -22,6 +22,9 @@ zyr-proto.workspace = true
 [target.'cfg(windows)'.dependencies]
 # The screen's own name, as the rest of the product knows it.
 zyr-screen.workspace = true
+# Whether the pointer is one of the system's shapes, as the service reads
+# it: only a pointer a program drew for itself has its picture carried.
+zyr-system.workspace = true
 # Desktop Duplication, Direct3D 11, WASAPI and SendInput are COM or need
 # its types: windows-sys carries no COM interface. The version the rest
 # of the repository already uses.

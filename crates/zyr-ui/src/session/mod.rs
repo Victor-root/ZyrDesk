@@ -771,6 +771,7 @@ impl Showing {
                         ));
                     }
                 }
+                Event::PointerChanged => crate::session::video::the_pointer_changed(),
                 Event::Notice(fact) => {
                     note(&format!("the player says: {fact}"));
                     // Before the picture, the opening screen is what the

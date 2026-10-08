@@ -90,6 +90,7 @@ mod tests {
                 "zyr-media",
                 "zyr-proto",
                 "zyr-screen",
+                "zyr-system",
             ],
         ),
         (

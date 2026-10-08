@@ -10,6 +10,7 @@ use std::time::Instant;
 
 use zyr_codec::{Frame, GpuVendor, Input, VideoEncoder};
 use zyr_media::input::Button;
+use zyr_media::pointer::PointerLook;
 use zyr_media::service::Display;
 use zyr_proto::fact::Fact;
 
@@ -61,6 +62,13 @@ pub trait Screen {
 
     /// Waits for the screen to change, until `until` at the latest.
     fn wait(&mut self, until: Instant) -> Result<Captured, ScreenError>;
+
+    /// What the pointer looks like, when that changed since this was last
+    /// asked: the computer watching draws a pointer of its own, and needs
+    /// a picture of the ones it has no name for.
+    fn new_pointer_look(&mut self) -> Option<PointerLook> {
+        None
+    }
 
     /// Draws the latest image into a frame for `encoder`, at the
     /// encoder's size, where `drawing` says.

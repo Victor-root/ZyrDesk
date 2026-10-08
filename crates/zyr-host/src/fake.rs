@@ -3,7 +3,8 @@
 //!
 //! The screen draws a pattern that moves with every image, and carries
 //! the number of the image in a corner block so that a test can tell
-//! pictures apart after they went through an encoder and a decoder. The
+//! pictures apart after they went through an encoder and a decoder. Its
+//! pointer is one of the system's shapes, or one a program drew. The
 //! keyboard and mouse remember what they were given. The sound card is
 //! silent, or plays a tone.
 
@@ -13,6 +14,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use zyr_codec::{Frame, GpuVendor, Input, OPUS_FRAME, VideoEncoder};
+use zyr_media::pointer::PointerLook;
 use zyr_media::service::Display;
 use zyr_proto::fact::Fact;
 
@@ -48,6 +50,8 @@ pub struct SyntheticScreen {
     latest: Option<u64>,
     /// The picture drawn last, reused.
     bgra: Vec<u8>,
+    /// What its pointer looks like, until it is told.
+    pointer: Option<PointerLook>,
 }
 
 impl SyntheticScreen {
@@ -60,6 +64,15 @@ impl SyntheticScreen {
             next_image: Instant::now(),
             latest: None,
             bgra: Vec::new(),
+            pointer: None,
+        }
+    }
+
+    /// The same screen, its pointer looking like `look`.
+    pub fn with_pointer(self, look: PointerLook) -> Self {
+        Self {
+            pointer: Some(look),
+            ..self
         }
     }
 
@@ -171,6 +184,10 @@ impl Screen for SyntheticScreen {
         self.next_image = at + period;
         self.latest = Some(self.latest.map_or(0, |index| index + 1));
         Ok(Captured::Image { at })
+    }
+
+    fn new_pointer_look(&mut self) -> Option<PointerLook> {
+        self.pointer.take()
     }
 
     fn draw(

@@ -44,6 +44,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{IUnknown, Interface, w};
 use zyr_codec::{Frame, GpuVendor, Input, VideoEncoder};
+use zyr_media::pointer::{PointerKind, PointerLook, PointerPicture};
 use zyr_media::service::Display;
 use zyr_proto::fact::Fact;
 use zyr_proto::log::{Log, Seldom};
@@ -56,7 +57,7 @@ use super::tuning::ThreadTask;
 use super::{Counter, failed};
 use crate::parts::{Aimed, Captured, Drawing, Feed, Screen, ScreenError};
 use crate::picture::{Rect, Size};
-use crate::pointer::{Kind, shape};
+use crate::pointer::shape;
 use crate::short_lived::{Distrust, ShortLived};
 
 /// How often duplication is tried again at first after it stopped, and
@@ -123,7 +124,6 @@ struct Latest {
 }
 
 /// The pointer, as Windows last said.
-#[derive(Default)]
 struct Pointer {
     x: i32,
     y: i32,
@@ -131,6 +131,24 @@ struct Pointer {
     images: Option<(u32, u32, PointerImages)>,
     /// Where its shape is read into, kept from one change to the next.
     bytes: Vec<u8>,
+    /// What it looks like to the computer watching, which starts on the
+    /// system's own shapes, and whether that changed since it was told.
+    look: PointerLook,
+    untold: bool,
+}
+
+impl Default for Pointer {
+    fn default() -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            visible: false,
+            images: None,
+            bytes: Vec::new(),
+            look: PointerLook::Named,
+            untold: false,
+        }
+    }
 }
 
 pub(super) struct DuplicatedScreen {
@@ -710,15 +728,39 @@ impl DuplicatedScreen {
         )
     }
 
-    /// Reads the pointer's new shape.
+    /// Reads the pointer's new shape, and what it looks like to the
+    /// computer watching: the system's own shape, which that computer
+    /// draws by its name, or a picture.
     fn read_pointer(&mut self, size: u32) {
-        let Some(duplication) = self
-            .filming
-            .as_ref()
-            .and_then(|filming| filming.duplication.clone())
-        else {
+        let picture = self.read_pointer_picture(size);
+        let look = match &picture {
+            Some(picture) if zyr_system::pointer_drawn_by_its_program() => {
+                PointerLook::Drawn(picture.clone())
+            }
+            _ => PointerLook::Named,
+        };
+        if look != self.pointer.look {
+            self.pointer.look = look;
+            self.pointer.untold = true;
+        }
+        let Some(picture) = picture else {
+            self.pointer.images = None;
             return;
         };
+        let shape = shape(&picture);
+        match self.converter.pointer(&shape) {
+            Ok(images) => self.pointer.images = Some((shape.width, shape.height, images)),
+            Err(e) => {
+                self.log.write(&e);
+                self.pointer.images = None;
+            }
+        }
+    }
+
+    /// The pointer's new shape, as Windows hands it over.
+    fn read_pointer_picture(&mut self, size: u32) -> Option<PointerPicture> {
+        let filming = self.filming.as_ref()?;
+        let (duplication, screen_width) = (filming.duplication.clone()?, filming.area.width);
         self.pointer.bytes.resize(size as usize, 0);
         let mut required = 0;
         let mut info = DXGI_OUTDUPL_POINTER_SHAPE_INFO::default();
@@ -733,38 +775,46 @@ impl DuplicatedScreen {
         };
         if let Err(e) = read {
             self.log.write(&failed("reading the pointer's shape", &e));
-            return;
+            return None;
         }
         let kind = match info.Type {
-            t if t == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME.0 as u32 => Kind::Monochrome,
-            t if t == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR.0 as u32 => Kind::Color,
-            t if t == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MASKED_COLOR.0 as u32 => Kind::MaskedColor,
+            t if t == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME.0 as u32 => {
+                PointerKind::Monochrome
+            }
+            t if t == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR.0 as u32 => PointerKind::Color,
+            t if t == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MASKED_COLOR.0 as u32 => {
+                PointerKind::MaskedColor
+            }
             other => {
                 self.log.write(&format!(
                     "a pointer of an unknown kind ({other}) is not drawn"
                 ));
-                self.pointer.images = None;
-                return;
+                return None;
             }
         };
         let bytes = &self.pointer.bytes[..(required as usize).min(self.pointer.bytes.len())];
-        let Some(shape) = shape(kind, info.Width, info.Height, info.Pitch, bytes) else {
+        let hot = (
+            u32::try_from(info.HotSpot.x).unwrap_or(0),
+            u32::try_from(info.HotSpot.y).unwrap_or(0),
+        );
+        let picture = PointerPicture::from_rows(
+            kind,
+            info.Width,
+            info.Height,
+            info.Pitch,
+            hot,
+            screen_width,
+            bytes,
+        );
+        if picture.is_none() {
             self.log.write(&format!(
                 "a pointer of {}x{} that its {} bytes cannot hold is not drawn",
                 info.Width,
                 info.Height,
                 bytes.len()
             ));
-            self.pointer.images = None;
-            return;
-        };
-        match self.converter.pointer(&shape) {
-            Ok(images) => self.pointer.images = Some((shape.width, shape.height, images)),
-            Err(e) => {
-                self.log.write(&e);
-                self.pointer.images = None;
-            }
         }
+        picture
     }
 }
 
@@ -860,6 +910,10 @@ impl Screen for DuplicatedScreen {
                 Err(trouble(failed("waiting for the screen", &e)))
             }
         }
+    }
+
+    fn new_pointer_look(&mut self) -> Option<PointerLook> {
+        std::mem::take(&mut self.pointer.untold).then(|| self.pointer.look.clone())
     }
 
     fn draw(

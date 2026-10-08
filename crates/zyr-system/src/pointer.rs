@@ -10,6 +10,10 @@
 //! One moment answers no shape at all, and it is the one moment the
 //! computer being watched draws its pointer into the picture itself: a
 //! window being dragged. See `a_window_is_being_dragged`.
+//!
+//! A pointer that a program drew for itself has no shape of the system's
+//! to be named after. The engine filming the screen asks whether that is
+//! the case, and carries its picture when it is.
 
 use zyr_proto::session::Pointer;
 
@@ -36,7 +40,25 @@ pub fn pointer_shape() -> Pointer {
     if about.flags & CURSOR_SHOWING == 0 {
         return Pointer::Arrow;
     }
-    named_shape(about.hCursor)
+    named_shape(about.hCursor).unwrap_or(Pointer::Arrow)
+}
+
+/// Whether the pointer on the desktop this program stands on is one a
+/// program drew for itself, which none of the system's shapes names.
+///
+/// Read whether it shows or not: a pointer hidden while somebody types
+/// comes back with the same shape, and nothing says so again.
+pub fn pointer_drawn_by_its_program() -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{CURSORINFO, GetCursorInfo};
+
+    let mut about = CURSORINFO {
+        cbSize: std::mem::size_of::<CURSORINFO>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: the block is ours with its own size written in it as the
+    // call requires.
+    let read = unsafe { GetCursorInfo(&mut about) } != 0;
+    read && named_shape(about.hCursor).is_none()
 }
 
 /// Whether a window on this desktop is being dragged or resized right
@@ -76,21 +98,21 @@ fn a_window_is_being_dragged() -> bool {
     about.flags & GUI_INMOVESIZE != 0
 }
 
-/// Which of the shapes this computer knows that pointer is.
+/// Which of the shapes this computer knows that pointer is, if any.
 ///
 /// Compared against the system's own, which are shared: a program asking
 /// for the ordinary arrow is handed the very same pointer as every other
 /// program that asked, so the two can be told apart by identity alone.
-/// A pointer a program drew for itself matches none of them and comes
-/// back as the arrow, which is what a system falls back to as well.
-fn named_shape(cursor: windows_sys::Win32::UI::WindowsAndMessaging::HCURSOR) -> Pointer {
+/// A pointer a program drew for itself matches none of them. No pointer
+/// at all is the arrow, which is what a system falls back to as well.
+fn named_shape(cursor: windows_sys::Win32::UI::WindowsAndMessaging::HCURSOR) -> Option<Pointer> {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         IDC_APPSTARTING, IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_IBEAM, IDC_NO, IDC_SIZEALL,
         IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IDC_WAIT, LoadCursorW,
     };
 
     if cursor.is_null() {
-        return Pointer::Arrow;
+        return Some(Pointer::Arrow);
     }
     for (which, shape) in [
         (IDC_IBEAM, Pointer::Text),
@@ -110,8 +132,8 @@ fn named_shape(cursor: windows_sys::Win32::UI::WindowsAndMessaging::HCURSOR) -> 
         // the system reserves for it. Nothing is loaded from a file and
         // nothing is ours to free: these are shared and outlive us.
         if unsafe { LoadCursorW(std::ptr::null_mut(), which) } == cursor {
-            return shape;
+            return Some(shape);
         }
     }
-    Pointer::Arrow
+    None
 }

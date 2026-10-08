@@ -26,10 +26,12 @@ use zyr_media::clock::Clock;
 use zyr_media::codec::CodecSet;
 use zyr_media::control::{ByeReason, ControlReader, ToEngine, ToPlayer, Wanted};
 use zyr_media::input::{InputEvent, Outgoing};
+use zyr_media::pointer::{Gathering, PointerPicture};
 use zyr_media::service;
 use zyr_proto::fact::Fact;
 use zyr_proto::log::{Log, Seldom};
 
+use crate::pointer::FarPointer;
 use crate::stats::Tally;
 use crate::tallies::{LinkTallies, Tallies};
 use crate::video::{Recover, VideoInput};
@@ -97,6 +99,8 @@ pub struct Parts {
     pub tallies: Arc<Mutex<Tallies>>,
     /// Where the codecs the engine can encode are kept once it says.
     pub encodable: Arc<Mutex<Option<CodecSet>>>,
+    /// Where what the far pointer looks like is kept.
+    pub far_pointer: Arc<Mutex<FarPointer>>,
     pub events: Arc<Events>,
     /// Held for as long as the session lasts: the stats thread stops when
     /// it goes.
@@ -164,6 +168,9 @@ struct Session {
     tally: Arc<Mutex<Tally>>,
     tallies: Arc<Mutex<Tallies>>,
     encodable: Arc<Mutex<Option<CodecSet>>>,
+    far_pointer: Arc<Mutex<FarPointer>>,
+    /// The pieces of the far pointer's picture arrived so far.
+    gathering: Gathering,
     events: Arc<Events>,
     hushed: Hushed,
     log: Log,
@@ -175,6 +182,7 @@ struct Hushed {
     sound_crowded: Seldom,
     too_early: Seldom,
     unreadable: Seldom,
+    pointer_drawn: Seldom,
 }
 
 async fn session(link: Link, parts: Parts) {
@@ -189,6 +197,7 @@ async fn session(link: Link, parts: Parts) {
         tally,
         tallies,
         encodable,
+        far_pointer,
         events,
         stats_stop,
         log,
@@ -213,6 +222,8 @@ async fn session(link: Link, parts: Parts) {
         tally,
         tallies,
         encodable,
+        far_pointer,
+        gathering: Gathering::default(),
         events,
         hushed: Hushed::default(),
         log,
@@ -365,6 +376,16 @@ impl Session {
                 // not current anyway.
                 let _ = self.video.try_send(VideoInput::Still { stream, frame });
             }
+            ToPlayer::PointerNamed => self.far_pointer(None),
+            ToPlayer::PointerPiece {
+                total,
+                offset,
+                bytes,
+            } => match self.gathering.take(total, offset, &bytes) {
+                Ok(Some(picture)) => self.far_pointer(Some(picture)),
+                Ok(None) => {}
+                Err(e) => return self.unreadable(e),
+            },
             ToPlayer::Bye { reason } => {
                 self.log
                     .write(&format!("the engine says goodbye: {reason:?}"));
@@ -379,6 +400,25 @@ impl Session {
             }
         }
         None
+    }
+
+    /// The far pointer is now this picture, or one of the system's own
+    /// shapes.
+    fn far_pointer(&mut self, picture: Option<PointerPicture>) {
+        if let Some(picture) = &picture {
+            let log = &self.log;
+            self.hushed
+                .pointer_drawn
+                .note(log, Instant::now(), |times| {
+                    format!(
+                        "the far pointer is drawn by its program: {}x{} {:?}, its picture came \
+                     ({times} since last said)",
+                        picture.width, picture.height, picture.kind
+                    )
+                });
+        }
+        lock(&self.far_pointer).set(picture);
+        self.events.say(Event::PointerChanged);
     }
 
     /// A control message that could not be read. The stream cannot go

@@ -37,6 +37,7 @@ use zyr_host::{
 };
 use zyr_link::LinkListener;
 use zyr_link::testing::in_tests;
+use zyr_media::pointer::{PointerKind, PointerLook, PointerPicture};
 use zyr_media::service::{Display, ToEngine, ToPlayer, ToService};
 use zyr_player::{
     Button, CodecChoice, Ending, Event, InputEvent, Measures, Player, Surface, Tallies, VideoCodec,
@@ -768,6 +769,61 @@ fn a_session_goes_from_the_host_engine_through_the_tunnel_to_the_player_and_back
     ];
     assert_eq!(let_go.len(), ups.len(), "{let_go:?}");
     assert!(ups.iter().all(|up| let_go.contains(up)), "{let_go:?}");
+}
+
+#[test]
+fn a_pointer_a_program_drew_for_itself_reaches_the_player_whole() {
+    let _alone = one_at_a_time();
+    // Larger than a control message: it travels in pieces. Opaque, so that
+    // what the player draws is the picture itself, at the size it is
+    // shown: the far screen is said to be as wide as the picture.
+    let side = 96;
+    let bytes: Vec<u8> = (0..side * side)
+        .flat_map(|at| [(at % 251) as u8, (at % 241) as u8, (at % 239) as u8, 255])
+        .collect();
+    let picture = PointerPicture {
+        kind: PointerKind::Color,
+        width: side as u16,
+        height: side as u16,
+        hot_x: 10,
+        hot_y: 20,
+        screen_width: WIDTH as u16,
+        bytes: bytes.clone(),
+    };
+    let look = PointerLook::Drawn(picture);
+    let screen: MakeScreen = Box::new(move || {
+        let screen = SyntheticScreen::new(u32::from(FPS)).with_pointer(look);
+        Ok(Box::new(screen) as Box<dyn Screen>)
+    });
+    let mut session = Session::start(
+        "pointer",
+        Wanted {
+            audio: false,
+            ..wanted()
+        },
+        Path::Direct,
+        screen,
+        Box::new(SilentSound),
+    );
+
+    let (mut shown, mut told) = (false, false);
+    while !(shown && told) {
+        match session.next_event() {
+            Event::Streaming { .. } => {}
+            Event::FirstPicture => shown = true,
+            Event::PointerChanged => told = true,
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    let image = session
+        .player
+        .far_pointer()
+        .expect("the far pointer's picture");
+    assert_eq!((image.width, image.height), (side as u32, side as u32));
+    assert_eq!((image.hot_x, image.hot_y), (10, 20));
+    assert!(image.colour == bytes, "the picture arrived changed");
+    assert!(image.mask.iter().all(|byte| *byte == 0));
+    assert_eq!(session.stop(), EngineEnding::PlayerLeft);
 }
 
 /// Lost on the way from the host, one packet in twenty.

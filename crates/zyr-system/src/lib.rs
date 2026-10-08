@@ -9,7 +9,7 @@
 //! Ctrl+Alt+Del, which Windows takes from a service and from nothing
 //! else; asking the Wi-Fi to put a session first and saying how it
 //! fares; reading the shape the pointer has on the desktop this program
-//! stands on; counting how busy the computer is and what its network
+//! stands on, and whether a program drew it for itself; counting how busy the computer is and what its network
 //! has carried and lost; and saying what the computer is.
 //!
 //! And what gets a program running at all: with no console flashing up,
@@ -70,7 +70,7 @@ pub use onscreen::{
     somebody_signed_in, start_a_helper, start_in_session, whoever_this_is,
 };
 #[cfg(windows)]
-pub use pointer::pointer_shape;
+pub use pointer::{pointer_drawn_by_its_program, pointer_shape};
 #[cfg(windows)]
 pub use reading::Vitals;
 #[cfg(windows)]

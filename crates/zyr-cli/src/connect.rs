@@ -184,6 +184,8 @@ fn watch(
                 asked_at.elapsed().as_millis()
             ),
             Ok(Event::Notice(fact)) => println!("  {}", zyr_i18n::fact(&fact)),
+            // Nothing here draws a pointer.
+            Ok(Event::PointerChanged) => {}
             Ok(Event::Ended(ending)) => return Some(ending),
             Err(RecvTimeoutError::Timeout) => {}
             // Nothing can be told any more: the player is gone with every
