@@ -28,6 +28,12 @@ pub(crate) fn options(backend: Backend, codec: VideoCodec) -> Vec<(&'static str,
             ("preset", "p1"),
             ("tune", "ull"),
             ("rc", "cbr"),
+            // A first look at the picture at a quarter of its size, so
+            // the rate control knows what the frame holds before it
+            // spends its bits: Sunshine's default, which found a single
+            // pass overshooting its budget, its large frames then lost
+            // on the way.
+            ("multipass", "qres"),
             ("zerolatency", "1"),
             // A frame's packet is fetched as soon as it is encoded.
             ("delay", "0"),
@@ -117,7 +123,10 @@ pub(crate) fn fallback(backend: Backend) -> Option<(&'static str, &'static str)>
         // Some AMD drivers refuse the ultra low latency usage (Sunshine's
         // workaround for AMF issue 410).
         Backend::Amf => Some(("usage", "lowlatency")),
-        Backend::Nvenc | Backend::MediaFoundation | Backend::Software => None,
+        // A card or driver that refuses the first look encodes in one
+        // pass, as before.
+        Backend::Nvenc => Some(("multipass", "disabled")),
+        Backend::MediaFoundation | Backend::Software => None,
     }
 }
 
@@ -255,6 +264,7 @@ mod tests {
                 ("zerolatency", "1"),
                 ("delay", "0"),
                 ("rc", "cbr"),
+                ("multipass", "qres"),
             ] {
                 assert!(
                     has(Backend::Nvenc, codec, option),

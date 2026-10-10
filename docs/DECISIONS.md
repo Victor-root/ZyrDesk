@@ -4256,6 +4256,20 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas mesuré.** L'effet sur la régularité de l'image en Wi-Fi ne se mesure que sur les deux PC : les lignes `tunnel` et `wifi` du client le diront.
 
+## D263. L'encodeur NVIDIA regarde l'image en quart de taille avant de l'encoder (2026-10-10, pendant MZ)
+
+> Troisième étape de la passe sur la latence ([D262](#d262-lordinateur-qui-regarde-nacquitte-plus-quun-paquet-sur-seize-2026-10-10-pendant-mz)).
+
+**Le constat.** NVENC encodait en une passe : son contrôle de débit découvre ce que contient une image en la dépensant. Une image qui change beaucoup d'un coup (une fenêtre qu'on ouvre, un défilement) sort alors plus grosse que sa part du débit, et part en une rafale qu'un lien étroit ne prend pas : c'est elle qui se perd en route, et sa perte coûte une image clé. Sunshine encode par défaut en deux passes, la première sur l'image en quart de taille, et sa documentation dit qu'une seule passe fait dépasser le débit et perdre des paquets. NVIDIA recommande la même chose pour le jeu à distance. La ligne `pace` de l'hôte compare déjà le débit produit au débit demandé ([D254](#d254-le-journal-de-lhôte-dit-ce-que-la-capture-et-lencodeur-ont-fait-de-chaque-seconde-2026-09-29-pendant-mz)).
+
+**Ce qui est fait.** NVENC reçoit `multipass qres`. Une carte ou un pilote qui le refuse ouvre l'encodeur une seconde fois en une seule passe, comme avant, de la même façon qu'AMF et Quick Sync retentent déjà avec une option changée.
+
+**Ce que ça coûte.** Un peu de temps d'encodage, la première passe portant sur un quart des pixels. Combien, rien ici ne le mesure : la ligne `pace` le dira dans le temps d'encodage de chaque image.
+
+**Les essais.** Les options de NVENC contiennent la première passe pour les trois codecs, et la seconde tentative ne change que celle-là.
+
+**Ce qui n'est pas mesuré.** Rien de cela n'a tourné sur une carte NVIDIA ici : la ligne `pace` de l'hôte dira le temps d'encodage, et si le débit produit colle mieux au débit demandé.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
