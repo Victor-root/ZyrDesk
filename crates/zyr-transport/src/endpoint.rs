@@ -1099,7 +1099,13 @@ mod tests {
                 .await
                 .expect("the packet arrives")
                 .unwrap();
-            tokio::time::sleep(Duration::from_millis(1)).await;
+            // Half a millisecond apart: a sleep of a millisecond takes a
+            // whole tick of the system's clock on Windows, past the delay
+            // within which an answer goes anyway.
+            let apart = std::time::Instant::now();
+            while apart.elapsed() < Duration::from_micros(500) {
+                std::hint::spin_loop();
+            }
         }
         let answers = pair.client_side.traffic().packets_sent - before;
         assert!(
