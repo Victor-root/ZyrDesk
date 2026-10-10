@@ -10,7 +10,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
-use quinn::{AsyncUdpSocket, ClientConfig, Endpoint, ServerConfig, TransportConfig};
+use quinn::{
+    AckFrequencyConfig, AsyncUdpSocket, ClientConfig, Endpoint, ServerConfig, TransportConfig,
+    VarInt,
+};
 use rustls::pki_types::CertificateDer;
 use zyr_proto::fingerprint::Fingerprint;
 
@@ -196,6 +199,9 @@ impl From<std::io::Error> for EndpointError {
 /// `Sending` says why the two ends do not get the same one.
 fn transport(media: Media, sending: Sending) -> TransportConfig {
     let mut config = TransportConfig::default();
+    if sending == Sending::Pictures {
+        config.ack_frequency_config(Some(sending_pictures_acks()));
+    }
     config.datagram_send_buffer_size(sending.queue());
     config.congestion_controller_factory(Arc::new(MediaController::new(media, sending)));
     config.datagram_receive_buffer_size(Some(RECEIVE_QUEUE));
@@ -204,6 +210,27 @@ fn transport(media: Media, sending: Sending) -> TransportConfig {
     ));
     config.keep_alive_interval(Some(KEEP_ALIVE_INTERVAL));
     config
+}
+
+/// Packets the end that receives the picture takes in before answering
+/// for them, past the first.
+///
+/// Left to the transport, it answers every second packet: at 40 Mb/s,
+/// some two thousand five hundred answers a second going the other way.
+/// On Wi-Fi each of them waits for its turn on the air like a packet of
+/// the picture, and every turn it takes is one the picture does not get.
+/// None of them is of any use to the picture, which nothing sends again;
+/// the reliable streams lose at most the answer's wait, the transport's
+/// usual 25 ms, before what they lost is sent again.
+const PACKETS_PER_ANSWER: u32 = 15;
+
+/// What the end that sends the picture asks of the one receiving it:
+/// an answer every `PACKETS_PER_ANSWER` packets, or as soon as one is
+/// missing, and within the transport's usual delay otherwise.
+fn sending_pictures_acks() -> AckFrequencyConfig {
+    let mut acks = AckFrequencyConfig::default();
+    acks.ack_eliciting_threshold(VarInt::from_u32(PACKETS_PER_ANSWER));
+    acks
 }
 
 /// The same, on a path of its own: packet discovery finds what it
@@ -1044,6 +1071,34 @@ mod tests {
         assert_eq!(
             said.expect("the connection did not survive the burst"),
             b"after"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_end_receiving_the_picture_answers_for_many_packets_at_once() {
+        // On Wi-Fi every answer takes its turn on the air like a packet of
+        // the picture: answering every second packet took turns from the
+        // picture by the thousand each second.
+        let pair = pair().await;
+        let room = pair.host_side.guaranteed_usable_datagram().unwrap() as usize;
+        let packet = Bytes::from(vec![0u8; room]);
+        // One at a time, as a road narrower than this computer delivers
+        // them: packets that arrive together are answered together
+        // whatever is asked.
+        const PACKETS: u64 = 300;
+        let before = pair.client_side.traffic().packets_sent;
+        for _ in 0..PACKETS {
+            pair.host_side.send_datagram(packet.clone()).unwrap();
+            tokio::time::timeout(PATIENCE, pair.client_side.read_datagram())
+                .await
+                .expect("the packet arrives")
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        let answers = pair.client_side.traffic().packets_sent - before;
+        assert!(
+            answers * 8 < PACKETS,
+            "{answers} packets sent back for {PACKETS} received"
         );
     }
 

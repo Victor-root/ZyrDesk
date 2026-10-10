@@ -4240,6 +4240,22 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas mesuré.** Le gain se lit sur un vrai Windows, dans les lignes `link` de l'hôte et `tunnel` du client ; il n'a pas pu l'être ici.
 
+## D262. L'ordinateur qui regarde n'acquitte plus qu'un paquet sur seize (2026-10-10, pendant MZ)
+
+> Deuxième étape de la passe sur la latence ([D261](#d261-les-paquets-dune-image-passent-les-tubes-locaux-dun-seul-coup-2026-10-10-pendant-mz)). Était écrit dans [NETWORK.md](NETWORK.md) comme reste à faire.
+
+**Le constat.** QUIC fait acquitter un paquet sur deux. L'image n'en a aucun besoin, puisque rien ne la renvoie ; mais l'ordinateur qui regarde acquittait quand même, à 40 Mb/s, quelque deux mille cinq cents fois par seconde. Sur un câble, c'est du bruit. Sur un Wi-Fi, c'est un coût réel : l'air est partagé dans les deux sens, et chaque petit paquet montant attend son tour comme un paquet de l'image, qui attend d'autant. Les essais à travers Internet de [D228](#d228-les-images-saffichent-au-rythme-de-lécran-une-par-rafraîchissement-2026-09-25-pendant-mz) à [D230](#d230-le-wi-fi-reste-sur-son-canal-pendant-une-session-et-laffichage-ne-se-fie-plus-aux-numéros-de-windows-2026-09-25-pendant-mz) avaient justement le client en Wi-Fi.
+
+**Ce qui est fait.** L'ordinateur qui envoie l'image (le service de l'hôte, et le relais pour ce qu'il porte) demande à celui qui la reçoit, par l'extension de fréquence d'acquittement de QUIC que les deux bouts connaissent, d'acquitter tous les seize paquets, tout de suite quand il en manque un, et au plus tard après le délai habituel de 25 ms. L'ordinateur qui regarde garde le réglage ordinaire pour ce qu'il envoie : ses touches et sa souris sont acquittées comme avant.
+
+**Ce que ça coûte.** Rien à l'image. Les flux fiables (messages du moteur, canal ZyrDesk) peuvent attendre au plus les 25 ms habituels de plus avant qu'un paquet perdu soit renvoyé, ce que le transport faisait déjà pour un paquet seul. L'aller-retour mesuré par le transport retire le délai d'acquittement que l'autre bout déclare, et reste juste.
+
+**Ce qui se lit dans le journal.** Dans la ligne `tunnel` du client, les paquets envoyés (« packets sent ») doivent tomber d'environ huit fois pendant qu'une image passe.
+
+**Les essais.** Trois cents paquets arrivés un à un, comme une route plus étroite que l'ordinateur les livre, ne donnent plus qu'une trentaine de paquets en retour au plus ; sans le réglage, l'essai en compte cent cinquante-neuf et échoue.
+
+**Ce qui n'est pas mesuré.** L'effet sur la régularité de l'image en Wi-Fi ne se mesure que sur les deux PC : les lignes `tunnel` et `wifi` du client le diront.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
