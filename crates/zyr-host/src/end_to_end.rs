@@ -839,8 +839,9 @@ async fn a_link_that_falls_behind_gets_a_key_frame_and_nothing_undecodable() {
     far.pictures_of(first, 5).await;
     // The player stops reading, long enough for the link and the queue
     // before it to fill, then reads slower than the pictures come: they
-    // are dropped on the way, again and again.
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    // are dropped on the way, again and again. A picture goes onto the
+    // link in one write, and the system holds many before it is full.
+    tokio::time::sleep(Duration::from_secs(3)).await;
     far.read_slowly(Duration::from_secs(3), Duration::from_millis(40))
         .await;
     far.read_for(Duration::from_millis(500)).await;

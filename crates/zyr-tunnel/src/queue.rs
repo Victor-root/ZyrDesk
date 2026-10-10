@@ -72,19 +72,35 @@ impl DatagramQueue {
         (dropped, left)
     }
 
-    /// Waits for the oldest datagram, and takes it, with how long it
-    /// waited.
+    /// Waits for a datagram, then takes, oldest first, every one waiting
+    /// up to `most` bytes of payload, the first whatever its size, each
+    /// with how long it waited. They go into `taken`, emptied first.
+    ///
+    /// What came off the connection together goes onto the link
+    /// together, in one write: a picture's datagrams arrive in a burst.
     ///
     /// Safe to abandon while waiting: nothing is taken until it is handed
     /// back.
-    pub async fn pop(&self) -> (DatagramChannel, Bytes, Duration) {
+    pub async fn pop_some(&self, most: usize, taken: &mut Vec<(DatagramChannel, Bytes, Duration)>) {
+        taken.clear();
         loop {
             let arrived = self.arrived.notified();
             {
                 let mut waiting = self.waiting.lock().expect("waiting datagrams");
-                if let Some((channel, payload, queued)) = waiting.datagrams.pop_front() {
+                let mut bytes = 0;
+                while let Some((_, payload, _)) = waiting.datagrams.front() {
+                    if !taken.is_empty() && bytes + payload.len() > most {
+                        break;
+                    }
+                    let Some((channel, payload, queued)) = waiting.datagrams.pop_front() else {
+                        break;
+                    };
                     waiting.bytes -= weight(&payload);
-                    return (channel, payload, queued.elapsed());
+                    bytes += payload.len();
+                    taken.push((channel, payload, queued.elapsed()));
+                }
+                if !taken.is_empty() {
+                    return;
                 }
             }
             arrived.await;
@@ -100,6 +116,13 @@ mod tests {
         Bytes::from(vec![mark; size])
     }
 
+    /// The marks of what one pop takes, at most `most` bytes.
+    async fn popped(queue: &DatagramQueue, most: usize) -> Vec<u8> {
+        let mut taken = Vec::new();
+        queue.pop_some(most, &mut taken).await;
+        taken.iter().map(|(_, payload, _)| payload[0]).collect()
+    }
+
     #[tokio::test]
     async fn datagrams_come_out_in_the_order_they_went_in() {
         let queue = DatagramQueue::default();
@@ -111,11 +134,28 @@ mod tests {
             };
             assert_eq!(queue.push(channel, datagram(100, mark)).0, 0);
         }
-        for mark in 0..10 {
-            let (channel, payload, _) = queue.pop().await;
-            assert_eq!(payload[0], mark);
-            assert_eq!(channel == DatagramChannel::Video, mark % 2 == 0);
+        let mut taken = Vec::new();
+        queue.pop_some(usize::MAX, &mut taken).await;
+        assert_eq!(taken.len(), 10);
+        for (mark, (channel, payload, _)) in taken.iter().enumerate() {
+            assert_eq!(usize::from(payload[0]), mark);
+            assert_eq!(*channel == DatagramChannel::Video, mark % 2 == 0);
         }
+    }
+
+    #[tokio::test]
+    async fn a_pop_takes_what_waits_up_to_the_bytes_asked() {
+        let queue = DatagramQueue::default();
+        for mark in 0..5 {
+            queue.push(DatagramChannel::Video, datagram(1_000, mark));
+        }
+        assert_eq!(popped(&queue, 2_500).await, [0, 1]);
+        assert_eq!(popped(&queue, 3_000).await, [2, 3, 4]);
+        // One larger than the bytes asked still goes, alone.
+        queue.push(DatagramChannel::Video, datagram(4_000, 5));
+        queue.push(DatagramChannel::Video, datagram(10, 6));
+        assert_eq!(popped(&queue, 1_000).await, [5]);
+        assert_eq!(popped(&queue, 1_000).await, [6]);
     }
 
     #[tokio::test]
@@ -129,8 +169,7 @@ mod tests {
             assert_eq!(dropped, u64::from(turn >= fits), "turn {turn}");
         }
         // What is left starts five datagrams in: the newest are kept.
-        let (_, first, _) = queue.pop().await;
-        assert_eq!(first[0], 5);
+        assert_eq!(popped(&queue, 0).await, [5]);
     }
 
     #[tokio::test]
@@ -154,7 +193,8 @@ mod tests {
             queue.push(DatagramChannel::Video, datagram(ROOM + 1, 2)).0,
             2
         );
-        let waited = tokio::time::timeout(std::time::Duration::from_millis(20), queue.pop()).await;
+        let waited =
+            tokio::time::timeout(std::time::Duration::from_millis(20), popped(&queue, 0)).await;
         assert!(waited.is_err(), "nothing should be left waiting");
     }
 
@@ -166,7 +206,9 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             pushing.push(DatagramChannel::Audio, datagram(8, 7));
         });
-        let (channel, payload, waited) = queue.pop().await;
+        let mut taken = Vec::new();
+        queue.pop_some(usize::MAX, &mut taken).await;
+        let (channel, payload, waited) = taken.pop().unwrap();
         assert_eq!(channel, DatagramChannel::Audio);
         assert_eq!(payload[0], 7);
         // Popped the moment it came: it hardly waited.

@@ -312,17 +312,39 @@ impl LinkWriter {
     /// Not to be abandoned halfway: half a frame left on the link
     /// would put the other side out of step for good.
     pub async fn send(&mut self, channel: Channel, payload: &[u8]) -> io::Result<()> {
-        if payload.len() > LONGEST_PAYLOAD {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("frame of {} bytes, too long for the link", payload.len()),
-            ));
-        }
-        let length = (1 + payload.len()) as u32;
+        self.send_all([(channel, payload)]).await
+    }
+
+    /// Sends frames one after the other in a single write, and flushes
+    /// them. Nothing leaves when one of them is too long for the link.
+    ///
+    /// A picture's datagrams go together: a Windows pipe takes one write
+    /// at a time, the next waiting until the system has said the last one
+    /// is done, and a write each made a picture of a hundred datagrams
+    /// wait for a hundred of those answers.
+    ///
+    /// Not to be abandoned halfway, like [`send`](Self::send).
+    pub async fn send_all<'a>(
+        &mut self,
+        frames: impl IntoIterator<Item = (Channel, &'a [u8])>,
+    ) -> io::Result<()> {
         self.frame.clear();
-        self.frame.extend_from_slice(&length.to_le_bytes());
-        self.frame.push(channel as u8);
-        self.frame.extend_from_slice(payload);
+        for (channel, payload) in frames {
+            if payload.len() > LONGEST_PAYLOAD {
+                self.frame.clear();
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("frame of {} bytes, too long for the link", payload.len()),
+                ));
+            }
+            let length = (1 + payload.len()) as u32;
+            self.frame.extend_from_slice(&length.to_le_bytes());
+            self.frame.push(channel as u8);
+            self.frame.extend_from_slice(payload);
+        }
+        if self.frame.is_empty() {
+            return Ok(());
+        }
         self.stream.write_all(&self.frame).await?;
         self.stream.flush().await
     }
@@ -595,6 +617,48 @@ mod tests {
 
         // Nothing of it reached the link: the next frame is the first
         // the other side sees.
+        writes.send(Channel::Control, b"next").await.unwrap();
+        let (channel, arrived) = reads.next().await.unwrap().unwrap();
+        assert_eq!((channel, &arrived[..]), (Channel::Control, &b"next"[..]));
+    }
+
+    #[tokio::test]
+    async fn frames_sent_together_arrive_one_by_one_in_order() {
+        let (accepted, connected) = both_ends().await;
+        let (_, mut writes) = connected.split();
+        let (mut reads, _) = accepted.split();
+        let payloads: Vec<Vec<u8>> = (0..100).map(|turn| payload(turn, 1_200)).collect();
+        let channels = |turn: usize| EVERY_CHANNEL[turn % EVERY_CHANNEL.len()];
+        writes
+            .send_all(
+                payloads
+                    .iter()
+                    .enumerate()
+                    .map(|(turn, sent)| (channels(turn), sent.as_slice())),
+            )
+            .await
+            .unwrap();
+        for (turn, sent) in payloads.iter().enumerate() {
+            let (channel, arrived) = reads.next().await.unwrap().unwrap();
+            assert_eq!((channel, &arrived[..]), (channels(turn), &sent[..]));
+        }
+    }
+
+    #[tokio::test]
+    async fn frames_sent_together_leave_none_of_them_when_one_is_too_long() {
+        let (accepted, connected) = both_ends().await;
+        let (_, mut writes) = connected.split();
+        let (mut reads, _) = accepted.split();
+        let overlong = vec![0; LONGEST_PAYLOAD + 1];
+        let refused = writes
+            .send_all([
+                (Channel::Video, &b"first"[..]),
+                (Channel::Video, overlong.as_slice()),
+            ])
+            .await
+            .expect_err("an overlong frame is refused");
+        assert_eq!(refused.kind(), io::ErrorKind::InvalidInput);
+
         writes.send(Channel::Control, b"next").await.unwrap();
         let (channel, arrived) = reads.next().await.unwrap().unwrap();
         assert_eq!((channel, &arrived[..]), (Channel::Control, &b"next"[..]));

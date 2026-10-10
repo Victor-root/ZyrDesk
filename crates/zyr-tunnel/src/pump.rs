@@ -35,6 +35,10 @@ const PIECE: usize = 64 * 1024;
 /// which only happens to a session whose other end has stopped reading.
 pub(crate) const CONTROL_WAITING: usize = 256;
 
+/// Most bytes of datagrams written onto the link at once: a picture of a
+/// fast stream, which the reader at the other end takes in a few reads.
+const ONE_WRITE: usize = 256 * 1024;
+
 /// How long what one end said as it left may take to reach the other.
 ///
 /// A goodbye is said and the link closed in one breath, and the tunnel
@@ -295,6 +299,7 @@ async fn onto_the_link(
     while let Ok(said) = service.try_recv() {
         writer.send(Channel::Service, &said).await?;
     }
+    let mut taken = Vec::new();
     loop {
         tokio::select! {
             biased;
@@ -306,11 +311,20 @@ async fn onto_the_link(
                 Counters::bump(&counters.control_to_link);
             }
             Some(said) = service.recv() => writer.send(Channel::Service, &said).await?,
-            (channel, payload, waited) = datagrams.pop() => {
+            () = datagrams.pop_some(ONE_WRITE, &mut taken) => {
                 let writing = Instant::now();
-                writer.send(channel.on_the_link(), &payload).await?;
-                flow.onto_the_link(payload.len(), waited, writing.elapsed());
-                Counters::bump(&counters.to_link);
+                writer
+                    .send_all(
+                        taken
+                            .iter()
+                            .map(|(channel, payload, _)| (channel.on_the_link(), &payload[..])),
+                    )
+                    .await?;
+                flow.written(writing.elapsed());
+                for (_, payload, waited) in &taken {
+                    flow.onto_the_link(payload.len(), *waited);
+                    Counters::bump(&counters.to_link);
+                }
             }
         }
     }

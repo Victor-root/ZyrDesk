@@ -35,7 +35,7 @@ pub(crate) struct Flow {
     /// Between a datagram coming off the connection and its turn to be
     /// written onto the link.
     waited: Timing,
-    /// Writing one datagram onto the link.
+    /// Writing onto the link what waited for it, in one write each time.
     writing: Timing,
     /// Most bytes waiting for the link at once.
     most_waiting: AtomicU64,
@@ -102,12 +102,16 @@ impl Flow {
     }
 
     /// A datagram that waited that long for its turn was written onto
-    /// the link, which took `writing`.
-    pub(crate) fn onto_the_link(&self, bytes: usize, waited: Duration, writing: Duration) {
+    /// the link.
+    pub(crate) fn onto_the_link(&self, bytes: usize, waited: Duration) {
         self.to_link.fetch_add(1, Ordering::Relaxed);
         self.to_link_bytes
             .fetch_add(bytes as u64, Ordering::Relaxed);
         self.waited.add(waited);
+    }
+
+    /// One write onto the link took `writing`.
+    pub(crate) fn written(&self, writing: Duration) {
         self.writing.add(writing);
     }
 
@@ -121,6 +125,7 @@ impl Flow {
         let to_link_bytes = self.to_link_bytes.swap(0, Ordering::Relaxed);
         let most_waiting = self.most_waiting.swap(0, Ordering::Relaxed);
         let waited = self.waited.taken();
+        let writes = self.writing.count.load(Ordering::Relaxed);
         let writing = self.writing.taken();
         if to_tunnel == 0 && to_link == 0 {
             return None;
@@ -138,8 +143,8 @@ impl Flow {
         };
         Some(format!(
             "into the tunnel {to_tunnel} datagrams, {} KB, the queue to send left at least {room}; \
-             onto the link {to_link} datagrams, {} KB, having waited here {waited} ms and been \
-             written in {writing} ms (mean/worst), at most {} KB waiting; the path: round trip \
+             onto the link {to_link} datagrams, {} KB, having waited here {waited} ms, in \
+             {writes} writes of {writing} ms (mean/worst), at most {} KB waiting; the path: round trip \
              {:.1} ms (least {:.1}), {sent} packets sent in {sends} sends, {received} received \
              in {receives} reads, {} lost",
             to_tunnel_bytes / 1024,
@@ -194,13 +199,16 @@ mod tests {
         flow.handed_to_the_tunnel(1200, 900 * 1024);
         flow.handed_to_the_tunnel(1200, 700 * 1024);
         flow.queued(3 * 1024);
-        flow.onto_the_link(1100, Duration::from_micros(40), Duration::from_micros(10));
-        flow.onto_the_link(1100, Duration::from_micros(120), Duration::from_micros(30));
+        flow.onto_the_link(1100, Duration::from_micros(40));
+        flow.written(Duration::from_micros(10));
+        flow.onto_the_link(1100, Duration::from_micros(120));
+        flow.onto_the_link(1100, Duration::from_micros(130));
+        flow.written(Duration::from_micros(30));
         let line = flow.second(&traffic(1_400, 3), &traffic(1_000, 1)).unwrap();
         assert!(
             line.starts_with(
                 "into the tunnel 2 datagrams, 2 KB, the queue to send left at least 700 KB; onto \
-                 the link 2 datagrams, 2 KB, having waited here 0.08/0.12 ms and been written in \
+                 the link 3 datagrams, 3 KB, having waited here 0.10/0.13 ms, in 2 writes of \
                  0.02/0.03 ms (mean/worst), at most 3 KB waiting;"
             ),
             "{line}"

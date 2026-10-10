@@ -298,15 +298,10 @@ async fn write(
             Some(datagram) = queues.audio.recv() => writer.send(Channel::Audio, &datagram).await,
             Some(Handed { at, packets }) = queues.video.recv() => {
                 let started = Instant::now();
-                let mut written = Ok(());
-                let mut bytes = 0;
-                for datagram in packets.iter() {
-                    bytes += datagram.len();
-                    written = writer.send(Channel::Video, datagram).await;
-                    if written.is_err() {
-                        break;
-                    }
-                }
+                let bytes = packets.iter().map(<[u8]>::len).sum();
+                let written = writer
+                    .send_all(packets.iter().map(|datagram| (Channel::Video, datagram)))
+                    .await;
                 written_down.picture(at, started, Instant::now(), packets.len(), bytes);
                 // Never waits: with enough spares already, or the
                 // pipeline gone, the buffer is freed.

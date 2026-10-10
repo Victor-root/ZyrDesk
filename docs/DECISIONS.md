@@ -4222,6 +4222,24 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Les essais, et ce qui n'est pas prouvé.** Une image plus grosse qu'un message traverse une vraie session, du moteur hôte au lecteur, et arrive entière ; la mise à l'échelle, les masques et le rassemblement des morceaux sont essayés à part. Rien n'a tourné sur un vrai Windows : la comparaison avec les formes du système dans le moteur hôte et la fabrication du curseur par Windows se vérifient à l'usage. Le journal du client dit, à rythme mesuré, « the far pointer is drawn by its program » avec la taille de l'image reçue, et celui de l'hôte compte en fin de session les fois où le curseur est devenu nommé ou dessiné (« pointer told »).
 
+## D261. Les paquets d'une image passent les tubes locaux d'un seul coup (2026-10-10, pendant MZ)
+
+> Première étape d'une passe sur la latence et la fluidité, surtout à travers Internet, demandée par Victor. Répond à la piste laissée par [D227](#d227-la-fluidité-se-mesure-image-par-image-à-chaque-étape-du-trajet-2026-09-25-pendant-mz) : « le moteur hôte écrit chaque paquet séparément dans le tube ».
+
+**Le constat, lu dans le code.** Une image traverse deux tubes locaux : du moteur hôte au service de l'hôte, puis du service du client au lecteur. Les deux écrivaient paquet par paquet, une écriture pour chacun. Or sous Windows un tube nommé, tel que la bibliothèque des entrées et sorties le mène (`mio`), n'accepte qu'une écriture à la fois : la suivante attend que Windows ait dit, par la file des achèvements, que la précédente est finie, et que le fil soit revenu la chercher. Une image de 70 Ko, une soixantaine de paquets avec sa réparation, attendait donc une soixantaine de ces allers-retours sur chaque ordinateur ; une image clé de plusieurs centaines de paquets, autant de centaines. Le dernier paquet d'une image, celui qui la rend entière, sortait le dernier de cette file.
+
+**Ce qui est fait.**
+
+- Le lien local sait écrire plusieurs trames à la suite en une seule écriture (`send_all`). Le format sur le tube ne change pas : de l'autre côté, rien ne distingue une trame écrite seule d'une trame écrite avec d'autres.
+- Le moteur hôte écrit tous les paquets d'une image d'un coup.
+- Le service du client écrit d'un coup tout ce qui attend pour le lecteur, jusqu'à 256 Ko par écriture : ce qui sort ensemble du tunnel, une image qui arrive en rafale, passe ensemble.
+
+**Ce qui se lit dans le journal.** La ligne `tunnel` du client dit maintenant en combien d'écritures les paquets sont passés vers le lecteur, et le temps de chacune : `onto the link 3600 datagrams, ... in 62 writes of 0.05/0.30 ms`. La ligne `link` de l'hôte, qui chronométrait déjà l'écriture d'une image entière, garde sa forme et devrait baisser.
+
+**Les essais.** Des trames écrites ensemble arrivent une à une, dans l'ordre ; une trame trop longue au milieu d'un lot n'en laisse partir aucune. La file du client rend ce qui attend jusqu'à la limite demandée, la première trame quelle que soit sa taille. L'essai du moteur hôte dont le lien prend du retard attend maintenant trois secondes au lieu d'une avant de lire lentement : écrites d'un coup, les images remplissent moins vite la réserve du système sous Linux, et il fallait plus longtemps pour que le lien déborde.
+
+**Ce qui n'est pas mesuré.** Le gain se lit sur un vrai Windows, dans les lignes `link` de l'hôte et `tunnel` du client ; il n'a pas pu l'être ici.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
