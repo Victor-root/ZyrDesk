@@ -286,17 +286,17 @@ Les journaux des **deux PC**, pris **juste après** l'essai raté, sans rien red
 4. dans la boîte de tri, taper ce texte, **le même sur les deux PC**, puis **Copier le tri** :
 
    ```
-   flow measures picture badges player pace engine ffmpeg tunnel way vitals wifi session gateway
+   flow measures picture badges player pace engine ffmpeg tunnel way vitals wifi priority session gateway
    ```
 
-   Chaque mot est une partie du produit, et chaque PC ne rend que celles qu'il a : le client rend `flow`, `measures`, `picture`, `badges` et `player` (l'image reçue, décodée et montrée, les voyants), l'hôte `pace`, `engine` et `ffmpeg` (l'image capturée, encodée, envoyée), et les deux `tunnel`, `way`, `vitals` et `wifi` (le réseau, ce que fait l'ordinateur, la carte Wi-Fi), `session` et `gateway` (la vie de la session).
+   Chaque mot est une partie du produit, et chaque PC ne rend que celles qu'il a : le client rend `flow`, `measures`, `picture`, `badges` et `player` (l'image reçue, décodée et montrée, les voyants), l'hôte `pace`, `engine` et `ffmpeg` (l'image capturée, encodée, envoyée), et les deux `tunnel`, `way`, `vitals`, `wifi` et `priority` (le réseau, ce que fait l'ordinateur, la carte Wi-Fi, ce que Windows a accordé au service), `session` et `gateway` (la vie de la session).
 
-Tout est dans ces lignes : une image perdue dit ce qu'elle avait et pourquoi elle a été abandonnée ; le débit produit par l'encodeur se lit contre le débit demandé ; la ligne `vitals` dit ce que l'ordinateur était en train de faire à la seconde de la saccade (processeur, programmes, paquets UDP jetés, carte réseau) ; `wifi` dit le signal et les changements de borne.
+Tout est dans ces lignes : une image perdue dit ce qu'elle avait et pourquoi elle a été abandonnée ; la ligne `road:` du client dit chaque seconde combien la route était pleine et ce qui est arrivé, et une ligne `player` chaque fois que le lecteur a demandé à l'hôte de baisser ou de remonter son débit, et pourquoi ([D265](../DECISIONS.md)) ; le débit produit par l'encodeur se lit contre le débit demandé ; la ligne `vitals` dit ce que l'ordinateur était en train de faire à la seconde de la saccade (processeur, programmes, paquets UDP jetés, carte réseau) ; `wifi` dit le signal et les changements de borne.
 
 **Une session longue** (plusieurs minutes) ne tient pas dans une copie : chaque PC ne rend que les 500 dernières lignes de chaque fichier. Alors, en deux temps :
 
 - d'abord l'**aperçu**, qui est petit : dans la boîte de tri, taper `-level:debug` ; ce sont les événements de la session, sans les lignes de chaque seconde. Ils disent ce qui s'est passé et **à quelle heure** ;
-- puis le **détail** des secondes qui comptent : le même texte que ci-dessus, précédé de l'heure de l'aperçu entre guillemets, à la dizaine de secondes près, par exemple `"09:58:1" flow measures picture badges player pace engine ffmpeg tunnel way vitals wifi session gateway`. **L'heure des journaux est l'heure universelle** (UTC), pas celle de Windows : en France, deux heures de moins l'été, une heure de moins l'hiver. Le plus sûr est de la recopier d'une ligne de l'aperçu.
+- puis le **détail** des secondes qui comptent : le même texte que ci-dessus, précédé de l'heure de l'aperçu entre guillemets, à la dizaine de secondes près, par exemple `"09:58:1" flow measures picture badges player pace engine ffmpeg tunnel way vitals wifi priority session gateway`. **L'heure des journaux est l'heure universelle** (UTC), pas celle de Windows : en France, deux heures de moins l'été, une heure de moins l'hiver. Le plus sûr est de la recopier d'une ligne de l'aperçu.
 
 Les journaux gardent le détail d'au moins un quart d'heure ([D257](../DECISIONS.md)) : ce qui est plus vieux que ça n'est plus là.
 
