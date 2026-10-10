@@ -895,6 +895,9 @@ struct Counted {
     /// This computer's Wi-Fi putting the session first, for as long as it
     /// lasts.
     _wifi: zyr_system::Favouring,
+    /// This service going before the computer's other programs, which
+    /// every packet of the session crosses.
+    _ahead: zyr_system::Ahead,
 }
 
 impl Counted {
@@ -905,6 +908,7 @@ impl Counted {
             media: media.clone(),
             _outside: crate::outside::watch(log),
             _wifi: zyr_system::favour_latency(log),
+            _ahead: zyr_system::put_ahead(log),
         }
     }
 }

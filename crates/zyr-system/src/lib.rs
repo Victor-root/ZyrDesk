@@ -8,7 +8,8 @@
 //! read for a while; locking that screen from inside it; pressing
 //! Ctrl+Alt+Del, which Windows takes from a service and from nothing
 //! else; asking the Wi-Fi to put a session first and saying how it
-//! fares; reading the shape the pointer has on the desktop this program
+//! fares; putting this program ahead of the others while a session is
+//! open; reading the shape the pointer has on the desktop this program
 //! stands on, and whether a program drew it for itself; counting how busy the computer is and what its network
 //! has carried and lost; and saying what the computer is.
 //!
@@ -22,6 +23,7 @@
 //! there, which is that no session holds a screen: the product is built
 //! and tested on machines that are not the ones it runs on.
 
+mod ahead;
 #[cfg(windows)]
 mod attention;
 #[cfg(any(windows, test))]
@@ -52,6 +54,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 use std::time::Duration;
 
+pub use ahead::{Ahead, put_ahead};
 #[cfg(windows)]
 pub use attention::{forget_it, let_it_be_pressed, press};
 #[cfg(windows)]

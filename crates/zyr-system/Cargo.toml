@@ -13,6 +13,8 @@ zyr-proto.workspace = true
 zyr-win32.workspace = true
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
+    # Timers to the millisecond while a session is open.
+    "Win32_Media",
     # What the network stack and the cards have counted, and which card
     # reaches an address.
     "Win32_NetworkManagement_IpHelper",

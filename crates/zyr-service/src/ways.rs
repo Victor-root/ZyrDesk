@@ -141,6 +141,9 @@ struct Open {
     /// This computer's Wi-Fi putting the session first, for as long as the
     /// way lasts.
     _wifi: zyr_system::Favouring,
+    /// This service going before the computer's other programs, which
+    /// every packet of the session crosses.
+    _ahead: zyr_system::Ahead,
     /// What this computer does, written down for as long as the way lasts.
     _vitals: Option<crate::vitals::Sampling>,
     /// What tells the player how the tunnel stands, and hears it.
@@ -725,6 +728,7 @@ impl Ways {
                 said: Said::from(opened_at),
                 _outside: crate::outside::watch(&self.log),
                 _wifi: zyr_system::favour_latency(&self.log),
+                _ahead: zyr_system::put_ahead(&self.log),
                 _vitals: vitals,
                 _telling: telling,
             },

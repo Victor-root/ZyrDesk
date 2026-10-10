@@ -4270,6 +4270,20 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas mesuré.** Rien de cela n'a tourné sur une carte NVIDIA ici : la ligne `pace` de l'hôte dira le temps d'encodage, et si le débit produit colle mieux au débit demandé.
 
+## D264. Le service passe devant les autres programmes pendant une session (2026-10-10, pendant MZ)
+
+> Quatrième étape de la passe sur la latence ([D263](#d263-lencodeur-nvidia-regarde-limage-en-quart-de-taille-avant-de-lencoder-2026-10-10-pendant-mz)). Était écrit dans [NETWORK.md](NETWORK.md) comme reste à faire, pour les fils du tunnel.
+
+**Le constat.** Chaque paquet d'une session traverse le service des deux ordinateurs : du tube du moteur au tunnel sur l'hôte, du tunnel au tube du lecteur sur le client. Le moteur hôte se met depuis longtemps devant les programmes de l'écran ([D255](#d255-le-journal-dit-ce-quest-lordinateur-et-ce-que-le-processus-a-obtenu-de-windows-2026-09-29-pendant-mz)) ; le service, lui, gardait la priorité ordinaire d'un service. Sur un hôte occupé, un jeu ou un rendu qui prend tous les processeurs, chaque image attendait donc son tour derrière lui dans le service, juste après en être passée devant dans le moteur. Windows 11 peut en plus prendre un programme sans fenêtre pour un programme dont la vitesse ne compte pas : il le fait tourner sur ses coeurs les plus lents, à fréquence réduite, et laisse ses minuteries se réveiller un tic entier en retard.
+
+**Ce qui est fait.** Dès qu'une session s'ouvre, dans un sens ou dans l'autre, le service se met en priorité haute, comme le moteur hôte, demande à Windows de ne jamais le ralentir pour économiser l'énergie ni retarder ses minuteries, et demande des minuteries à la milliseconde. Après la dernière session, tout est rendu tel quel. C'est fait au même endroit que la demande faite au Wi-Fi ([D230](#d230-le-wi-fi-reste-sur-son-canal-pendant-une-session-et-laffichage-ne-se-fie-plus-aux-numéros-de-windows-2026-09-25-pendant-mz)), par la brique de plateforme (`zyr-system`), qui ne fait rien hors de Windows.
+
+**Ce que ça coûte.** Le service ne travaille que quand un paquet passe : quelques pour cent d'un coeur à 40 Mb/s. Son fil qui compte la charge de l'ordinateur ([D252](#d252-le-journal-dit-ce-que-fait-lordinateur-lui-même-seconde-par-seconde-2026-09-29-pendant-mz)) reste le dernier du service.
+
+**Ce qui se lit dans le journal.** Une ligne `priority` à l'ouverture de la première session : « set up for the sessions: before the computer's other programs, never slowed down to save power, timers to the millisecond », ou ce qui a été refusé.
+
+**Les essais.** Sous Windows (CI) : deux sessions ouvertes mettent le programme en priorité haute, la fermeture de la première la garde, celle de la dernière rend la priorité d'avant.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
