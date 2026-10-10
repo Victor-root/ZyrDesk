@@ -601,6 +601,7 @@ fn play<P: Presenter>(presenter: P, shared: VideoShared) {
     let video = Video::new(ff, presenter, tally, tallies, rect, log);
     video::run(video, &input, &size, |said| match said {
         Said::Recover(recover) => inner.send(Inner::Recover(recover)).is_ok(),
+        Said::Crossed(crossed) => inner.send(Inner::Crossed(crossed)).is_ok(),
         Said::FirstPicture => {
             events.say(Event::FirstPicture);
             true

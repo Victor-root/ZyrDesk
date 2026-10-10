@@ -27,6 +27,7 @@ use zyr_media::codec::CodecSet;
 use zyr_media::control::{ByeReason, ControlReader, ToEngine, ToPlayer, Wanted};
 use zyr_media::input::{InputEvent, Outgoing};
 use zyr_media::pointer::{Gathering, PointerPicture};
+use zyr_media::road::{Arrival, Road};
 use zyr_media::service;
 use zyr_proto::fact::Fact;
 use zyr_proto::log::{Log, Seldom};
@@ -34,7 +35,7 @@ use zyr_proto::log::{Log, Seldom};
 use crate::pointer::FarPointer;
 use crate::stats::Tally;
 use crate::tallies::{LinkTallies, Tallies};
-use crate::video::{Recover, VideoInput};
+use crate::video::{Crossed, Recover, VideoInput};
 use crate::{Ending, Event, Events, lock};
 
 /// How long the link may take to be reached. It is on this computer and
@@ -55,6 +56,9 @@ const LET_GO_WITHIN: Duration = Duration::from_secs(2);
 /// Control messages gathered into one frame of the link at most, in
 /// bytes: whatever is waiting, up to this.
 const GATHERED: usize = 64 * 1024;
+
+/// How often what the road did is written down, while pictures come.
+const ROAD_EVERY: Duration = Duration::from_secs(1);
 
 /// What the person's side asks of the player.
 #[derive(Debug)]
@@ -80,6 +84,8 @@ pub enum Inner {
     /// The decoder is ready: the codecs it decodes.
     Hello(CodecSet),
     Recover(Recover),
+    /// How a picture crossed the road.
+    Crossed(Crossed),
     /// Nothing can be shown: the session ends, for this reason.
     Failed(Fact),
 }
@@ -153,6 +159,8 @@ pub fn run(parts: Parts, connected: SyncSender<io::Result<()>>) {
 /// Where a session stands, as the link sees it.
 struct Session {
     wanted: Wanted,
+    /// What the road between the two computers bears.
+    road: Road,
     hello_sent: bool,
     outgoing: Outgoing,
     control: ControlReader<ToPlayer>,
@@ -208,6 +216,7 @@ async fn session(link: Link, parts: Parts) {
     let writing = tokio::spawn(write(writer, pending, log.clone()));
     let mut session = Session {
         wanted,
+        road: Road::new(wanted.bitrate_kbps, wanted.fps),
         hello_sent: false,
         outgoing: Outgoing::new(),
         control: ControlReader::new(),
@@ -230,6 +239,8 @@ async fn session(link: Link, parts: Parts) {
     };
     let mut ping = tokio::time::interval(PING_EVERY);
     ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut road_said = tokio::time::interval(ROAD_EVERY);
+    road_said.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     let ending = loop {
         tokio::select! {
@@ -263,6 +274,7 @@ async fn session(link: Link, parts: Parts) {
                 let sent_us = session.clock.now();
                 session.say(&ToEngine::Ping { sent_us });
             }
+            _ = road_said.tick() => session.road_said(),
         }
     };
     session.log.write(&format!("session over: {ending:?}"));
@@ -310,9 +322,11 @@ impl Session {
                 }
             }
             Channel::Video => {
+                let arrived = Instant::now();
+                self.road.datagram(payload.len(), arrived);
                 let datagram = VideoInput::Datagram {
                     datagram: payload,
-                    arrived: Instant::now(),
+                    arrived,
                 };
                 if let Err(refused) = self.video.try_send(datagram) {
                     self.video_refused(refused);
@@ -354,6 +368,7 @@ impl Session {
                     "stream {stream}: {} {width}x{height} at {fps} fps",
                     codec.name()
                 ));
+                self.road.fps(fps);
                 let (width, height) = (u32::from(width), u32::from(height));
                 lock(&self.tally).streaming(codec, width, height);
                 self.events.say(Event::Streaming {
@@ -481,6 +496,8 @@ impl Session {
         match order {
             Order::Change(wanted) => {
                 self.wanted = wanted;
+                // The engine forgets the road's ceiling with it.
+                self.road.wanted(wanted.bitrate_kbps);
                 // Before the hello, the hello itself carries it.
                 if self.hello_sent {
                     self.log
@@ -542,12 +559,58 @@ impl Session {
             Inner::Recover(Recover { stream, frame }) => {
                 self.say(&ToEngine::Recover { stream, frame });
             }
+            Inner::Crossed(crossed) => self.crossed(crossed),
             Inner::Failed(reason) => {
                 self.say(&ToEngine::Bye);
                 return Some(Ending::EngineFailed(reason));
             }
         }
         None
+    }
+
+    /// Weighs how a picture crossed the road, and asks the engine to keep
+    /// under what the road bears when that changed.
+    fn crossed(&mut self, crossed: Crossed) {
+        match crossed {
+            Crossed::Whole {
+                sent_us,
+                first,
+                last,
+                key,
+            } => self.road.whole(Arrival {
+                sent_us,
+                first_us: self.clock.micros(first),
+                last_us: self.clock.micros(last),
+                at: last,
+                key,
+            }),
+            Crossed::Lost(at) => self.road.lost(at),
+        }
+        let Some(ceiling) = self.road.decide(Instant::now()) else {
+            return;
+        };
+        self.log.write(&format!(
+            "{}: {}, with {} kb/s arriving",
+            ceiling.because,
+            match ceiling.kbps {
+                Some(kbps) => format!("the host is asked to keep under {kbps} kb/s"),
+                None => format!(
+                    "the host is asked for the {} kb/s chosen again",
+                    self.wanted.bitrate_kbps
+                ),
+            },
+            ceiling.arrived_kbps
+        ));
+        self.say(&ToEngine::Ceiling { kbps: ceiling.kbps });
+    }
+
+    /// Writes down what the road did since the last time, if pictures
+    /// came.
+    fn road_said(&mut self) {
+        let reading = self.road.reading(Instant::now());
+        if reading.pictures > 0 {
+            self.log.debug(&format!("road: {reading}"));
+        }
     }
 
     /// Input before the hello: nothing is shown yet for it to aim at,

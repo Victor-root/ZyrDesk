@@ -262,6 +262,7 @@ fn pass_on(
         Ok(FromPlayer::Recover { stream, frame }) => {
             Heard::Player(Asked::Recover { stream, frame })
         }
+        Ok(FromPlayer::Ceiling { kbps }) => Heard::Player(Asked::Ceiling { kbps }),
         Ok(FromPlayer::Bye) => Heard::Player(Asked::Bye),
         Err(e) => Heard::Unreadable(e),
     };

@@ -97,6 +97,11 @@ pub(crate) enum Command {
     Recover {
         stream: u16,
     },
+    /// The most the road bears on the wire, in kilobits a second, until
+    /// the viewer changes what it wants.
+    Ceiling {
+        kbps: Option<u32>,
+    },
     Quit,
 }
 
@@ -154,6 +159,12 @@ pub(crate) fn encoder_kbps(asked: u32, fec_percent: u8, sound: bool) -> u32 {
     let pictures = u64::from(asked) * 100 / (100 + u64::from(fec_percent));
     let sound_kbps = if sound { OPUS_BITRATE / 1000 } else { 0 };
     (pictures as u32).saturating_sub(sound_kbps).max(LEAST_KBPS)
+}
+
+/// Kilobits a second on the wire: what the viewer wants, under the
+/// ceiling of the road.
+pub(crate) fn on_the_wire(wanted: &Wanted, ceiling: Option<u32>) -> u32 {
+    ceiling.map_or(wanted.bitrate_kbps, |kbps| kbps.min(wanted.bitrate_kbps))
 }
 
 /// What an encoder is opened for.
@@ -262,6 +273,8 @@ struct Encoding {
 /// What the viewer asked for, once streaming.
 struct Streaming {
     wanted: Wanted,
+    /// The most the road bears, which the rate on the wire keeps under.
+    ceiling: Option<u32>,
     decodable: CodecSet,
     packetizer: Packetizer,
     cadence: Cadence,
@@ -540,6 +553,7 @@ impl Pipeline {
             } => {
                 self.streaming = Some(Streaming {
                     wanted,
+                    ceiling: None,
                     decodable,
                     packetizer: Packetizer::new(usize::from(datagram_budget), DEFAULT_FEC_PERCENT),
                     cadence: Cadence::new(u32::from(wanted.fps), wanted.steady),
@@ -552,6 +566,7 @@ impl Pipeline {
             }
             Command::Change { wanted } => self.change(wanted),
             Command::Recover { stream } => self.recover(stream),
+            Command::Ceiling { kbps } => self.ceiling(kbps),
             Command::Quit => return false,
         }
         true
@@ -708,13 +723,18 @@ impl Pipeline {
         }));
     }
 
-    /// The settings the viewer's wishes come to, for `codec`.
-    fn settings(&self, codec: VideoCodec, wanted: &Wanted) -> Settings {
+    /// The settings the viewer's wishes come to, for `codec`, under the
+    /// ceiling of the road, if any.
+    fn settings(&self, codec: VideoCodec, wanted: &Wanted, ceiling: Option<u32>) -> Settings {
         Settings {
             codec,
             picture: self.picture(),
             fps: u32::from(wanted.fps.max(1)),
-            kbps: encoder_kbps(wanted.bitrate_kbps, DEFAULT_FEC_PERCENT, wanted.audio),
+            kbps: encoder_kbps(
+                on_the_wire(wanted, ceiling),
+                DEFAULT_FEC_PERCENT,
+                wanted.audio,
+            ),
         }
     }
 
@@ -764,7 +784,7 @@ impl Pipeline {
             let Some(streaming) = &self.streaming else {
                 return;
             };
-            let settings = self.settings(codec, &streaming.wanted);
+            let settings = self.settings(codec, &streaming.wanted, streaming.ceiling);
             let backends: Vec<Backend> = self
                 .encoders
                 .iter()
@@ -861,7 +881,7 @@ impl Pipeline {
         // stream before went.
         streaming.keys = KeyFrames::default();
         streaming.keys.ask(KeyBecause::Opening);
-        let asked = streaming.wanted.bitrate_kbps;
+        let asked = on_the_wire(&streaming.wanted, streaming.ceiling);
         streaming.encoding = Some(encoding);
         self.place();
         self.timeline.rate(Rate {
@@ -906,6 +926,8 @@ impl Pipeline {
         let Some(streaming) = &mut self.streaming else {
             return;
         };
+        // The viewer's choice is theirs to try, whatever the road bore.
+        streaming.ceiling = None;
         let before = std::mem::replace(&mut streaming.wanted, wanted);
         if before.fps != wanted.fps {
             streaming.cadence.set_fps(u32::from(wanted.fps));
@@ -916,6 +938,28 @@ impl Pipeline {
         if before.codec != wanted.codec {
             streaming.told_codec = false;
         }
+        self.follow();
+    }
+
+    /// The road bears this much on the wire, or what the viewer wants.
+    fn ceiling(&mut self, kbps: Option<u32>) {
+        let Some(streaming) = &mut self.streaming else {
+            return;
+        };
+        streaming.ceiling = kbps;
+        self.shared.log.write(&match kbps {
+            Some(kbps) => format!("the player finds the road bears {kbps} kb/s"),
+            None => "the player finds the road bears what is wanted".to_string(),
+        });
+        self.follow();
+    }
+
+    /// The encoder follows what is asked of it now.
+    fn follow(&mut self) {
+        let Some(streaming) = &self.streaming else {
+            return;
+        };
+        let (wanted, ceiling) = (streaming.wanted, streaming.ceiling);
         let Some(now) = streaming
             .encoding
             .as_ref()
@@ -927,7 +971,7 @@ impl Pipeline {
             self.open_stream();
             return;
         };
-        let next = self.settings(codec, &wanted);
+        let next = self.settings(codec, &wanted, ceiling);
         match plan(&now, &next) {
             Plan::Keep => {}
             Plan::Rebuild => self.open_stream(),
@@ -954,7 +998,7 @@ impl Pipeline {
                 if let Some(streaming) = &self.streaming {
                     self.timeline.rate(Rate {
                         encoder_kbps: kbps,
-                        wire_kbps: streaming.wanted.bitrate_kbps,
+                        wire_kbps: on_the_wire(&streaming.wanted, streaming.ceiling),
                     });
                 }
                 self.serving(&settings);
@@ -1379,6 +1423,23 @@ mod tests {
         assert_eq!(encoder_kbps(20_000, 20, false), 16_666);
         assert_eq!(encoder_kbps(20_000, 0, false), 20_000);
         assert_eq!(encoder_kbps(80_000, 20, true), 66_538);
+    }
+
+    #[test]
+    fn the_wire_keeps_under_the_ceiling_and_never_over_what_is_wanted() {
+        let wanted = Wanted {
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            bitrate_kbps: 40_000,
+            codec: CodecChoice::Auto,
+            draw_pointer: false,
+            audio: true,
+            steady: false,
+        };
+        assert_eq!(on_the_wire(&wanted, None), 40_000);
+        assert_eq!(on_the_wire(&wanted, Some(17_000)), 17_000);
+        assert_eq!(on_the_wire(&wanted, Some(90_000)), 40_000);
     }
 
     #[test]

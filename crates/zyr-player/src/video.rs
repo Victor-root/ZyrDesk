@@ -94,10 +94,27 @@ impl fmt::Display for Because {
     }
 }
 
+/// How a picture crossed the road, for the link to weigh what the road
+/// bears (see [`zyr_media::road`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Crossed {
+    /// It arrived whole: when the host handed it over, on the host's
+    /// clock, and when its first and last packets came here.
+    Whole {
+        sent_us: u32,
+        first: Instant,
+        last: Instant,
+        key: bool,
+    },
+    /// It was lost, given up at that moment.
+    Lost(Instant),
+}
+
 /// What the video thread has to tell the rest of the player.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Said {
     Recover(Recover),
+    Crossed(Crossed),
     FirstPicture,
     /// Something the person is told.
     Notice(Fact),
@@ -551,6 +568,7 @@ impl<P: Presenter> Video<P> {
                     gone,
                 } => {
                     lock(&self.tally).lost(now);
+                    self.said.push(Said::Crossed(Crossed::Lost(now)));
                     self.flow.lost(now, frame, &gone);
                     self.hushed.lost.note(&self.log, now, |times| {
                         format!(
@@ -569,6 +587,12 @@ impl<P: Presenter> Video<P> {
                         tally.since_capture(frame.captured_us, frame.last_packet)
                     };
                     self.flow.whole(&frame, since_capture);
+                    self.said.push(Said::Crossed(Crossed::Whole {
+                        sent_us: frame.captured_us.wrapping_add(frame.host_latency_us),
+                        first: frame.first_packet,
+                        last: frame.last_packet,
+                        key: frame.key,
+                    }));
                     if let Some(picture) = self.decode(&frame, now) {
                         let ready = Ready {
                             picture,
@@ -983,6 +1007,13 @@ mod tests {
         }
     }
 
+    /// What was said, but how each picture crossed.
+    fn told(said: Vec<Said>) -> Vec<Said> {
+        said.into_iter()
+            .filter(|said| !matches!(said, Said::Crossed(_)))
+            .collect()
+    }
+
     fn recovers(said: &[Said]) -> Vec<Recover> {
         said.iter()
             .filter_map(|one| match one {
@@ -1144,7 +1175,7 @@ mod tests {
             frame_in(&mut video, 1, n as u32, packet, at);
         }
         let said = video.settle(at);
-        assert_eq!(said, [Said::FirstPicture]);
+        assert_eq!(told(said), [Said::FirstPicture]);
         assert_eq!(video.presenter.drawn, [looks[3]]);
         assert_eq!(video.counters.decoded, 4);
         assert_eq!(video.counters.unshown, 3);
@@ -1380,7 +1411,7 @@ mod tests {
         for (n, packet) in packets.iter().enumerate() {
             frame_in(&mut video, 1, n as u32, packet, at);
         }
-        assert_eq!(video.settle(at), [Said::FirstPicture]);
+        assert_eq!(told(video.settle(at)), [Said::FirstPicture]);
         let assembly = video.assembler.counters();
         assert_eq!((assembly.frames_lost, assembly.overflow), (0, 0));
         assert_eq!(video.counters.decoded, count as u64);

@@ -79,9 +79,21 @@ pub(crate) enum Heard {
 /// What the player asks of the engine itself; keys and pointer go to
 /// the input thread, pings are answered by the link.
 pub(crate) enum Asked {
-    Hello { wanted: Wanted, decodable: CodecSet },
-    Change { wanted: Wanted },
-    Recover { stream: u16, frame: u32 },
+    Hello {
+        wanted: Wanted,
+        decodable: CodecSet,
+    },
+    Change {
+        wanted: Wanted,
+    },
+    Recover {
+        stream: u16,
+        frame: u32,
+    },
+    /// The most the road bears, until the person chooses another rate.
+    Ceiling {
+        kbps: Option<u32>,
+    },
     Bye,
 }
 
@@ -306,6 +318,12 @@ impl Engine {
                     ));
                 }
                 let _ = self.pipeline.send(pipeline::Command::Recover { stream });
+                None
+            }
+            Asked::Ceiling { kbps } => {
+                if self.welcomed {
+                    let _ = self.pipeline.send(pipeline::Command::Ceiling { kbps });
+                }
                 None
             }
             Asked::Bye => Some(Ending::PlayerLeft),

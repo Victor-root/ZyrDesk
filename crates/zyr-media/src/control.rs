@@ -21,6 +21,7 @@
 //! 9  ReleaseAll
 //! 10 Ping     sent_us u64
 //! 11 Bye
+//! 12 Ceiling  kbps u32 (the most to send on the wire; 0 for none)
 //! wanted: width u16, height u16, fps u16, bitrate_kbps u32, codec u8,
 //!         flags u8 (bit0 draw pointer, bit1 audio, bit2 steady)
 //! ```
@@ -127,6 +128,12 @@ pub enum ToEngine {
         sent_us: u64,
     },
     Bye,
+    /// The most the road bears, in kilobits a second on the wire, which
+    /// the host keeps under until the person chooses another rate;
+    /// `None` once the road bears what they chose (see [`crate::road`]).
+    Ceiling {
+        kbps: Option<u32>,
+    },
 }
 
 /// Why the engine ends a session.
@@ -256,6 +263,7 @@ const WHEEL: u8 = 8;
 const RELEASE_ALL: u8 = 9;
 const PING: u8 = 10;
 const ENGINE_BYE: u8 = 11;
+const CEILING: u8 = 12;
 
 const KEY_EXTENDED: u8 = 1;
 const KEY_DOWN: u8 = 2;
@@ -283,6 +291,9 @@ impl ToEngine {
                 out.extend_from_slice(&sent_us.to_le_bytes())
             }),
             ToEngine::Bye => framed(out, ENGINE_BYE, |_| {}),
+            ToEngine::Ceiling { kbps } => framed(out, CEILING, |out| {
+                out.extend_from_slice(&kbps.unwrap_or(0).to_le_bytes());
+            }),
         }
     }
 }
@@ -371,6 +382,9 @@ impl ControlMessage for ToEngine {
                 sent_us: reader.u64()?,
             },
             ENGINE_BYE => ToEngine::Bye,
+            CEILING => ToEngine::Ceiling {
+                kbps: Some(reader.u32()?).filter(|kbps| *kbps != 0),
+            },
             _ => return Ok(None),
         };
         reader.finish()?;
@@ -664,6 +678,8 @@ mod tests {
                 sent_us: u64::MAX - 7,
             },
             ToEngine::Bye,
+            ToEngine::Ceiling { kbps: Some(17_250) },
+            ToEngine::Ceiling { kbps: None },
         ]
     }
 

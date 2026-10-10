@@ -49,6 +49,10 @@ Chaque paquet porte l'heure de capture : le client connaît donc la latence de b
 
 La réparation vient d'abord des paquets de réparation, sans attendre. Si une image ne peut vraiment pas être reconstruite, le client ne montre pas d'image abîmée : il garde la dernière image juste, demande une image clé une seule fois (redemandée au bout d'un quart de seconde si rien n'arrive, jamais en rafale), et reprend dès qu'elle arrive. C'est la leçon de [D136](DECISIONS.md) : une demande par image reçue avait saturé le lien au pire moment.
 
+## 4 bis. Quand la route ne porte pas le débit
+
+Le débit choisi est un maximum, pas une promesse de la route. Le lecteur mesure chaque image à son arrivée : le temps qu'elle a mis à venir entière, moins le temps le plus court qu'un premier paquet a mis sur les dix dernières secondes, dit combien elle a attendu dans le lien le plus étroit. Quand les images arrivent durablement plus lentement qu'elles ne partent (trois de suite et en moyenne sur un cinquième de seconde), ou que trois se perdent dans la seconde, il demande au moteur hôte de rester sous un plafond, un peu au-dessous de ce qui arrive vraiment, et l'encodeur suit dès l'image suivante. Les images qui attendent derrière une image clé ne comptent pas contre la route tant qu'elles s'écoulent. Le plafond remonte quand la route reste calme : de 25 % toutes les deux secondes loin de ce qu'elle a porté, de 8 % toutes les six secondes près de ce débit, jamais au-dessus de 95 % de ce qu'elle a porté pendant trente secondes, et il disparaît en atteignant le débit choisi. Changer le débit, à la main, l'efface. Le calcul vit dans `zyr-media` (`road`), essayé contre une route simulée ([D265](DECISIONS.md)).
+
 ## 5. Le son
 
 L'hôte enregistre ce que la carte son joue, avant son propre volume et sa propre coupure : couper les enceintes de l'ordinateur d'en face garde donc le son de la session ([D61](DECISIONS.md)). Il l'encode en Opus par tranches de 10 ms. Le client le joue avec une petite réserve de deux tranches, et une tranche perdue est remplacée plutôt qu'attendue. Le son a sa propre file et son propre fil : il ne retarde jamais l'image. Sans carte son chez le client, rien n'est ouvert, et rien n'est attendu ([D211](DECISIONS.md) à [D214](DECISIONS.md)).
@@ -63,7 +67,7 @@ La souris « Bureau » envoie une position absolue et le client montre son propr
 
 | Canal | Contenu | Fiabilité |
 |---|---|---|
-| Flux « moteur » | Messages du lecteur et du moteur hôte : demande de session, changements en direct, demande d'image clé, écran immobile, touches et souris, image d'un curseur sans nom, mesure de l'aller-retour | Fiable et ordonné |
+| Flux « moteur » | Messages du lecteur et du moteur hôte : demande de session, changements en direct, demande d'image clé, plafond de la route, écran immobile, touches et souris, image d'un curseur sans nom, mesure de l'aller-retour | Fiable et ordonné |
 | Datagrammes « vidéo » | Paquets d'images et paquets de réparation | Non fiable, réparé par la correction d'erreurs |
 | Datagrammes « son » | Tranches Opus numérotées | Non fiable, tranche perdue remplacée |
 | Canal ZyrDesk | Les questions du produit, inchangées : écran de l'hôte, débit, codecs, presse-papiers, fichiers, journal, Ctrl+Alt+Suppr, verrouillage | Fiable |

@@ -275,6 +275,16 @@ impl Far {
         }
     }
 
+    /// The next rate the engine says it serves, in the same stream.
+    async fn serving(&mut self) -> u32 {
+        self.until(|said| match said {
+            Said::Service(ToService::Serving { kbps, .. }) => Some(*kbps),
+            Said::Player(ToPlayer::Streaming { .. }) => panic!("a new stream for a new rate"),
+            _ => None,
+        })
+        .await
+    }
+
     /// Reads the link for `span`, taking in everything.
     async fn read_for(&mut self, span: Duration) {
         let deadline = Instant::now() + span;
@@ -790,6 +800,32 @@ async fn a_still_screen_is_sent_again_only_when_steady() {
         repeats.len()
     );
     assert!(repeats.iter().all(|picture| picture.repeat && !picture.key));
+    far.player(ToEngineControl::Bye).await;
+    assert_eq!(far.ended(), Ending::PlayerLeft);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_road_keeps_the_rate_under_its_ceiling_until_the_viewer_chooses_again() {
+    let mut far = Far::start("ceiling", 60, Box::new(SilentSound)).await;
+    let (_, first) = far.open(wanted()).await;
+    // 3000 kb/s on the wire, less the parity.
+    assert_eq!(far.serving().await, 2_500);
+    far.player(ToEngineControl::Ceiling { kbps: Some(1_200) })
+        .await;
+    assert_eq!(far.serving().await, 1_000);
+    // A ceiling above what is wanted changes nothing of it.
+    far.player(ToEngineControl::Ceiling { kbps: Some(9_000) })
+        .await;
+    assert_eq!(far.serving().await, 2_500);
+    far.player(ToEngineControl::Ceiling { kbps: Some(1_200) })
+        .await;
+    assert_eq!(far.serving().await, 1_000);
+    // The viewer choosing a rate again lifts the ceiling.
+    far.player(ToEngineControl::Change { wanted: wanted() })
+        .await;
+    assert_eq!(far.serving().await, 2_500);
+    let pictures = far.pictures_of(first, 10).await;
+    assert!(pictures.iter().all(|picture| picture.stream == first));
     far.player(ToEngineControl::Bye).await;
     assert_eq!(far.ended(), Ending::PlayerLeft);
 }
