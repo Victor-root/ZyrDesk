@@ -4308,6 +4308,18 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas mesuré.** Rien de cela n'a couru sur une vraie route étroite. Les seuils viennent de Pudica et de WebRTC, et se règlent sur les journaux : une ligne `road` qui dépasse souvent 100 % sans plafond, ou des plafonds sur une route qui portait tout, sont ce qu'il faut regarder.
 
+## D266. Les prises du tunnel gardent aussi de la place pour ce qui part (2026-10-10, pendant MZ)
+
+> Sixième étape de la passe sur la latence ([D265](#d265-le-débit-suit-ce-que-la-route-porte-2026-10-10-pendant-mz)). Complète [D251](#d251-la-connexion-directe-garde-de-la-place-pour-ce-qui-arrive-et-le-journal-dit-combien-2026-09-29-pendant-mz), qui ne l'avait fait que pour ce qui arrive.
+
+**Le constat.** Une image est remise au système d'un bloc, une image clé de plusieurs centaines de paquets à la fois. Ce que la prise garde de ce qui part était laissé à la valeur du système, 64 Ko sous Windows : au-delà, le système répond qu'il ne prend plus rien, et le transport attend qu'on lui dise qu'il peut, paquet après paquet, pendant que la carte envoie ce qu'elle a. Sunshine demande un mébioctet pour ses images, après avoir mesuré des envois bloqués cinq à dix millisecondes avec la valeur du système.
+
+**Ce qui est fait.** Toute prise du tunnel, de sa jonction et de ses branches de relais demande un mébioctet pour ce qui part, à côté des huit pour ce qui arrive. Le journal disait déjà ce que le système accorde dans les deux sens ; une ligne d'événement le dit désormais aussi quand il accorde moins que demandé pour ce qui part.
+
+**Les essais.** Une prise du transport garde plus de place pour ce qui part qu'une prise ordinaire (échoue sans la demande) ; la phrase du journal passe en événement quand l'un des deux sens a moins que demandé.
+
+**Ce qui n'est pas mesuré.** Sous Linux le système plafonne la demande, et l'essai le voit ; sous Windows, la ligne « the system holds ... of what leaves » de chaque ouverture dira ce qui est accordé.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

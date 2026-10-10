@@ -98,6 +98,17 @@ const QUEUED: Duration = Duration::from_millis(250);
 /// the system felt like.
 const ARRIVING_ROOM: usize = 8 * 1024 * 1024;
 
+/// What the socket is asked to hold of what leaves before the network
+/// takes it.
+///
+/// A picture is handed to the system in one burst, a key frame of
+/// several hundred packets at a time. Past what the socket holds, the
+/// system answers that it cannot take more and the transport waits to be
+/// told it can, packet after packet, while the card sends what it has.
+/// Sunshine asks a mebibyte for its pictures, having measured sends that
+/// blocked for five to ten milliseconds on the system's default.
+const LEAVING_ROOM: usize = 1024 * 1024;
+
 /// Silence on the socket worth writing down, while a session is open.
 ///
 /// A tunnel that stands is answered several times a second: a whole
@@ -1977,12 +1988,14 @@ pub fn bind_socket(listen: SocketAddr) -> io::Result<std::net::UdpSocket> {
 }
 
 /// Asks the system to hold that much of what arrives before anything
-/// reads it.
+/// reads it, and of what leaves before the network takes it.
 ///
 /// Best effort on purpose: a system that grants less is not a reason to
 /// refuse a session, and what it really granted is read back and said.
 pub fn make_room(socket: &std::net::UdpSocket) {
-    let _ = socket2::SockRef::from(socket).set_recv_buffer_size(ARRIVING_ROOM);
+    let socket = socket2::SockRef::from(socket);
+    let _ = socket.set_recv_buffer_size(ARRIVING_ROOM);
+    let _ = socket.set_send_buffer_size(LEAVING_ROOM);
 }
 
 /// What the system really holds for that socket.
@@ -2013,16 +2026,18 @@ pub fn room_of(socket: &std::net::UdpSocket) -> Room {
 /// What the journal says of the room a socket holds: an event when it is
 /// less than was asked for, since what comes in faster than the program
 /// is given the processor is then lost before anything can count it, and
-/// a line for the hunt when it is what was asked for.
+/// what leaves in a burst waits on the system, and a line for the hunt
+/// when it is what was asked for.
 pub fn room_said(room: &Room) -> (Aloud, String) {
     let Room { arriving, leaving } = *room;
-    if arriving < ARRIVING_ROOM {
+    if arriving < ARRIVING_ROOM || leaving < LEAVING_ROOM {
         (
             Aloud::Says,
             format!(
-                "the system holds {arriving} bytes of what arrives on this socket, not the \
-                 {ARRIVING_ROOM} asked for, and {leaving} of what leaves: what comes in faster \
-                 than this program is given the processor is lost before anything can count it"
+                "the system holds {arriving} bytes of what arrives on this socket and \
+                 {leaving} of what leaves, not the {ARRIVING_ROOM} and {LEAVING_ROOM} asked \
+                 for: what comes in faster than this program is given the processor is lost \
+                 before anything can count it, and a burst leaving waits on the system"
             ),
         )
     } else {
@@ -3027,19 +3042,25 @@ mod tests {
         assert_eq!(how, Aloud::Says);
         assert!(
             line.contains(
-                "holds 65536 bytes of what arrives on this socket, not the 8388608 asked for"
+                "holds 65536 bytes of what arrives on this socket and 65536 of what leaves, not \
+                 the 8388608 and 1048576 asked for"
             ),
             "{line}"
         );
-        let (how, line) = room_said(&Room {
+        let (how, _) = room_said(&Room {
             arriving: ARRIVING_ROOM,
             leaving: 65_536,
+        });
+        assert_eq!(how, Aloud::Says, "too little room for what leaves");
+        let (how, line) = room_said(&Room {
+            arriving: ARRIVING_ROOM,
+            leaving: LEAVING_ROOM,
         });
         assert_eq!(how, Aloud::Hunts);
         assert_eq!(
             line,
-            "the system holds 8388608 bytes of what arrives on this socket, and 65536 of what \
-             leaves"
+            "the system holds 8388608 bytes of what arrives on this socket, and 1048576 of \
+             what leaves"
         );
     }
 

@@ -925,7 +925,7 @@ mod tests {
     #[tokio::test]
     async fn an_end_of_our_own_holds_more_room_than_a_plain_socket_gets() {
         let plain = std::net::UdpSocket::bind(local()).unwrap();
-        let by_default = room_of(&plain).arriving;
+        let by_default = room_of(&plain);
         let host = TunnelEndpoint::host(
             &Identity::generate().unwrap(),
             Identity::generate().unwrap().fingerprint(),
@@ -935,11 +935,17 @@ mod tests {
         .unwrap();
         let room = host.room().expect("it bound its own socket");
         assert!(
-            room.arriving > by_default,
-            "{} bytes held, {by_default} by default",
-            room.arriving
+            room.arriving > by_default.arriving,
+            "{} bytes held, {} by default",
+            room.arriving,
+            by_default.arriving
         );
-        assert!(room.leaving > 0);
+        assert!(
+            room.leaving > by_default.leaving,
+            "{} bytes held of what leaves, {} by default",
+            room.leaving,
+            by_default.leaving
+        );
     }
 
     impl Pair {
