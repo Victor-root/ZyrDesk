@@ -4,10 +4,23 @@
 //! own rate, and a session wants at most `fps` pictures a second. A
 //! captured image goes at once if at least 7/8 of a period passed since
 //! the last captured image went: a screen refreshing at the rate asked
-//! (60 Hz for 60 fps), or slightly faster, never waits, its jitter never
-//! costs a frame of delay, and no delay builds up. Sooner than that, the
+//! (60 Hz for 60 fps) never waits, its jitter never costs a frame of
+//! delay, and no delay builds up. Sooner than that, the
 //! image is held (a newer capture replacing it) and goes when its time
-//! comes, which keeps a faster screen below 8/7 of the rate asked.
+//! comes.
+//!
+//! Captured images also keep to the rate asked over the long run: each
+//! one that goes books a period on a grid, and an image may run at most a
+//! quarter of a period ahead of that grid. A screen that gives more
+//! images than the rate, in bursts or a little faster, is then sent at
+//! the rate and not beyond it: the player shows one picture a refresh,
+//! and every picture beyond the rate waited behind another there before
+//! being thrown away. A quarter of a period is the jitter of a screen at
+//! the rate, which never waits for it: a late image moves the grid, and
+//! the next one, on time, is early by its lateness. A screen a little
+//! faster than the rate drifts ahead until it waits, at most a period,
+//! and one image is left out: the same image the player would otherwise
+//! have thrown away, at the same cost in waiting.
 //!
 //! With `steady`, a screen that stays still is sent again at the full
 //! rate, for a player that paces its display on arrivals: the first
@@ -66,6 +79,8 @@ pub struct Cadence {
     steady: bool,
     /// When the last captured image went.
     captured_sent: Option<Instant>,
+    /// When the next captured image is due on the grid of the rate.
+    captured_due: Option<Instant>,
     /// When the last picture went, captured or repeated.
     last_sent: Option<Instant>,
     holding: bool,
@@ -82,6 +97,7 @@ impl Cadence {
             period: period_of(fps),
             steady,
             captured_sent: None,
+            captured_due: None,
             last_sent: None,
             holding: false,
             next_slot: None,
@@ -94,6 +110,9 @@ impl Cadence {
         self.period = period_of(fps);
         // Counted in periods of the old rate.
         self.next_slot = None;
+        self.captured_due = self
+            .captured_sent
+            .and_then(|at| at.checked_add(self.period));
         self.restart_idle();
     }
 
@@ -156,11 +175,17 @@ impl Cadence {
 
     /// When a captured image may go, after the last one that went.
     fn held_until(&self) -> Option<Instant> {
-        self.captured_sent?.checked_add(self.period * 7 / 8)
+        let after_the_last = self.captured_sent?.checked_add(self.period * 7 / 8)?;
+        let on_the_grid = self
+            .captured_due
+            .and_then(|due| due.checked_sub(self.period / 4));
+        Some(on_the_grid.map_or(after_the_last, |grid| grid.max(after_the_last)))
     }
 
     fn captured_went(&mut self, at: Instant) {
         self.captured_sent = Some(at);
+        let booked = self.captured_due.map_or(at, |due| due.max(at));
+        self.captured_due = booked.checked_add(self.period);
         self.last_sent = Some(at);
         self.holding = false;
         let taken = self.next_slot.map_or(at, |free| free.max(at));
@@ -273,35 +298,89 @@ mod tests {
     }
 
     #[test]
-    fn a_screen_slightly_faster_never_drifts() {
-        let interval = Duration::from_secs_f64(1.0 / 60.1);
-        let captures = source(interval, 10, Duration::ZERO, &mut Noise::new(51));
-        let mut cadence = Cadence::new(60, true);
-        let sent = run(&mut cadence, &captures, Duration::from_secs(11));
-        let captured: Vec<_> = sent
+    fn a_screen_at_the_rate_is_not_held_back_by_one_late_image() {
+        let period = Duration::from_secs(1) / 60;
+        let mut captures: Vec<_> = (0..60).map(|n| period * n).collect();
+        captures[10] += us(3_000);
+        let mut cadence = Cadence::new(60, false);
+        let sent = run(&mut cadence, &captures, Duration::from_secs(1));
+        let pictures: Vec<_> = sent
             .iter()
-            .filter(|(_, what)| *what != Sent::Repeat)
+            .filter(|(_, what)| *what != Sent::Still)
             .collect();
-        assert_eq!(captured.len(), captures.len());
-        for ((at, what), capture) in captured.iter().zip(&captures) {
-            assert_eq!((*at, *what), (*capture, Sent::Captured));
+        assert_eq!(pictures.len(), captures.len());
+        // The one right after it is closer than seven eighths of a period
+        // and waits for that; every one after goes as it comes.
+        assert_eq!(*pictures[11], (captures[10] + period * 7 / 8, Sent::Held));
+        for (n, ((at, what), captured)) in pictures.iter().zip(&captures).enumerate() {
+            if n != 11 {
+                assert_eq!((*at, *what), (*captured, Sent::Captured));
+            }
         }
     }
 
     #[test]
-    fn a_faster_screen_stays_below_eight_sevenths_of_the_rate() {
-        let interval = Duration::from_secs(1) / 144;
-        let captures = source(interval, 10, Duration::ZERO, &mut Noise::new(52));
+    fn a_screen_slightly_faster_is_sent_at_the_rate_and_waits_less_than_a_period() {
+        let interval = Duration::from_secs_f64(1.0 / 60.1);
+        let captures = source(interval, 20, Duration::ZERO, &mut Noise::new(51));
         let mut cadence = Cadence::new(60, false);
-        let sent = run(&mut cadence, &captures, Duration::from_secs(10));
-        let period = Duration::from_secs(1) / 60;
-        for pair in sent.windows(2) {
-            assert!(pair[1].0 - pair[0].0 >= period * 7 / 8, "{pair:?}");
+        let sent = run(&mut cadence, &captures, Duration::from_secs(21));
+        let pictures: Vec<_> = sent
+            .iter()
+            .filter(|(_, what)| *what != Sent::Still)
+            .collect();
+        assert!(pictures.len() < captures.len());
+        assert!(pictures.len() >= captures.len() - 3, "{}", pictures.len());
+        for (at, _) in &pictures {
+            let captured = captures.iter().rev().find(|capture| *capture <= at);
+            assert!(*at - *captured.unwrap() < interval, "{at:?}");
         }
-        let per_second = sent.len() as f64 / 10.0;
-        assert!(per_second <= 60.0 * 8.0 / 7.0 + 0.1, "{per_second}");
-        assert!(per_second >= 60.0, "{per_second}");
-        assert!(sent.iter().any(|(_, what)| *what == Sent::Held));
+        let period = Duration::from_secs(1) / 60;
+        let (first, last) = (pictures[0].0, pictures[pictures.len() - 1].0);
+        assert!(
+            last - first >= period * (pictures.len() as u32 - 2),
+            "{last:?}"
+        );
+    }
+
+    #[test]
+    fn a_faster_screen_never_goes_beyond_the_rate() {
+        let period = Duration::from_secs(1) / 60;
+        let mut noise = Noise::new(52);
+        let sources = [
+            source(Duration::from_secs(1) / 144, 10, Duration::ZERO, &mut noise),
+            {
+                // Bursts: a screen giving one to three images a refresh.
+                let mut at = Duration::ZERO;
+                (0..1200)
+                    .map(|_| {
+                        at += us(1_000 + noise.below(12_000) as u64);
+                        at
+                    })
+                    .collect()
+            },
+        ];
+        for captures in &sources {
+            let mut cadence = Cadence::new(60, false);
+            let sent = run(&mut cadence, captures, Duration::from_secs(10));
+            let pictures: Vec<_> = sent
+                .iter()
+                .filter(|(_, what)| *what != Sent::Still)
+                .collect();
+            for pair in pictures.windows(2) {
+                assert!(pair[1].0 - pair[0].0 >= period * 3 / 4, "{pair:?}");
+            }
+            let (first, last) = (pictures[0].0, pictures[pictures.len() - 1].0);
+            assert!(
+                last - first >= period * (pictures.len() as u32 - 1) - period / 4,
+                "{} pictures from {first:?} to {last:?}",
+                pictures.len()
+            );
+            let lasted = (*captures.last().unwrap()).min(Duration::from_secs(10));
+            let at_the_rate = (lasted.as_secs_f64() * 60.0) as usize;
+            assert!(pictures.len() + 2 >= at_the_rate, "{}", pictures.len());
+            assert!(pictures.iter().any(|(_, what)| *what == Sent::Held));
+        }
     }
 
     #[test]

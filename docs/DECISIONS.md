@@ -4328,6 +4328,18 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** L'interrupteur part du réglage de l'accueil à chaque session. Il ne bascule que si l'hôte a obéi : un refus s'affiche et la ligne reste où elle était, pour ne jamais dire que la pièce est silencieuse quand elle ne l'est pas. Un changement fait ici est écrit dans le réglage de l'accueil, comme le presse-papiers, pour que les deux ne se contredisent pas.
 
+## D268. L'hôte n'envoie jamais plus d'images par seconde que la session n'en demande (2026-10-12, pendant MZ)
+
+**Ce que Victor a vu.** Le voyant du réseau allumé en permanence pendant une session en réseau local, avec des « pertes d'images ».
+
+**Ce que le journal disait.** Aucune perte sur le chemin, 0,7 ms de réseau. Mais l'écran de l'hôte rendait 65 à 82 images par seconde, par rafales, pour une session à 60, et l'hôte en envoyait 65 à 68. La règle de la cadence laissait partir une image dès que sept huitièmes de période s'étaient écoulés depuis la précédente, ce qui plafonnait l'envoi à 8/7 de la cadence demandée, soit 68,6 images par seconde. Le lecteur n'en montre qu'une par rafraîchissement : les autres attendaient derrière, jusqu'à 25 ms de plus entre l'arrivée et l'écran (57 à 74 ms de la capture à l'écran, contre 40 dans la session suivante), puis étaient remplacées. Ces 9 à 12 % d'images remplacées comptent comme un réseau qui tremble, et allumaient le voyant.
+
+**Décision : les images capturées tiennent la cadence sur la durée.** Chaque image qui part réserve une période sur une grille, et une image ne peut prendre qu'un quart de période d'avance sur cette grille. La règle des sept huitièmes reste pour l'écart entre deux images. Un écran au rythme demandé n'attend jamais : son irrégularité tient dans ce quart, et une image en retard déplace la grille plutôt que de faire attendre les suivantes. Un écran plus rapide, par rafales ou de peu, est envoyé à la cadence demandée et pas au-delà.
+
+**Ce que ça change pour un écran à peine plus rapide.** Il prend de l'avance jusqu'à attendre, au plus une période, puis une image est laissée de côté. C'est l'image que le lecteur aurait jetée, avec la même attente : l'écran de l'ordinateur qui regarde ne montre pas plus d'images que son rafraîchissement. Rien n'est perdu, et l'encodage comme le débit de cette image sont économisés.
+
+**Ce qui se voit.** Le voyant du réseau ne s'allume plus pour des images que l'hôte envoyait en trop. Dans le journal, la ligne `pace` de l'hôte compte 60 images par seconde au plus, et la ligne `flow` du lecteur ne compte presque plus d'images remplacées. Les essais de la cadence vérifient un écran à 144 Hz, un écran par rafraîchissement irrégulier, un écran à 60,1 Hz et une image en retard au milieu d'un écran régulier.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
