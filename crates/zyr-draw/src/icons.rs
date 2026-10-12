@@ -64,6 +64,12 @@ pub const SOUND: Icon = icon_of(&[
     Stroke::SvgPath("M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"),
 ]);
 
+/// A speaker standing in a room, for the sound of the far computer.
+pub const FAR_SPEAKERS: Icon = icon_of(&[
+    Stroke::RoundRect(5.0, 3.0, 14.0, 18.0, 2.0),
+    Stroke::SvgPath("M9 14a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M12 7h.01"),
+]);
+
 pub const KEYBOARD: Icon = icon_of(&[
     Stroke::RoundRect(2.0, 5.0, 20.0, 14.0, 2.0),
     Stroke::SvgPath("M6 9h1M9.5 9h1M13 9h1M16.5 9h1M6 13h1M9.5 13h5M17 13h1"),

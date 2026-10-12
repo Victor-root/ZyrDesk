@@ -491,6 +491,23 @@ pub async fn remember_shared_clipboard(shared: bool) {
     .await;
 }
 
+/// Writes down whether the far computer's speakers are silenced.
+pub async fn remember_muted_far_speakers(quiet: bool) {
+    remember(
+        "whether the far speakers are silenced",
+        format!(
+            "the far computer's speakers will {} for the sessions to come",
+            if quiet { "be silenced" } else { "play" }
+        ),
+        |preferred| {
+            let moved = preferred.mute_far_speakers != quiet;
+            preferred.mute_far_speakers = quiet;
+            moved
+        },
+    )
+    .await;
+}
+
 /// What the service has been told a session should look like.
 ///
 /// The ordinary settings when it cannot be asked: a session is about to

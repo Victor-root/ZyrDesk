@@ -4320,6 +4320,14 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui n'est pas mesuré.** Sous Linux le système plafonne la demande, et l'essai le voit ; sous Windows, la ligne « the system holds ... of what leaves » de chaque ouverture dira ce qui est accordé.
 
+## D267. Les enceintes de l'hôte se coupent aussi depuis le bouton flottant (2026-10-12, pendant MZ)
+
+**Ce que Victor a demandé.** Pouvoir choisir pendant la session si le son sort ou non sur le PC physique de l'hôte, sans repasser par les réglages.
+
+**Ce qui est fait.** Une ligne « Enceintes de l'hôte » (Allumées / Coupées) dans le menu du bouton flottant, entre le son d'ici et le clavier. Elle pose la même demande que celle de l'ouverture ([D64](#d64-couper-le-son-den-face-se-décide-du-côté-qui-regarde-2026-08-27-pendant-m4)), sur la même voie : rien ne change du mécanisme ni des dialogues entre deux versions.
+
+**Ce qui se voit.** L'interrupteur part du réglage de l'accueil à chaque session. Il ne bascule que si l'hôte a obéi : un refus s'affiche et la ligne reste où elle était, pour ne jamais dire que la pièce est silencieuse quand elle ne l'est pas. Un changement fait ici est écrit dans le réglage de l'accueil, comme le presse-papiers, pour que les deux ne se contredisent pas.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

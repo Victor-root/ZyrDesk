@@ -137,6 +137,8 @@ pub enum Act {
     LockScreen,
     /// The session's own sound, hushed or given back on this computer.
     Sound,
+    /// The speakers of the far computer, silenced or played again.
+    FarSpeakers,
     /// Which of the two computers Alt+Tab, Escape and the Windows key
     /// belong to.
     SystemKeys,
@@ -167,6 +169,8 @@ pub struct Floating {
     /// tunnel, and this window's whole part in it is to say which way the
     /// switch is and to write that down.
     clipboard: AtomicBool,
+    /// Whether the far computer's speakers are silenced for this session.
+    far_silent: AtomicBool,
     /// Whether the two badges in the corner of the picture are drawn at
     /// all times.
     ///
@@ -496,6 +500,9 @@ pub fn adopt(app: &App, preferred: &zyr_proto::session::Preferred) {
     state
         .clipboard
         .store(preferred.shared_clipboard, Ordering::Relaxed);
+    state
+        .far_silent
+        .store(preferred.mute_far_speakers, Ordering::Relaxed);
     state
         .figures
         .store(preferred.stats_overlay, Ordering::Relaxed);
@@ -855,6 +862,11 @@ pub fn the_clipboard_is_shared(app: &App) -> bool {
     app.floating().clipboard.load(Ordering::Relaxed)
 }
 
+/// Whether the far computer's speakers are silenced right now.
+pub fn the_far_speakers_are_silent(app: &App) -> bool {
+    app.floating().far_silent.load(Ordering::Relaxed)
+}
+
 /// Whether the badges in the corner of the picture are being held on
 /// screen rather than left to show themselves.
 pub fn the_badges_are_held_up(app: &App) -> bool {
@@ -903,6 +915,22 @@ async fn share_the_clipboard(app: &App) -> Result<(), Fact> {
     let shared = !state.clipboard.load(Ordering::Relaxed);
     state.clipboard.store(shared, Ordering::Relaxed);
     crate::shell::settings::remember_shared_clipboard(shared).await;
+    Ok(())
+}
+
+/// Silences the far computer's speakers, or lets them play again.
+///
+/// Asked of that computer first and written down only once it has done
+/// it: a switch left on the side that was refused would say the room is
+/// quiet when it is not. Written down as well for the next session, like
+/// the clipboard, because the settings screen holds the same choice and
+/// the two must never disagree.
+async fn hush_the_far_speakers(app: &App) -> Result<(), Fact> {
+    let state = app.floating();
+    let quiet = !state.far_silent.load(Ordering::Relaxed);
+    crate::session::hush_over_there(quiet).await?;
+    state.far_silent.store(quiet, Ordering::Relaxed);
+    crate::shell::settings::remember_muted_far_speakers(quiet).await;
     Ok(())
 }
 
@@ -998,6 +1026,7 @@ pub async fn ask(app: &App, act: Act) -> Result<(), Fact> {
         Act::SecureAttention => crate::session::press_ctrl_alt_del_over_there().await,
         Act::LockScreen => crate::session::lock_over_there().await,
         Act::Sound => hush_the_session(),
+        Act::FarSpeakers => hush_the_far_speakers(app).await,
         Act::SystemKeys => change_the_keyboard().await,
         Act::Clipboard => share_the_clipboard(app).await,
         Act::Badges => always_show_the_badges(app),

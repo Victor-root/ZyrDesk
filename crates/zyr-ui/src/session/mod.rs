@@ -275,6 +275,14 @@ pub async fn lock_over_there() -> Result<(), Fact> {
     answer.map(|_| ())
 }
 
+/// Silences the far computer's speakers, or lets them play again.
+pub async fn hush_over_there(quiet: bool) -> Result<(), Fact> {
+    let way = the_way().ok_or_else(none_under_way)?;
+    service::ask(&Request::Hush { way, quiet })
+        .await
+        .map(|_| ())
+}
+
 /// Which of the far computer's screens this session is served from.
 ///
 /// Empty is that computer's main screen, which is what every session

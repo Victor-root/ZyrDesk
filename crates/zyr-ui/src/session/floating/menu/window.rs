@@ -389,6 +389,10 @@ pub(super) fn reread_the_toggles(app: &App) {
         crate::session::floating::the_clipboard_is_shared(app),
     );
     change |= set(&HELD, crate::session::floating::the_badges_are_held_up(app));
+    change |= set(
+        &FAR_SILENT,
+        crate::session::floating::the_far_speakers_are_silent(app),
+    );
     // Without a session there is no player to ask, and the card does not
     // open without a session: the switch is then left as it is rather
     // than turned off.

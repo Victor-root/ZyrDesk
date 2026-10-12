@@ -135,7 +135,7 @@ pub(super) enum Setting {
 }
 
 /// What the card holds, in order.
-pub(super) const LINES: [Line; 21] = [
+pub(super) const LINES: [Line; 22] = [
     Line::Measures,
     // Just under the readings, so at the top of what is read: what has
     // just been refused is read before whatever was going to be clicked
@@ -176,6 +176,16 @@ pub(super) const LINES: [Line; 21] = [
         sides: [key!("menu.sound_on"), key!("menu.sound_muted")],
         act: Act::Sound,
         state: &MUTED,
+    }),
+    Line::Toggle(Toggle {
+        icon: &icons::FAR_SPEAKERS,
+        label: key!("menu.far_speakers"),
+        sides: [
+            key!("menu.far_speakers_playing"),
+            key!("menu.far_speakers_silent"),
+        ],
+        act: Act::FarSpeakers,
+        state: &FAR_SILENT,
     }),
     Line::Toggle(Toggle {
         icon: &icons::KEYBOARD,

@@ -122,6 +122,7 @@ static ROUND: AtomicU32 = AtomicU32::new(0);
 /// rather than what is, is a switch nobody believes twice.
 static IN_GAME: AtomicBool = AtomicBool::new(false);
 static MUTED: AtomicBool = AtomicBool::new(false);
+static FAR_SILENT: AtomicBool = AtomicBool::new(false);
 static IMMERSIVE: AtomicBool = AtomicBool::new(false);
 static SHARED: AtomicBool = AtomicBool::new(false);
 static HELD: AtomicBool = AtomicBool::new(false);
