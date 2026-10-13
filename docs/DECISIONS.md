@@ -4410,6 +4410,19 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Pour le prochain journal.** La ligne `present:` dit combien de fois l'écran a été daté par la fenêtre, par les statistiques vidéo ou pas du tout, et la ligne `pacing` du client doit maintenant compter des images à l'heure ou en retard au lieu de zéros.
 
+## D274. Une cadence que l'écran ne date plus est abandonnée (2026-10-13, pendant MZ)
+
+> Reprend [D273](#d273-le-client-retire-d271-et-d272-et-lit-les-temps-de-lécran-par-les-statistiques-vidéo-2026-10-13-pendant-mz).
+
+**Ce que le journal a montré.** Quand la fenêtre de session passe par le compositeur de Windows (au retour depuis la barre des tâches), l'écran date ses rafraîchissements et la cadence du client en apprend le rythme. Dès que la fenêtre repasse directement à l'écran, plus rien ne date l'écran, pas même les statistiques vidéo de D273, et la cadence gardait le rythme appris, que plus rien ne recalait. Elle retenait donc des images pour des fenêtres placées sur un rythme qui glissait doucement par rapport au vrai : la moitié des images attendaient un rafraîchissement de plus, et un saut de 26 ms revenait à peu près chaque seconde, quand les deux rythmes se croisaient. Dans ce mode, l'appel qui remet l'image à Windows attend de toute façon qu'elle soit affichée, ce qui suffit à n'en montrer qu'une par rafraîchissement.
+
+**Décision.**
+
+- Si l'écran n'a rien dit de ses rafraîchissements depuis une demi-seconde, la cadence oublie le rythme appris et présente chaque image dès qu'elle est décodée, la plus récente remplaçant celle qui attend encore. Elle le réapprend dès que l'écran date de nouveau ses rafraîchissements.
+- Le repli de D273 sur les statistiques vidéo est retiré : il n'a jamais rien daté. On garde seulement ce qu'elles disent du mode d'affichage et du nombre d'images en attente, pour le journal.
+
+**Ce qui se voit.** Plus de saut régulier toutes les secondes, et un rafraîchissement de retard en moins pour environ la moitié des images quand la fenêtre est affichée directement à l'écran.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

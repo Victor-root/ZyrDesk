@@ -65,7 +65,12 @@
 //!
 //! Until the screen has said when its refreshes are, a picture is
 //! presented as soon as it is decoded, the newest replacing any not yet
-//! presented.
+//! presented. So again once it has said nothing for half a second, as
+//! when the window goes to the screen straight, without the compositor:
+//! a rhythm nobody times any more drifts from the screen's, and windows
+//! drawn on it held pictures a refresh for nothing, one more each time
+//! the two slipped apart. Presenting then waits for the picture to be
+//! shown, which paces the pictures one a refresh by itself.
 
 use std::cmp::Ordering;
 use std::collections::VecDeque;
@@ -112,6 +117,10 @@ const MOST_WAITING: usize = 2;
 /// up together and let through at once: the newer takes the older's
 /// place while both wait.
 const BURST: u32 = 4;
+
+/// How long the screen may say nothing of its refreshes before the
+/// rhythm known is let go of.
+const UNTIMED_FOR: Duration = Duration::from_millis(500);
 
 /// Presents remembered until the screen says what became of them.
 const MOST_PENDING: usize = 16;
@@ -269,6 +278,8 @@ pub(crate) struct Pacer<T> {
     served_repeat: bool,
     /// When the last picture was presented.
     presented_at: Option<Instant>,
+    /// When the screen last said when its refreshes are.
+    timed_at: Option<Instant>,
     /// How long before a refresh its window closes, as learnt; never
     /// more than two thirds of a refresh when used.
     cutoff: Duration,
@@ -296,6 +307,7 @@ impl<T> Pacer<T> {
             served: None,
             served_repeat: false,
             presented_at: None,
+            timed_at: None,
             cutoff: CUTOFF,
             cutoff_moved: None,
             pending: VecDeque::new(),
@@ -456,8 +468,20 @@ impl<T> Pacer<T> {
     ) {
         self.presented_at = Some(presented);
         let Some(screen) = screen else {
+            if self.refreshes.is_some()
+                && self
+                    .timed_at
+                    .is_none_or(|at| presented.saturating_duration_since(at) >= UNTIMED_FOR)
+            {
+                self.forget_the_screen();
+                self.log.debug(
+                    "pacing: the screen has said nothing of its refreshes for half a second; \
+                     pictures go as soon as decoded",
+                );
+            }
             return;
         };
+        self.timed_at = Some(presented);
         if let Some(due) = due {
             if self.pending.len() == MOST_PENDING {
                 self.pending.pop_front();
@@ -1441,6 +1465,23 @@ mod tests {
             compositor_missed: 0,
             compositor_dropped: 0,
         }
+    }
+
+    #[test]
+    fn a_screen_that_stops_timing_its_refreshes_is_no_longer_paced() {
+        let journal = testing::OwnLog::new("pacing-untimed");
+        let mut pacer = Pacer::new(&journal.log);
+        let at = Instant::now();
+        pacer.after(None, at, Some(&said(1, 1_000, at)));
+        assert!(pacer.refreshes.is_some());
+        pacer.after(None, at + UNTIMED_FOR / 2, None);
+        assert!(pacer.refreshes.is_some(), "a moment of silence keeps it");
+        let later = at + UNTIMED_FOR;
+        pacer.after(None, later, None);
+        assert!(pacer.refreshes.is_none());
+        pacer.ready(7u32, later, false);
+        let turn = pacer.due(later).unwrap();
+        assert_eq!((turn.picture, turn.due), (7, None), "goes at once");
     }
 
     #[test]

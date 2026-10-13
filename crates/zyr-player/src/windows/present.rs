@@ -356,9 +356,8 @@ impl Drawing {
 struct Gpu {
     device: Device,
     swap: IDXGISwapChain1,
-    /// The swap chain's statistics for video, which time the screen
-    /// where its own statistics stay empty, as when the screen shows the
-    /// pictures straight.
+    /// The swap chain's statistics for video, which say how the screen
+    /// shows the pictures and how many it has shown.
     media: Option<IDXGISwapChainMedia>,
     flags: DXGI_SWAP_CHAIN_FLAG,
     target: Option<ID3D11RenderTargetView>,
@@ -397,9 +396,9 @@ struct Spent {
     /// present: composed by the compositor, put straight on the screen,
     /// not shown, composition failed, or nothing said.
     shown_by: [u32; 5],
-    /// What timed the screen after each present: the swap chain's own
-    /// statistics, its statistics for video, or nothing.
-    timed_by: [u32; 3],
+    /// Whether the swap chain's statistics timed the screen after each
+    /// present, or said nothing.
+    timed_by: [u32; 2],
     /// Presents the screen had not shown yet, after each present.
     waiting: Spread,
     /// How long after a refresh of the screen each Present returned.
@@ -434,12 +433,12 @@ impl Spent {
                 .join(", ")
         };
         let [composed, overlay, none, failed, unsaid] = self.shown_by;
-        let [own, media, untimed] = self.timed_by;
+        let [timed, untimed] = self.timed_by;
         let mut line = format!(
             "present: drawing {} ms, Present {} ms, returning {} ms after a refresh \
              (median/95th/worst); shown composed {composed}, straight on the screen {overlay}, \
-             not shown {none}, composition failed {failed}, unsaid {unsaid}; timed by the swap \
-             chain {own}, by its statistics for video {media}, not at all {untimed}",
+             not shown {none}, composition failed {failed}, unsaid {unsaid}; screen timed {timed} \
+             times, not {untimed}",
             self.drawing, self.presenting, self.after_refresh
         );
         if !self.waiting.is_empty() {
@@ -780,9 +779,10 @@ impl Gpu {
     }
 
     /// What the screen showed of this swap chain's pictures: its own
-    /// statistics, or its statistics for video where those stay empty,
-    /// and the compositor's for the refresh and what it missed. Nothing
-    /// while the system has nothing to say.
+    /// statistics, and the compositor's for the refresh and what it
+    /// missed. Nothing while the system has nothing to say, as before the
+    /// first picture reaches the screen, or when the screen shows the
+    /// pictures straight.
     fn displayed(&self) -> Option<Displayed> {
         // SAFETY: a getter on a live swap chain.
         let presented = unsafe { self.swap.GetLastPresentCount() }.ok()?;
@@ -795,30 +795,18 @@ impl Gpu {
                 .map(|()| statistics)
         });
         let own = self.own_statistics();
-        let by_media = media.and_then(|statistics| {
-            Timed::of(
-                statistics.PresentCount,
-                statistics.PresentRefreshCount,
-                statistics.SyncRefreshCount,
-                statistics.SyncQPCTime,
-            )
-        });
         {
             let mut spent = self.spent.borrow_mut();
             let mode = media.map(|statistics| statistics.CompositionMode);
             spent.shown_by[mode_index(mode)] += 1;
-            spent.timed_by[match (own, by_media) {
-                (Some(_), _) => 0,
-                (None, Some(_)) => 1,
-                (None, None) => 2,
-            }] += 1;
+            spent.timed_by[usize::from(own.is_none())] += 1;
             if let Some(statistics) = media.filter(|statistics| statistics.PresentCount != 0) {
                 spent
                     .waiting
                     .add_value(presented.saturating_sub(statistics.PresentCount) as f32);
             }
         }
-        let statistics = own.or(by_media)?;
+        let statistics = own?;
         let mut timing = DWM_TIMING_INFO {
             cbSize: size_of::<DWM_TIMING_INFO>() as u32,
             ..Default::default()
