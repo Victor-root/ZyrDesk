@@ -65,28 +65,37 @@ pub struct Shown {
     pub checksum: Option<u64>,
 }
 
-/// What the screen really showed, as the system tells it.
+/// What the screen says: when it refreshes, and what it really showed.
 ///
 /// Presenting a picture is asking for it to be shown; the compositor then
 /// shows it at a refresh of the screen, a later one, or never when a
-/// newer picture came before its refresh. Only this says which.
+/// newer picture came before its refresh. Only the system says which,
+/// and not always.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Displayed {
+    /// The last refresh timed, and when: the refreshes to come are
+    /// counted from it.
+    pub timed: u64,
+    pub timed_at: Instant,
+    /// How long a refresh of the screen lasts.
+    pub refresh: Duration,
+    /// What became of the pictures presented, when the system says: it
+    /// does not where the window goes to the screen straight, without
+    /// the compositor.
+    pub pictures: Option<Pictures>,
+}
+
+/// What the screen showed of the pictures presented, as the system says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pictures {
     /// Pictures presented so far on this surface.
     pub presented: u64,
     /// The last of them the screen showed, counted the same way.
     pub shown: u64,
-    /// The refresh of the screen it appeared at, counted since the screen
-    /// started.
+    /// The refresh it appeared at, counted as the refreshes timed are.
     pub at_refresh: u64,
     /// When that refresh was.
     pub at: Instant,
-    /// The last refresh the system timed, and when it was: the refreshes
-    /// to come are counted from it.
-    pub timed: u64,
-    pub timed_at: Instant,
-    /// How long a refresh of the screen lasts, as the system says.
-    pub refresh: Duration,
     /// Compositions the desktop's compositor missed, and frames it
     /// dropped, since it started.
     pub compositor_missed: u64,
@@ -120,8 +129,8 @@ pub trait Presenter {
     /// Makes everything again after [`Fault::Lost`].
     fn renew(&mut self) -> Result<(), String>;
 
-    /// What the screen showed of the pictures presented, when the system
-    /// says. Nothing where there is no screen.
+    /// When the screen refreshes, and what it showed of the pictures
+    /// presented, when the system says. Nothing where there is no screen.
     fn displayed(&self) -> Option<Displayed> {
         None
     }

@@ -4450,6 +4450,22 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Rien de plus que le retrait du plafond : la session suit l'image de l'hôte avec environ 20 ms de moins.
 
+## D277. Le client date lui-même les rafraîchissements de l'écran quand sa fenêtre va droit à l'écran (2026-10-13, pendant MZ)
+
+> Complète [D274](#d274-une-cadence-que-lécran-ne-date-plus-est-abandonnée-2026-10-13-pendant-mz) et [D276](#d276-d275-est-retiré--lécran-nattendait-que-parce-que-le-pilote-limitait-les-images-2026-10-13-pendant-mz).
+
+**Ce que Victor a vu.** Plafond du pilote retiré, la capture à l'écran tombe à 12 ms, mais il reste de petits à-coups quand ça bouge, surtout en déplaçant des fenêtres ou pendant les animations de Windows. Le journal montre pourquoi : quand la fenêtre de session va droit à l'écran, sans le compositeur, Windows ne dit plus quand l'écran se rafraîchit. Chaque image part donc dès qu'elle est décodée, et les images arrivent du réseau tantôt à 6 ms, tantôt à 23 ms d'écart : deux tombent parfois sur le même rafraîchissement, la première n'est jamais vue, et le rafraîchissement d'après remontre l'ancienne.
+
+**Décision.**
+
+- Un fil du lecteur attend chaque rafraîchissement de l'écran où est la fenêtre (`WaitForVBlank` de sa sortie) et note quand il se réveille. La durée d'un rafraîchissement est le milieu des derniers écarts, chacun ramené au nombre de rafraîchissements qu'il couvre : un réveil en retard qui en saute un ne fausse ni le compte ni la durée. Le fil suit la fenêtre d'un écran à l'autre.
+- Quand la fenêtre va droit à l'écran, ce que dit l'écran se réduit à ces rafraîchissements, sans ce qu'il a montré. La cadence s'en sert comme des autres : une image par rafraîchissement, dans l'ordre, avec le rattrapage habituel.
+- Sans compositeur à attendre, la fenêtre d'un rafraîchissement se ferme 3 ms avant lui, et non 6, et n'en bouge pas : rien ne dit quand une image l'a manqué.
+- Quand l'écran passe d'une façon de dire à l'autre (fenêtre composée, ou droit à l'écran), la cadence repart de zéro : les deux ne comptent pas les rafraîchissements de la même façon.
+- Le journal dit chaque seconde la durée trouvée et l'écart des réveils (`refreshes: one every … ms, woken … ms off the rhythm`), et la ligne `pacing` repasse à « presented one a refresh ».
+
+**Ce qui se voit.** Des mouvements réguliers, une image par rafraîchissement, au prix d'un peu d'attente pour les images arrivées dans les 3 dernières millisecondes avant un rafraîchissement.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -21,7 +21,7 @@ use zyr_media::trace::{Seconds, Spread, ms};
 use zyr_media::video::{AssembledFrame, AssemblyCounters, GivenUp, Gone};
 use zyr_proto::log::Log;
 
-use crate::present::Displayed;
+use crate::present::{Displayed, Pictures};
 
 /// What these lines are filed under in the journal.
 pub const TAG: &str = "flow";
@@ -46,7 +46,7 @@ pub(crate) struct Flow {
     last_whole: Option<Instant>,
     last_presented: Option<Instant>,
     /// What the screen said last, which the next saying is counted from.
-    screen: Option<Displayed>,
+    screen: Option<Pictures>,
     /// Presents the screen has not been seen to show yet: their number,
     /// when they were presented, and how long after their capture.
     presents: VecDeque<(u64, Instant, Option<Duration>)>,
@@ -252,21 +252,24 @@ impl Flow {
             .presenting
             .add(done.saturating_duration_since(started));
         let _ = write!(second.presents, " {:.1}", every.map_or(0.0, ms));
-        if let Some(screen) = screen {
+        if let Some(screen) = screen
+            && let Some(pictures) = screen.pictures
+        {
             if self.presents.len() == REMEMBERED {
                 self.presents.pop_front();
             }
             self.presents
-                .push_back((screen.presented, done, since_capture));
-            self.screen_said(screen);
+                .push_back((pictures.presented, done, since_capture));
+            self.screen_said(pictures, screen.refresh);
         }
     }
 
-    /// Counts what the screen showed since it last said.
-    fn screen_said(&mut self, now: Displayed) {
+    /// Counts what the screen showed since it last said, refreshing
+    /// every `refresh`.
+    fn screen_said(&mut self, now: Pictures, refresh: Duration) {
         let second = &mut self.second;
         second.screen_seen = true;
-        second.refresh = Some(now.refresh);
+        second.refresh = Some(refresh);
         // A surface made again counts from nought: nothing to compare.
         let Some(before) = self
             .screen
@@ -467,15 +470,17 @@ mod tests {
 
     fn screen(at: Instant, presented: u64, shown: u64, refresh: u64) -> Displayed {
         Displayed {
-            presented,
-            shown,
-            at_refresh: refresh,
-            at: at + Duration::from_micros(refresh * 16_667),
             timed: refresh,
             timed_at: at + Duration::from_micros(refresh * 16_667),
             refresh: Duration::from_micros(16_667),
-            compositor_missed: 0,
-            compositor_dropped: 0,
+            pictures: Some(Pictures {
+                presented,
+                shown,
+                at_refresh: refresh,
+                at: at + Duration::from_micros(refresh * 16_667),
+                compositor_missed: 0,
+                compositor_dropped: 0,
+            }),
         }
     }
 

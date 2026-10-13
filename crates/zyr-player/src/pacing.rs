@@ -65,12 +65,17 @@
 //!
 //! Until the screen has said when its refreshes are, a picture is
 //! presented as soon as it is decoded, the newest replacing any not yet
-//! presented. So again once it has said nothing for half a second, as
-//! when the window goes to the screen straight, without the compositor:
-//! a rhythm nobody times any more drifts from the screen's, and windows
+//! presented. So again once it has said nothing for half a second: a
+//! rhythm nobody times any more drifts from the screen's, and windows
 //! drawn on it held pictures a refresh for nothing, one more each time
-//! the two slipped apart. Nothing paces the pictures there yet: they
-//! land on the screen as unevenly as they come.
+//! the two slipped apart.
+//!
+//! Where the window goes to the screen straight, without the compositor,
+//! the screen still says when it refreshes, but not what it showed: the
+//! refreshes are counted another way, and what was said before is let go
+//! of when the screen starts or stops saying what it showed. With no
+//! compositor to wait for, the window closes 3 ms before the refresh,
+//! and stays there, since no miss is ever told.
 
 use std::cmp::Ordering;
 use std::collections::VecDeque;
@@ -80,7 +85,7 @@ use zyr_media::trace::{Seconds, Spread, ms};
 use zyr_proto::log::Log;
 
 use crate::flow::TAG;
-use crate::present::Displayed;
+use crate::present::{Displayed, Pictures};
 
 /// How long after a refresh the window for the next one opens: what the
 /// compositor shows at the refresh just gone is settled by then.
@@ -90,6 +95,12 @@ const OPENING: Duration = Duration::from_micros(500);
 /// it must close earlier: a little more than the 3.3 to 5.7 ms a
 /// laptop's compositor was measured needing.
 const CUTOFF: Duration = Duration::from_millis(6);
+
+/// How long before a refresh the window closes where the window goes to
+/// the screen straight: no compositor to wait for, only the flip to the
+/// new picture to be queued, and nothing that says when one was missed
+/// to learn from.
+const STRAIGHT_CUTOFF: Duration = Duration::from_millis(3);
 
 /// How much earlier than the margin a picture missed its refresh with
 /// the window closes from then on.
@@ -280,6 +291,9 @@ pub(crate) struct Pacer<T> {
     presented_at: Option<Instant>,
     /// When the screen last said when its refreshes are.
     timed_at: Option<Instant>,
+    /// Whether the screen shows the pictures straight, without the
+    /// compositor, as it does when it does not say what it showed.
+    straight: bool,
     /// How long before a refresh its window closes, as learnt; never
     /// more than two thirds of a refresh when used.
     cutoff: Duration,
@@ -308,6 +322,7 @@ impl<T> Pacer<T> {
             served_repeat: false,
             presented_at: None,
             timed_at: None,
+            straight: false,
             cutoff: CUTOFF,
             cutoff_moved: None,
             pending: VecDeque::new(),
@@ -482,12 +497,14 @@ impl<T> Pacer<T> {
             return;
         };
         self.timed_at = Some(presented);
-        if let Some(due) = due {
+        if let Some(due) = due
+            && let Some(pictures) = screen.pictures
+        {
             if self.pending.len() == MOST_PENDING {
                 self.pending.pop_front();
             }
             self.pending.push_back(Pending {
-                id: screen.presented,
+                id: pictures.presented,
                 due,
                 at: presented,
             });
@@ -521,10 +538,16 @@ impl<T> Pacer<T> {
         Some((due, opening))
     }
 
-    /// How long before a refresh its window closes: as learnt, but always
-    /// leaving a third of a refresh open.
+    /// How long before a refresh its window closes: as learnt, or
+    /// [`STRAIGHT_CUTOFF`] where the screen shows the pictures straight,
+    /// but always leaving a third of a refresh open.
     fn cutoff_for(&self, refreshes: &Refreshes) -> Duration {
-        self.cutoff.min(refreshes.period * 2 / 3)
+        let cutoff = if self.straight {
+            STRAIGHT_CUTOFF
+        } else {
+            self.cutoff
+        };
+        cutoff.min(refreshes.period * 2 / 3)
     }
 
     /// Whether the picture just presented could have gone a refresh
@@ -562,15 +585,19 @@ impl<T> Pacer<T> {
     /// Takes in what the screen said: when its refreshes are, and what
     /// became of the pictures presented.
     fn screen(&mut self, screen: &Displayed, now: Instant) {
-        // A count gone back is a count started again: nothing said before
-        // compares with it.
-        if self
-            .timed
-            .back()
-            .is_some_and(|&(count, _)| screen.timed < count)
+        // A count gone back is a count started again, and a screen that
+        // starts or stops saying what it showed counts its refreshes
+        // another way: nothing said before compares with it.
+        let straight = screen.pictures.is_none();
+        if straight != self.straight
+            || self
+                .timed
+                .back()
+                .is_some_and(|&(count, _)| screen.timed < count)
         {
             self.forget_the_screen();
         }
+        self.straight = straight;
         let newest = (screen.timed, screen.timed_at);
         if self
             .timed
@@ -601,7 +628,9 @@ impl<T> Pacer<T> {
                 .map(|(due, _)| due);
         }
         self.refreshes = Some(refreshes);
-        self.resolve(screen, now);
+        if let Some(pictures) = &screen.pictures {
+            self.resolve(screen, pictures, now);
+        }
         if self.cutoff > CUTOFF
             && self
                 .cutoff_moved
@@ -680,7 +709,7 @@ impl<T> Pacer<T> {
     }
 
     /// What the screen says of the presents waiting for its word.
-    fn resolve(&mut self, screen: &Displayed, now: Instant) {
+    fn resolve(&mut self, screen: &Displayed, pictures: &Pictures, now: Instant) {
         let Some(refreshes) = self.refreshes else {
             return;
         };
@@ -690,16 +719,16 @@ impl<T> Pacer<T> {
         // more than half a refresh, puts it a refresh off. Nothing is
         // judged by such a refresh, nor by one before it.
         let trusted = |counted: u64| self.disagreed.is_none_or(|disagreed| counted > disagreed);
-        let (shown_trusted, timed_trusted) = (trusted(screen.at_refresh), trusted(screen.timed));
+        let (shown_trusted, timed_trusted) = (trusted(pictures.at_refresh), trusted(screen.timed));
         while let Some(pending) = self.pending.front().copied() {
-            match screen.shown.cmp(&pending.id) {
+            match pictures.shown.cmp(&pending.id) {
                 Ordering::Equal => {
                     self.pending.pop_front();
                     if !shown_trusted {
                         self.second.unjudged += 1;
-                    } else if refreshes.same(screen.at, pending.due) {
+                    } else if refreshes.same(pictures.at, pending.due) {
                         self.second.on_time += 1;
-                    } else if screen.at > pending.due {
+                    } else if pictures.at > pending.due {
                         self.missed(pending, now);
                     } else {
                         self.second.early += 1;
@@ -947,15 +976,17 @@ mod tests {
             let timed_at = self.said_at(timed);
             let timed = self.counted(timed);
             Some(Displayed {
-                presented: self.presents.len() as u64,
-                shown: index as u64 + 1,
-                at_refresh,
-                at: timed_at - self.reported * (timed - at_refresh) as u32,
                 timed,
                 timed_at,
                 refresh: self.reported,
-                compositor_missed: 0,
-                compositor_dropped: 0,
+                pictures: Some(Pictures {
+                    presented: self.presents.len() as u64,
+                    shown: index as u64 + 1,
+                    at_refresh,
+                    at: timed_at - self.reported * (timed - at_refresh) as u32,
+                    compositor_missed: 0,
+                    compositor_dropped: 0,
+                }),
             })
         }
 
@@ -1455,16 +1486,40 @@ mod tests {
     /// present shown then.
     fn said(presented: u64, timed: u64, at: Instant) -> Displayed {
         Displayed {
-            presented,
-            shown: presented,
-            at_refresh: timed,
-            at,
             timed,
             timed_at: at,
             refresh: Duration::from_nanos(SIXTY_HZ),
-            compositor_missed: 0,
-            compositor_dropped: 0,
+            pictures: Some(Pictures {
+                presented,
+                shown: presented,
+                at_refresh: timed,
+                at,
+                compositor_missed: 0,
+                compositor_dropped: 0,
+            }),
         }
+    }
+
+    #[test]
+    fn a_screen_shown_straight_is_paced_on_its_own_count_and_closes_later() {
+        let journal = testing::OwnLog::new("pacing-straight");
+        let mut pacer = Pacer::<u32>::new(&journal.log);
+        let at = Instant::now();
+        pacer.after(None, at, Some(&said(1, 5_000, at)));
+        assert_eq!(pacer.timed.back().map(|&(count, _)| count), Some(5_000));
+        let straight = Displayed {
+            timed: 7,
+            timed_at: at + Duration::from_nanos(SIXTY_HZ),
+            refresh: Duration::from_nanos(SIXTY_HZ),
+            pictures: None,
+        };
+        pacer.after(None, straight.timed_at, Some(&straight));
+        // Counted afresh, as the straight screen counts.
+        assert_eq!(pacer.timed.len(), 1);
+        let refreshes = pacer.refreshes.unwrap();
+        assert_eq!(refreshes.at, straight.timed_at);
+        assert_eq!(pacer.cutoff_for(&refreshes), STRAIGHT_CUTOFF);
+        assert!(pacer.pending.is_empty());
     }
 
     #[test]

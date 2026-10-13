@@ -68,8 +68,9 @@ use zyr_media::trace::{Seconds, Spread};
 use zyr_proto::log::Log;
 
 use super::device::{self, Device, INTEL};
+use super::refreshes::Refreshes;
 use super::{FineTimers, Multimedia, code_and_words, failure};
-use crate::present::{Displayed, Fault, Presenter, Rect, Shown, letterbox};
+use crate::present::{Displayed, Fault, Pictures, Presenter, Rect, Shown, letterbox};
 
 /// The shaders, compiled when the player starts: d3dcompiler_47.dll
 /// comes with every Windows 10, and nothing is built ahead of time.
@@ -155,6 +156,8 @@ pub struct Screen {
     _playback: Multimedia,
     /// Waits as short as asked while the window plays.
     _timers: FineTimers,
+    /// When the screen refreshes, for when the swap chain does not say.
+    refreshes: Refreshes,
     log: Log,
 }
 
@@ -168,6 +171,7 @@ impl Screen {
             mmcss: false,
             _playback: Multimedia::join(w!("Playback"), log),
             _timers: FineTimers::ask(log),
+            refreshes: Refreshes::follow(hwnd, log),
             log: log.clone(),
         };
         // SAFETY: a switch for this process, taking a plain value.
@@ -269,7 +273,7 @@ impl Presenter for Screen {
     }
 
     fn displayed(&self) -> Option<Displayed> {
-        self.gpu.as_ref()?.displayed()
+        self.gpu.as_ref()?.displayed(&self.refreshes)
     }
 }
 
@@ -780,10 +784,10 @@ impl Gpu {
 
     /// What the screen showed of this swap chain's pictures: its own
     /// statistics, and the compositor's for the refresh and what it
-    /// missed. Nothing while the system has nothing to say, as before the
-    /// first picture reaches the screen, or when the screen shows the
-    /// pictures straight.
-    fn displayed(&self) -> Option<Displayed> {
+    /// missed. Where the screen shows the pictures straight, only when it
+    /// refreshes, as `refreshes` timed it. Nothing while the system has
+    /// nothing to say, as before the first picture reaches the screen.
+    fn displayed(&self, refreshes: &Refreshes) -> Option<Displayed> {
         // SAFETY: a getter on a live swap chain.
         let presented = unsafe { self.swap.GetLastPresentCount() }.ok()?;
         let media = self.media.as_ref().and_then(|media| {
@@ -795,9 +799,9 @@ impl Gpu {
                 .map(|()| statistics)
         });
         let own = self.own_statistics();
+        let mode = media.map(|statistics| statistics.CompositionMode);
         {
             let mut spent = self.spent.borrow_mut();
-            let mode = media.map(|statistics| statistics.CompositionMode);
             spent.shown_by[mode_index(mode)] += 1;
             spent.timed_by[usize::from(own.is_none())] += 1;
             if let Some(statistics) = media.filter(|statistics| statistics.PresentCount != 0) {
@@ -805,6 +809,15 @@ impl Gpu {
                     .waiting
                     .add_value(presented.saturating_sub(statistics.PresentCount) as f32);
             }
+        }
+        if mode == Some(DXGI_FRAME_PRESENTATION_MODE_OVERLAY) {
+            let refresh = refreshes.latest()?;
+            return Some(Displayed {
+                timed: refresh.count,
+                timed_at: refresh.at,
+                refresh: refresh.period,
+                pictures: None,
+            });
         }
         let statistics = own?;
         let mut timing = DWM_TIMING_INFO {
@@ -825,15 +838,17 @@ impl Gpu {
         let timed_at = now.checked_sub(since_timed)?;
         let at = timed_at.checked_sub(before_timed)?;
         Some(Displayed {
-            presented: u64::from(presented),
-            shown: u64::from(statistics.shown),
-            at_refresh: u64::from(statistics.at_refresh),
-            at,
             timed: u64::from(statistics.timed),
             timed_at,
             refresh,
-            compositor_missed: timing.cFramesMissed,
-            compositor_dropped: timing.cFramesDropped,
+            pictures: Some(Pictures {
+                presented: u64::from(presented),
+                shown: u64::from(statistics.shown),
+                at_refresh: u64::from(statistics.at_refresh),
+                at,
+                compositor_missed: timing.cFramesMissed,
+                compositor_dropped: timing.cFramesDropped,
+            }),
         })
     }
 
