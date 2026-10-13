@@ -4340,6 +4340,16 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Le voyant du réseau ne s'allume plus pour des images que l'hôte envoyait en trop. Dans le journal, la ligne `pace` de l'hôte compte 60 images par seconde au plus, et la ligne `flow` du lecteur ne compte presque plus d'images remplacées. Les essais de la cadence vérifient un écran à 144 Hz, un écran par rafraîchissement irrégulier, un écran à 60,1 Hz et une image en retard au milieu d'un écran régulier.
 
+## D269. La grille de la cadence ne tient que l'écran qui déborde (2026-10-13, pendant MZ)
+
+> Corrige [D268](#d268-lhôte-nenvoie-jamais-plus-dimages-par-seconde-que-la-session-nen-demande-2026-10-12-pendant-mz) : le plafond reste, mais seulement là où il sert.
+
+**Ce que le journal suivant a montré.** Le voyant ne s'allume plus, et le lecteur ne remplace plus qu'une image par seconde. Mais l'hôte retenait parfois ses images 5 à 17 ms, une seconde durant, sur un écran qui donnait ses 60 images à l'heure. La grille de D268 garde la trace de chaque image partie : une seule image en retard la décale, et toutes les suivantes, à l'heure, l'attendent d'autant, jusqu'à ce que l'écran s'arrête. Une session à travers Internet a payé 4 à 5 ms de plus de la capture à l'écran pendant ces secondes-là.
+
+**Décision : la grille ne vaut que pour un écran qui déborde.** Un écran déborde quand il a donné plus d'images que la cadence sur les huit dernières périodes, au quart de période près. Seul celui-là est tenu à la grille. Les autres reviennent à la règle d'avant D268 : une image part dès que sept huitièmes de période sont passés depuis la précédente, et la grille repart de chaque image partie, donc oublie aussitôt un retard. Un écran à peine plus rapide que la cadence ne déborde pas, et part comme il vient, comme avant D268.
+
+**Ce qui se voit.** Les images retenues par l'hôte (`h` dans la ligne `pace`) ne reviennent que lorsque l'écran donne vraiment plus que la cadence. Un essai rejoue ce que le journal montrait : une rafale, puis l'écran à son rythme, et vérifie que les images d'après repartent sans attendre.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
