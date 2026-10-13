@@ -29,6 +29,7 @@ use zyr_media::input::{InputEvent, Outgoing};
 use zyr_media::pointer::{Gathering, PointerPicture};
 use zyr_media::road::{Arrival, Road};
 use zyr_media::service;
+use zyr_media::trace::Steps;
 use zyr_proto::fact::Fact;
 use zyr_proto::log::{Log, Seldom};
 
@@ -180,6 +181,9 @@ struct Session {
     /// The pieces of the far pointer's picture arrived so far.
     gathering: Gathering,
     events: Arc<Events>,
+    /// How evenly the pointer's positions leave, which is how evenly the
+    /// far screen can follow it.
+    pointer: Steps,
     hushed: Hushed,
     log: Log,
 }
@@ -234,6 +238,7 @@ async fn session(link: Link, parts: Parts) {
         far_pointer,
         gathering: Gathering::default(),
         events,
+        pointer: Steps::default(),
         hushed: Hushed::default(),
         log,
     };
@@ -629,6 +634,13 @@ impl Session {
     }
 
     fn input(&mut self, event: InputEvent) {
+        if let InputEvent::PointerAt { .. } = event {
+            let now = Instant::now();
+            self.pointer.came(now);
+            if let Some(steps) = self.pointer.second(now) {
+                self.log.debug(&format!("pointer: positions sent {steps}"));
+            }
+        }
         self.counters.sent += 1;
         self.publish();
         self.say(&ToEngine::Input(event));

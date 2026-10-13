@@ -16,6 +16,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use zyr_media::input::{Held, InputEvent};
+use zyr_media::trace::Steps;
 use zyr_proto::log::{Log, Seldom};
 
 use crate::parts::{Injected, Injector, MakeInjector};
@@ -93,6 +94,9 @@ struct Player {
     held: Held,
     mapping: Option<Mapping>,
     counts: Counts,
+    /// How evenly the pointer's positions come, which is how evenly this
+    /// screen can follow them.
+    pointer: Steps,
     failures: Seldom,
     log: Log,
 }
@@ -104,6 +108,7 @@ impl Player {
             held: Held::new(),
             mapping: None,
             counts: Counts::default(),
+            pointer: Steps::default(),
             failures: Seldom::default(),
             log,
         }
@@ -157,6 +162,13 @@ impl Player {
             InputEvent::ReleaseAll => &mut self.counts.release_alls,
         };
         *count += 1;
+        if let InputEvent::PointerAt { .. } = event {
+            let now = Instant::now();
+            self.pointer.came(now);
+            if let Some(steps) = self.pointer.second(now) {
+                self.log.debug(&format!("pointer: positions came {steps}"));
+            }
+        }
         if event == InputEvent::ReleaseAll {
             self.release();
             return;

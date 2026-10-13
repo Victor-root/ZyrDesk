@@ -123,6 +123,58 @@ impl Seconds {
     }
 }
 
+/// A step longer than this between two of a kind is a pause, not
+/// unevenness: the hand stopped.
+const PAUSE: Duration = Duration::from_millis(100);
+
+/// A step longer than a refresh of a 60 Hz screen, and a little: a
+/// refresh of the screen it lands on went by with nothing new.
+const LONGER_THAN_A_REFRESH: Duration = Duration::from_millis(17);
+
+/// How evenly something comes while it keeps coming, a second at a
+/// time: the steps from one to the next, pauses left out, and how many
+/// were longer than a refresh.
+#[derive(Debug, Clone, Default)]
+pub struct Steps {
+    last: Option<Instant>,
+    steps: Spread,
+    long: u32,
+    seconds: Seconds,
+}
+
+impl Steps {
+    /// One came at `now`.
+    pub fn came(&mut self, now: Instant) {
+        self.seconds.started(now);
+        if let Some(step) = self
+            .last
+            .replace(now)
+            .map(|last| now.saturating_duration_since(last))
+            .filter(|step| *step < PAUSE)
+        {
+            self.steps.add(step);
+            if step > LONGER_THAN_A_REFRESH {
+                self.long += 1;
+            }
+        }
+    }
+
+    /// The second gone, once it is over at `now`: `every M/P/W ms, N
+    /// longer than a refresh`.
+    pub fn second(&mut self, now: Instant) -> Option<String> {
+        if !self.seconds.over(now) || self.steps.is_empty() {
+            return None;
+        }
+        let line = format!(
+            "every {} ms (median/95th/worst), {} longer than a refresh",
+            self.steps, self.long
+        );
+        self.steps.clear();
+        self.long = 0;
+        Some(line)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,5 +219,20 @@ mod tests {
         assert!(!seconds.over(at + EVERY * 3));
         seconds.started(at + EVERY * 3);
         assert!(seconds.over(at + EVERY * 4));
+    }
+
+    #[test]
+    fn steps_leave_pauses_out_and_count_those_longer_than_a_refresh() {
+        let at = Instant::now();
+        let mut steps = Steps::default();
+        for ms_at in [0u64, 8, 16, 40, 48, 400, 408] {
+            steps.came(at + Duration::from_millis(ms_at));
+        }
+        assert_eq!(steps.second(at + EVERY / 2), None);
+        assert_eq!(
+            steps.second(at + EVERY).as_deref(),
+            Some("every 8.0/24.0/24.0 ms (median/95th/worst), 1 longer than a refresh")
+        );
+        assert_eq!(steps.second(at + EVERY * 3), None);
     }
 }
