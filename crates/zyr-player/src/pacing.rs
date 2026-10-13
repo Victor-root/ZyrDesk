@@ -350,6 +350,11 @@ impl<T> Pacer<T> {
         }
     }
 
+    /// Whether a picture waits to be presented.
+    pub(crate) fn waits(&self) -> bool {
+        !self.waiting.is_empty()
+    }
+
     /// The picture to present at `now`, if one is due.
     pub(crate) fn due(&mut self, now: Instant) -> Option<Turn<T>> {
         let Some(refreshes) = self.refreshes else {

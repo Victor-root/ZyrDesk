@@ -103,6 +103,14 @@ pub trait Presenter {
     /// The codecs this presenter's decoder can decode.
     fn decodable(&self, ff: &Arc<Ffmpeg>) -> CodecSet;
 
+    /// Whether a picture presented now would be taken at once, rather
+    /// than queued behind those the screen has not taken yet. Asked
+    /// before each picture the pacing would present; a yes holds until
+    /// the next present.
+    fn room(&mut self) -> bool {
+        true
+    }
+
     /// Draws a picture and shows it.
     fn present(&mut self, picture: &DecodedFrame) -> Result<Shown, Fault>;
 

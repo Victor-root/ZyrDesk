@@ -4365,6 +4365,24 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Les essais.** Un écran à l'heure qui donne une image en double toutes les demi-secondes ne retient que ces images-là : 20 sur 10 secondes, contre 239 avant. L'essai échoue avec la règle d'avant.
 
+## D271. Le client ne laisse jamais plus de deux images attendre l'écran (2026-10-13, pendant MZ)
+
+> Reprend [D270](#d270-la-cadence-de-lhôte-compte-depuis-limage-filmée-et-laffichage-du-client-se-mesure-en-deux-temps-2026-10-13-pendant-mz).
+
+**Ce que le journal a montré.** Sur le PC client où afficher une image prenait 16,7 ms, la préparation de l'image prend 0 ms : c'est l'appel qui la remet à Windows qui attend, un rafraîchissement d'écran entier, à presque chaque image. Ce PC ne dit pas non plus ce que l'écran a montré, si bien que la cadence du client présente chaque image dès qu'elle est décodée. L'écran y prend les images une par rafraîchissement, sans garder seulement la plus récente : la file que Direct3D permet, trois images, se remplit à la première rafale et ne se vide plus. Chaque image s'affiche alors jusqu'à trois rafraîchissements après avoir été prête, et le fil de l'image, bloqué dans l'appel, lit les paquets du réseau d'autant plus tard.
+
+**Décision.**
+
+- La fenêtre de session demande à Windows de lui signaler chaque image que l'écran a prise, et n'en laisse jamais plus de deux attendre : celle du prochain rafraîchissement, et celle qui la remplace quand la cadence le décide.
+- Quand deux images attendent déjà, la suivante reste dans la cadence au lieu d'être remise à Windows. Le fil de l'image redemande à l'écran une milliseconde plus tard, sans jamais bloquer, et lit les paquets pendant ce temps. Si une image plus récente arrive entre-temps, c'est elle qui part.
+- Seule l'image redessinée après un changement de taille de la fenêtre attend sur place, 100 ms au plus.
+
+**Ce qui se voit.** Jusqu'à un rafraîchissement de délai en moins à l'écran sur un PC comme celui-ci, et des paquets lus dès qu'ils arrivent. Une image doublée par une plus récente avant d'avoir pu partir compte comme perdue, ce qu'elle est : l'écran n'aurait pas pu la montrer.
+
+**Pour le prochain journal.** La ligne `present:` dit maintenant comment l'écran a montré les images (composées par Windows, posées directement sur l'écran, ou rien de dit), combien ont attendu de la place et combien de temps. La ligne qui dit sur quel écran est la fenêtre revient à chaque changement de taille, pour ne plus se perdre en tête d'un long journal.
+
+**Les essais.** Une image qui trouve l'écran plein n'est pas dessinée, le fil se réveille une milliseconde plus tard, une image plus récente prend sa place, et elle part dès que l'écran a de la place.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

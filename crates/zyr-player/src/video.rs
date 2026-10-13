@@ -54,6 +54,11 @@ pub const RESEND: Duration = Duration::from_millis(250);
 /// which must not pass for falling behind.
 pub const FALLEN_BEHIND: Duration = Duration::from_millis(250);
 
+/// How soon the screen is asked again whether it took a picture, while
+/// one waits for room: it tells only whoever asks, and this thread waits
+/// for datagrams, not for it.
+const ROOM_ASKED_AGAIN: Duration = Duration::from_millis(1);
+
 /// Datagrams taken in at most before the newest picture is drawn: a key
 /// frame's worth, so that a burst is drawn once, whole, rather than
 /// picture after picture.
@@ -430,6 +435,8 @@ pub struct Video<P: Presenter> {
     decoding: Decoding,
     /// The pictures decoded, each waiting for its refresh.
     pacer: Pacer<Ready>,
+    /// A picture waits for the screen to take those before it.
+    full: bool,
     /// The picture on the surface, drawn again when the surface changes
     /// size.
     on_screen: Option<(DecodedFrame, u32)>,
@@ -464,6 +471,7 @@ impl<P: Presenter> Video<P> {
                 refused: None,
             },
             pacer: Pacer::new(&log),
+            full: false,
             on_screen: None,
             first_shown: false,
             said: Vec::new(),
@@ -511,6 +519,9 @@ impl<P: Presenter> Video<P> {
             self.assembler.next_deadline(),
             self.recovery.next_resend(),
             self.pacer.next_wakeup(now),
+            self.full
+                .then(|| now.checked_add(ROOM_ASKED_AGAIN))
+                .flatten(),
         ]
         .into_iter()
         .flatten()
@@ -531,7 +542,10 @@ impl<P: Presenter> Video<P> {
         if let Some(recover) = self.recovery.due(now) {
             self.ask(recover, Because::Unanswered, now);
         }
-        if let Some(turn) = self.pacer.due(now) {
+        self.full = self.pacer.waits() && !self.presenter.room();
+        if !self.full
+            && let Some(turn) = self.pacer.due(now)
+        {
             self.unshown(now, turn.unshown);
             self.show(turn.picture, turn.due, now);
         }
@@ -909,11 +923,13 @@ mod tests {
     use zyr_media::video::VideoHeader;
 
     /// Records the fingerprint of every picture drawn, and can be told
-    /// to lose its graphics card, when drawing or before.
+    /// to lose its graphics card, when drawing or before, or that the
+    /// screen has not taken the pictures before.
     #[derive(Default)]
     struct Recording {
         inner: Headless,
         drawn: Vec<u64>,
+        full: bool,
         lose_next: bool,
         gone: bool,
         renewed: u32,
@@ -926,6 +942,10 @@ mod tests {
 
         fn decodable(&self, ff: &Arc<Ffmpeg>) -> CodecSet {
             self.inner.decodable(ff)
+        }
+
+        fn room(&mut self) -> bool {
+            !self.full
         }
 
         fn present(&mut self, picture: &DecodedFrame) -> Result<Shown, Fault> {
@@ -1180,6 +1200,40 @@ mod tests {
         assert_eq!(video.counters.decoded, 4);
         assert_eq!(video.counters.unshown, 3);
         assert_eq!(video.counters.checksum, Some(looks[3]));
+    }
+
+    #[test]
+    fn a_picture_waits_for_the_screen_to_take_those_before_and_the_newest_goes() {
+        let (packets, looks) = h264(3, &[]);
+        let mut video = video(Recording::default());
+        let at = Instant::now();
+        let ms = |n: u64| at + Duration::from_millis(n);
+        frame_in(&mut video, 1, 0, &packets[0], at);
+        video.settle(at);
+        assert_eq!(video.presenter.drawn, [looks[0]]);
+        assert_eq!(video.next_wakeup(at), None);
+
+        video.presenter.full = true;
+        frame_in(&mut video, 1, 1, &packets[1], ms(16));
+        video.settle(ms(16));
+        assert_eq!(video.presenter.drawn, [looks[0]], "nothing queues behind");
+        assert_eq!(
+            video.next_wakeup(ms(16)),
+            Some(ms(16) + ROOM_ASKED_AGAIN),
+            "the screen is asked again soon"
+        );
+        frame_in(&mut video, 1, 2, &packets[2], ms(20));
+        video.settle(ms(20));
+        assert_eq!(video.presenter.drawn, [looks[0]]);
+
+        video.presenter.full = false;
+        video.settle(ms(21));
+        assert_eq!(video.presenter.drawn, [looks[0], looks[2]]);
+        assert_eq!(
+            video.counters.unshown, 1,
+            "the picture overtaken was never seen"
+        );
+        assert_eq!(video.next_wakeup(ms(21)), None);
     }
 
     #[test]
