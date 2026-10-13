@@ -16,6 +16,11 @@
 //! most two wait for it, enough for the pacing to replace the picture of
 //! a refresh before it shows, and no picture is presented while two
 //! wait. The newest waits with the pacing instead, never on the thread.
+//! Where the screen shows the pictures straight, without the compositor,
+//! it takes them one per refresh with no newest-wins, and that count was
+//! seen never to fill while Present waited a whole refresh: so, while the
+//! system counts the pictures it showed, none is presented while one it
+//! has not shown waits.
 //!
 //! The decoder's NV12 pictures become RGB in a pixel shader (BT.709,
 //! limited range), drawn as large as fits with the picture's shape and
@@ -427,6 +432,15 @@ struct Spent {
     /// present: composed by the compositor, put straight on the screen,
     /// not shown, composition failed, or nothing said.
     shown_by: [u32; 5],
+    /// Presents the screen had not shown yet, after each present, when
+    /// the system counted them lately.
+    waiting: Spread,
+    /// How long after a refresh of the screen each Present returned.
+    after_refresh: Spread,
+    /// Whether the swap chain's own statistics timed the screen, or were
+    /// empty, after each present.
+    timed: u32,
+    untimed: u32,
 }
 
 impl Spent {
@@ -460,9 +474,11 @@ impl Spent {
         }
     }
 
-    /// How the system said the screen showed the last picture.
-    fn shown_by(&mut self, mode: Option<DXGI_FRAME_PRESENTATION_MODE>) {
-        let index = match mode {
+    /// What the system said after a present: how the screen shows the
+    /// pictures, how many wait for it, and whether the swap chain timed
+    /// the screen.
+    fn looked(&mut self, showing: Showing, timed: bool) {
+        let index = match showing.mode {
             Some(DXGI_FRAME_PRESENTATION_MODE_COMPOSED) => 0,
             Some(DXGI_FRAME_PRESENTATION_MODE_OVERLAY) => 1,
             Some(DXGI_FRAME_PRESENTATION_MODE_NONE) => 2,
@@ -470,6 +486,14 @@ impl Spent {
             _ => 4,
         };
         self.shown_by[index] += 1;
+        if let Some(waiting) = showing.waiting {
+            self.waiting.add_value(waiting as f32);
+        }
+        if timed {
+            self.timed += 1;
+        } else {
+            self.untimed += 1;
+        }
     }
 
     fn line(&self) -> String {
@@ -491,6 +515,24 @@ impl Spent {
              unsaid {unsaid}",
             self.drawing, self.presenting
         );
+        if self.waiting.is_empty() {
+            line.push_str("; the presents waiting for the screen were not counted");
+        } else {
+            line.push_str(&format!(
+                "; {} presents waiting for the screen",
+                self.waiting
+            ));
+        }
+        if !self.after_refresh.is_empty() {
+            line.push_str(&format!(
+                "; Present returned {} ms after a refresh",
+                self.after_refresh
+            ));
+        }
+        line.push_str(&format!(
+            "; the swap chain timed the screen {} times, and not {} times",
+            self.timed, self.untimed
+        ));
         if self.full_times > 0 {
             line.push_str(&format!(
                 "; {} pictures waited {} ms for the screen to take the two before",
@@ -508,6 +550,14 @@ impl Spent {
         }
         line
     }
+}
+
+/// How the screen shows a swap chain's pictures, and how many presented
+/// wait for it, as far as the system says.
+#[derive(Default)]
+struct Showing {
+    mode: Option<DXGI_FRAME_PRESENTATION_MODE>,
+    waiting: Option<u64>,
 }
 
 /// One more time for a code.
@@ -681,11 +731,16 @@ impl Gpu {
     }
 
     /// Whether the screen has taken enough of the pictures presented for
-    /// one more to be presented without queueing behind two.
+    /// one more to be presented without queueing behind them: two at
+    /// most, and none when it shows them straight, one per refresh.
     fn room(&mut self) -> bool {
         if !self.room {
+            let showing = self.showing();
+            let one_by_one = showing.mode == Some(DXGI_FRAME_PRESENTATION_MODE_OVERLAY)
+                && showing.waiting.is_some_and(|waiting| waiting > 0);
             // SAFETY: a handle of ours, not waited for.
-            self.room = unsafe { WaitForSingleObject(self.queue.0, 0) } == WAIT_OBJECT_0;
+            self.room =
+                !one_by_one && unsafe { WaitForSingleObject(self.queue.0, 0) } == WAIT_OBJECT_0;
             let now = Instant::now();
             let mut spent = self.spent.borrow_mut();
             if self.room {
@@ -835,9 +890,12 @@ impl Gpu {
             return Err(self.fault("Present", presented));
         }
         self.room = false;
-        self.spent
-            .borrow_mut()
-            .drew(began, drawn, Instant::now(), presented, &self.log);
+        let done = Instant::now();
+        let mut spent = self.spent.borrow_mut();
+        if let Some(after) = since_refresh() {
+            spent.after_refresh.add(after);
+        }
+        spent.drew(began, drawn, done, presented, &self.log);
         Ok(())
     }
 
@@ -846,15 +904,51 @@ impl Gpu {
     /// missed. Nothing while the system has nothing to say, as before the
     /// first picture reaches the screen, when it answers with noughts.
     fn displayed(&self) -> Option<Displayed> {
-        let mode = self.media.as_ref().and_then(|media| {
-            let mut statistics = DXGI_FRAME_STATISTICS_MEDIA::default();
-            // SAFETY: a getter on a live swap chain, into a structure of
-            // ours.
-            unsafe { media.GetFrameStatisticsMedia(&mut statistics) }
-                .ok()
-                .map(|()| statistics.CompositionMode)
-        });
-        self.spent.borrow_mut().shown_by(mode);
+        let showing = self.showing();
+        let displayed = self.timed();
+        self.spent.borrow_mut().looked(showing, displayed.is_some());
+        displayed
+    }
+
+    /// How the screen shows the pictures, and how many presented it has
+    /// not shown yet: counted only while the system timed the screen in
+    /// the last tenth of a second, as a count it stopped updating would
+    /// hold every picture back.
+    fn showing(&self) -> Showing {
+        let Some(media) = &self.media else {
+            return Showing::default();
+        };
+        let mut statistics = DXGI_FRAME_STATISTICS_MEDIA::default();
+        // SAFETY: a getter on a live swap chain, into a structure of ours.
+        if unsafe { media.GetFrameStatisticsMedia(&mut statistics) }.is_err() {
+            return Showing::default();
+        }
+        let waiting = self.waiting(&statistics);
+        Showing {
+            mode: Some(statistics.CompositionMode),
+            waiting,
+        }
+    }
+
+    /// Presents the screen has not shown yet, by the count `statistics`
+    /// carry, if the system timed the screen lately.
+    fn waiting(&self, statistics: &DXGI_FRAME_STATISTICS_MEDIA) -> Option<u64> {
+        if statistics.PresentCount == 0 {
+            return None;
+        }
+        let frequency = qpc_frequency()?;
+        let (counter, _) = counter_now()?;
+        let since = u64::try_from(counter.checked_sub(statistics.SyncQPCTime)?).ok()?;
+        if since > frequency / 10 {
+            return None;
+        }
+        // SAFETY: a getter on a live swap chain.
+        let presented = unsafe { self.swap.GetLastPresentCount() }.ok()?;
+        Some(u64::from(presented.saturating_sub(statistics.PresentCount)))
+    }
+
+    /// The swap chain's own statistics of what the screen showed, timed.
+    fn timed(&self) -> Option<Displayed> {
         // SAFETY: a getter on a live swap chain.
         let presented = unsafe { self.swap.GetLastPresentCount() }.ok()?;
         let mut statistics = DXGI_FRAME_STATISTICS::default();
@@ -877,10 +971,7 @@ impl Gpu {
         // SAFETY: no window names the whole compositor; the structure
         // says its own size.
         unsafe { DwmGetCompositionTimingInfo(HWND::default(), &mut timing) }.ok()?;
-        let mut frequency = 0i64;
-        // SAFETY: a plain out value.
-        unsafe { QueryPerformanceFrequency(&mut frequency) }.ok()?;
-        let frequency = u64::try_from(frequency).ok().filter(|ticks| *ticks > 0)?;
+        let frequency = qpc_frequency()?;
         let ticks = |count: u64| Duration::from_secs_f64(count as f64 / frequency as f64);
         let refresh = ticks(timing.qpcRefreshPeriod);
         let (counter, now) = counter_now()?;
@@ -1086,6 +1177,30 @@ impl Gpu {
         };
         Fault::Lost(format!("{text}; {reason}"))
     }
+}
+
+/// Ticks of the performance counter in a second.
+fn qpc_frequency() -> Option<u64> {
+    let mut frequency = 0i64;
+    // SAFETY: a plain out value.
+    unsafe { QueryPerformanceFrequency(&mut frequency) }.ok()?;
+    u64::try_from(frequency).ok().filter(|ticks| *ticks > 0)
+}
+
+/// How long ago the screen last refreshed, as the compositor says.
+fn since_refresh() -> Option<Duration> {
+    let mut timing = DWM_TIMING_INFO {
+        cbSize: size_of::<DWM_TIMING_INFO>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: no window names the whole compositor; the structure says
+    // its own size.
+    unsafe { DwmGetCompositionTimingInfo(HWND::default(), &mut timing) }.ok()?;
+    let frequency = qpc_frequency()?;
+    let (counter, _) = counter_now()?;
+    let period = timing.qpcRefreshPeriod.max(1);
+    let since = u64::try_from(counter).ok()?.checked_sub(timing.qpcVBlank)? % period;
+    Some(Duration::from_secs_f64(since as f64 / frequency as f64))
 }
 
 /// The performance counter and the moment it was read, taken close

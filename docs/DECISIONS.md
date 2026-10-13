@@ -4383,6 +4383,19 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Les essais.** Une image qui trouve l'écran plein n'est pas dessinée, le fil se réveille une milliseconde plus tard, une image plus récente prend sa place, et elle part dès que l'écran a de la place.
 
+## D272. Quand l'écran prend les images directement, une seule l'attend (2026-10-13, pendant MZ)
+
+> Reprend [D271](#d271-le-client-ne-laisse-jamais-plus-de-deux-images-attendre-lécran-2026-10-13-pendant-mz).
+
+**Ce que le journal a montré.** Sur le PC client concerné, toutes les images vont directement à l'écran, sans passer par le compositeur de Windows. L'appel qui remet une image à Windows y attend toujours un rafraîchissement entier, alors que le signal de D271 n'a jamais dit que la file était pleine : dans ce mode, ce signal ne suit pas ce que l'écran a vraiment pris. Les statistiques habituelles de la fenêtre restent vides, mais celles que Windows donne pour la vidéo répondent.
+
+**Décision.**
+
+- Quand Windows dit que l'écran prend les images directement, et qu'il a compté depuis moins d'un dixième de seconde la dernière image montrée, aucune image n'est remise tant qu'une autre attend encore l'écran. L'image suivante patiente dans la cadence, la plus récente remplaçant l'autre, comme en D271.
+- Si Windows cesse de compter, la règle se tait d'elle-même : une image n'est jamais retenue sur un compte figé.
+
+**Pour le prochain journal.** La ligne `present:` dit maintenant combien d'images attendaient l'écran après chaque envoi, combien de temps après un rafraîchissement l'appel est revenu, et combien de fois les statistiques de la fenêtre ont daté l'écran ou sont restées vides. Si la file ne se compte pas non plus dans ce mode, ces chiffres le diront, et la suite se décidera dessus.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
