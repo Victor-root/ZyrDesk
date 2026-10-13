@@ -4423,6 +4423,20 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Plus de saut régulier toutes les secondes, et un rafraîchissement de retard en moins pour environ la moitié des images quand la fenêtre est affichée directement à l'écran.
 
+## D275. Le client reprend le rafraîchissement de retard qu'il garde quand l'écran le fait attendre (2026-10-13, pendant MZ)
+
+> Complète [D274](#d274-une-cadence-que-lécran-ne-date-plus-est-abandonnée-2026-10-13-pendant-mz).
+
+**Ce que le journal a montré.** Avec la fenêtre affichée directement à l'écran, le client montre bien une image par rafraîchissement, mais pendant de longues secondes chaque image arrive alors que la précédente attend encore le sien : elle attend 6 à 14 ms que l'appel précédent rende la main, puis tout un rafraîchissement pour s'afficher. Il suffit que deux images arrivent dans le même rafraîchissement pour entrer dans cet état, et comme l'hôte et l'écran vont au même rythme, rien ne l'en fait sortir. Chaque image s'affiche alors un rafraîchissement plus tard qu'elle ne le pourrait : 17 ms de plus de la capture à l'écran.
+
+**Décision.**
+
+- Une image compte comme arrivée quand sa dernière part est arrivée, et non quand le fil de l'image, retenu par l'écran, a pu la décoder.
+- Quand toutes les images des deux dernières secondes sont arrivées avant que l'appel précédent rende la main, la suivante dans ce cas est retenue, au plus un rafraîchissement, pour qu'une plus récente prenne sa place. Celle-ci part dès qu'elle arrive, et le retard disparaît. C'est le même rattrapage que celui de la cadence quand l'écran date ses rafraîchissements : une image sautée, une fois, contre un rafraîchissement de retard en moins pour toutes les suivantes. Si aucune image plus récente ne vient (écran immobile), celle retenue part quand même.
+- Le journal le dit (« the next such is held for a newer one »), et la ligne `pacing` compte l'image sautée dans « dropped to take a refresh back ».
+
+**Ce qui se voit.** Environ 17 ms de moins de la capture à l'écran pendant les moments où le client gardait ce retard, au prix d'une image sautée au plus toutes les deux secondes, et seulement quand il le gardait.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
