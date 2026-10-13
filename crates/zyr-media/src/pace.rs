@@ -2,15 +2,21 @@
 //!
 //! The screen gives an image whenever something changed on it, at its
 //! own rate, and a session wants at most `fps` pictures a second. A
-//! captured image goes at once if at least 7/8 of a period passed since
-//! the last captured image went: a screen refreshing at the rate asked
-//! (60 Hz for 60 fps) never waits, its jitter never costs a frame of
-//! delay, and no delay builds up. Sooner than that, the
-//! image is held (a newer capture replacing it) and goes when its time
-//! comes.
+//! captured image goes at once if it was filmed at least 7/8 of a period
+//! after the last captured image that went: a screen refreshing at the
+//! rate asked (60 Hz for 60 fps) never waits, its jitter never costs a
+//! frame of delay, and no delay builds up. Sooner than that, the image is
+//! held a whole period after that one, and a newer capture replaces it:
+//! an image given twice, two milliseconds apart, is the one left out,
+//! and the screen's next image, on time, takes its place.
 //!
-//! A screen crowded with images, more than the rate asked over the last
-//! [`CROWDED`] periods, is also held to the rate over the long run: each
+//! Counted from when the images were filmed, never from when they went:
+//! a held image goes late, and counting from its going would hold the
+//! next one, on time, by as much, and the one after by a little less,
+//! for a handful of images.
+//!
+//! A screen crowded with images, one more than the rate asked over the
+//! last [`CROWDED`] periods, is also held to the rate over the long run: each
 //! image that goes books a period on a grid, and an image may run at most
 //! a quarter of a period ahead of it. Bursts and screens much faster than
 //! the rate are then sent at the rate and not beyond it: the player shows
@@ -55,10 +61,15 @@ use std::time::{Duration, Instant};
 /// silent picture for frozen.
 pub const STILL_EVERY: Duration = Duration::from_millis(100);
 
-/// Over how many periods a screen is seen crowded: long enough that one
-/// late image is not a burst, short enough that a burst is caught within
-/// a few of its images.
-const CROWDED: u32 = 8;
+/// Over how many periods a screen is seen crowded, when it gave one
+/// image more than these periods hold.
+///
+/// Long enough that a screen at the rate, a little faster than the clock
+/// it is measured with or bunched by its own jitter, is never taken for
+/// crowded: held to the grid, it would wait for it a period at a time.
+/// Short enough that a burst, or a screen much faster than the rate, is
+/// caught within a few of its images.
+const CROWDED: u32 = 16;
 
 /// What to do with an image just captured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,10 +97,14 @@ pub struct Cadence {
     steady: bool,
     /// When the last captured image went.
     captured_sent: Option<Instant>,
+    /// When the last captured image that went was filmed.
+    filmed: Option<Instant>,
+    /// When the image held was filmed.
+    held_filmed: Option<Instant>,
     /// When the next captured image is due on the grid of the rate.
     captured_due: Option<Instant>,
-    /// When the last captures came, up to [`CROWDED`] of them and the
-    /// latest.
+    /// When the last captures came, up to [`CROWDED`] and one of them
+    /// and the latest.
     captures: VecDeque<Instant>,
     /// Whether the screen gave more images than the rate over the last
     /// [`CROWDED`] periods.
@@ -110,6 +125,8 @@ impl Cadence {
             period: period_of(fps),
             steady,
             captured_sent: None,
+            filmed: None,
+            held_filmed: None,
             captured_due: None,
             captures: VecDeque::new(),
             crowded: false,
@@ -138,22 +155,23 @@ impl Cadence {
 
     pub fn on_captured(&mut self, now: Instant) -> Now {
         self.captures.push_back(now);
-        if self.captures.len() > CROWDED as usize + 1 {
+        if self.captures.len() > CROWDED as usize + 2 {
             self.captures.pop_front();
         }
         let window = self.period * CROWDED - self.period / 4;
-        self.crowded = self.captures.len() > CROWDED as usize
+        self.crowded = self.captures.len() > CROWDED as usize + 1
             && self
                 .captures
                 .front()
                 .is_some_and(|first| now.saturating_duration_since(*first) < window);
-        match self.held_until() {
+        match self.may_go(self.period * 7 / 8) {
             Some(until) if now < until => {
                 self.holding = true;
+                self.held_filmed = Some(now);
                 Now::Hold
             }
             _ => {
-                self.captured_went(now);
+                self.captured_went(now, now);
                 Now::Emit
             }
         }
@@ -165,7 +183,8 @@ impl Cadence {
             if now < until {
                 return None;
             }
-            self.captured_went(now);
+            let filmed = self.held_filmed.unwrap_or(now);
+            self.captured_went(now, filmed);
             return Some(Due::EmitHeld);
         }
         if !self.steady {
@@ -198,9 +217,16 @@ impl Cadence {
         }
     }
 
-    /// When a captured image may go, after the last one that went.
+    /// When the image held goes: a period after the last one that went
+    /// was filmed.
     fn held_until(&self) -> Option<Instant> {
-        let after_the_last = self.captured_sent?.checked_add(self.period * 7 / 8)?;
+        self.may_go(self.period)
+    }
+
+    /// When a captured image may go: `after` the last one that went was
+    /// filmed, and on the grid when the screen is crowded.
+    fn may_go(&self, after: Duration) -> Option<Instant> {
+        let after_the_last = self.filmed?.checked_add(after)?;
         let on_the_grid = self
             .captured_due
             .filter(|_| self.crowded)
@@ -208,8 +234,11 @@ impl Cadence {
         Some(on_the_grid.map_or(after_the_last, |grid| grid.max(after_the_last)))
     }
 
-    fn captured_went(&mut self, at: Instant) {
+    /// A captured image went at `at`, filmed at `filmed`.
+    fn captured_went(&mut self, at: Instant, filmed: Instant) {
         self.captured_sent = Some(at);
+        self.filmed = Some(filmed);
+        self.held_filmed = None;
         let booked = match self.captured_due {
             Some(due) if self.crowded => due.max(at),
             _ => at,
@@ -338,9 +367,10 @@ mod tests {
             .filter(|(_, what)| *what != Sent::Still)
             .collect();
         assert_eq!(pictures.len(), captures.len());
-        // The one right after it is closer than seven eighths of a period
-        // and waits for that; every one after goes as it comes.
-        assert_eq!(*pictures[11], (captures[10] + period * 7 / 8, Sent::Held));
+        // The one right after it was filmed closer than seven eighths of
+        // a period and waits a period after it; every one after goes as
+        // it comes.
+        assert_eq!(*pictures[11], (captures[10] + period, Sent::Held));
         for (n, ((at, what), captured)) in pictures.iter().zip(&captures).enumerate() {
             if n != 11 {
                 assert_eq!((*at, *what), (*captured, Sent::Captured));
@@ -365,6 +395,38 @@ mod tests {
     }
 
     #[test]
+    fn a_screen_at_the_rate_with_an_image_twice_now_and_then_is_not_crowded() {
+        let period = Duration::from_secs(1) / 60;
+        let mut noise = Noise::new(55);
+        let mut captures = source(period, 10, us(1_000), &mut noise);
+        // An image given twice every half second, two milliseconds apart.
+        let twice: Vec<_> = captures
+            .iter()
+            .step_by(30)
+            .map(|at| *at + us(2_000))
+            .collect();
+        captures.extend(&twice);
+        captures.sort();
+        let mut cadence = Cadence::new(60, false);
+        let sent = run(&mut cadence, &captures, Duration::from_secs(11));
+        let waited = sent
+            .iter()
+            .filter(|(_, what)| *what != Sent::Still)
+            .filter(|(at, _)| {
+                let captured = captures.iter().rev().find(|capture| *capture <= at);
+                *at - *captured.unwrap() > us(3_000)
+            })
+            .count();
+        // Only the image given twice waits, for the seven eighths after
+        // the one before it.
+        assert!(
+            waited <= twice.len(),
+            "{waited} waited, {} twice",
+            twice.len()
+        );
+    }
+
+    #[test]
     fn a_screen_back_at_the_rate_after_a_burst_is_no_longer_held() {
         let period = Duration::from_secs(1) / 60;
         let mut captures: Vec<_> = (0..20).map(|n| period * n).collect();
@@ -381,7 +443,7 @@ mod tests {
             .collect();
         let after: Vec<_> = captures
             .iter()
-            .filter(|at| **at > burst_end + period * CROWDED)
+            .filter(|at| **at > burst_end + period * (CROWDED + 2))
             .collect();
         for capture in &after {
             assert!(
@@ -415,11 +477,11 @@ mod tests {
                 .iter()
                 .filter(|(_, what)| *what != Sent::Still)
                 .collect();
-            for pair in pictures.windows(2) {
-                assert!(pair[1].0 - pair[0].0 >= period * 3 / 4, "{pair:?}");
-            }
             // Counted once the screen has been seen crowded.
             let held = &pictures[CROWDED as usize..];
+            for pair in held.windows(2) {
+                assert!(pair[1].0 - pair[0].0 >= period * 3 / 4, "{pair:?}");
+            }
             let (first, last) = (held[0].0, held[held.len() - 1].0);
             assert!(
                 last - first >= period * (held.len() as u32 - 1) - period / 4,
@@ -563,7 +625,7 @@ mod tests {
             sent,
             vec![
                 (us(0), Sent::Captured),
-                (period * 7 / 8, Sent::Held),
+                (period, Sent::Held),
                 (us(40_000), Sent::Captured),
             ]
         );
@@ -575,7 +637,7 @@ mod tests {
         let mut cadence = Cadence::new(60, false);
         assert_eq!(cadence.on_captured(at), Now::Emit);
         assert_eq!(cadence.on_captured(at + us(5_000)), Now::Hold);
-        let due = at + Duration::from_secs(1) / 60 * 7 / 8;
+        let due = at + Duration::from_secs(1) / 60;
         assert_eq!(cadence.next_wakeup(), Some(due));
         assert_eq!(cadence.due(due - us(1)), None);
         assert_eq!(cadence.due(due), Some(Due::EmitHeld));
@@ -605,10 +667,10 @@ mod tests {
         cadence.set_fps(30);
         let period = Duration::from_secs(1) / 30;
         assert_eq!(cadence.on_captured(at + us(20_000)), Now::Hold);
-        assert_eq!(cadence.next_wakeup(), Some(at + period * 7 / 8));
-        assert_eq!(cadence.due(at + period * 7 / 8), Some(Due::EmitHeld));
+        assert_eq!(cadence.next_wakeup(), Some(at + period));
+        assert_eq!(cadence.due(at + period), Some(Due::EmitHeld));
 
-        let sent = at + period * 7 / 8;
+        let sent = at + period;
         cadence.set_steady(true);
         assert_eq!(cadence.next_wakeup(), Some(sent + period + period / 8));
         cadence.set_steady(false);

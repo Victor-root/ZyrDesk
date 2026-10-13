@@ -4350,6 +4350,21 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Les images retenues par l'hôte (`h` dans la ligne `pace`) ne reviennent que lorsque l'écran donne vraiment plus que la cadence. Un essai rejoue ce que le journal montrait : une rafale, puis l'écran à son rythme, et vérifie que les images d'après repartent sans attendre.
 
+## D270. La cadence de l'hôte compte depuis l'image filmée, et l'affichage du client se mesure en deux temps (2026-10-13, pendant MZ)
+
+> Reprend [D269](#d269-la-grille-de-la-cadence-ne-tient-que-lécran-qui-déborde-2026-10-13-pendant-mz).
+
+**Ce que le journal a montré, côté hôte.** Des suites d'images retenues 12, puis 10, 8, 6 et 4 ms, une image sur deux ou trois, sur un écran qui tournait à 60 images par seconde. Deux causes. L'écran donne parfois une image en double, deux millisecondes après la précédente. La règle des sept huitièmes de période se comptait depuis le départ de l'image précédente, et une image retenue part en retard : la suivante, filmée à l'heure, attendait donc d'autant, la suivante un peu moins, sur une demi-douzaine d'images. Et une seule image en double suffisait à faire passer l'écran pour débordant, donc à le tenir à la grille de D268.
+
+**Décision.**
+
+- La règle se compte depuis le moment où l'image précédente a été filmée, et non depuis son départ. Une image filmée trop tôt attend une période entière après celle-là, et la suivante, si elle arrive à l'heure, la remplace : c'est l'image en double qui est laissée de côté, et le rythme ne bouge pas.
+- Un écran ne déborde que s'il a donné au moins une image de plus que seize périodes n'en tiennent, au quart de période près. Une image en double de temps en temps n'y suffit plus ; une rafale ou un écran nettement plus rapide, oui.
+
+**Côté client, ce qui manquait pour conclure.** Sur un des PC, afficher une image prend 16,7 ms à chaque fois, au lieu de 0,1 ms ailleurs, et les paquets attendent d'autant avant d'être lus. Le journal ne disait pas si c'est la préparation de l'image ou l'appel qui la remet à Windows qui attend. Une ligne `present:` par seconde, sous l'étiquette du lecteur, donne maintenant les deux temps à part, les codes que Windows a rendus autres qu'un simple succès, et pourquoi il refuse de dire ce que l'écran a montré. Une ligne à la création de l'affichage dit sur quel écran est la fenêtre, à quelle fréquence, et combien d'images la carte peut mettre en attente.
+
+**Les essais.** Un écran à l'heure qui donne une image en double toutes les demi-secondes ne retient que ces images-là : 20 sur 10 secondes, contre 239 avant. L'essai échoue avec la règle d'avant.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

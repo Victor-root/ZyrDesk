@@ -20,6 +20,7 @@
 //! other, so the device's immediate context is never used by two
 //! threads at once: FFmpeg's own lock on it is all it needs.
 
+use std::cell::RefCell;
 use std::ffi::c_void;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -51,13 +52,15 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_FEATURE_PRESENT_ALLOW_TEARING, DXGI_FRAME_STATISTICS,
     DXGI_MWA_NO_WINDOW_CHANGES, DXGI_PRESENT, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1,
     DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING, DXGI_SWAP_EFFECT_FLIP_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIFactory5, IDXGISwapChain1,
+    DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIDevice1, IDXGIFactory5, IDXGISwapChain1,
 };
+use windows::Win32::Graphics::Gdi::{DEVMODEW, ENUM_CURRENT_SETTINGS, EnumDisplaySettingsW};
 use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
-use windows::core::{BOOL, Error, HRESULT, Interface, PCSTR, s, w};
+use windows::core::{BOOL, Error, HRESULT, Interface, PCSTR, PCWSTR, s, w};
 use zyr_codec::{D3d11Picture, DecodeOutput, DecodedFrame, Ffmpeg, VideoDecoder};
 use zyr_media::codec::CodecSet;
+use zyr_media::trace::{Seconds, Spread};
 use zyr_proto::log::Log;
 
 use super::device::{self, Device, INTEL};
@@ -361,7 +364,79 @@ struct Gpu {
     views: Option<Views>,
     private: Option<Private>,
     rect: Option<Rect>,
+    /// What drawing and presenting cost, told once a second.
+    spent: RefCell<Spent>,
     log: Log,
+}
+
+/// What drawing and presenting cost over a second, and what the system
+/// answered.
+///
+/// Drawing and presenting apart: a present that waits for the screen
+/// and a copy that waits for the decoder cost the same time and are not
+/// the same fault.
+#[derive(Default)]
+struct Spent {
+    seconds: Seconds,
+    drawing: Spread,
+    presenting: Spread,
+    /// Codes Present answered other than plain success, and how often.
+    said: Vec<(HRESULT, u32)>,
+    /// Why the system would not tell what the screen showed, and how
+    /// often.
+    unsaid: Vec<(HRESULT, u32)>,
+}
+
+impl Spent {
+    /// One picture drawn from `began`, presented from `drawn` to `done`.
+    fn drew(&mut self, began: Instant, drawn: Instant, done: Instant, said: HRESULT, log: &Log) {
+        self.seconds.started(done);
+        self.drawing.add(drawn - began);
+        self.presenting.add(done - drawn);
+        if said != HRESULT(0) {
+            count(&mut self.said, said);
+        }
+        if self.seconds.over(done) {
+            log.debug(&self.line());
+            *self = Spent::default();
+        }
+    }
+
+    fn line(&self) -> String {
+        let codes = |list: &[(HRESULT, u32)]| {
+            list.iter()
+                .map(|(code, times)| {
+                    format!(
+                        "{} {times} times",
+                        code_and_words(*code, &Error::from(*code).message())
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let mut line = format!(
+            "present: drawing {} ms, Present {} ms (median/95th/worst)",
+            self.drawing, self.presenting
+        );
+        if !self.said.is_empty() {
+            line.push_str(&format!("; Present said {}", codes(&self.said)));
+        }
+        if !self.unsaid.is_empty() {
+            line.push_str(&format!(
+                "; what the screen showed was refused: {}",
+                codes(&self.unsaid)
+            ));
+        }
+        line
+    }
+}
+
+/// One more time for a code.
+fn count(list: &mut Vec<(HRESULT, u32)>, code: HRESULT) {
+    match list.iter_mut().find(|(seen, _)| *seen == code) {
+        Some((_, times)) => *times += 1,
+        None => list.push((code, 1)),
+    }
 }
 
 impl Gpu {
@@ -457,9 +532,11 @@ impl Gpu {
             views: None,
             private: None,
             rect: None,
+            spent: RefCell::default(),
             log: log.clone(),
         };
         gpu.upload(reach);
+        log.debug(&gpu.where_it_shows());
         log.write(&format!(
             "swap chain of {}x{}, {BUFFERS} buffers, flip discard, tearing {}",
             made.Width,
@@ -504,10 +581,57 @@ impl Gpu {
         Ok(())
     }
 
+    /// The screen the window is on, at what refresh, and how many
+    /// pictures the card may queue: what decides whether presenting
+    /// waits.
+    fn where_it_shows(&self) -> String {
+        // SAFETY: a getter on the device, answered with a number.
+        let queued = self
+            .device
+            .device
+            .cast::<IDXGIDevice1>()
+            .and_then(|device| unsafe { device.GetMaximumFrameLatency() })
+            .map_or_else(|e| failure("GetMaximumFrameLatency", &e), |n| n.to_string());
+        // SAFETY: a getter on a live swap chain, then on its output.
+        let screen = unsafe { self.swap.GetContainingOutput() }
+            .and_then(|output| unsafe { output.GetDesc() })
+            .map_or_else(
+                |e| failure("GetContainingOutput", &e),
+                |described| {
+                    let name = described.DeviceName;
+                    let mut mode = DEVMODEW {
+                        dmSize: size_of::<DEVMODEW>() as u16,
+                        ..Default::default()
+                    };
+                    // SAFETY: a name the system wrote, ended by a nought,
+                    // and a structure of ours that says its own size.
+                    let read = unsafe {
+                        EnumDisplaySettingsW(
+                            PCWSTR(name.as_ptr()),
+                            ENUM_CURRENT_SETTINGS,
+                            &mut mode,
+                        )
+                    };
+                    let end = name.iter().position(|c| *c == 0).unwrap_or(name.len());
+                    let name = String::from_utf16_lossy(&name[..end]);
+                    if read.as_bool() {
+                        format!(
+                            "{name} at {} Hz, {}x{}",
+                            mode.dmDisplayFrequency, mode.dmPelsWidth, mode.dmPelsHeight
+                        )
+                    } else {
+                        format!("{name}, its mode unread")
+                    }
+                },
+            );
+        format!("the window shows on {screen}; the card queues at most {queued} pictures")
+    }
+
     fn draw(&mut self, picture: &D3d11Picture) -> Result<(), Fault> {
         if self.hidden {
             return Ok(());
         }
+        let began = Instant::now();
         let (width, height) = (picture.width(), picture.height());
         let source = picture.texture();
         let mut source_description = D3D11_TEXTURE2D_DESC::default();
@@ -584,10 +708,14 @@ impl Gpu {
         // No wait for the screen's refresh and no flag: the newest
         // picture wins at composition, without tearing.
         // SAFETY: a swap chain of this device, drawn into above.
+        let drawn = Instant::now();
         let presented = unsafe { self.swap.Present(0, DXGI_PRESENT(0)) };
         if presented.is_err() {
             return Err(self.fault("Present", presented));
         }
+        self.spent
+            .borrow_mut()
+            .drew(began, drawn, Instant::now(), presented, &self.log);
         Ok(())
     }
 
@@ -600,7 +728,10 @@ impl Gpu {
         let presented = unsafe { self.swap.GetLastPresentCount() }.ok()?;
         let mut statistics = DXGI_FRAME_STATISTICS::default();
         // SAFETY: the same, into a structure of ours.
-        unsafe { self.swap.GetFrameStatistics(&mut statistics) }.ok()?;
+        if let Err(e) = unsafe { self.swap.GetFrameStatistics(&mut statistics) } {
+            count(&mut self.spent.borrow_mut().unsaid, e.code());
+            return None;
+        }
         if statistics.PresentCount == 0
             || statistics.PresentRefreshCount == 0
             || statistics.SyncRefreshCount == 0
