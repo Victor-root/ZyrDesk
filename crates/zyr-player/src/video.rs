@@ -599,7 +599,7 @@ impl<P: Presenter> Video<P> {
                             captured_us: frame.captured_us,
                             whole: frame.last_packet,
                         };
-                        let left_out = self.pacer.ready(ready, frame.last_packet, frame.repeat);
+                        let left_out = self.pacer.ready(ready, Instant::now(), frame.repeat);
                         self.unshown(now, left_out);
                     }
                     self.assembler.recycle(frame.data);
@@ -721,10 +721,11 @@ impl<P: Presenter> Video<P> {
                     tally.since_capture(captured_us, done)
                 };
                 let screen = self.presenter.displayed();
-                // Handed over at `started`: where the screen shows the
-                // pictures straight, Present returns only once it shows
-                // this one, which says nothing of how early it was given.
-                self.pacer.after(due, started, done, screen.as_ref());
+                // Handed over at `started`: Present can wait for the
+                // screen to show it, under a cap on the frame rate set in
+                // the graphics driver, which says nothing of how early it
+                // was given.
+                self.pacer.after(due, started, screen.as_ref());
                 self.flow
                     .presented(whole, started, done, since_capture, screen);
                 self.counters.shown += 1;

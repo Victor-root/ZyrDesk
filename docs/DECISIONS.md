@@ -4437,6 +4437,19 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Environ 17 ms de moins de la capture à l'écran pendant les moments où le client gardait ce retard, au prix d'une image sautée au plus toutes les deux secondes, et seulement quand il le gardait.
 
+## D276. D275 est retiré : l'écran n'attendait que parce que le pilote limitait les images (2026-10-13, pendant MZ)
+
+> Retire [D275](#d275-le-client-reprend-le-rafraîchissement-de-retard-quil-garde-quand-lécran-le-fait-attendre-2026-10-13-pendant-mz) et corrige ce que [D274](#d274-une-cadence-que-lécran-ne-date-plus-est-abandonnée-2026-10-13-pendant-mz) disait de l'affichage direct.
+
+**Ce que le journal a montré.** Le PC client avait un plafond de 59 images par seconde réglé dans le pilote graphique, pour les jeux. C'est lui qui faisait attendre l'appel qui remet chaque image à Windows (16,7 ms à chaque image), et qui sautait une image par seconde. Plafond retiré, l'appel rend la main en 0,1 ms, chaque image arrivée est montrée, et la capture à l'écran tombe de 25 à 35 ms à 11 à 13 ms.
+
+**Décision.**
+
+- Le rattrapage de D275 est retiré : il ne visait qu'un retard créé par ce plafond, et ne se déclenche plus jamais sans lui.
+- Ce que D274 disait de l'affichage direct est corrigé dans le code : l'appel n'y attend pas l'écran, rien n'y cadence encore les images, elles arrivent à l'écran aussi irrégulièrement qu'elles arrivent du réseau.
+
+**Ce qui se voit.** Rien de plus que le retrait du plafond : la session suit l'image de l'hôte avec environ 20 ms de moins.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

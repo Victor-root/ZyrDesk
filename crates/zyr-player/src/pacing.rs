@@ -69,17 +69,8 @@
 //! when the window goes to the screen straight, without the compositor:
 //! a rhythm nobody times any more drifts from the screen's, and windows
 //! drawn on it held pictures a refresh for nothing, one more each time
-//! the two slipped apart. Presenting then waits for the picture to be
-//! shown, which paces the pictures one a refresh by itself.
-//!
-//! It also keeps a refresh of delay once one is taken: two pictures that
-//! come within one refresh, the second waits for the first to show, and
-//! from then on every picture comes while the one before still waits for
-//! its refresh, and shows a refresh after it could have. Once every
-//! picture of the last two seconds came before the present before it
-//! returned, the next one that comes that way is held, up to a refresh,
-//! for a newer one to take its place: that one is presented as it comes,
-//! and the delay is gone.
+//! the two slipped apart. Nothing paces the pictures there yet: they
+//! land on the screen as unevenly as they come.
 
 use std::cmp::Ordering;
 use std::collections::VecDeque;
@@ -130,11 +121,6 @@ const BURST: u32 = 4;
 /// How long the screen may say nothing of its refreshes before the
 /// rhythm known is let go of.
 const UNTIMED_FOR: Duration = Duration::from_millis(500);
-
-/// The longest a picture is held for a newer one to take a refresh back
-/// before the refreshes are known: a refresh of a 50 Hz screen. A
-/// present that took longer was held up by something else.
-const HELD_AT_MOST: Duration = Duration::from_millis(20);
 
 /// Presents remembered until the screen says what became of them.
 const MOST_PENDING: usize = 16;
@@ -226,8 +212,7 @@ impl Refreshes {
 
 struct Waiting<T> {
     picture: T,
-    /// When it could have been presented first, had nothing held the
-    /// thread up: when its frame came whole.
+    /// When it was decoded.
     ready: Instant,
     /// Sent again by the host, its screen unchanged.
     repeat: bool,
@@ -291,13 +276,8 @@ pub(crate) struct Pacer<T> {
     served: Option<Instant>,
     /// Whether that picture was sent again by the host.
     served_repeat: bool,
-    /// When the last picture was presented, and when presenting it
-    /// returned.
+    /// When the last picture was presented.
     presented_at: Option<Instant>,
-    returned_at: Option<Instant>,
-    /// Until when the picture waiting is held for a newer one, to take
-    /// a refresh back before the refreshes are known.
-    held_until: Option<Instant>,
     /// When the screen last said when its refreshes are.
     timed_at: Option<Instant>,
     /// How long before a refresh its window closes, as learnt; never
@@ -327,8 +307,6 @@ impl<T> Pacer<T> {
             served: None,
             served_repeat: false,
             presented_at: None,
-            returned_at: None,
-            held_until: None,
             timed_at: None,
             cutoff: CUTOFF,
             cutoff_moved: None,
@@ -341,9 +319,9 @@ impl<T> Pacer<T> {
         }
     }
 
-    /// A picture decoded, whose frame came whole at `ready`, a `repeat`
-    /// if the host sent it again. Says which waiting pictures were left
-    /// out for it: before the refreshes are known, only the newest waits.
+    /// A picture decoded at `ready`, a `repeat` if the host sent it again.
+    /// Says which waiting pictures were left out for it: before the
+    /// refreshes are known, only the newest waits.
     pub(crate) fn ready(&mut self, picture: T, ready: Instant, repeat: bool) -> Unshown {
         self.seconds.started(ready);
         let before = self.waiting.len();
@@ -377,9 +355,6 @@ impl<T> Pacer<T> {
         if self.refreshes.is_some() {
             self.second.gave_way += gave_way;
             self.second.piled_up += piled_up;
-        } else if gave_way + piled_up > 0 && self.held_until.take().is_some() {
-            self.catching_up = false;
-            self.second.caught_up += 1;
         }
         Unshown {
             gave_way,
@@ -390,7 +365,14 @@ impl<T> Pacer<T> {
     /// The picture to present at `now`, if one is due.
     pub(crate) fn due(&mut self, now: Instant) -> Option<Turn<T>> {
         let Some(refreshes) = self.refreshes else {
-            return self.as_it_comes(now);
+            let waiting = self.waiting.pop_front()?;
+            self.second.unpaced += 1;
+            self.served_repeat = waiting.repeat;
+            return Some(Turn {
+                picture: waiting.picture,
+                due: None,
+                unshown: Unshown::default(),
+            });
         };
         if self.waiting.is_empty() {
             return None;
@@ -461,68 +443,13 @@ impl<T> Pacer<T> {
         })
     }
 
-    /// Before the refreshes are known, the picture waiting goes at once,
-    /// unless it is held for a newer one to take a refresh back.
-    fn as_it_comes(&mut self, now: Instant) -> Option<Turn<T>> {
-        let behind = self
-            .waiting
-            .front()
-            .is_some_and(|waiting| self.came_behind(waiting.ready));
-        if self.catching_up && behind {
-            let until = *self.held_until.get_or_insert_with(|| {
-                let returned = self.returned_at.unwrap_or(now);
-                let took = self
-                    .presented_at
-                    .map_or(Duration::ZERO, |at| returned.saturating_duration_since(at));
-                returned + took.min(HELD_AT_MOST)
-            });
-            if now < until {
-                return None;
-            }
-        }
-        if self.catching_up {
-            self.catching_up = false;
-            self.held_until = None;
-            self.log.debug(if behind {
-                "pacing: no newer picture came to take a refresh back; the one held goes"
-            } else {
-                "pacing: a picture came after the present before returned; no refresh to take back"
-            });
-        }
-        let waiting = self.waiting.pop_front()?;
-        self.early(behind, now);
-        if self.catching_up {
-            self.log.debug(
-                "pacing: every picture of the last two seconds came while the one before still \
-                 waited for its refresh; the next such is held for a newer one",
-            );
-        }
-        self.second.unpaced += 1;
-        self.served_repeat = waiting.repeat;
-        Some(Turn {
-            picture: waiting.picture,
-            due: None,
-            unshown: Unshown::default(),
-        })
-    }
-
-    /// Whether a picture that came at `ready` came before the last
-    /// present returned, by more than the unevenness of a moment.
-    fn came_behind(&self, ready: Instant) -> bool {
-        self.returned_at
-            .is_some_and(|returned| ready + EARLY_BY <= returned)
-    }
-
     /// When a waiting picture can next be presented, if one waits for
-    /// its window or is held; one presented as soon as decoded needs no
-    /// wake-up.
+    /// its window; one presented as soon as decoded needs no wake-up.
     pub(crate) fn next_wakeup(&self, now: Instant) -> Option<Instant> {
         if self.waiting.is_empty() {
             return None;
         }
-        let Some(refreshes) = self.refreshes else {
-            return self.held_until;
-        };
+        let refreshes = self.refreshes?;
         let (due, opening) = self.turn(&refreshes, now)?;
         match self.served {
             Some(served) if !refreshes.later(due, served) => served.checked_add(OPENING),
@@ -531,17 +458,15 @@ impl<T> Pacer<T> {
     }
 
     /// A picture was presented at `presented`, for the refresh `due` then
-    /// when it was paced, presenting it returned at `returned`, and
-    /// `screen` is what the screen said right after.
+    /// when it was paced, and `screen` is what the screen said right
+    /// after.
     pub(crate) fn after(
         &mut self,
         due: Option<Instant>,
         presented: Instant,
-        returned: Instant,
         screen: Option<&Displayed>,
     ) {
         self.presented_at = Some(presented);
-        self.returned_at = Some(returned);
         let Some(screen) = screen else {
             if self.refreshes.is_some()
                 && self
@@ -575,7 +500,6 @@ impl<T> Pacer<T> {
     pub(crate) fn clear(&mut self) {
         self.waiting.clear();
         self.presented_at = None;
-        self.returned_at = None;
         self.forget_the_screen();
     }
 
@@ -633,7 +557,6 @@ impl<T> Pacer<T> {
         self.early_since = None;
         self.early_run = 0;
         self.catching_up = false;
-        self.held_until = None;
     }
 
     /// Takes in what the screen said: when its refreshes are, and what
@@ -1093,7 +1016,7 @@ mod tests {
                     self.compositor.presents.push((now, turn.picture));
                     self.presented.push((turn.picture, turn.due));
                     let screen = self.compositor.displayed(now);
-                    self.pacer.after(turn.due, now, now, screen.as_ref());
+                    self.pacer.after(turn.due, now, screen.as_ref());
                     continue;
                 }
                 let woken = self.pacer.next_wakeup(now).map(|at| at + self.late);
@@ -1549,12 +1472,12 @@ mod tests {
         let journal = testing::OwnLog::new("pacing-untimed");
         let mut pacer = Pacer::new(&journal.log);
         let at = Instant::now();
-        pacer.after(None, at, at, Some(&said(1, 1_000, at)));
+        pacer.after(None, at, Some(&said(1, 1_000, at)));
         assert!(pacer.refreshes.is_some());
-        pacer.after(None, at + UNTIMED_FOR / 2, at + UNTIMED_FOR / 2, None);
+        pacer.after(None, at + UNTIMED_FOR / 2, None);
         assert!(pacer.refreshes.is_some(), "a moment of silence keeps it");
         let later = at + UNTIMED_FOR;
-        pacer.after(None, later, later, None);
+        pacer.after(None, later, None);
         assert!(pacer.refreshes.is_none());
         pacer.ready(7u32, later, false);
         let turn = pacer.due(later).unwrap();
@@ -1566,12 +1489,12 @@ mod tests {
         let journal = testing::OwnLog::new("pacing-count");
         let mut pacer = Pacer::new(&journal.log);
         let at = Instant::now();
-        pacer.after(None, at, at, Some(&said(1, 1_000, at)));
+        pacer.after(None, at, Some(&said(1, 1_000, at)));
         assert!(pacer.refreshes.is_some());
         let left_out = pacer.ready(7u32, at + Duration::from_millis(1), false);
         assert_eq!(left_out, Unshown::default());
         let later = at + Duration::from_millis(2);
-        pacer.after(None, later, later, Some(&said(2, 5, later)));
+        pacer.after(None, later, Some(&said(2, 5, later)));
         // Counted afresh from the refresh just timed.
         assert_eq!(pacer.timed.len(), 1);
         assert_eq!(pacer.refreshes.map(|known| known.at), Some(later));
@@ -1590,7 +1513,6 @@ mod tests {
             let now = at + Duration::from_secs(20) * step;
             pacer.after(
                 None,
-                now,
                 now,
                 Some(&said(u64::from(step), 1_200 * u64::from(step), now)),
             );
@@ -1619,130 +1541,6 @@ mod tests {
             (2, None, Unshown::default())
         );
         assert!(pacer.due(now).is_none());
-    }
-
-    /// A screen the window goes to straight: presenting returns at the
-    /// refresh that shows the picture, and says nothing of it. Pictures
-    /// come at `arrived`, the thread first free at `free`; gives, for each
-    /// picture shown, how long after it came, and how many never were.
-    fn straight_on_the_screen(
-        log: &Log,
-        start: Instant,
-        arrived: &[Instant],
-        mut free: Instant,
-    ) -> (Vec<Duration>, u64) {
-        let period = Duration::from_nanos(SIXTY_HZ);
-        let refresh_after = |at: Instant| {
-            let refreshes = at.duration_since(start).as_nanos() / period.as_nanos() + 1;
-            start + period * refreshes as u32
-        };
-        let mut pacer = Pacer::new(log);
-        let (mut next, mut now) = (0, start);
-        let (mut shown, mut never) = (Vec::new(), 0);
-        let until = *arrived.last().unwrap() + period * 3;
-        while now <= until {
-            if now >= free {
-                while next < arrived.len() && arrived[next] <= now {
-                    never += pacer.ready(next, arrived[next], false).dropped;
-                    next += 1;
-                }
-                if let Some(turn) = pacer.due(now) {
-                    never += turn.unshown.dropped;
-                    let returned = refresh_after(now);
-                    pacer.after(None, now, returned, None);
-                    shown.push(returned.duration_since(arrived[turn.picture]));
-                    free = returned;
-                    now = returned;
-                    continue;
-                }
-            }
-            let Some(at) = [
-                arrived.get(next).copied().filter(|_| now >= free),
-                pacer.next_wakeup(now),
-                Some(free).filter(|free| now < *free),
-            ]
-            .into_iter()
-            .flatten()
-            .min() else {
-                break;
-            };
-            now = at.max(now + Duration::from_micros(1));
-        }
-        (shown, never)
-    }
-
-    #[test]
-    fn a_refresh_kept_behind_a_present_that_waits_for_the_screen_is_taken_back() {
-        let journal = testing::OwnLog::new("pacing-straight");
-        let start = Instant::now();
-        let arrived = arrivals(
-            start,
-            SIXTY_HZ,
-            Duration::from_millis(10),
-            Duration::ZERO,
-            300,
-        );
-        // Busy until the second refresh: the first picture waits for it,
-        // and every one after waits for the one before.
-        let free = start + Duration::from_nanos(2 * SIXTY_HZ);
-        let (shown, never) = straight_on_the_screen(&journal.log, start, &arrived, free);
-        let refresh = Duration::from_nanos(SIXTY_HZ);
-        assert!(
-            shown[..60].iter().all(|after| *after > refresh),
-            "{shown:?}"
-        );
-        assert!(
-            shown[shown.len() - 60..]
-                .iter()
-                .all(|after| *after < refresh),
-            "{shown:?}"
-        );
-        assert_eq!(never, 1, "one picture is the price of the refresh");
-        let written = journal.written();
-        assert!(
-            written.contains("1 dropped to take a refresh back"),
-            "{written}"
-        );
-        assert!(written.contains("the next such is held"), "{written}");
-    }
-
-    #[test]
-    fn pictures_that_come_after_the_present_before_returned_are_never_held() {
-        let journal = testing::OwnLog::new("pacing-straight-free");
-        let start = Instant::now();
-        let arrived = arrivals(
-            start,
-            SIXTY_HZ,
-            Duration::from_millis(10),
-            Duration::ZERO,
-            300,
-        );
-        let (shown, never) = straight_on_the_screen(&journal.log, start, &arrived, start);
-        assert_eq!(shown.len(), 300);
-        assert!(
-            shown
-                .iter()
-                .all(|after| *after < Duration::from_nanos(SIXTY_HZ)),
-            "{shown:?}"
-        );
-        assert_eq!(never, 0);
-    }
-
-    #[test]
-    fn a_picture_held_for_a_newer_one_goes_after_a_refresh_if_none_comes() {
-        let journal = testing::OwnLog::new("pacing-held");
-        let mut pacer = Pacer::new(&journal.log);
-        let at = Instant::now();
-        let refresh = Duration::from_nanos(SIXTY_HZ);
-        let returned = at + refresh;
-        pacer.after(None, at, returned, None);
-        pacer.catching_up = true;
-        pacer.ready(1u32, returned - Duration::from_millis(5), false);
-        assert!(pacer.due(returned).is_none(), "held for a newer one");
-        assert_eq!(pacer.next_wakeup(returned), Some(returned + refresh));
-        let turn = pacer.due(returned + refresh).unwrap();
-        assert_eq!((turn.picture, turn.due), (1, None));
-        assert!(!pacer.catching_up);
     }
 
     #[test]
@@ -1881,7 +1679,7 @@ mod tests {
         let journal = testing::OwnLog::new("pacing-repeat-waiting");
         let mut pacer = Pacer::new(&journal.log);
         let at = Instant::now();
-        pacer.after(None, at, at, Some(&said(1, 1_000, at)));
+        pacer.after(None, at, Some(&said(1, 1_000, at)));
         // Both decoded after the window of refresh 1001 closed.
         let ms = Duration::from_millis;
         assert_eq!(pacer.ready(1u32, at + ms(12), true), Unshown::default());
