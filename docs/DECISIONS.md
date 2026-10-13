@@ -4396,6 +4396,20 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Pour le prochain journal.** La ligne `present:` dit maintenant combien d'images attendaient l'écran après chaque envoi, combien de temps après un rafraîchissement l'appel est revenu, et combien de fois les statistiques de la fenêtre ont daté l'écran ou sont restées vides. Si la file ne se compte pas non plus dans ce mode, ces chiffres le diront, et la suite se décidera dessus.
 
+## D273. Le client retire D271 et D272, et lit les temps de l'écran par les statistiques vidéo (2026-10-13, pendant MZ)
+
+> Retire [D271](#d271-le-client-ne-laisse-jamais-plus-de-deux-images-attendre-lécran-2026-10-13-pendant-mz) et [D272](#d272-quand-lécran-prend-les-images-directement-une-seule-lattend-2026-10-13-pendant-mz).
+
+**Ce que le journal a montré.** Sur le PC client où les images vont directement à l'écran, aucune image n'attend l'écran quand l'appel qui la remet à Windows revient : cet appel attend simplement que l'écran l'affiche, comme une synchronisation verticale. La file de trois images supposée par D271 n'existe pas. La règle de D272 a même ajouté un rafraîchissement de retard dans les secondes où elle s'est déclenchée (48 ms de la capture à l'écran au lieu de 34). Les statistiques habituelles de la fenêtre y restent vides, mais celles que Windows tient pour la vidéo datent bien l'écran.
+
+**Décision.**
+
+- Tout ce qu'avaient ajouté D271 et D272 est retiré : le signal de file pleine, l'attente de place et la règle d'une image à la fois.
+- Quand les statistiques de la fenêtre restent vides, le client lit les mêmes informations dans les statistiques vidéo. Sa cadence connaît alors le rythme de l'écran, juge chaque image (à l'heure, en retard) et rattrape un rafraîchissement de retard quand il le peut, ce qu'elle ne faisait jamais sur ce PC.
+- La cadence compte une image comme remise au moment où le client la confie à Windows, et non au retour de l'appel, qui peut attendre l'affichage.
+
+**Pour le prochain journal.** La ligne `present:` dit combien de fois l'écran a été daté par la fenêtre, par les statistiques vidéo ou pas du tout, et la ligne `pacing` du client doit maintenant compter des images à l'heure ou en retard au lieu de zéros.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

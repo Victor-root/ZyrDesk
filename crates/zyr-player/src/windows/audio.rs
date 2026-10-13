@@ -21,7 +21,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use windows::Win32::Foundation::{PROPERTYKEY, WAIT_FAILED, WAIT_TIMEOUT};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, PROPERTYKEY, WAIT_FAILED, WAIT_TIMEOUT};
 use windows::Win32::Media::Audio::{
     AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
     AUDCLNT_STREAMFLAGS_EVENTCALLBACK, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, DEVICE_STATE,
@@ -39,7 +39,7 @@ use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 use windows::core::{Interface, PCWSTR, implement, w};
 use zyr_proto::log::{Log, Seldom};
 
-use super::{Multimedia, Owned, failure};
+use super::{Multimedia, failure};
 use crate::audio::{Muted, Sound, pace};
 
 /// The engine's sound: 48 kHz, two channels, 32-bit float.
@@ -236,7 +236,7 @@ struct Output {
     render: IAudioRenderClient,
     volume: ISimpleAudioVolume,
     /// Set by the card each time it has room.
-    wake: Owned,
+    wake: Event,
     /// Frames the card's buffer holds.
     frames: u32,
     /// The mute the mixer shows now, once set.
@@ -302,10 +302,7 @@ impl Output {
             }
         };
 
-        // SAFETY: an unnamed auto-reset event, not set.
-        let wake = unsafe { CreateEventW(None, false, false, None) }
-            .map(Owned)
-            .map_err(|e| refused("CreateEventW", &e))?;
+        let wake = Event::new().map_err(|e| refused("CreateEventW", &e))?;
         // SAFETY: an event of ours, alive as long as the client.
         unsafe { client.SetEventHandle(wake.0) }.map_err(|e| refused("SetEventHandle", &e))?;
         // SAFETY: getters on an initialised client.
@@ -544,6 +541,23 @@ impl Drop for Mixed {
 /// What an extensible format adds after the plain one.
 fn extension() -> usize {
     size_of::<WAVEFORMATEXTENSIBLE>() - size_of::<WAVEFORMATEX>()
+}
+
+/// An event of ours, closed when dropped.
+struct Event(HANDLE);
+
+impl Event {
+    fn new() -> windows::core::Result<Event> {
+        // SAFETY: an unnamed auto-reset event, not set.
+        unsafe { CreateEventW(None, false, false, None) }.map(Event)
+    }
+}
+
+impl Drop for Event {
+    fn drop(&mut self) {
+        // SAFETY: a handle of ours, closed once here.
+        let _ = unsafe { CloseHandle(self.0) };
+    }
 }
 
 /// COM, brought up on the sound thread for as long as it plays, and

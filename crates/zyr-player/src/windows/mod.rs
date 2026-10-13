@@ -13,7 +13,7 @@ pub use present::Screen;
 
 use std::time::Duration;
 
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
+use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Media::{TIMERR_NOERROR, timeBeginPeriod, timeEndPeriod};
 use windows::Win32::System::Threading::{
     AvRevertMmThreadCharacteristics, AvSetMmThreadCharacteristicsW,
@@ -31,16 +31,6 @@ fn failure(what: &str, error: &Error) -> String {
 /// Windows' own words for it.
 fn code_and_words(code: HRESULT, words: &str) -> String {
     format!("{:#010x} {}", code.0 as u32, words.trim())
-}
-
-/// A handle of ours, closed when dropped.
-struct Owned(HANDLE);
-
-impl Drop for Owned {
-    fn drop(&mut self) {
-        // SAFETY: a handle of ours, closed once here.
-        let _ = unsafe { CloseHandle(self.0) };
-    }
 }
 
 /// The calling thread, scheduled by the multimedia class scheduler as
