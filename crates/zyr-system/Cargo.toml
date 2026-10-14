@@ -13,6 +13,8 @@ zyr-proto.workspace = true
 zyr-win32.workspace = true
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
+    # The colour of the desktop, behind its wallpaper.
+    "Win32_Graphics_Gdi",
     # Timers to the millisecond while a session is open.
     "Win32_Media",
     # What the network stack and the cards have counted, and which card
@@ -24,7 +26,11 @@ windows-sys = { version = "0.61.2", features = [
     # wlanapi.dll being missing from a Windows Server without its
     # wireless service.
     "Win32_NetworkManagement_WiFi",
+    # The full name written on this computer for an account.
+    "Win32_NetworkManagement_NetManagement",
     "Win32_Security",
+    # The name a company's directory gives the person.
+    "Win32_Security_Authentication_Identity",
     "Win32_Storage_FileSystem",
     # The shell asked to run a program with administrator rights expects
     # COM on the thread that asks.

@@ -2,8 +2,8 @@
 //!
 //! Nearly all of it sits in the registry, where Windows and the drivers
 //! write it down as they install: the build of Windows, the processor,
-//! the graphics cards and the driver each runs on. The memory and the
-//! power come from their own calls. No permission beyond reading is
+//! the graphics cards and the driver each runs on. The memory, what of it
+//! is plugged in, and the power come from their own calls. No permission beyond reading is
 //! needed, and what cannot be read is left out. How it is worded is in
 //! `machine.rs`.
 
@@ -17,7 +17,9 @@ use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_LOCAL_MACHINE, KEY_READ, REG_ROUTINE_FLAGS, RRF_RT_ANY, RRF_RT_REG_DWORD,
     RRF_RT_REG_SZ, RegCloseKey, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW,
 };
-use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+use windows_sys::Win32::System::SystemInformation::{
+    GetPhysicallyInstalledSystemMemory, GlobalMemoryStatusEx, MEMORYSTATUSEX,
+};
 use windows_sys::core::GUID;
 use zyr_win32::{read_wide, wide};
 
@@ -39,12 +41,13 @@ pub fn describe_this_computer() -> Option<String> {
 }
 
 /// What Windows says this computer is.
-fn this_computer() -> Machine {
+pub fn this_computer() -> Machine {
     Machine {
         windows: windows(),
         processor: text(PROCESSOR_KEY, "ProcessorNameString").map(|name| tidy(&name)),
         processors: std::thread::available_parallelism().map_or(0, usize::from),
         memory: memory(),
+        installed: installed(),
         power: power(),
         cards: cards(),
     }
@@ -126,6 +129,14 @@ fn memory() -> Option<u64> {
     };
     // SAFETY: a structure of ours, with its size said.
     (unsafe { GlobalMemoryStatusEx(&mut status) } != 0).then_some(status.ullTotalPhys)
+}
+
+fn installed() -> Option<u64> {
+    let mut kilobytes = 0u64;
+    // SAFETY: a number of ours, which the call writes.
+    (unsafe { GetPhysicallyInstalledSystemMemory(&mut kilobytes) } != 0)
+        .then_some(kilobytes * 1024)
+        .filter(|bytes| *bytes > 0)
 }
 
 fn power() -> Power {

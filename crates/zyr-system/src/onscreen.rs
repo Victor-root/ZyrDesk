@@ -172,7 +172,7 @@ fn same_file(one: &Path, other: &Path) -> bool {
 /// # Safety
 ///
 /// `text` is null, or points at letters ending with a nought.
-unsafe fn wide_text(text: *const u16) -> String {
+pub(crate) unsafe fn wide_text(text: *const u16) -> String {
     if text.is_null() {
         return String::new();
     }

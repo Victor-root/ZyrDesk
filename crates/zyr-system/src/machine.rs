@@ -27,13 +27,23 @@ pub struct Windows {
 /// The first build of Windows 11.
 const FIRST_WINDOWS_11: u32 = 22_000;
 
-impl fmt::Display for Windows {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(if self.build >= FIRST_WINDOWS_11 {
+impl Windows {
+    /// Which Windows it is, as everybody names it.
+    ///
+    /// Read from the build and not from the name the registry writes:
+    /// Windows 11 still writes « Windows 10 » there.
+    pub fn name(&self) -> &'static str {
+        if self.build >= FIRST_WINDOWS_11 {
             "Windows 11"
         } else {
             "Windows 10"
-        })?;
+        }
+    }
+}
+
+impl fmt::Display for Windows {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())?;
         if let Some(version) = &self.version {
             write!(f, " {version}")?;
         }
@@ -179,8 +189,27 @@ pub struct Machine {
     pub processors: usize,
     /// Memory Windows can use, in bytes.
     pub memory: Option<u64>,
+    /// Memory plugged into the computer, in bytes: a little more than
+    /// what Windows can use, and the number its owner bought it with.
+    pub installed: Option<u64>,
     pub power: Power,
     pub cards: Vec<Card>,
+}
+
+impl Machine {
+    /// The graphics card that draws: the one with the most memory of its
+    /// own.
+    ///
+    /// A laptop carries the processor's graphics beside the card that
+    /// plays games, and the card is the one its owner knows it by. With
+    /// nothing declared, the first one Windows lists.
+    pub fn main_card(&self) -> Option<&Card> {
+        self.cards
+            .iter()
+            .enumerate()
+            .max_by_key(|(at, card)| (card.memory.unwrap_or(0), std::cmp::Reverse(*at)))
+            .map(|(_, card)| card)
+    }
 }
 
 impl fmt::Display for Machine {
@@ -231,6 +260,7 @@ mod tests {
             processor: Some("Example(R) Core(TM) i5-0000H CPU @ 2.40GHz".to_string()),
             processors: 8,
             memory: Some(17_000_000_000),
+            installed: Some(17_179_869_184),
             power: Power {
                 plan: Some("Balanced".to_string()),
                 mode: Some("Best performance".to_string()),
@@ -260,6 +290,38 @@ mod tests {
              performance mode, on the mains; graphics Example GTX 0000 Ti (driver 32.0.15.6094, \
              6.0 GB), Example UHD Graphics (driver 31.0.101.2130, 128 MB)"
         );
+    }
+
+    #[test]
+    fn the_card_that_draws_is_the_one_with_the_most_memory() {
+        let mut laptop = a_laptop();
+        assert_eq!(
+            laptop.main_card().map(|card| card.name.as_str()),
+            Some("Example GTX 0000 Ti")
+        );
+        laptop.cards.reverse();
+        assert_eq!(
+            laptop.main_card().map(|card| card.name.as_str()),
+            Some("Example GTX 0000 Ti")
+        );
+        // Nothing declared: the first one listed.
+        for card in &mut laptop.cards {
+            card.memory = None;
+        }
+        assert_eq!(
+            laptop.main_card().map(|card| card.name.as_str()),
+            Some("Example UHD Graphics")
+        );
+        laptop.cards.clear();
+        assert!(laptop.main_card().is_none());
+    }
+
+    #[test]
+    fn windows_is_named_by_its_build() {
+        let mut windows = a_laptop().windows.unwrap();
+        assert_eq!(windows.name(), "Windows 11");
+        windows.build = 19_045;
+        assert_eq!(windows.name(), "Windows 10");
     }
 
     #[test]

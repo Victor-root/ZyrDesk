@@ -11,7 +11,8 @@
 //! fares; putting this program ahead of the others while a session is
 //! open; reading the shape the pointer has on the desktop this program
 //! stands on, and whether a program drew it for itself; counting how busy the computer is and what its network
-//! has carried and lost; and saying what the computer is.
+//! has carried and lost; and saying what the computer is, how far its
+//! network reaches, who sits at it and what their desktop shows.
 //!
 //! And what gets a program running at all: with no console flashing up,
 //! with administrator rights asked of the person, or when the person
@@ -26,6 +27,8 @@
 mod ahead;
 #[cfg(windows)]
 mod attention;
+#[cfg(windows)]
+mod connectivity;
 #[cfg(any(windows, test))]
 mod counted;
 #[cfg(windows)]
@@ -38,6 +41,8 @@ mod inspection;
 mod machine;
 #[cfg(windows)]
 mod onscreen;
+#[cfg(windows)]
+mod person;
 #[cfg(windows)]
 mod pointer;
 #[cfg(windows)]
@@ -58,6 +63,8 @@ pub use ahead::{Ahead, put_ahead};
 #[cfg(windows)]
 pub use attention::{forget_it, let_it_be_pressed, press};
 #[cfg(windows)]
+pub use connectivity::{Connectivity, connectivity};
+#[cfg(windows)]
 pub use elevated::run_as_administrator;
 #[cfg(not(windows))]
 pub use elsewhere::{
@@ -66,12 +73,16 @@ pub use elsewhere::{
     start_a_helper, start_at_sign_in, start_in_session, still_running, whoever_this_is,
 };
 #[cfg(windows)]
-pub use inspection::describe_this_computer;
+pub use inspection::{describe_this_computer, this_computer};
+#[cfg(windows)]
+pub use machine::{Card, Machine, Windows};
 #[cfg(windows)]
 pub use onscreen::{
     SessionProcess, errand, errand_code, lock_this_desktop, runs_in, session_on_screen,
     somebody_signed_in, start_a_helper, start_in_session, whoever_this_is,
 };
+#[cfg(windows)]
+pub use person::{Wallpaper, name_of_the_person, wallpaper};
 #[cfg(windows)]
 pub use pointer::{pointer_drawn_by_its_program, pointer_shape};
 #[cfg(windows)]
