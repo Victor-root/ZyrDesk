@@ -88,9 +88,13 @@
   --art-ridge-front: #303b55;
   --art-rim: rgba(248, 205, 106, 0.28);
 
-  /* Frosted glass, laid over the picture the home window lies on: the
-     tint over the blurred picture, and the light along its edge. How far
-     the picture behind it is blurred is the same in both themes. */
+  /* The picture the home window lies on is never seen bare: a light
+     frost covers the whole page, enough for the words written on it to
+     read, and a deeper glass the bar on the left and the banner. For
+     each, the tint over the blurred picture; for the panels, the light
+     along their edge. How far each blurs is the same in both themes. */
+  --frost: rgba(11, 13, 18, 0.38);
+  --frost-blur: 18px;
   --glass: rgba(18, 21, 29, 0.62);
   --glass-edge: rgba(255, 255, 255, 0.08);
   --glass-blur: 60px;
@@ -182,6 +186,7 @@
   --art-ridge-front: #7f8794;
   --art-rim: rgba(255, 255, 255, 0.45);
 
+  --frost: rgba(255, 255, 255, 0.3);
   --glass: rgba(255, 255, 255, 0.58);
   --glass-edge: rgba(255, 255, 255, 0.75);
 

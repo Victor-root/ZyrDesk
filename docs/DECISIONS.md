@@ -4655,6 +4655,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Un accueil posé sur des courants dorés, clair ou sombre selon le thème, avec une barre de gauche et un bandeau en verre dépoli. Les images font 1672 pixels de large : sur un très grand écran, elles sont agrandies, ce que leur flou naturel rend peu visible.
 
+## D297. L'image de fond se voit à travers un verre léger (2026-10-14, pendant MZ)
+
+**Pourquoi.** Posée nette sous la page ([D296](#d296-laccueil-repose-sur-une-image-de-fond-sous-du-verre-dépoli-2026-10-14-pendant-mz)), l'image de fond rendait mal : ses traits et ses points lumineux se mêlaient aux titres écrits dessus.
+
+**Ce qui est fait.** Toute la page voit désormais l'image à travers un verre léger : floutée un peu (`--frost-blur`, 18 pixels) et sous une teinte légère (`--frost`), assez pour que les écritures se lisent, pas assez pour effacer l'image. La barre de gauche et le bandeau gardent leur verre plus marqué par-dessus. Le flou de chaque verre est fait une fois par la carte graphique et gardé, les deux côte à côte, jusqu'à ce que la fenêtre change de taille.
+
+**Ce qui se voit.** Une image de fond adoucie partout, et des panneaux en verre plus dépoli.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

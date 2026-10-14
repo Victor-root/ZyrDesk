@@ -332,9 +332,10 @@ pub struct Canvas {
     /// What was drawn so far in a frame, kept to be laid down again as
     /// it is: see `keep`.
     kept: std::cell::RefCell<Option<ID2D1Bitmap>>,
-    /// The last picture blurred for frosted glass: which one, how far,
-    /// and the blurred copy, if the graphics card could make it.
-    frost: std::cell::RefCell<Option<Frost>>,
+    /// The pictures blurred for frosted glass, the most recently drawn
+    /// last: the light glass over the whole page and the deeper one of
+    /// the panels over it are two blurs of the same picture.
+    frosts: std::cell::RefCell<Vec<Frost>>,
     /// How what is drawn now is grown and moved: see `growing`.
     growth: std::cell::Cell<Matrix3x2>,
 }
@@ -383,7 +384,8 @@ struct Shade {
 }
 
 /// A picture blurred for frosted glass: which picture, by how many of
-/// its own pixels, and the blurred copy.
+/// its own pixels, and the blurred copy, if the graphics card could make
+/// it.
 struct Frost {
     picture: u64,
     blur: u32,
@@ -408,6 +410,8 @@ const PICTURES_KEPT: usize = 24;
 const SCENES_KEPT: usize = 16;
 /// How many shadows: one per size of card, dialog and block on screen.
 const SHADES_KEPT: usize = 16;
+/// How many blurs: the page's and the panels', in each theme.
+const FROSTS_KEPT: usize = 4;
 
 impl Canvas {
     /// A canvas of this size, in real pixels.
@@ -546,7 +550,7 @@ impl Canvas {
                 scenes: std::cell::RefCell::new(Vec::new()),
                 shades: std::cell::RefCell::new(Vec::new()),
                 kept: std::cell::RefCell::new(None),
-                frost: std::cell::RefCell::new(None),
+                frosts: std::cell::RefCell::new(Vec::new()),
                 growth: std::cell::Cell::new(Matrix3x2::identity()),
             })
         }
@@ -1117,24 +1121,8 @@ impl Canvas {
         self.lay(&bitmap, (size.0 as f32, size.1 as f32), rect, radius, 1.0);
     }
 
-    /// Lays the picture the window lies on, covering the whole canvas,
-    /// and lets only what falls in `rect` show.
-    pub fn backdrop(&self, picture: &Picture, rect: Rect) {
-        let Some(bitmap) = self.bitmap_of(picture) else {
-            return;
-        };
-        self.lay_within(
-            &bitmap,
-            (picture.width as f32, picture.height as f32),
-            self.whole(),
-            rect,
-            0.0,
-            1.0,
-        );
-    }
-
-    /// The same picture seen through frosted glass in the rounded `rect`:
-    /// blurred by `blur` pixels of the canvas.
+    /// A picture covering the whole canvas, seen through frosted glass
+    /// in the rounded `rect`: blurred by `blur` pixels of the canvas.
     ///
     /// The blur is the graphics card's, made once for the picture and
     /// kept until the canvas changes size; a canvas whose card cannot blur
@@ -1144,25 +1132,39 @@ impl Canvas {
         // Blurred at the picture's own size, then laid larger: blurring
         // first costs less, and comes to the same once laid.
         let part = (self.width as f32 / size.0).max(self.height as f32 / size.1);
-        let mut frost = self.frost.borrow_mut();
         let blur_here = (blur / part).round().max(1.0) as u32;
-        let wanted = |kept: &Frost| kept.picture == picture.id && kept.blur == blur_here;
-        if !frost.as_ref().is_some_and(wanted) {
-            *frost = Some(Frost {
-                picture: picture.id,
-                blur: blur_here,
-                bitmap: self.blurred(picture, blur_here as f32),
-            });
-        }
-        let bitmap = match frost.as_ref().and_then(|kept| kept.bitmap.clone()) {
-            Some(bitmap) => bitmap,
-            None => match self.bitmap_of(picture) {
-                Some(bitmap) => bitmap,
-                None => return,
-            },
+        let Some(bitmap) = self
+            .frost_of(picture, blur_here)
+            .or_else(|| self.bitmap_of(picture))
+        else {
+            return;
         };
-        drop(frost);
         self.lay_within(&bitmap, size, self.whole(), rect, radius, 1.0);
+    }
+
+    /// The picture blurred by this many of its own pixels, made the first
+    /// time it is asked for.
+    fn frost_of(&self, picture: &Picture, blur: u32) -> Option<ID2D1Bitmap> {
+        let mut kept = self.frosts.borrow_mut();
+        if let Some(at) = kept
+            .iter()
+            .position(|frost| frost.picture == picture.id && frost.blur == blur)
+        {
+            let found = kept.remove(at);
+            let bitmap = found.bitmap.clone();
+            kept.push(found);
+            return bitmap;
+        }
+        let bitmap = self.blurred(picture, blur as f32);
+        if kept.len() >= FROSTS_KEPT {
+            kept.remove(0);
+        }
+        kept.push(Frost {
+            picture: picture.id,
+            blur,
+            bitmap: bitmap.clone(),
+        });
+        bitmap
     }
 
     /// The whole canvas, as a rect.

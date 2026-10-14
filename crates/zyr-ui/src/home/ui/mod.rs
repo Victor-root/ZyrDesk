@@ -354,20 +354,25 @@ impl<'a> Painter<'a> {
         }
     }
 
-    /// The picture the window lies on, within `at`, or the plain
-    /// background where it could not be read.
+    /// The picture the window lies on, within `at`, under the light
+    /// frost that lets what is written on it read; the plain background
+    /// where it could not be read.
     pub fn backdrop(&self, at: Rect) {
         if self.silent {
             return;
         }
         match zyr_draw::backdrop::backdrop(self.light) {
-            Some(picture) => self.canvas.backdrop(picture, at),
+            Some(picture) => {
+                self.canvas
+                    .frosted(picture, at, 0.0, self.px(design::FROST_BLUR));
+                self.fill(at, 0.0, self.colours.frost);
+            }
             None => self.fill(at, 0.0, self.colours.background),
         }
     }
 
-    /// Frosted glass in the rounded `at`: the picture the window lies on,
-    /// blurred, under the glass's tint.
+    /// The deeper glass of a panel in the rounded `at`: the picture the
+    /// window lies on, blurred further, under the glass's tint.
     pub fn glass(&self, at: Rect, radius: f32) {
         if self.silent {
             return;
