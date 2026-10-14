@@ -60,6 +60,19 @@ pub fn presence(peer: &Peer) -> Presence {
     }
 }
 
+/// The computers in the order they are shown: those a session can be
+/// opened towards first, then those that are there but take none, then
+/// those that are gone. Within each, the order they came in is kept, so
+/// that a card never jumps for nothing.
+pub fn reachable_first(peers: &mut [Peer]) {
+    peers.sort_by_key(|peer| match presence(peer) {
+        Presence::Ready => 0,
+        Presence::Unknown => 1,
+        Presence::Closed { .. } => 2,
+        Presence::Gone => 3,
+    });
+}
+
 /// The road a session towards that computer takes.
 ///
 /// This network first: a computer that announces itself here is reached
@@ -123,6 +136,34 @@ mod tests {
         let offline = said("seen=no written=no device=d2 online=no access=ready");
         assert_eq!(presence(&offline), Presence::Gone);
         assert!(!presence(&offline).can_be_reached());
+    }
+
+    #[test]
+    fn the_computers_that_answer_come_first_and_keep_their_order() {
+        let named = |name: &str, fields: &str| {
+            let mut peer = said(fields);
+            peer.name = name.to_string();
+            peer
+        };
+        let mut peers = vec![
+            named(
+                "gone",
+                "seen=no written=no device=d1 online=no access=ready",
+            ),
+            named(
+                "closed",
+                "seen=yes written=no device=d2 online=yes access=off",
+            ),
+            named("first", "seen=yes written=no"),
+            named("written", "seen=no written=yes"),
+            named(
+                "second",
+                "seen=no written=no device=d3 online=yes access=ready",
+            ),
+        ];
+        reachable_first(&mut peers);
+        let order: Vec<&str> = peers.iter().map(|peer| peer.name.as_str()).collect();
+        assert_eq!(order, ["first", "second", "written", "closed", "gone"]);
     }
 
     #[test]

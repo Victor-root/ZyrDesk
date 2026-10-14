@@ -206,7 +206,8 @@ pub fn watch(app: App) {
 /// time taken from the session's picture.
 pub async fn again(app: &App) -> bool {
     let standing = crate::shell::desk::standing().await;
-    let peers = crate::shell::desk::peers().await;
+    let mut peers = crate::shell::desk::peers().await;
+    zyr_session::presence::reachable_first(&mut peers);
     let sessions = crate::session::sessions().await;
     let watching = crate::shell::desk::watching().await;
     let settings = crate::shell::settings::settings(app.clone()).await;
