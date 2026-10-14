@@ -27,6 +27,11 @@ use crate::shell::theme::Choice;
 /// form across a field.
 const WIDEST: f32 = 860.0;
 
+/// How much larger the page is drawn at most, when the window is wide
+/// enough for it: on a large screen, a page left at its own size reads
+/// small in the middle of the room.
+const LARGEST: f32 = 1.3;
+
 /// The codecs and the ways of showing a session the sides offer, as they
 /// travel and are written down, in the order the sides show them.
 pub const CODECS: [&str; 4] = ["auto", "H.264", "HEVC", "AV1"];
@@ -35,6 +40,12 @@ pub const DISPLAYS: [&str; 2] = ["fullscreen", "windowed"];
 /// Draws the page within `at`, from its top, and gives back the height it
 /// takes.
 pub fn draw(painter: &mut Painter, at: Rect) -> f32 {
+    let factor = (size(at).0 / painter.px(WIDEST)).clamp(1.0, LARGEST);
+    painter.enlarged(factor, |painter| tabs_and_section(painter, at))
+}
+
+/// The page, at the size it is drawn at.
+fn tabs_and_section(painter: &mut Painter, at: Rect) -> f32 {
     let width = size(at).0.min(painter.px(WIDEST));
     let at = Rect {
         right: at.left + width,

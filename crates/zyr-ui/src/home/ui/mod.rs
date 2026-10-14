@@ -89,6 +89,16 @@ impl<'a> Painter<'a> {
         page * self.scale
     }
 
+    /// Draws `inside` this many times larger than the screen's scale asks:
+    /// a page that has room to spare uses it.
+    pub fn enlarged<R>(&mut self, factor: f32, inside: impl FnOnce(&mut Self) -> R) -> R {
+        let scale = self.scale;
+        self.scale *= factor;
+        let made = inside(self);
+        self.scale = scale;
+        made
+    }
+
     pub fn pen(&self, size: f32) -> Pen {
         Pen::of(self.px(size))
     }

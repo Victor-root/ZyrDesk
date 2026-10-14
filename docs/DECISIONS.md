@@ -4631,6 +4631,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Une barre de gauche qui se termine par la version, et un slogan centré.
 
+## D294. Les paramètres grandissent avec la fenêtre (2026-10-14, pendant MZ)
+
+**Pourquoi.** Sur le grand écran de Victor, la page des paramètres restait à sa taille, une colonne étroite et un texte petit au milieu d'une grande surface vide.
+
+**Ce qui est fait.** La page se dessine plus grande quand la fenêtre a la place : à 860 pixels de large ou moins, elle garde sa taille ; au-delà, tout grandit ensemble (texte, icônes, interrupteurs, marges) jusqu'à remplir la largeur, et au plus d'un tiers de plus (1,3 fois). Le peintre sait dessiner une partie de la fenêtre à une échelle plus grande que celle de l'écran (`enlarged`), sans rien changer à la façon dont chaque pièce est dessinée.
+
+**Ce qui se voit.** Des paramètres lisibles sur un grand écran, inchangés sur un petit.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
