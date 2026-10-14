@@ -89,8 +89,10 @@
   --art-rim: rgba(248, 205, 106, 0.28);
 
   /* The veil over the scenery of the banner and of the bar on the
-     left: enough for what is written on it to read. */
-  --scenery-veil: rgba(9, 12, 22, 0.35);
+     left, at its strongest where words are written: the left of the
+     banner, the top and the foot of the bar. It thins out elsewhere,
+     where the dunes are left to be seen. */
+  --scenery-veil: rgba(9, 12, 22, 0.82);
 
   /* A grid of 8. Every spacing comes from it. */
   --space-1: 4px;
@@ -179,7 +181,7 @@
   --art-ridge-front: #7f8794;
   --art-rim: rgba(255, 255, 255, 0.45);
 
-  --scenery-veil: rgba(255, 255, 255, 0.15);
+  --scenery-veil: rgba(250, 247, 240, 0.85);
 
   --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-2: 0 4px 16px rgba(16, 24, 40, 0.08);

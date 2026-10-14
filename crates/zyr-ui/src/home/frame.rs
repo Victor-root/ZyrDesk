@@ -315,7 +315,21 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
 /// bottom the person, whether everything is up to date, and the build.
 fn sidebar(painter: &mut Painter, at: Rect) {
     let colours = painter.colours;
-    painter.scenery(at, 0.0, colours.surface_2);
+    // Strong behind the pages at the top and the person at the foot, thin
+    // in between, where the dunes show.
+    painter.scenery(
+        at,
+        0.0,
+        colours.surface_2,
+        ((at.left, at.top), (at.left, at.bottom)),
+        &[
+            (0.0, 1.0),
+            (0.45, 0.9),
+            (0.7, 0.35),
+            (0.85, 0.6),
+            (1.0, 0.9),
+        ],
+    );
     painter.upright(
         at.right - painter.px(1.0),
         at.top,

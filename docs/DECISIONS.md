@@ -4711,6 +4711,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Un bandeau et une barre de gauche ouverts sur des dunes dorées le jour, argentées la nuit.
 
+## D304. Le voile du paysage se fait dégradé, fort sous les mots (2026-10-14, pendant MZ)
+
+**Pourquoi.** Le paysage de dunes ([D303](#d303-un-paysage-de-dunes-habille-le-bandeau-et-la-barre-de-gauche-2026-10-14-pendant-mz)) plaît, mais sous un voile égal partout, les mots du bandeau et le menu de la barre de gauche se lisaient mal sur les dunes claires.
+
+**Ce qui est fait.** Le voile n'est plus égal : il suit une ligne, fort là où sont les mots et léger ailleurs, comme les affiches de films posent leur titre. Dans le bandeau, de gauche à droite : plein derrière le message, le portrait et les caractéristiques de l'ordinateur, puis il s'efface vers la droite, où les dunes et le soleil (ou la lune) restent visibles. Dans la barre de gauche, de haut en bas : fort derrière le menu, léger au milieu, et fort de nouveau en bas derrière la personne et la version. Sa couleur est celle de la charte (`--scenery-veil`), crème en clair et bleu nuit en sombre, et chaque endroit dit sa force en quelques paliers. La toile sait remplir une forme d'un dégradé de couleurs (`Canvas::gradient`).
+
+**Ce qui se voit.** Des mots nets sur le paysage, et des dunes qui se montrent là où il n'y a rien à lire.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -122,7 +122,15 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
         identity_top + identity_height + inside + if beside { 0.0 } else { painter.px(STRIP) };
     let card = Rect::at(at.left, at.top, width, height);
     let radius = painter.px(design::RADIUS_LARGE);
-    painter.scenery(card, radius, colours.surface_1);
+    // Strong behind the words on the left, thin on the right, where the
+    // dunes and the sun or the moon show.
+    painter.scenery(
+        card,
+        radius,
+        colours.surface_1,
+        ((card.left, card.top), (card.right, card.top)),
+        &[(0.0, 1.0), (0.45, 0.85), (0.75, 0.3), (1.0, 0.1)],
+    );
     painter.stroke(card, radius, colours.border);
 
     painter.text(

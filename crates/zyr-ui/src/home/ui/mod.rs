@@ -356,14 +356,31 @@ impl<'a> Painter<'a> {
 
     /// The scenery of the window, covering the rounded `at` under its
     /// veil; `plain` where it could not be read.
-    pub fn scenery(&self, at: Rect, radius: f32, plain: Colour) {
-        match zyr_draw::scenery::scenery(self.light) {
-            Some(picture) => {
-                self.picture(picture, at, radius);
-                self.fill(at, radius, self.colours.scenery_veil);
-            }
-            None => self.fill(at, radius, plain),
+    ///
+    /// The veil runs along `from` to `to`, at each stop a share of the way
+    /// and how much of its strength it keeps there: strong where words
+    /// are written, thin where the dunes are left to be seen.
+    pub fn scenery(
+        &self,
+        at: Rect,
+        radius: f32,
+        plain: Colour,
+        along: ((f32, f32), (f32, f32)),
+        veil: &[(f32, f32)],
+    ) {
+        if self.silent {
+            return;
         }
+        let Some(picture) = zyr_draw::scenery::scenery(self.light) else {
+            self.fill(at, radius, plain);
+            return;
+        };
+        self.picture(picture, at, radius);
+        let stops: Vec<(f32, Colour)> = veil
+            .iter()
+            .map(|(share, strength)| (*share, self.colours.scenery_veil.faded(*strength)))
+            .collect();
+        self.canvas.gradient(at, radius, along, &stops);
     }
 
     pub fn picture(&self, picture: &Picture, at: Rect, radius: f32) {
