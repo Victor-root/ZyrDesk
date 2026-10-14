@@ -4703,6 +4703,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Un bandeau et une barre de gauche teintés d'or, sans être jaunes.
 
+## D303. Un paysage de dunes habille le bandeau et la barre de gauche (2026-10-14, pendant MZ)
+
+**Pourquoi.** Les halos ([D300](#d300-le-bandeau-et-la-barre-de-gauche-brillent-de-halos-dégradés-2026-10-14-pendant-mz) à [D302](#d302-les-halos-jaunes-sadoucissent-de-moitié-2026-10-14-pendant-mz)) n'ont pas plu, ni des dunes dessinées par le code. Victor a fait faire deux images d'un même paysage de dunes : sous un soleil voilé, et sous la lune.
+
+**Ce qui est fait.** Les halos quittent la toile et la charte. Les deux images sont dans `crates/zyr-draw/scenery/`, en JPEG, compilées dans le programme et lues une fois ; la lecture d'une image portée par le programme revient pour elles. Le bandeau et la barre de gauche montrent la même image du thème, chacun la recadrant pour couvrir sa place, si bien que les deux se lisent comme un même paysage. Un voile de la charte (`--scenery-veil`, blanc léger en clair, bleu nuit en sombre) se pose par-dessus pour que le texte se lise. Une image qui ne pourrait pas être lue laisse la couleur de surface d'avant.
+
+**Ce qui se voit.** Un bandeau et une barre de gauche ouverts sur des dunes dorées le jour, argentées la nuit.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

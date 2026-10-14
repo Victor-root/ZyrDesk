@@ -354,27 +354,16 @@ impl<'a> Painter<'a> {
         }
     }
 
-    /// A halo of light in the rounded `at`, its centre and how far it
-    /// reaches written in shares of `at`'s width and height.
-    pub fn halo(
-        &self,
-        at: Rect,
-        radius: f32,
-        centre: (f32, f32),
-        reach: (f32, f32),
-        colour: Colour,
-    ) {
-        if self.silent {
-            return;
+    /// The scenery of the window, covering the rounded `at` under its
+    /// veil; `plain` where it could not be read.
+    pub fn scenery(&self, at: Rect, radius: f32, plain: Colour) {
+        match zyr_draw::scenery::scenery(self.light) {
+            Some(picture) => {
+                self.picture(picture, at, radius);
+                self.fill(at, radius, self.colours.scenery_veil);
+            }
+            None => self.fill(at, radius, plain),
         }
-        let (width, height) = size(at);
-        self.canvas.halo(
-            at,
-            radius,
-            (at.left + width * centre.0, at.top + height * centre.1),
-            (width * reach.0, height * reach.1),
-            colour,
-        );
     }
 
     pub fn picture(&self, picture: &Picture, at: Rect, radius: f32) {

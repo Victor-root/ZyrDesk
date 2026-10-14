@@ -88,13 +88,9 @@
   --art-ridge-front: #303b55;
   --art-rim: rgba(248, 205, 106, 0.28);
 
-  /* The halos of light the banner and the bar on the left glow with,
-     all yellows: a wash over the whole, the gold of the logo, and a
-     deeper amber that answers it. The page around them is white or
-     night, so they carry the colour. */
-  --halo-wash: rgba(239, 181, 54, 0.07);
-  --halo-gold: rgba(239, 181, 54, 0.26);
-  --halo-amber: rgba(214, 118, 28, 0.16);
+  /* The veil over the scenery of the banner and of the bar on the
+     left: enough for what is written on it to read. */
+  --scenery-veil: rgba(9, 12, 22, 0.35);
 
   /* A grid of 8. Every spacing comes from it. */
   --space-1: 4px;
@@ -183,9 +179,7 @@
   --art-ridge-front: #7f8794;
   --art-rim: rgba(255, 255, 255, 0.45);
 
-  --halo-wash: rgba(250, 222, 150, 0.28);
-  --halo-gold: rgba(240, 178, 48, 0.36);
-  --halo-amber: rgba(232, 140, 36, 0.16);
+  --scenery-veil: rgba(255, 255, 255, 0.15);
 
   --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-2: 0 4px 16px rgba(16, 24, 40, 0.08);
