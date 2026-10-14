@@ -250,7 +250,7 @@ mod tests {
         let french = languages().position(|code| code == "fr").unwrap();
         assert_eq!(
             fact_in(french, &refused),
-            "le serveur a refusé la session vers PC-17 : aucun droit sur cet ordinateur"
+            "le serveur a refusé la session avec PC-17 : accès non autorisé à cet ordinateur"
         );
     }
 
