@@ -376,7 +376,7 @@ struct Shade {
     bitmap: ID2D1Bitmap,
 }
 
-type ShadeKey = (u32, u32, u32, u32, [u32; 4]);
+type ShadeKey = (u32, u32, u32, u32, [u32; 3]);
 
 /// An abstract picture already drawn: what it shows, how many pixels
 /// wide and high and at what scale, in hundredths, and its pixels.
@@ -857,9 +857,13 @@ impl Canvas {
 
     /// The drop shadow of a rounded rectangle, in real pixels.
     ///
-    /// Made of the outline drawn again further and further out, each
-    /// time very faint, which builds up a soft border from the edge
-    /// outwards. A Gaussian blur would need a graphics device and all
+    /// Made of the outline drawn again from further out to further in,
+    /// each time faint, which builds up a soft border that is half dark
+    /// on the edge itself, as a blurred shadow is. The layers are drawn
+    /// at full strength and the whole laid down at the shadow's own
+    /// opacity: a shadow of a few per cent split in dozens of layers
+    /// would round each one to a whole step of colour, and come out
+    /// darker than asked. A Gaussian blur would need a graphics device and all
     /// its torments, for a difference nobody sees on a sixteen-pixel
     /// shadow lying under a card.
     ///
@@ -888,7 +892,6 @@ impl Canvas {
                 colour.red.to_bits(),
                 colour.green.to_bits(),
                 colour.blue.to_bits(),
-                colour.alpha.to_bits(),
             ],
         );
         let (whole_wide, whole_high) = (wide + margin * 2.0, high + margin * 2.0);
@@ -907,12 +910,13 @@ impl Canvas {
                 whole_high,
             ),
             0.0,
-            1.0,
+            colour.alpha,
         );
     }
 
-    /// The shadow for that key, drawn the first time it is asked for: one
-    /// rounded layer per pixel of softness, each fainter than a solid one.
+    /// The shadow for that key, at full strength, drawn the first time it
+    /// is asked for: one rounded layer per pixel of softness on each side
+    /// of the edge.
     fn shade_of(
         &self,
         key: ShadeKey,
@@ -929,9 +933,7 @@ impl Canvas {
             kept.push(found);
             return Some(bitmap);
         }
-        let steps = blur.ceil().max(1.0) as i32;
-        let mut layer_colour = colour;
-        layer_colour.alpha = colour.alpha / steps as f32;
+        let steps = (blur.ceil().max(1.0) as i32) * 2;
         let cast = Rect::at(
             margin,
             margin,
@@ -953,18 +955,25 @@ impl Canvas {
                     D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
                 )
                 .ok()?;
-            let brush = layer
-                .CreateSolidColorBrush(&tint(layer_colour), None)
-                .ok()?;
+            let solid = Colour {
+                alpha: 1.0,
+                ..colour
+            };
+            let brush = layer.CreateSolidColorBrush(&tint(solid), None).ok()?;
             layer.BeginDraw();
             layer.Clear(Some(&tint(Colour::TRANSPARENT)));
+            let narrowest = (cast.right - cast.left).min(cast.bottom - cast.top) / 2.0;
             for step in 0..steps {
-                let gap = blur * (1.0 - step as f32 / steps as f32);
+                let gap = (blur * (1.0 - 2.0 * step as f32 / steps as f32)).max(-narrowest);
+                // Each layer covers the ones before it: this share of
+                // what is left makes the strength grow evenly, layer
+                // after layer, up to all of it under the last.
+                brush.SetColor(&tint(solid.faded(1.0 / (steps - step) as f32)));
                 layer.FillRoundedRectangle(
                     &D2D1_ROUNDED_RECT {
                         rect: cast.grown(gap).d2d(),
-                        radiusX: radius + gap,
-                        radiusY: radius + gap,
+                        radiusX: (radius + gap).max(0.0),
+                        radiusY: (radius + gap).max(0.0),
                     },
                     &brush,
                 );
