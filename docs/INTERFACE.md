@@ -46,11 +46,9 @@ Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est des
 
 | Élément | État | Note |
 |---|---|---|
-| « Bonjour {prénom} ! » | Oui | Le nom du compte ZyrDesk ; sans serveur, celui de la session Windows ou Linux |
-| « Prenez le contrôle de vos ordinateurs, où que vous soyez. » | Oui | |
-| Poste local : la version de Windows | Oui | |
-| Réseau : connecté ou non | Oui | |
-| ZyrDesk : « Tout est opérationnel », ou ce qui ne va pas | Oui | L'état du service, avec le fait qui l'explique |
+| « Bonjour, {prénom} » | Oui | Le nom du compte ZyrDesk ; sans serveur, celui de la session Windows ou Linux |
+| « Accédez à vos ordinateurs, où que vous soyez. » | Oui | |
+| Cet ordinateur, sous le message d'accueil | Oui | Voir la section 5 : il vit dans le bandeau ([D283](DECISIONS.md)) |
 | Bloc « Accès distant » : l'interrupteur | Oui | Active ou coupe l'accès distant |
 | Bloc « Accès distant » : « Cet ordinateur accepte les connexions à distance », ou ce qui l'empêche | Oui | |
 | Image abstraite et devise « Plus loin ensemble » | Oui | |
@@ -59,17 +57,20 @@ L'empreinte de l'ordinateur **ne figure pas** sur l'accueil : elle ne sert qu'à
 
 ## 5. Cet ordinateur
 
+Dans le bandeau, sous le message d'accueil : une carte à part le répétait ([D283](DECISIONS.md)).
+
 | Élément | État | Note |
 |---|---|---|
 | Fond d'écran de cet ordinateur | Oui | Le sien, lu sur place |
 | Nom, avec le crayon pour le renommer | Oui | Renommer passe par le compte quand il y en a un, sinon grisé |
-| « Accepte les connexions » ou ce qui l'empêche | Oui | |
 | Système, processeur, mémoire, carte graphique | Oui | Lus sur place |
+| Réseau : connecté ou non | Oui | |
+| ZyrDesk : « Tout est opérationnel », ou ce qui ne va pas | Oui | L'état du service, avec le fait qui l'explique |
 | « Voir les détails » | Oui | Ouvre les détails, empreinte comprise |
 
 ## 6. Mes ordinateurs
 
-Une carte par ordinateur connu (réseau local et compte), avec « Voir tout » et le nombre.
+Une carte par ordinateur connu (réseau local et compte), avec « Voir tout » et le nombre. Ceux qui acceptent une session viennent d'abord, ceux qui sont hors ligne en dernier.
 
 | Élément de la carte | État | Note |
 |---|---|---|

@@ -18,14 +18,18 @@ use crate::home::state::{Offer, Page, State, Target, Toggle};
 use crate::home::ui::{Button, Kind, Painter, QUICK, SWITCH_SIZE, middle, size, square};
 use crate::home::words::{self, Tone};
 
-/// The banner's height, and what is added when its block of remote access
-/// has to go under its words.
-const BANNER: f32 = 216.0;
+/// What is added to the banner when its block of remote access has to go
+/// under its words.
 const STRIP: f32 = 76.0;
 /// The room inside the banner, and the block of remote access.
 const BANNER_INSIDE: f32 = 36.0;
 const ACCESS: f32 = 300.0;
 const MOTTO: f32 = 150.0;
+
+/// This computer within the banner: the narrowest its row is, and its
+/// wallpaper's frame.
+const IDENTITY: f32 = 560.0;
+const PORTRAIT: (f32, f32) = (232.0, 146.0);
 
 /// A card's height, the gap between cards, and the narrowest and widest a
 /// computer's card is.
@@ -33,15 +37,8 @@ const CARD: f32 = 262.0;
 const GAP: f32 = 16.0;
 const NARROWEST: f32 = 220.0;
 const WIDEST: f32 = 300.0;
-/// This computer's card: as narrow and as wide as it goes beside the
-/// others, and its height when it has a row of its own.
-const THIS: (f32, f32) = (360.0, 452.0);
-const THIS_ALONE: f32 = 196.0;
 
-/// The pictures of the cards: this computer's wallpaper, and the one of
-/// each other computer.
-const THUMB: (f32, f32) = (176.0, 132.0);
-const THUMB_ALONE: (f32, f32) = (208.0, THIS_ALONE - 40.0);
+/// A computer's picture on its card.
 const PICTURE: f32 = 104.0;
 
 /// The space between two sections, and between a heading and what it
@@ -71,8 +68,8 @@ pub fn draw(painter: &mut Painter, at: Rect) -> f32 {
 
 /* ---- The banner -------------------------------------------------------- */
 
-/// The banner: the greeting, how this computer, its network and ZyrDesk
-/// are doing, the switch of remote access, and ZyrDesk's picture.
+/// The banner: the greeting, this computer as it is, the switch of remote
+/// access, and ZyrDesk's picture.
 fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
     let colours = painter.colours;
     let width = size(at).0;
@@ -82,23 +79,30 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
     let tagline = say!("home.tagline");
     let display = painter.display();
     let lead = painter.pen(design::SUBTITLE);
-    let stats = stats_of(seen);
-    let row = stats_width(painter, &stats);
     let words = painter
         .width_of(&hello, display)
         .max(painter.width_of(&tagline, lead))
-        .max(row);
+        .max(painter.px(IDENTITY));
     let room = width - inside * 2.0 - words;
     let with_motto = room >= painter.px(ACCESS + BANNER_INSIDE + MOTTO);
     let beside = room >= painter.px(ACCESS);
-    let height = painter.px(if beside { BANNER } else { BANNER + STRIP });
+    let words = if beside { words } else { width - inside * 2.0 };
+
+    let (hello_height, lead_height) = (painter.line(display), painter.line(lead));
+    let identity_top = painter.px(30.0)
+        + hello_height
+        + painter.px(design::SPACE_1)
+        + lead_height
+        + painter.px(design::SPACE_6);
+    let identity_height = painter.px(PORTRAIT.1);
+    let height =
+        identity_top + identity_height + inside + if beside { 0.0 } else { painter.px(STRIP) };
     let card = Rect::at(at.left, at.top, width, height);
     let radius = painter.px(design::RADIUS_LARGE);
     painter.art(card, radius, BANNER_SEED, true);
     painter.stroke(card, radius, colours.border);
 
     let mut y = card.top + painter.px(30.0);
-    let hello_height = painter.line(display);
     painter.text(
         &hello,
         display,
@@ -106,17 +110,21 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
         Rect::at(card.left + inside, y, words + painter.px(4.0), hello_height),
     );
     y += hello_height + painter.px(design::SPACE_1);
-    let lead_height = painter.line(lead);
     painter.text(
         &tagline,
         lead,
         colours.text_soft,
         Rect::at(card.left + inside, y, words + painter.px(4.0), lead_height),
     );
-    draw_stats(
+    this_computer(
         painter,
-        &stats,
-        (card.left + inside, card.top + painter.px(140.0)),
+        seen,
+        Rect::at(
+            card.left + inside,
+            card.top + identity_top,
+            words,
+            identity_height,
+        ),
     );
 
     if beside {
@@ -166,116 +174,6 @@ const BANNER_SEED: u32 = 1;
 fn greeted(seen: &Seen) -> String {
     let (name, _) = seen.with_person();
     words::first_name(&name)
-}
-
-/// One of the three things the banner says: an icon, what it is about,
-/// what it says, and how that reads.
-struct Stat {
-    icon: &'static Icon,
-    title: String,
-    said: String,
-    tone: Option<Tone>,
-}
-
-fn stats_of(seen: &Seen) -> [Stat; 3] {
-    let windows = seen
-        .machine
-        .as_ref()
-        .and_then(words::windows)
-        .unwrap_or_else(|| say!("home.windows_unknown"));
-    let (network, network_tone) = words::connectivity(seen.connectivity);
-    let (zyrdesk, zyrdesk_tone) = words::zyrdesk(seen);
-    [
-        Stat {
-            icon: &icons::LAPTOP,
-            title: say!("home.this_computer"),
-            said: windows,
-            tone: None,
-        },
-        Stat {
-            icon: &icons::WORLD,
-            title: say!("home.network"),
-            said: network,
-            tone: Some(network_tone),
-        },
-        Stat {
-            icon: &icons::SHIELD,
-            title: "ZyrDesk".to_string(),
-            said: zyrdesk,
-            tone: Some(zyrdesk_tone),
-        },
-    ]
-}
-
-/// What the three take, side by side with what parts them.
-fn stats_width(painter: &Painter, stats: &[Stat]) -> f32 {
-    stats
-        .iter()
-        .map(|stat| stat_width(painter, stat))
-        .sum::<f32>()
-        + painter.px(STAT_GAP * 2.0) * (stats.len() as f32 - 1.0)
-}
-
-const STAT_ICON: f32 = 28.0;
-const STAT_GAP: f32 = 26.0;
-
-fn stat_width(painter: &Painter, stat: &Stat) -> f32 {
-    let dot = if stat.tone.is_some() {
-        painter.px(14.0)
-    } else {
-        0.0
-    };
-    painter.px(STAT_ICON + 12.0)
-        + painter
-            .width_of(&stat.title, painter.body().in_bold())
-            .max(painter.width_of(&stat.said, painter.caption()) + dot)
-}
-
-fn draw_stats(painter: &Painter, stats: &[Stat], (mut x, top): (f32, f32)) {
-    let colours = painter.colours;
-    let title = painter.body().in_bold();
-    let caption = painter.caption();
-    let (title_height, caption_height) = (painter.line(title), painter.line(caption));
-    let icon = painter.px(STAT_ICON);
-    let height = title_height + painter.px(2.0) + caption_height;
-    for (rank, stat) in stats.iter().enumerate() {
-        let width = stat_width(painter, stat);
-        painter.icon(
-            stat.icon,
-            Rect::at(x, top + (height - icon) / 2.0, icon, icon),
-            colours.text,
-        );
-        let words = x + icon + painter.px(12.0);
-        painter.text(
-            &stat.title,
-            title,
-            colours.text,
-            Rect::at(words, top, width, title_height),
-        );
-        let mut said = words;
-        let said_top = top + title_height + painter.px(2.0);
-        if let Some(tone) = stat.tone {
-            let dot = painter.px(8.0);
-            painter.dot(
-                (said + dot / 2.0, said_top + caption_height / 2.0),
-                dot,
-                tone_colour(painter, tone),
-                false,
-            );
-            said += painter.px(14.0);
-        }
-        painter.text(
-            &stat.said,
-            caption,
-            colours.text_soft,
-            Rect::at(said, said_top, width, caption_height),
-        );
-        x += width + painter.px(STAT_GAP);
-        if rank + 1 < stats.len() {
-            painter.upright(x, top, height, colours.border_strong);
-            x += painter.px(STAT_GAP);
-        }
-    }
 }
 
 /// The colour a state's dot is drawn in.
@@ -523,53 +421,33 @@ fn motto(painter: &Painter, card: Rect) {
 
 /* ---- This computer, and the others --------------------------------------- */
 
-/// This computer's card and the others', side by side when there is room
-/// and one above the other when there is not.
+/// The other computers, under their heading, and gives back the height
+/// they take.
 fn computers(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
-    let width = size(at).0;
-    let gap = painter.px(GAP);
-    let this_width = (width * 0.36).clamp(painter.px(THIS.0), painter.px(THIS.1));
-    let beside = width - this_width - gap >= painter.px(NARROWEST) * 2.0 + gap;
     let heading = painter.line(painter.subtitle()) + painter.px(UNDER_HEADING);
-
-    painter.heading((at.left, at.top), &say!("home.this_computer"), None);
-    let this = Rect::at(
-        at.left,
-        at.top + heading,
-        if beside { this_width } else { width },
-        painter.px(if beside { CARD } else { THIS_ALONE }),
-    );
-    this_computer(painter, seen, this, beside);
-
-    let others = if beside {
-        Rect::at(this.right + gap, at.top, width - this_width - gap, 0.0)
-    } else {
-        Rect::at(at.left, this.bottom + painter.px(BETWEEN), width, 0.0)
-    };
     painter.heading(
-        (others.left, others.top),
+        (at.left, at.top),
         &say!("home.my_computers"),
         Some(seen.peers.len()),
     );
     see_all(
         painter,
         Rect::at(
-            others.left,
-            others.top,
-            size(others).0,
+            at.left,
+            at.top,
+            size(at).0,
             heading - painter.px(UNDER_HEADING),
         ),
     );
-    let grid = their_cards(
-        painter,
-        seen,
-        Rect {
-            top: others.top + heading,
-            ..others
-        },
-    );
-    let below_others = others.top + heading + grid;
-    below_others.max(this.bottom) - at.top
+    heading
+        + their_cards(
+            painter,
+            seen,
+            Rect {
+                top: at.top + heading,
+                ..at
+            },
+        )
 }
 
 /// « See all », which leads to the page of computers once there is one.
@@ -603,31 +481,51 @@ fn see_all(painter: &mut Painter, row: Rect) {
     painter.tells(at, say!("soon.tip"));
 }
 
-/// This computer's card: its wallpaper, its name, where it stands, what
-/// it is made of, and the way to everything else about it.
-fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect, beside: bool) {
+/// This computer, in the banner: its wallpaper, its name, what it is made
+/// of, how its network and ZyrDesk are doing, and the way to everything
+/// else about it.
+fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect) {
     let colours = painter.colours;
-    painter.card(at);
-    let inside = painter.px(design::SPACE_5);
-    let room = if beside { THUMB } else { THUMB_ALONE };
-    let thumb_width = painter.px(room.0).min(size(at).0 * 0.4);
-    let thumb = Rect::at(
-        at.left + inside,
-        at.top + inside,
-        thumb_width,
-        painter.px(room.1),
+    let portrait = Rect::at(
+        at.left,
+        at.top,
+        painter.px(PORTRAIT.0).min(size(at).0 * 0.4),
+        size(at).1,
     );
-    // Read at the larger of the two sizes it is shown at, so that the
-    // window changing shape never has it read again.
     crate::home::seen::wallpaper_shown_at(
         painter.app,
-        painter.px(THUMB_ALONE.0).round() as u32,
-        painter.px(THUMB.1.max(THUMB_ALONE.1)).round() as u32,
+        painter.px(PORTRAIT.0).round() as u32,
+        painter.px(PORTRAIT.1).round() as u32,
     );
-    wallpaper(painter, seen, thumb);
+    wallpaper(painter, seen, portrait);
 
-    let left = thumb.right + inside;
-    let width = (at.right - inside - left).max(0.0);
+    let left = portrait.right + painter.px(design::SPACE_5);
+    let width = (at.right - left).max(0.0);
+    let caption = painter.caption();
+    let caption_line = painter.line(caption);
+
+    // What this is, above the name: the banner says the rest of it.
+    let small = painter.px(16.0);
+    let eyebrow = caption.in_bold();
+    let mut y = at.top;
+    painter.icon(
+        &icons::LAPTOP,
+        Rect::at(left, y + (caption_line - small) / 2.0, small, small),
+        colours.text_soft,
+    );
+    painter.text(
+        &say!("home.this_computer"),
+        eyebrow.ellipsized(),
+        colours.text_soft,
+        Rect::at(
+            left + small + painter.px(8.0),
+            y,
+            width - small - painter.px(8.0),
+            caption_line,
+        ),
+    );
+    y += caption_line + painter.px(2.0);
+
     let name_pen = painter.subtitle().ellipsized();
     let name_height = painter.line(name_pen);
     let name = seen.this_name();
@@ -635,7 +533,6 @@ fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect, beside: bool) {
     let name_width = painter
         .width_of(&name, name_pen)
         .min(width - pencil - painter.px(design::SPACE_2));
-    let mut y = at.top + inside - painter.px(2.0);
     painter.text(
         &name,
         name_pen,
@@ -656,84 +553,98 @@ fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect, beside: bool) {
             say!("renaming.rename"),
         );
     } else {
-        let side = painter.px(16.0);
         painter.icon(
             &icons::PENCIL,
-            square(middle(pencil_at), side),
+            square(middle(pencil_at), small),
             colours.text_faint,
         );
         painter.tells(pencil_at, say!("home.rename_needs_an_account"));
     }
-    y += name_height + painter.px(design::SPACE_1);
-    let (said, tone) = words::this_computer(seen.standing.as_ref(), seen.ffmpeg_here);
-    let caption = painter.caption();
-    let line = painter.line(painter.body());
-    let dot = painter.px(8.0);
-    painter.dot(
-        (left + dot / 2.0, y + line / 2.0),
-        dot,
-        tone_colour(painter, tone),
-        false,
-    );
-    painter.text(
-        &said,
-        painter.body().ellipsized(),
-        colours.text_soft,
-        Rect::at(left + painter.px(14.0), y, width - painter.px(14.0), line),
-    );
-    y += line + painter.px(design::SPACE_4);
+    y += name_height + painter.px(design::SPACE_2);
 
-    let specs = specs_of(seen);
-    let two_columns = !beside && width >= painter.px(520.0);
-    let spec_line = painter.px(27.0);
-    let column = if two_columns { width / 2.0 } else { width };
-    let small = painter.px(16.0);
-    for (rank, (icon, said)) in specs.iter().enumerate() {
-        let (across, down) = if two_columns {
-            (rank / 2, rank % 2)
-        } else {
-            (0, rank)
-        };
+    // What it is made of, two by two.
+    let spec_line = painter.px(24.0);
+    let column = width / 2.0;
+    for (rank, (icon, said)) in specs_of(seen).iter().enumerate() {
         let row = Rect::at(
-            left + column * across as f32,
-            y + spec_line * down as f32,
+            left + column * (rank % 2) as f32,
+            y + spec_line * (rank / 2) as f32,
             column,
             spec_line,
         );
-        if row.bottom > at.bottom - painter.px(34.0 + design::SPACE_5) && !two_columns && beside {
-            break;
-        }
         let (_, centre) = middle(row);
         painter.icon(
             icon,
             Rect::at(row.left, centre - small / 2.0, small, small),
-            colours.text_faint,
+            colours.text_soft,
         );
         painter.text(
             said,
             caption.ellipsized(),
-            colours.text_soft,
+            colours.text,
             Rect {
                 left: row.left + small + painter.px(10.0),
-                right: row.right - painter.px(design::SPACE_2),
+                right: row.right - painter.px(design::SPACE_3),
                 ..row
             },
         );
     }
 
+    // How its network and ZyrDesk are doing, and the details beside.
+    let button_height = painter.px(34.0);
+    let row_top = at.bottom - button_height;
+    let centre = row_top + button_height / 2.0;
     let label = say!("home.see_details");
-    let height = painter.px(34.0);
     let button_width = painter.button_width(&label, Some(&icons::CHEVRON));
     painter.button(
         Rect::at(
-            at.right - inside - button_width,
-            at.bottom - inside - height,
+            at.right - button_width,
+            row_top,
             button_width,
-            height,
+            button_height,
         ),
         Target::Details,
         Button::new(&label, Kind::Quiet).leading_on(&icons::CHEVRON),
     );
+    let (network, network_tone) = words::connectivity(seen.connectivity);
+    let (zyrdesk, zyrdesk_tone) = words::zyrdesk(seen);
+    let dot = painter.px(8.0);
+    let mut x = left;
+    let end = at.right - button_width - painter.px(design::SPACE_3);
+    for (icon, said, tone) in [
+        (&icons::WORLD, network, network_tone),
+        (&icons::SHIELD, zyrdesk, zyrdesk_tone),
+    ] {
+        if x + small >= end {
+            break;
+        }
+        painter.icon(
+            icon,
+            Rect::at(x, centre - small / 2.0, small, small),
+            colours.text_soft,
+        );
+        x += small + painter.px(8.0);
+        painter.dot(
+            (x + dot / 2.0, centre),
+            dot,
+            tone_colour(painter, tone),
+            false,
+        );
+        x += dot + painter.px(6.0);
+        let said_width = painter.width_of(&said, caption).min((end - x).max(0.0));
+        painter.text(
+            &said,
+            caption.ellipsized(),
+            colours.text,
+            Rect::at(
+                x,
+                centre - caption_line / 2.0,
+                said_width + painter.px(2.0),
+                caption_line,
+            ),
+        );
+        x += said_width + painter.px(design::SPACE_5);
+    }
 }
 
 /// This computer's wallpaper in its frame: the picture, the desktop's

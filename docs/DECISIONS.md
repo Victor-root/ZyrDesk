@@ -4541,6 +4541,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Les phrases changent à l'écran, sans changer de place ni de fonction. Les tailles des boutons sont à vérifier sous Windows, le français étant souvent plus long que l'anglais.
 
+## D283. Cet ordinateur rejoint le bandeau, et les ordinateurs joignables passent en tête (2026-10-14, pendant MZ)
+
+**Pourquoi.** Victor, à l'usage : le bandeau disait déjà ce qu'est ce poste et comment il va, puis la carte « Cet ordinateur » le redisait juste en dessous. Et la liste des ordinateurs suivait l'ordre du service, un PC éteint pouvant passer devant celui qu'on veut joindre.
+
+**Ce qui est fait.** Le bandeau porte cet ordinateur sous le message d'accueil : son fond d'écran, son nom et le crayon, ce qu'il est, l'état de son réseau et de ZyrDesk, et « Voir les détails ». La carte à part disparaît, et « Mes ordinateurs » prend toute la largeur. La liste se range par présence (session possible, ajouté manuellement, présent mais fermé, hors ligne), l'ordre d'arrivée étant gardé dans chaque groupe ; la règle vit dans `zyr-session`, avec son essai. Cela précise [D280](#d280-le-nouvel-accueil-remplace-lancien-dune-seule-pièce-2026-10-14-pendant-mz) sans changer le reste de la maquette.
+
+**Ce qui se voit.** Un accueil plus court, sans doublon, et les ordinateurs en ligne en premier.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
