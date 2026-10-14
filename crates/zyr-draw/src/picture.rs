@@ -75,9 +75,9 @@ mod reading {
             })
         }
 
-        /// The picture written in these bytes, at its own size: one the
-        /// program carries, made for what it is drawn on.
-        pub fn decode(bytes: &'static [u8]) -> Option<Picture> {
+        /// The picture written in these bytes, one the program carries,
+        /// brought down until it just covers `room` as `read` does.
+        pub fn decode(bytes: &'static [u8], room: (u32, u32)) -> Option<Picture> {
             with_the_system(|| {
                 decoded(
                     |factory| {
@@ -95,7 +95,7 @@ mod reading {
                                 .ok()
                         }
                     },
-                    (u32::MAX, u32::MAX),
+                    room,
                 )
             })
         }

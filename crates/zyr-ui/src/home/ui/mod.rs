@@ -350,12 +350,12 @@ impl<'a> Painter<'a> {
         if self.silent {
             return;
         }
-        let Some(picture) = zyr_draw::scenery::scenery(self.light, false) else {
+        let (width, height) = size(at);
+        let (wide, high) = (width * DUNES_ZOOM, height * DUNES_ZOOM);
+        let Some(picture) = zyr_draw::scenery::scenery(self.light, (wide, high)) else {
             self.fill(at, radius, self.colours.surface_2);
             return;
         };
-        let (width, height) = size(at);
-        let (wide, high) = (width * DUNES_ZOOM, height * DUNES_ZOOM);
         let share = |bits: u32| (bits & 0xffff) as f32 / f32::from(u16::MAX);
         // Anywhere across, and in the lower part of the picture, where
         // the dunes are rather than the sky.
@@ -387,7 +387,7 @@ impl<'a> Painter<'a> {
         if self.silent {
             return;
         }
-        let Some(picture) = zyr_draw::scenery::scenery(self.light, false) else {
+        let Some(picture) = zyr_draw::scenery::scenery(self.light, size(at)) else {
             self.fill(at, radius, plain);
             return;
         };
@@ -406,7 +406,7 @@ impl<'a> Painter<'a> {
         if self.silent {
             return;
         }
-        if let Some(picture) = zyr_draw::scenery::scenery(self.light, true) {
+        if let Some(picture) = zyr_draw::scenery::frosted(self.light) {
             self.canvas.picture_within(picture, behind, at, radius, 1.0);
         }
         self.fill(at, radius, self.colours.glass);

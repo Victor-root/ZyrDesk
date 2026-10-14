@@ -182,7 +182,7 @@ pub fn watch(app: App) {
         // free, the person's name may ask the network of a company, and
         // the scenery of the theme takes a moment to read at its size.
         let (machine, person) = crate::shell::app::spawn_blocking(|| {
-            zyr_draw::scenery::scenery(crate::shell::theme::light(), false);
+            zyr_draw::scenery::read_ahead(crate::shell::theme::light());
             (
                 zyr_system::this_computer(),
                 zyr_system::name_of_the_person(),

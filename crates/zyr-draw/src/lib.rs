@@ -26,7 +26,7 @@ mod canvas;
 pub mod mark;
 #[cfg(windows)]
 pub mod pulse;
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 pub mod scenery;
 
 #[cfg(windows)]

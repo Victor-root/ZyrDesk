@@ -4751,6 +4751,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Des dunes nettes même sur un grand écran.
 
+## D309. Le paysage est gardé à trois tailles, pour ne jamais créneler (2026-10-14, pendant MZ)
+
+**Pourquoi.** Passé en 4K ([D308](#d308-le-paysage-en-vraie-4k-2026-10-14-pendant-mz)), le paysage s'est couvert de crénelage : posé dans le bandeau, il est réduit de plus de moitié, et bien davantage dans les cartes. La toile ne lisse une image qu'en la réduisant de moitié au plus ; au-delà, les fines rides du sable se cassent en marches.
+
+**Ce qui est fait.** L'image de chaque thème est gardée à trois tailles, 3840, 1920 et 960 pixels de large, chacune lue une fois et réduite par le système avec tout le soin qu'il met à réduire une photo. À chaque endroit, la toile pose la plus petite qui reste aussi large que ce qu'elle couvre : elle n'a jamais à la réduire de plus de moitié. Le choix est un calcul simple, essayé sur tout système. Les trois tailles du thème sont lues dès le démarrage, loin du fil qui dessine.
+
+**Ce qui se voit.** Des dunes lisses, sans marches, dans le bandeau, la barre de gauche et les cartes.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
