@@ -152,7 +152,7 @@ ask() {
       printf -v "$__variable" '%s' "$answer"
       return 0
     fi
-    warn "$(t 'Il faut une réponse.' 'An answer is needed.')"
+    warn "$(t 'Une réponse est requise.' 'An answer is required.')"
   done
 }
 
@@ -167,14 +167,14 @@ ask_secret() {
       warn "$(t "$SHORTEST_PASSWORD caractères au moins." "$SHORTEST_PASSWORD characters at least.")"
       continue
     fi
-    printf '%s?%s %s : ' "$C_BRIGHT" "$C_RESET" "$(t 'Encore une fois, pour être sûr' 'Once more, to be sure')"
+    printf '%s?%s %s : ' "$C_BRIGHT" "$C_RESET" "$(t 'Ressaisissez pour confirmer' 'Enter it again to confirm')"
     IFS= read -r -s second || { echo; exit 1; }
     echo
     if [[ $first == "$second" ]]; then
       printf -v "$__variable" '%s' "$first"
       return 0
     fi
-    warn "$(t 'Les deux ne sont pas pareils.' 'The two differ.')"
+    warn "$(t 'Les deux saisies ne correspondent pas.' 'The two entries do not match.')"
   done
 }
 
@@ -226,7 +226,7 @@ confirm_in_full() {
   word=$(t 'oui' 'yes')
   IFS= read -r -e -p "$(prompt "$C_WARNING" \
     "$(t "Tapez « $word » pour continuer" "Type \"$word\" to continue")" \
-    "[$(t 'autre chose annule' 'anything else cancels')]")" answer || { echo; exit 1; }
+    "[$(t 'toute autre saisie annule' 'any other entry cancels')]")" answer || { echo; exit 1; }
   [[ $answer == "$word" ]]
 }
 
@@ -350,15 +350,15 @@ needed_tools() {
 check_the_prerequisites() {
   local missing=0
   if [[ $EUID -ne 0 ]]; then
-    fail "$(t 'Ce script s'"'"'exécute en root : sudo bash install.sh' 'This script runs as root: sudo bash install.sh')"
+    fail "$(t 'Ce script doit être lancé en root : sudo bash install.sh' 'This script must run as root: sudo bash install.sh')"
     exit 1
   fi
   if [[ ! -d /run/systemd/system ]]; then
-    fail "$(t 'systemd ne tourne pas ici : le serveur s'"'"'installe comme un service systemd.' 'systemd is not running here: the server installs as a systemd service.')"
+    fail "$(t 'systemd n'"'"'est pas actif sur cette machine : le serveur s'"'"'installe comme service systemd.' 'systemd is not running on this machine: the server is installed as a systemd service.')"
     exit 1
   fi
   if [[ $OS_ID != debian ]] || [[ $OS_VERSION != 12 && $OS_VERSION != 13 ]]; then
-    warn "$(t "Ce système n'est pas un Debian 12 ou 13 (${OS_ID:-inconnu} ${OS_VERSION:-}) : le script n'y a pas été essayé." "This system is not Debian 12 or 13 (${OS_ID:-unknown} ${OS_VERSION:-}): the script was not tried on it.")"
+    warn "$(t "Ce système n'est pas Debian 12 ou 13 (${OS_ID:-inconnu} ${OS_VERSION:-}) : le script n'y a pas été testé." "This system is not Debian 12 or 13 (${OS_ID:-unknown} ${OS_VERSION:-}): the script has not been tested on it.")"
     ask_yes "$(t 'Continuer quand même ?' 'Continue anyway?')" non || exit 1
   fi
   if ! binary_name >/dev/null; then
@@ -376,7 +376,7 @@ check_the_prerequisites() {
     fi
   done
   if [[ $missing -eq 1 ]] && ! command -v apt-get >/dev/null 2>&1; then
-    fail "$(t 'apt-get est introuvable : installez ce qui manque, puis relancez.' 'apt-get is missing: install what is missing, then run again.')"
+    fail "$(t 'apt-get est introuvable : installez les paquets manquants, puis relancez le script.' 'apt-get is not available: install the missing packages, then run the script again.')"
     exit 1
   fi
   # Rust installed by rustup lives there, and is only on the path once the
@@ -387,7 +387,7 @@ check_the_prerequisites() {
       PATH="${HOME:-/root}/.cargo/bin:$PATH"
     fi
     if ! command -v cargo >/dev/null 2>&1; then
-      fail "$(t 'Compiler sur place demande Rust, et cargo est introuvable.' 'Building here needs Rust, and cargo is missing.')"
+      fail "$(t 'La compilation sur place demande Rust, et cargo est introuvable.' 'Building on this machine requires Rust, and cargo was not found.')"
       info "curl -fsSL https://sh.rustup.rs | sh -s -- -y && . \"\$HOME/.cargo/env\""
       exit 1
     fi
@@ -423,13 +423,13 @@ save_the_state() {
 ask_the_questions() {
   local choice default_host default_name default_account
 
-  default_name=${NAME:-$(t 'Maison' 'Home')}
-  ask NAME "$(t 'Nom affiché du serveur' 'Name the application shows for this server')" "$default_name"
+  default_name=${NAME:-$(t 'Principal' 'Main')}
+  ask NAME "$(t 'Nom affiché pour ce serveur' 'Name shown for this server')" "$default_name"
 
   default_host=${PUBLIC_HOST:-${PUBLIC_IP:-$LOCAL_IP}}
   ask PUBLIC_HOST "$(t 'Adresse publique (domaine ou IP)' 'Public address (domain or IP)')" "$default_host"
   if is_an_ip "$PUBLIC_HOST" && is_cgnat "$PUBLIC_HOST"; then
-    warn "$(t "$PUBLIC_HOST est une adresse partagée (CGNAT) : aucun port ne se renvoie vers cette machine depuis Internet. Un domaine ou un VPN sera nécessaire." "$PUBLIC_HOST is a shared address (CGNAT): no port can be forwarded to this machine from the Internet. A domain or a VPN will be needed.")"
+    warn "$(t "$PUBLIC_HOST est une adresse partagée (CGNAT) : aucun port ne peut être redirigé vers cette machine depuis Internet. Un nom de domaine ou un VPN sera nécessaire." "$PUBLIC_HOST is a shared address (CGNAT): no port can be forwarded to this machine from the Internet. A domain name or a VPN will be needed.")"
   fi
 
   ask_choice choice "$(t "Chiffrement de l'API" 'Encryption of the API')" "${TLS_MODE:-2}" \
@@ -439,7 +439,7 @@ ask_the_questions() {
   TLS_MODE=$choice
   case "$TLS_MODE" in
     1)
-      ask LOCAL_PORT "$(t 'Port de boucle locale que le mandataire renvoie vers le serveur' 'Loopback port the proxy forwards to the server')" "${LOCAL_PORT:-8443}"
+      ask LOCAL_PORT "$(t 'Port local vers lequel le mandataire inverse transmet les requêtes' 'Local port the reverse proxy forwards requests to')" "${LOCAL_PORT:-8443}"
       API_PORT=443
       CERT_FILE="" KEY_FILE=""
       ;;
@@ -453,10 +453,10 @@ ask_the_questions() {
       while true; do
         ask CERT_FILE "$(t 'Certificat (chaîne complète, PEM)' 'Certificate (full chain, PEM)')" "${CERT_FILE:-}"
         ask KEY_FILE "$(t 'Clé privée (PEM)' 'Private key (PEM)')" "${KEY_FILE:-}"
-        if [[ ! -r $CERT_FILE ]]; then warn "$(t "$CERT_FILE ne se lit pas." "$CERT_FILE cannot be read.")"; continue; fi
-        if [[ ! -r $KEY_FILE ]]; then warn "$(t "$KEY_FILE ne se lit pas." "$KEY_FILE cannot be read.")"; continue; fi
+        if [[ ! -r $CERT_FILE ]]; then warn "$(t "$CERT_FILE est illisible." "$CERT_FILE cannot be read.")"; continue; fi
+        if [[ ! -r $KEY_FILE ]]; then warn "$(t "$KEY_FILE est illisible." "$KEY_FILE cannot be read.")"; continue; fi
         if ! go_together "$CERT_FILE" "$KEY_FILE"; then
-          warn "$(t 'Ce certificat et cette clé ne vont pas ensemble.' 'This certificate and this key do not match.')"
+          warn "$(t 'Ce certificat et cette clé ne correspondent pas.' 'This certificate and this key do not match.')"
           continue
         fi
         break
@@ -477,10 +477,10 @@ ask_the_questions() {
 
   ask DATA_DIR "$(t 'Dossier des données' 'Data folder')" "${DATA_DIR:-$DEFAULT_DATA}"
 
-  ask_choice choice "$(t 'Inscriptions' 'Registrations')" "$(policy_as_number "${REGISTRATION:-invitation}")" \
-    "$(t 'ouvertes : qui connaît le serveur peut se créer un compte' 'open: anyone who knows the server may create an account')" \
-    "$(t 'sur invitation : un code par compte, donné par vous' 'by invitation: one code per account, handed out by you')" \
-    "$(t 'fermées : les comptes se créent sur la machine seulement' 'closed: accounts are created on the machine only')"
+  ask_choice choice "$(t 'Création des comptes' 'Account creation')" "$(policy_as_number "${REGISTRATION:-invitation}")" \
+    "$(t 'ouvertes : quiconque connaît le serveur peut créer un compte' 'open: anyone who knows the server can create an account')" \
+    "$(t 'sur invitation : un code par compte, que vous remettez' 'by invitation: one code per account, that you hand out')" \
+    "$(t 'fermées : les comptes ne se créent que sur la machine elle-même' 'closed: accounts can only be created on the machine itself')"
   case "$choice" in
     1) REGISTRATION=open ;;
     2) REGISTRATION=invitation ;;
@@ -536,7 +536,7 @@ recap() {
   fi
   panel_key "$(t 'Miroir et relais' 'Mirror and relay')" "UDP $RELAY_PORT$( [[ $RELAY_ENABLED == non ]] && t ', relais désactivé' ', relay disabled')"
   panel_key "$(t 'Données' 'Data')" "$DATA_DIR"
-  panel_key "$(t 'Inscriptions' 'Registrations')" "$(policy_in_words "$REGISTRATION")"
+  panel_key "$(t 'Création des comptes' 'Account creation')" "$(policy_in_words "$REGISTRATION")"
   panel_key "$(t 'Premier compte' 'First account')" "$ADMIN_USER"
   panel_close
 }
@@ -590,7 +590,7 @@ download_the_binary() {
     tag=$WANTED_VERSION
   else
     tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
-    [[ -n $tag ]] || { echo "aucune version publiée trouvée pour $REPO"; return 1; }
+    [[ -n $tag ]] || { echo "$(t "aucune version publiée trouvée pour $REPO" "no published version found for $REPO")"; return 1; }
   fi
   base="https://github.com/$REPO/releases/download/$tag"
   curl -fsSL -o "$folder/$name" "$base/$name"
@@ -772,7 +772,7 @@ wait_for_the_server() {
       return 0
     fi
     if ! systemctl is-active --quiet zyrdesk-server.service; then
-      echo "le service s'est arrêté :"
+      echo "$(t "le service s'est arrêté :" "the service stopped:")"
       journalctl -u zyrdesk-server.service -n 20 --no-pager
       return 1
     fi
@@ -808,9 +808,9 @@ summary() {
     panel_line "  $(bold "$fingerprint")"
   fi
   if [[ $TLS_MODE == 1 ]]; then
-    panel_key "$(t 'Ports à renvoyer sur la box' 'Ports to forward on the router')" "$(t "TCP 443 vers le mandataire, UDP $RELAY_PORT vers $LOCAL_IP" "TCP 443 to the proxy, UDP $RELAY_PORT to $LOCAL_IP")"
+    panel_key "$(t 'Ports à rediriger sur le routeur' 'Ports to forward on the router')" "$(t "TCP 443 vers le mandataire, UDP $RELAY_PORT vers $LOCAL_IP" "TCP 443 to the proxy, UDP $RELAY_PORT to $LOCAL_IP")"
   else
-    panel_key "$(t "Ports à renvoyer sur la box vers $LOCAL_IP" "Ports to forward on the router to $LOCAL_IP")" "TCP $API_PORT, UDP $RELAY_PORT"
+    panel_key "$(t "Ports à rediriger sur le routeur vers $LOCAL_IP" "Ports to forward on the router to $LOCAL_IP")" "TCP $API_PORT, UDP $RELAY_PORT"
   fi
   panel_key "$(t 'Configuration' 'Configuration')" "$CONF"
   panel_key "$(t 'Données' 'Data')" "$DATA_DIR   $(t "(sauvegarde : zyrdesk-server backup <dossier>)" '(backup: zyrdesk-server backup <folder>)')"
@@ -822,13 +822,13 @@ summary() {
   if [[ $TLS_MODE == 1 ]]; then
     proxy_panel
   fi
-  info "$(t 'Relancer ce script met à jour ou reconfigure. « zyrdesk-server status » dit où il en est.' 'Running this script again updates or reconfigures. "zyrdesk-server status" says where it stands.')"
+  info "$(t 'Relancer ce script met à jour le serveur ou le reconfigure. « zyrdesk-server status » indique son état.' 'Running this script again updates the server or reconfigures it. "zyrdesk-server status" shows its state.')"
 }
 
 # The exact lines of a reverse proxy: the live channel is a WebSocket,
 # which wants Upgrade and Connection passed on and a long read timeout.
 proxy_panel() {
-  panel_open "$(t 'Le mandataire inverse, à configurer par vous' 'The reverse proxy, to configure yourself')" "$C_WARNING"
+  panel_open "$(t 'Le mandataire inverse, à configurer de votre côté' 'The reverse proxy, to configure on your side')" "$C_WARNING"
   panel_line "$(t "Caddy, dans le Caddyfile :" 'Caddy, in the Caddyfile:')"
   panel_line "  $PUBLIC_HOST {"
   panel_line "      reverse_proxy 127.0.0.1:$LOCAL_PORT"
@@ -850,10 +850,10 @@ proxy_panel() {
 # ---- The paths through the script ------------------------------------------
 
 fresh_install() {
-  panel_open "$(t "Où l'on est" 'Where we are')" "$C_SOFT"
+  panel_open "$(t "Situation actuelle" 'Current state')" "$C_SOFT"
   panel_line "$(t 'Machine' 'Machine') : $(bold "$(hostname)") ($OS_ID $OS_VERSION$( [[ -n $CONTAINER ]] && echo ", $(t 'conteneur' 'container') $CONTAINER$( [[ $UNPRIVILEGED -eq 1 ]] && t ' non privilégié' ' unprivileged')"))"
   panel_line "$(t 'Adresse' 'Address') : $(bold "${LOCAL_IP:-?}")$( [[ -n $PUBLIC_IP ]] && echo ", $(t 'publique' 'public') $(bold "$PUBLIC_IP")")"
-  panel_line "$(t 'Ce script installe le serveur ZyrDesk : comptes, mise en relation, relais.' 'This script installs the ZyrDesk server: accounts, rendezvous, relay.')"
+  panel_line "$(t 'Ce script installe le serveur ZyrDesk : comptes, mise en relation entre ordinateurs, relais.' 'This script installs the ZyrDesk server: accounts, introductions between computers, relay.')"
   panel_close
   echo
 
@@ -866,7 +866,7 @@ fresh_install() {
   step "$(t "Utilisateur $SERVICE_USER et dossiers" "User $SERVICE_USER and folders")" create_the_user_and_folders
   step "$(t 'Obtention de zyrdesk-server' 'Getting zyrdesk-server')" get_the_binary
   step "$(t "Installation de zyrdesk-server ${VERSION_INSTALLEE:-}" "Installing zyrdesk-server ${VERSION_INSTALLEE:-}")" put_the_binary_in_place
-  step "$(t 'Configuration écrite' 'Configuration written')" write_the_configuration
+  step "$(t 'Configuration enregistrée' 'Configuration saved')" write_the_configuration
   # The certificate before the keys, not after: what creates the server's
   # signing key is asking it for its fingerprint, and that question reads
   # the certificate along the way. In the other order, it fails on a
@@ -878,7 +878,7 @@ fresh_install() {
   step "$(t 'Clés du serveur' 'Server keys')" generate_the_keys
   step "$(t 'Service systemd installé et démarré' 'systemd service installed and started')" write_the_unit
   step "$(t 'Démarrage' 'Starting')" start_the_service
-  step "$(t 'Le serveur répond' 'The server answers')" wait_for_the_server
+  step "$(t 'Le serveur répond' 'The server responds')" wait_for_the_server
   step "$(t "Compte $ADMIN_USER créé" "Account $ADMIN_USER created")" create_the_first_account
   save_the_state
   summary
@@ -891,7 +891,7 @@ update_the_server() {
   step "$(t "Installation de zyrdesk-server ${VERSION_INSTALLEE:-}" "Installing zyrdesk-server ${VERSION_INSTALLEE:-}")" put_the_binary_in_place
   step "$(t 'Service systemd' 'systemd service')" write_the_unit
   step "$(t 'Démarrage' 'Starting')" start_the_service
-  step "$(t 'Le serveur répond' 'The server answers')" wait_for_the_server
+  step "$(t 'Le serveur répond' 'The server responds')" wait_for_the_server
   save_the_state
   ok "$(t "Mis à jour en ${VERSION_INSTALLEE:-?}." "Updated to ${VERSION_INSTALLEE:-?}.")"
 }
@@ -902,14 +902,14 @@ reconfigure() {
   recap
   ask_yes "$(t 'Appliquer cette configuration ?' 'Apply this configuration?')" oui || exit 0
   echo
-  step "$(t 'Configuration écrite' 'Configuration written')" write_the_configuration
+  step "$(t 'Configuration enregistrée' 'Configuration saved')" write_the_configuration
   case "$TLS_MODE" in
     2) [[ -f $TLS_DIR/server.crt ]] || step "$(t 'Certificat auto-signé' 'Self-signed certificate')" generate_the_certificate ;;
     3) step "$(t 'Certificat copié' 'Certificate copied')" copy_the_certificate ;;
   esac
   step "$(t 'Service systemd' 'systemd service')" write_the_unit
   step "$(t 'Redémarrage' 'Restarting')" start_the_service
-  step "$(t 'Le serveur répond' 'The server answers')" wait_for_the_server
+  step "$(t 'Le serveur répond' 'The server responds')" wait_for_the_server
   step "$(t "Compte $ADMIN_USER" "Account $ADMIN_USER")" create_the_first_account
   save_the_state
   summary
@@ -935,7 +935,7 @@ rename_an_account() {
   ask_choice choice "$(t 'Quel compte renommer ?' 'Which account to rename?')" 1 "${accounts[@]}"
   old=${accounts[choice - 1]}
   while true; do
-    ask new "$(t "Nouveau nom (3 à 32 lettres, chiffres, points, tirets ou soulignés ; Entrée garde $old)" "New name (3 to 32 letters, digits, dots, dashes or underscores; Enter keeps $old)")" "$old"
+    ask new "$(t "Nouveau nom (3 à 32 lettres, chiffres, points, tirets ou soulignés ; Entrée garde $old)" "New name (3 to 32 letters, digits, dots, hyphens or underscores; Enter keeps $old)")" "$old"
     if [[ $new == "$old" ]]; then
       info "$(t 'Rien n'"'"'a changé.' 'Nothing changed.')"
       return 0
@@ -945,20 +945,20 @@ rename_an_account() {
     fi
     warn "$said"
   done
-  ok "$(t "Le compte $old s'appelle maintenant $new, avec ses appareils." "Account $old is now $new, with its devices.")"
+  ok "$(t "Le compte $old s'appelle maintenant $new, avec ses ordinateurs." "Account $old is now $new, with its computers.")"
   if [[ $ADMIN_USER == "$old" ]]; then
     ADMIN_USER=$new
     save_the_state
   fi
   # The devices connected learn the name when they connect again.
-  step "$(t 'Redémarrage, pour que les ordinateurs connectés le sachent' 'Restarting, for the connected computers to know it')" start_the_service
-  step "$(t 'Le serveur répond' 'The server answers')" wait_for_the_server
+  step "$(t 'Redémarrage, pour que les ordinateurs connectés le sachent' 'Restarting, so that the connected computers learn of it')" start_the_service
+  step "$(t 'Le serveur répond' 'The server responds')" wait_for_the_server
 }
 
 uninstall() {
   load_the_state
   panel_open "$(t 'Retirer le serveur' 'Remove the server')" "$C_WARNING"
-  panel_line "$(t 'Premier palier : le service est arrêté et retiré, le programme effacé.' 'First stage: the service is stopped and removed, the program erased.')"
+  panel_line "$(t 'Première étape : le service est arrêté et retiré, le programme supprimé.' 'First step: the service is stopped and removed, and the program deleted.')"
   panel_line "$(t "Les données et les clés restent dans ${DATA_DIR:-$DEFAULT_DATA} et la configuration dans $CONF_DIR." "Data and keys stay in ${DATA_DIR:-$DEFAULT_DATA}, the configuration in $CONF_DIR.")"
   panel_close
   ask_yes "$(t 'Retirer le service et le programme ?' 'Remove the service and the program?')" non || exit 0
@@ -969,16 +969,16 @@ uninstall() {
   rm -f "$BIN"
   ok "$(t 'Service et programme retirés.' 'Service and program removed.')"
 
-  panel_open "$(t 'Second palier : tout effacer' 'Second stage: erase everything')" "$C_WARNING"
-  panel_line "$(t "Efface ${DATA_DIR:-$DEFAULT_DATA} (comptes, appareils, clés du serveur) et $CONF_DIR." "Erases ${DATA_DIR:-$DEFAULT_DATA} (accounts, devices, server keys) and $CONF_DIR.")"
-  panel_line "$(t "Les appareils rattachés perdront leur compte et devront se rattacher à nouveau. Rien ne se récupère ensuite." 'Attached devices lose their account and must attach again. Nothing is recoverable afterwards.')"
+  panel_open "$(t 'Seconde étape : tout supprimer' 'Second step: delete everything')" "$C_WARNING"
+  panel_line "$(t "Supprime ${DATA_DIR:-$DEFAULT_DATA} (comptes, ordinateurs, clés du serveur) et $CONF_DIR." "Deletes ${DATA_DIR:-$DEFAULT_DATA} (accounts, computers, server keys) and $CONF_DIR.")"
+  panel_line "$(t "Les ordinateurs rattachés perdront leur compte et devront être rattachés de nouveau. Rien ne pourra être récupéré ensuite." 'Attached computers lose their account and must be attached again. Nothing can be recovered afterwards.')"
   panel_close
   if confirm_in_full; then
     rm -rf "${DATA_DIR:-$DEFAULT_DATA}" "$CONF_DIR"
     userdel "$SERVICE_USER" >/dev/null 2>&1 || true
-    ok "$(t 'Données, clés et configuration effacées.' 'Data, keys and configuration erased.')"
+    ok "$(t 'Données, clés et configuration supprimées.' 'Data, keys and configuration deleted.')"
   else
-    info "$(t 'Données et configuration gardées.' 'Data and configuration kept.')"
+    info "$(t 'Données et configuration conservées.' 'Data and configuration kept.')"
   fi
 }
 
@@ -992,7 +992,7 @@ existing_installation_menu() {
   panel_close
   ask_choice choice "$(t 'Que faire ?' 'What to do?')" 1 \
     "$(t 'Mettre à jour vers la version publiée' 'Update to the published version')" \
-    "$(t 'Reconfigurer (les questions, avec les réponses d'"'"'avant)' 'Reconfigure (the questions, with the previous answers)')" \
+    "$(t 'Reconfigurer (les mêmes questions, avec les réponses précédentes)' 'Reconfigure (the same questions, with the previous answers)')" \
     "$(t 'Renommer un compte' 'Rename an account')" \
     "$(t "Afficher l'état" 'Show the state')" \
     "$(t 'Désinstaller' 'Uninstall')" \
@@ -1023,12 +1023,12 @@ $(t 'Installe le serveur ZyrDesk sur cette machine.' 'Installs the ZyrDesk serve
 
 $(t 'Options' 'Options') :
   --binary FILE       $(t 'un binaire zyrdesk-server déjà obtenu, plutôt que le télécharger' 'a zyrdesk-server binary already at hand, rather than downloading it')
-  --version vX.Y.Z    $(t 'cette version publiée plutôt que la dernière' 'that published version rather than the latest')
+  --version vX.Y.Z    $(t 'cette version publiée, au lieu de la dernière' 'that published version, rather than the latest one')
   --from-source       $(t 'compiler sur place (cargo requis), pour une architecture sans binaire' 'build here (cargo required), for an architecture without a binary')
   --source DIR        $(t 'avec --from-source : ce dépôt déjà cloné' 'with --from-source: that repository, already cloned')
   --branch NAME       $(t 'avec --from-source : cette branche du dépôt (main sinon)' 'with --from-source: that branch of the repository (main otherwise)')
   --lang fr|en        $(t 'la langue du script (celle de la machine sinon)' "the script's language (the machine's otherwise)")
-  --help              $(t 'ceci' 'this')
+  --help              $(t 'affiche cette aide' 'show this help')
 HELP
 }
 
@@ -1049,7 +1049,7 @@ done
 
 banner
 if [[ $INTERACTIVE -eq 0 ]]; then
-  fail "$(t 'Ce script pose des questions : lancez-le dans un terminal.' 'This script asks questions: run it in a terminal.')"
+  fail "$(t 'Ce script demande des réponses : lancez-le dans un terminal.' 'This script needs answers: run it in a terminal.')"
   exit 1
 fi
 survey_the_machine
