@@ -44,27 +44,24 @@
 use windows::Win32::Foundation::{HWND, POINT, RECT, SIZE};
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D_RECT_F, D2D_SIZE_F, D2D_SIZE_U, D2D1_ALPHA_MODE_IGNORE, D2D1_ALPHA_MODE_PREMULTIPLIED,
-    D2D1_BEZIER_SEGMENT, D2D1_BORDER_MODE_HARD, D2D1_COLOR_F, D2D1_COMPOSITE_MODE_SOURCE_OVER,
-    D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_PIXEL_FORMAT,
+    D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_CLOSED,
+    D2D1_FIGURE_END_OPEN, D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
-    CLSID_D2D1GaussianBlur, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_ARC_SEGMENT,
-    D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL, D2D1_BITMAP_BRUSH_PROPERTIES,
-    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
-    D2D1_BITMAP_PROPERTIES, D2D1_BRUSH_PROPERTIES, D2D1_CAP_STYLE_ROUND,
-    D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_SOLID,
-    D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_EXTEND_MODE_CLAMP, D2D1_FACTORY_TYPE_SINGLE_THREADED,
-    D2D1_FEATURE_LEVEL_DEFAULT, D2D1_GAUSSIANBLUR_PROP_BORDER_MODE,
-    D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, D2D1_HWND_RENDER_TARGET_PROPERTIES,
-    D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_OPTIONS_NONE, D2D1_LAYER_PARAMETERS,
-    D2D1_LINE_JOIN_ROUND, D2D1_PRESENT_OPTIONS_NONE, D2D1_PROPERTY_TYPE_ENUM,
-    D2D1_PROPERTY_TYPE_FLOAT, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE,
-    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
+    D2D1_BITMAP_BRUSH_PROPERTIES, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+    D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_BITMAP_PROPERTIES, D2D1_BRUSH_PROPERTIES,
+    D2D1_CAP_STYLE_ROUND, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_DASH_STYLE_DASH,
+    D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_EXTEND_MODE_CLAMP,
+    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
+    D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_LAYER_OPTIONS_NONE, D2D1_LAYER_PARAMETERS,
+    D2D1_LINE_JOIN_ROUND, D2D1_PRESENT_OPTIONS_NONE, D2D1_RENDER_TARGET_PROPERTIES,
+    D2D1_RENDER_TARGET_TYPE, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_TYPE_SOFTWARE,
     D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES,
     D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
     D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory,
-    ID2D1Bitmap, ID2D1DCRenderTarget, ID2D1DeviceContext, ID2D1Factory, ID2D1HwndRenderTarget,
-    ID2D1Image, ID2D1PathGeometry, ID2D1RenderTarget, ID2D1SolidColorBrush, ID2D1StrokeStyle,
+    ID2D1Bitmap, ID2D1DCRenderTarget, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1PathGeometry,
+    ID2D1RenderTarget, ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -332,10 +329,6 @@ pub struct Canvas {
     /// What was drawn so far in a frame, kept to be laid down again as
     /// it is: see `keep`.
     kept: std::cell::RefCell<Option<ID2D1Bitmap>>,
-    /// The pictures blurred for frosted glass, the most recently drawn
-    /// last: the light glass over the whole page and the deeper one of
-    /// the panels over it are two blurs of the same picture.
-    frosts: std::cell::RefCell<Vec<Frost>>,
     /// How what is drawn now is grown and moved: see `growing`.
     growth: std::cell::Cell<Matrix3x2>,
 }
@@ -383,15 +376,6 @@ struct Shade {
     bitmap: ID2D1Bitmap,
 }
 
-/// A picture blurred for frosted glass: which picture, by how many of
-/// its own pixels, and the blurred copy, if the graphics card could make
-/// it.
-struct Frost {
-    picture: u64,
-    blur: u32,
-    bitmap: Option<ID2D1Bitmap>,
-}
-
 type ShadeKey = (u32, u32, u32, u32, [u32; 3]);
 
 /// An abstract picture already drawn: what it shows, how many pixels
@@ -410,8 +394,6 @@ const PICTURES_KEPT: usize = 24;
 const SCENES_KEPT: usize = 16;
 /// How many shadows: one per size of card, dialog and block on screen.
 const SHADES_KEPT: usize = 16;
-/// How many blurs: the page's and the panels', in each theme.
-const FROSTS_KEPT: usize = 4;
 
 impl Canvas {
     /// A canvas of this size, in real pixels.
@@ -550,7 +532,6 @@ impl Canvas {
                 scenes: std::cell::RefCell::new(Vec::new()),
                 shades: std::cell::RefCell::new(Vec::new()),
                 kept: std::cell::RefCell::new(None),
-                frosts: std::cell::RefCell::new(Vec::new()),
                 growth: std::cell::Cell::new(Matrix3x2::identity()),
             })
         }
@@ -1121,112 +1102,6 @@ impl Canvas {
         self.lay(&bitmap, (size.0 as f32, size.1 as f32), rect, radius, 1.0);
     }
 
-    /// A picture covering the whole canvas, seen through frosted glass
-    /// in the rounded `rect`: blurred by `blur` pixels of the canvas.
-    ///
-    /// The blur is the graphics card's, made once for the picture and
-    /// kept until the canvas changes size; a canvas whose card cannot blur
-    /// shows the picture as it is, and the tint laid over it does the rest.
-    pub fn frosted(&self, picture: &Picture, rect: Rect, radius: f32, blur: f32) {
-        let size = (picture.width as f32, picture.height as f32);
-        // Blurred at the picture's own size, then laid larger: blurring
-        // first costs less, and comes to the same once laid.
-        let part = (self.width as f32 / size.0).max(self.height as f32 / size.1);
-        let blur_here = (blur / part).round().max(1.0) as u32;
-        let Some(bitmap) = self
-            .frost_of(picture, blur_here)
-            .or_else(|| self.bitmap_of(picture))
-        else {
-            return;
-        };
-        self.lay_within(&bitmap, size, self.whole(), rect, radius, 1.0);
-    }
-
-    /// The picture blurred by this many of its own pixels, made the first
-    /// time it is asked for.
-    fn frost_of(&self, picture: &Picture, blur: u32) -> Option<ID2D1Bitmap> {
-        let mut kept = self.frosts.borrow_mut();
-        if let Some(at) = kept
-            .iter()
-            .position(|frost| frost.picture == picture.id && frost.blur == blur)
-        {
-            let found = kept.remove(at);
-            let bitmap = found.bitmap.clone();
-            kept.push(found);
-            return bitmap;
-        }
-        let bitmap = self.blurred(picture, blur as f32);
-        if kept.len() >= FROSTS_KEPT {
-            kept.remove(0);
-        }
-        kept.push(Frost {
-            picture: picture.id,
-            blur,
-            bitmap: bitmap.clone(),
-        });
-        bitmap
-    }
-
-    /// The whole canvas, as a rect.
-    fn whole(&self) -> Rect {
-        Rect::at(0.0, 0.0, self.width as f32, self.height as f32)
-    }
-
-    /// The picture blurred by the graphics card, at its own size, if the
-    /// card can.
-    fn blurred(&self, picture: &Picture, blur: f32) -> Option<ID2D1Bitmap> {
-        let source = self.bitmap_of(picture)?;
-        // SAFETY: a drawing of its own, made beside the canvas's and closed
-        // before its picture is taken, and an effect made from it and fed
-        // a bitmap of the same device.
-        unsafe {
-            let layer = self
-                .target
-                .CreateCompatibleRenderTarget(
-                    Some(&D2D_SIZE_F {
-                        width: picture.width as f32,
-                        height: picture.height as f32,
-                    }),
-                    None,
-                    Some(&format()),
-                    D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
-                )
-                .ok()?;
-            let context: ID2D1DeviceContext = layer.cast().ok()?;
-            let effect = context.CreateEffect(&CLSID_D2D1GaussianBlur).ok()?;
-            effect.SetInput(0, &source.cast::<ID2D1Image>().ok()?, true);
-            // Sigma, the measure the effect takes, is a third of the
-            // reach of the blur.
-            effect
-                .SetValue(
-                    D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION.0 as u32,
-                    D2D1_PROPERTY_TYPE_FLOAT,
-                    &(blur / 3.0).to_ne_bytes(),
-                )
-                .ok()?;
-            // The edges keep their colour rather than fade to nothing: the
-            // glass lies along the window's own edges.
-            effect
-                .SetValue(
-                    D2D1_GAUSSIANBLUR_PROP_BORDER_MODE.0 as u32,
-                    D2D1_PROPERTY_TYPE_ENUM,
-                    &(D2D1_BORDER_MODE_HARD.0 as u32).to_ne_bytes(),
-                )
-                .ok()?;
-            let output = effect.GetOutput().ok()?;
-            layer.BeginDraw();
-            context.DrawImage(
-                &output,
-                None,
-                None,
-                D2D1_INTERPOLATION_MODE_LINEAR,
-                D2D1_COMPOSITE_MODE_SOURCE_OVER,
-            );
-            layer.EndDraw(None, None).ok()?;
-            layer.GetBitmap().ok()
-        }
-    }
-
     /// The renderer's copy of this picture, made the first time it is
     /// drawn.
     fn bitmap_of(&self, picture: &Picture) -> Option<ID2D1Bitmap> {
@@ -1321,22 +1196,15 @@ impl Canvas {
     /// Through a brush that fills the rounded shape rather than a bitmap
     /// drawn and clipped: that is what rounds its corners as smoothly as
     /// any other shape, without a layer.
-    fn lay(&self, bitmap: &ID2D1Bitmap, size: (f32, f32), rect: Rect, radius: f32, opacity: f32) {
-        self.lay_within(bitmap, size, rect, rect, radius, opacity);
-    }
-
-    /// Lays a picture so that it covers `cover`, and lets only what falls
-    /// in the rounded `rect` show.
-    fn lay_within(
+    fn lay(
         &self,
         bitmap: &ID2D1Bitmap,
         (wide, high): (f32, f32),
-        cover: Rect,
         rect: Rect,
         radius: f32,
         opacity: f32,
     ) {
-        let (room_wide, room_high) = (cover.right - cover.left, cover.bottom - cover.top);
+        let (room_wide, room_high) = (rect.right - rect.left, rect.bottom - rect.top);
         if wide <= 0.0 || high <= 0.0 || room_wide <= 0.0 || room_high <= 0.0 {
             return;
         }
@@ -1358,8 +1226,8 @@ impl Canvas {
                         M12: 0.0,
                         M21: 0.0,
                         M22: part,
-                        M31: cover.left + (room_wide - wide * part) / 2.0,
-                        M32: cover.top + (room_high - high * part) / 2.0,
+                        M31: rect.left + (room_wide - wide * part) / 2.0,
+                        M32: rect.top + (room_high - high * part) / 2.0,
                     },
                 }),
             ) else {

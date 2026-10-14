@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use zyr_draw::design;
 use zyr_draw::icons::{self, Icon};
+use zyr_draw::ribbons::Place;
 use zyr_draw::{Align, Rect};
 use zyr_i18n::say;
 
@@ -103,7 +104,7 @@ fn lapse(painter: &mut Painter) {
 /// The page, under the bar at its top, scrolled.
 fn page(painter: &mut Painter, at: Rect, narrow: bool) {
     let colours = painter.colours;
-    painter.backdrop(at);
+    painter.fill(at, 0.0, colours.background);
     let side = painter.px(SIDE);
     let bar_top = at.top + painter.px(ABOVE);
     let bar = Rect::at(
@@ -144,7 +145,7 @@ fn page(painter: &mut Painter, at: Rect, narrow: bool) {
         bottom: room.top,
         ..at
     };
-    painter.backdrop(veil);
+    painter.fill(veil, 0.0, colours.background);
     if now > 0.0 {
         let shown = (now / painter.px(design::SPACE_4)).min(1.0);
         painter.fill(
@@ -315,12 +316,12 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
 /// bottom the person, whether everything is up to date, and the build.
 fn sidebar(painter: &mut Painter, at: Rect) {
     let colours = painter.colours;
-    painter.glass(at, 0.0);
+    painter.ribbons(Place::Bar, at, 0.0, colours.surface_2);
     painter.upright(
         at.right - painter.px(1.0),
         at.top,
         size(at).1,
-        colours.glass_edge,
+        colours.border,
     );
 
     let edge = painter.px(design::SPACE_5);

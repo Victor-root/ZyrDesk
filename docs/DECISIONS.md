@@ -4663,6 +4663,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Une image de fond adoucie partout, et des panneaux en verre plus dépoli.
 
+## D298. Des rubans de satin habillent le bandeau et la barre de gauche (2026-10-14, pendant MZ)
+
+**Pourquoi.** Ni l'image de fond sur toute la fenêtre ([D296](#d296-laccueil-repose-sur-une-image-de-fond-sous-du-verre-dépoli-2026-10-14-pendant-mz)) ni son verre léger ([D297](#d297-limage-de-fond-se-voit-à-travers-un-verre-léger-2026-10-14-pendant-mz)) n'ont plu à Victor, pas plus que les fonds essayés ensuite (chargé, mat) ou des rubans dessinés par le code. Il a trouvé ce qu'il cherchait : une page unie, et des rubans de satin ivoire bordés d'or sur le bandeau et la barre de gauche, dans une image qu'il a fait faire.
+
+**Ce qui est fait.** Les deux décisions précédentes sont défaites : la page retrouve son fond uni, et le verre, son flou par la carte graphique et ses couleurs quittent la toile et la charte. Les rubans sont quatre images dans `crates/zyr-draw/ribbons/`, compilées dans le programme et lues une fois : celle de Victor pour le bandeau en clair ; pour le sombre, la même tirée vers l'or sur bleu nuit (ses parties dorées gardent leur or, le reste passe du bleu nuit à l'ardoise selon sa clarté) ; et pour la barre de gauche, chacune redressée d'un quart de tour, pour que les deux se lisent comme une même étoffe. Chacune couvre sa place comme un fond d'écran couvre un écran, recadrée au besoin. Une image qui ne pourrait pas être lue laisse la couleur de surface d'avant.
+
+**Ce qui se voit.** Une page claire et unie, un bandeau et une barre de gauche drapés de rubans de satin, ivoire et or en clair, or sur bleu nuit en sombre.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

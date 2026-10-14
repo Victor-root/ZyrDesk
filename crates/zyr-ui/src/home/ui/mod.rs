@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use zyr_draw::design::{self, Colour, Palette, Shadow};
 use zyr_draw::icons::Icon;
+use zyr_draw::ribbons::Place;
 use zyr_draw::{Canvas, Pen, Picture, Rect, Scene};
 
 use crate::home::seen::Seen;
@@ -354,34 +355,13 @@ impl<'a> Painter<'a> {
         }
     }
 
-    /// The picture the window lies on, within `at`, under the light
-    /// frost that lets what is written on it read; the plain background
-    /// where it could not be read.
-    pub fn backdrop(&self, at: Rect) {
-        if self.silent {
-            return;
+    /// The ribbons of this place of the window, covering the rounded
+    /// `at`; `plain` where they could not be read.
+    pub fn ribbons(&self, place: Place, at: Rect, radius: f32, plain: Colour) {
+        match zyr_draw::ribbons::ribbons(place, self.light) {
+            Some(picture) => self.picture(picture, at, radius),
+            None => self.fill(at, radius, plain),
         }
-        match zyr_draw::backdrop::backdrop(self.light) {
-            Some(picture) => {
-                self.canvas
-                    .frosted(picture, at, 0.0, self.px(design::FROST_BLUR));
-                self.fill(at, 0.0, self.colours.frost);
-            }
-            None => self.fill(at, 0.0, self.colours.background),
-        }
-    }
-
-    /// The deeper glass of a panel in the rounded `at`: the picture the
-    /// window lies on, blurred further, under the glass's tint.
-    pub fn glass(&self, at: Rect, radius: f32) {
-        if self.silent {
-            return;
-        }
-        if let Some(picture) = zyr_draw::backdrop::backdrop(self.light) {
-            self.canvas
-                .frosted(picture, at, radius, self.px(design::GLASS_BLUR));
-        }
-        self.fill(at, radius, self.colours.glass);
     }
 
     pub fn picture(&self, picture: &Picture, at: Rect, radius: f32) {

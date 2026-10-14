@@ -88,17 +88,6 @@
   --art-ridge-front: #303b55;
   --art-rim: rgba(248, 205, 106, 0.28);
 
-  /* The picture the home window lies on is never seen bare: a light
-     frost covers the whole page, enough for the words written on it to
-     read, and a deeper glass the bar on the left and the banner. For
-     each, the tint over the blurred picture; for the panels, the light
-     along their edge. How far each blurs is the same in both themes. */
-  --frost: rgba(11, 13, 18, 0.38);
-  --frost-blur: 18px;
-  --glass: rgba(18, 21, 29, 0.62);
-  --glass-edge: rgba(255, 255, 255, 0.08);
-  --glass-blur: 60px;
-
   /* A grid of 8. Every spacing comes from it. */
   --space-1: 4px;
   --space-2: 8px;
@@ -185,10 +174,6 @@
   --art-ridge-near: #9ba2ad;
   --art-ridge-front: #7f8794;
   --art-rim: rgba(255, 255, 255, 0.45);
-
-  --frost: rgba(255, 255, 255, 0.3);
-  --glass: rgba(255, 255, 255, 0.58);
-  --glass-edge: rgba(255, 255, 255, 0.75);
 
   --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-2: 0 4px 16px rgba(16, 24, 40, 0.08);
