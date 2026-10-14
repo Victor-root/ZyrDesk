@@ -18,6 +18,10 @@ windows = { version = "0.62.2", features = [
     "Win32_Graphics_DirectWrite",
     "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Gdi",
+    # The Windows Imaging Component, which reads the pictures of
+    # wallpapers, and the COM it is reached through.
+    "Win32_Graphics_Imaging",
+    "Win32_System_Com",
     "Win32_UI_WindowsAndMessaging",
 ] }
 # The points and matrices Direct2D uses: a separate crate of the family,

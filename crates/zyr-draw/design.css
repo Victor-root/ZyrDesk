@@ -47,6 +47,12 @@
      The black of the logo, as in the logo: it is what reads on that
      gold, and white does not hold there. */
   --on-accent: #0b0d12;
+  /* The main action at rest, and what is written on it. On a dark page
+     the gold at full strength, repeated on every card, would outshout
+     what it sits on: it rests as a gold veil and fills when the hand
+     comes to it. */
+  --action: rgba(239, 181, 54, 0.14);
+  --on-action: #f8cd6a;
 
   /* System states. A small palette, never decorative.
 
@@ -58,6 +64,31 @@
   --warning: #f97316;
   --error: #f87171;
   --offline: #4b5563;
+
+  /* The road to a computer, on its tag: through this network, or
+     through the account's server. Two colours a person learns once and
+     reads at a glance, neither of them the accent nor a state: a tag
+     says where, not whether all is well. */
+  --road-local: #60a5fa;
+  --road-internet: #a78bfa;
+
+  /* The abstract picture ZyrDesk draws for itself: the banner of the
+     home screen, and every computer whose own wallpaper has not come.
+     Ridges one behind the other under a sky warmed by the gold, which
+     is what « further, together » looks like without a photograph.
+     From the sky down to the nearest ridge, then the light on the
+     ridges, the side the banner's words are written on, and what is
+     written on the picture itself. */
+  --art-sky: #0e121b;
+  --art-horizon: #1a2030;
+  --art-glow: rgba(239, 181, 54, 0.22);
+  --art-ridge-far: #1e2534;
+  --art-ridge-mid: #232b3d;
+  --art-ridge-near: #29334a;
+  --art-ridge-front: #303b55;
+  --art-rim: rgba(248, 205, 106, 0.28);
+  --art-veil: #12151d;
+  --on-art: #f3f4f7;
 
   /* A grid of 8. Every spacing comes from it. */
   --space-1: 4px;
@@ -77,7 +108,10 @@
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.35);
 
-  /* Four text sizes, not one more. */
+  /* Four text sizes, not one more. And the greeting of the home
+     screen, the one text the whole window is built around, which is
+     written larger than any title and nowhere else. */
+  --display: 30px;
   --title: 22px;
   --subtitle: 15px;
   --body: 14px;
@@ -112,17 +146,38 @@
 
   /* The same gold, brought down until it reads on white: the gold of the
      logo is too light there to carry text, and an accent nobody can read
-     is no longer an accent. */
-  --accent: #b57e06;
-  --accent-bright: #8a5f00;
-  --accent-muted: #fbe6b4;
-  --accent-tint: rgba(181, 126, 6, 0.1);
+     is no longer an accent. Deep enough that white written on it, and it
+     written on white, both pass the contrast a small text asks for. */
+  --accent: #94680f;
+  --accent-bright: #7a5408;
+  --accent-muted: #f3e3c0;
+  --accent-tint: rgba(148, 104, 15, 0.1);
   --on-accent: #ffffff;
+  /* On a light page the bronze holds its ground at rest, as on the
+     model the home screen was drawn from. */
+  --action: #94680f;
+  --on-action: #ffffff;
 
   --online: #059669;
   --warning: #c2410c;
   --error: #dc2626;
   --offline: #9ca3af;
+
+  --road-local: #2563eb;
+  --road-internet: #7c3aed;
+
+  /* A dawn: a warm sky, slate ridges, and the gold of the logo for the
+     light. */
+  --art-sky: #f6f0e7;
+  --art-horizon: #ebe2d5;
+  --art-glow: rgba(239, 181, 54, 0.3);
+  --art-ridge-far: #d6d4d3;
+  --art-ridge-mid: #babdc3;
+  --art-ridge-near: #9ba2ad;
+  --art-ridge-front: #7f8794;
+  --art-rim: rgba(255, 255, 255, 0.45);
+  --art-veil: #f8f4ee;
+  --on-art: #ffffff;
 
   --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-2: 0 6px 20px rgba(16, 24, 40, 0.08);

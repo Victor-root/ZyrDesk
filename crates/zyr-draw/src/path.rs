@@ -4,7 +4,8 @@
 //! is only arithmetic, and the tests of this brick read every path the
 //! product ships. What is understood is what the icons of this product
 //! use, and nothing more: move to, line to, horizontal line, vertical
-//! line, a curve, an arc, and close. An unknown letter stops the reading
+//! line, a curve, a curve that carries on from the one before, an arc,
+//! and close. An unknown letter stops the reading
 //! rather than being skipped: a half-drawn icon looks like a defect, a
 //! missing icon like an oversight, and the second one gets looked into.
 
@@ -41,6 +42,9 @@ pub(crate) fn read(said: &str) -> Option<Vec<Step>> {
     let mut words = Tokens::over(said);
     let mut steps = Vec::new();
     let (mut at, mut start) = ((0.0f32, 0.0f32), (0.0f32, 0.0f32));
+    // The second handle of the curve just drawn, which the next one
+    // mirrors when it carries on from it. Nothing after anything else.
+    let mut handle: Option<(f32, f32)> = None;
     let mut letter = ' ';
     while let Some(next) = words.letter_or_number() {
         let repeated = next.is_none();
@@ -56,6 +60,7 @@ pub(crate) fn read(said: &str) -> Option<Vec<Step>> {
                 (x, y)
             }
         };
+        let carried = handle.take();
         match letter.to_ascii_uppercase() {
             'M' => {
                 let (x, y) = (number()?, number()?);
@@ -88,6 +93,24 @@ pub(crate) fn read(said: &str) -> Option<Vec<Step>> {
                 let (x, y) = (number()?, number()?);
                 let (first, second) = (moved(at, x1, y1), moved(at, x2, y2));
                 at = moved(at, x, y);
+                handle = Some(second);
+                steps.push(Step::Curve {
+                    first,
+                    second,
+                    to: at,
+                });
+            }
+            'S' => {
+                // The first handle is the last curve's second one,
+                // mirrored through where the pen stands: that is what
+                // keeps the two curves one smooth line. With no curve
+                // before, it is the point itself.
+                let first = carried.map_or(at, |(x, y)| (2.0 * at.0 - x, 2.0 * at.1 - y));
+                let (x2, y2) = (number()?, number()?);
+                let (x, y) = (number()?, number()?);
+                let second = moved(at, x2, y2);
+                at = moved(at, x, y);
+                handle = Some(second);
                 steps.push(Step::Curve {
                     first,
                     second,
@@ -228,6 +251,39 @@ mod tests {
                     first: (11.0, 10.0),
                     second: (12.0, 11.0),
                     to: (13.0, 13.0),
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn a_curve_that_carries_on_mirrors_the_handle_before_it() {
+        assert_eq!(
+            read("M0 0C0 2 2 4 4 4s4 -2 4 -4"),
+            Some(vec![
+                Step::Start((0.0, 0.0)),
+                Step::Curve {
+                    first: (0.0, 2.0),
+                    second: (2.0, 4.0),
+                    to: (4.0, 4.0),
+                },
+                Step::Curve {
+                    first: (6.0, 4.0),
+                    second: (8.0, 2.0),
+                    to: (8.0, 0.0),
+                },
+            ])
+        );
+        // After anything but a curve, its first handle is the point the
+        // pen stands on.
+        assert_eq!(
+            read("M1 1S2 2 3 3"),
+            Some(vec![
+                Step::Start((1.0, 1.0)),
+                Step::Curve {
+                    first: (1.0, 1.0),
+                    second: (2.0, 2.0),
+                    to: (3.0, 3.0),
                 },
             ])
         );

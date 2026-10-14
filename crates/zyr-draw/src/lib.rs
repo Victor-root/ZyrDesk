@@ -3,17 +3,22 @@
 //! Every window of the product is painted by the program itself, with no
 //! browser and no toolkit: this is what they paint with. The canvas, the
 //! design system its colours and sizes come from, the icons, the ZyrDesk
-//! mark, and the beat whatever moves keeps time to.
+//! mark, the abstract picture it draws for itself, the pictures it reads
+//! from files, and the beat whatever moves keeps time to.
 //!
 //! It knows how to draw and nothing about what: which screen shows what,
 //! and when, belongs to the windows that use it. The design system and
 //! the icons are plain values, read and tried on any system; what turns
 //! them into pixels is Windows', like the windows it dresses.
 
+#[cfg(any(windows, test))]
+mod art;
 pub mod design;
 pub mod icons;
 #[cfg(any(windows, test))]
 mod path;
+#[cfg(any(windows, test))]
+mod picture;
 
 #[cfg(windows)]
 mod canvas;
@@ -23,5 +28,9 @@ pub mod mark;
 pub mod pulse;
 
 #[cfg(windows)]
-pub use canvas::{Align, Canvas, Overflow, Pen, Rect};
+pub use art::Scene;
+#[cfg(windows)]
+pub use canvas::{Align, Canvas, Family, Overflow, Pen, Rect};
 pub use icons::{Icon, Stroke};
+#[cfg(windows)]
+pub use picture::Picture;

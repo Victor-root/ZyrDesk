@@ -35,17 +35,21 @@
 
 use windows::Win32::Foundation::{HWND, POINT, RECT, SIZE};
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D_RECT_F, D2D_SIZE_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_COLOR_F,
-    D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_PIXEL_FORMAT,
+    D2D_RECT_F, D2D_SIZE_F, D2D_SIZE_U, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT,
+    D2D1_COLOR_F, D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN,
+    D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
-    D2D1_CAP_STYLE_ROUND, D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE,
-    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_LINE_JOIN_ROUND,
+    D2D1_BITMAP_BRUSH_PROPERTIES, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, D2D1_BITMAP_PROPERTIES,
+    D2D1_BRUSH_PROPERTIES, D2D1_CAP_STYLE_ROUND, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
+    D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE,
+    D2D1_EXTEND_MODE_CLAMP, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
+    D2D1_GAMMA_2_2, D2D1_LINE_JOIN_ROUND, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES,
     D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE,
     D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
-    D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1Factory,
-    ID2D1PathGeometry, ID2D1SolidColorBrush, ID2D1StrokeStyle,
+    D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1CreateFactory, ID2D1Bitmap, ID2D1DCRenderTarget,
+    ID2D1Factory, ID2D1PathGeometry, ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -64,9 +68,11 @@ use windows::Win32::UI::WindowsAndMessaging::{ULW_ALPHA, UpdateLayeredWindow};
 use windows::core::{HSTRING, Interface};
 use windows_numerics::{Matrix3x2, Vector2};
 
+use crate::art::Scene;
 use crate::design::{Colour, Shadow};
 use crate::icons::{Icon, Stroke};
 use crate::path::Step;
+use crate::picture::Picture;
 
 /// The font family, the system's own, in the order the renderer looks
 /// for it.
@@ -82,6 +88,27 @@ const FAMILY_BEFORE: &str = "Segoe UI";
 /// under one another.
 const MONO: &str = "Cascadia Mono";
 const MONO_BEFORE: &str = "Consolas";
+
+/// The family with serifs, for the one line of the product written as a
+/// motto rather than as information: set on its picture like a caption
+/// on a print, it has to read as something said, not something shown.
+/// Windows 10 and 11 both carry the first; the second is there since
+/// long before.
+const SERIF: &str = "Sitka Heading";
+const SERIF_BEFORE: &str = "Georgia";
+
+/// Which family a word is written in.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Family {
+    /// The system's own, for everything a person reads.
+    Text,
+    /// Fixed width: for a fingerprint, a journal, a code and a key
+    /// combination, where each character must take up the same room as
+    /// its neighbour.
+    Mono,
+    /// With serifs, for a motto.
+    Serif,
+}
 
 /// Where a word is aligned in the rect it is given.
 #[derive(Clone, Copy, PartialEq)]
@@ -114,10 +141,7 @@ pub struct Pen {
     pub size: f32,
     pub bold: bool,
     pub align: Align,
-    /// Fixed width: for a fingerprint, a journal, a code and a key
-    /// combination, where each character must take up the same room as
-    /// its neighbour.
-    pub mono: bool,
+    pub family: Family,
     pub overflow: Overflow,
     /// What is added between two characters, in real pixels.
     ///
@@ -135,7 +159,7 @@ impl Pen {
             size,
             bold: false,
             align: Align::Left,
-            mono: false,
+            family: Family::Text,
             overflow: Overflow::Wrap,
             spacing: 0.0,
         }
@@ -159,7 +183,17 @@ impl Pen {
     }
 
     pub const fn monospaced(self) -> Self {
-        Pen { mono: true, ..self }
+        Pen {
+            family: Family::Mono,
+            ..self
+        }
+    }
+
+    pub const fn with_serifs(self) -> Self {
+        Pen {
+            family: Family::Serif,
+            ..self
+        }
     }
 
     pub const fn ellipsized(self) -> Self {
@@ -190,7 +224,7 @@ struct Key {
     size: u32,
     bold: bool,
     align: Align,
-    mono: bool,
+    family: Family,
     overflow: Overflow,
 }
 
@@ -200,7 +234,7 @@ impl Key {
             size: (pen.size * 1000.0).round() as u32,
             bold: pen.bold,
             align: pen.align,
-            mono: pen.mono,
+            family: pen.family,
             overflow: pen.overflow,
         }
     }
@@ -289,7 +323,31 @@ pub struct Canvas {
     /// And the same one dashed, for what is waiting to be filled.
     dashed: ID2D1StrokeStyle,
     factory: ID2D1Factory,
+    /// The pictures already handed to the renderer, the most recently
+    /// drawn last: a wallpaper is drawn at every frame, and handing its
+    /// pixels over again each time would copy them for nothing.
+    bitmaps: std::cell::RefCell<Vec<(u64, ID2D1Bitmap)>>,
+    /// The abstract pictures already drawn, at the size, scale and in the
+    /// colours they were drawn for, the most recently drawn last. Drawn
+    /// once and then laid down like a photograph: its gradients cost far
+    /// more than laying it down.
+    scenes: std::cell::RefCell<Vec<Drawn>>,
 }
+
+/// An abstract picture already drawn: what it shows, how many pixels
+/// wide and high and at what scale, in hundredths, and its pixels.
+struct Drawn {
+    scene: Scene,
+    size: (u32, u32, u32),
+    bitmap: ID2D1Bitmap,
+}
+
+/// How many pictures, and how many abstract ones, the canvas keeps
+/// ready. More than a home screen shows at once, so none is made again
+/// while the hand moves, and few enough that the ones nobody shows any
+/// more are let go.
+const PICTURES_KEPT: usize = 24;
+const SCENES_KEPT: usize = 16;
 
 impl Canvas {
     /// A canvas of this size, in real pixels.
@@ -307,34 +365,19 @@ impl Canvas {
         unsafe {
             let screen = GetDC(None);
             let surface = CreateCompatibleDC(Some(screen));
-            let mut info: BITMAPINFO = std::mem::zeroed();
-            info.bmiHeader = BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: width,
-                // The right way up, which for an image is said with a
-                // negative height.
-                biHeight: -height,
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
-                ..Default::default()
-            };
-            let mut pixels: *mut std::ffi::c_void = std::ptr::null_mut();
-            let bitmap =
-                CreateDIBSection(Some(surface), &info, DIB_RGB_COLORS, &mut pixels, None, 0)
-                    .ok()?;
-            let before = SelectObject(surface, bitmap.into());
             ReleaseDC(None, screen);
+            let Some(bitmap) = pixels(surface, width, height) else {
+                let _ = DeleteDC(surface);
+                return None;
+            };
+            let before = SelectObject(surface, bitmap.into());
 
             let factory: ID2D1Factory =
                 D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None).ok()?;
             let target = factory
                 .CreateDCRenderTarget(&D2D1_RENDER_TARGET_PROPERTIES {
                     r#type: D2D1_RENDER_TARGET_TYPE_SOFTWARE,
-                    pixelFormat: D2D1_PIXEL_FORMAT {
-                        format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                        alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-                    },
+                    pixelFormat: format(),
                     // Everything is already counted in real pixels on
                     // this side, so the renderer is asked not to rescale
                     // anything.
@@ -378,8 +421,38 @@ impl Canvas {
                 style,
                 dashed,
                 factory,
+                bitmaps: std::cell::RefCell::new(Vec::new()),
+                scenes: std::cell::RefCell::new(Vec::new()),
             })
         }
+    }
+
+    /// Gives the canvas a new size, keeping everything it has made.
+    ///
+    /// What a window being resized by hand asks for at every step: only
+    /// the pixels change, and making the fonts, the shapes and the
+    /// pictures again at each of them would be work thrown away a
+    /// sixtieth of a second later. Says whether it could.
+    pub fn resize(&mut self, width: i32, height: i32) -> bool {
+        if width <= 0 || height <= 0 {
+            return false;
+        }
+        if (width, height) == (self.width, self.height) {
+            return true;
+        }
+        // SAFETY: a surface of ours, given new pixels, the old ones given
+        // back once they are no longer selected into it.
+        unsafe {
+            let Some(bitmap) = pixels(self.surface, width, height) else {
+                return false;
+            };
+            let _ = SelectObject(self.surface, bitmap.into());
+            let _ = DeleteObject(self.bitmap.into());
+            self.bitmap = bitmap;
+        }
+        self.width = width;
+        self.height = height;
+        true
     }
 
     /// Its length on each side, for whoever needs to know whether it is
@@ -640,6 +713,231 @@ impl Canvas {
         unsafe { self.target.PopAxisAlignedClip() };
     }
 
+    /// A rounded rectangle filled with colours that follow one another
+    /// along a line, from `from` to `to`, each at its share of the way.
+    ///
+    /// What CSS writes as `linear-gradient`: a veil that fades a picture
+    /// into the page, a light that falls across a card.
+    pub fn fill_gradient(
+        &self,
+        rect: Rect,
+        radius: f32,
+        (from, to): ((f32, f32), (f32, f32)),
+        stops: &[(f32, Colour)],
+    ) {
+        let stops: Vec<D2D1_GRADIENT_STOP> = stops
+            .iter()
+            .map(|(position, colour)| D2D1_GRADIENT_STOP {
+                position: *position,
+                color: tint(*colour),
+            })
+            .collect();
+        // SAFETY: a target of ours between the start and the end of a
+        // drawing, and a brush made from it for this one fill.
+        unsafe {
+            let Ok(collection) = self.target.CreateGradientStopCollection(
+                &stops,
+                D2D1_GAMMA_2_2,
+                D2D1_EXTEND_MODE_CLAMP,
+            ) else {
+                return;
+            };
+            let Ok(brush) = self.target.CreateLinearGradientBrush(
+                &D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES {
+                    startPoint: point(from),
+                    endPoint: point(to),
+                },
+                None,
+                &collection,
+            ) else {
+                return;
+            };
+            self.target.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: rect.d2d(),
+                    radiusX: radius,
+                    radiusY: radius,
+                },
+                &brush,
+            );
+        }
+    }
+
+    /// Lays a picture over this rounded rectangle, covering it to its
+    /// edges and cropping what is beyond, as a wallpaper covers a screen
+    /// of another shape.
+    pub fn picture(&self, picture: &Picture, rect: Rect, radius: f32, opacity: f32) {
+        let Some(bitmap) = self.bitmap_of(picture) else {
+            return;
+        };
+        self.lay(
+            &bitmap,
+            (picture.width as f32, picture.height as f32),
+            rect,
+            radius,
+            opacity,
+        );
+    }
+
+    /// Lays ZyrDesk's abstract picture over this rounded rectangle.
+    ///
+    /// Drawn at the exact size of the rectangle once, then laid down at
+    /// every frame like a photograph. `scale` is how much a page pixel
+    /// counts for, which the light on the ridges is drawn at.
+    pub fn art(&self, scene: &Scene, rect: Rect, radius: f32, scale: f32) {
+        let size = (
+            (rect.right - rect.left).round().max(1.0) as u32,
+            (rect.bottom - rect.top).round().max(1.0) as u32,
+        );
+        let key = (size.0, size.1, (scale * 100.0).round() as u32);
+        let Some(bitmap) = self.scene_of(scene, key, scale) else {
+            return;
+        };
+        self.lay(&bitmap, (size.0 as f32, size.1 as f32), rect, radius, 1.0);
+    }
+
+    /// The renderer's copy of this picture, made the first time it is
+    /// drawn.
+    fn bitmap_of(&self, picture: &Picture) -> Option<ID2D1Bitmap> {
+        let mut kept = self.bitmaps.borrow_mut();
+        if let Some(at) = kept.iter().position(|(id, _)| *id == picture.id) {
+            let found = kept.remove(at);
+            let bitmap = found.1.clone();
+            kept.push(found);
+            return Some(bitmap);
+        }
+        // SAFETY: a target of ours, given pixels that outlive the call
+        // and are four bytes each in rows of exactly the width said.
+        let made = unsafe {
+            self.target.CreateBitmap(
+                D2D_SIZE_U {
+                    width: picture.width,
+                    height: picture.height,
+                },
+                Some(picture.pixels.as_ptr().cast()),
+                picture.width * 4,
+                &D2D1_BITMAP_PROPERTIES {
+                    pixelFormat: format(),
+                    dpiX: 96.0,
+                    dpiY: 96.0,
+                },
+            )
+        }
+        .ok()?;
+        if kept.len() >= PICTURES_KEPT {
+            kept.remove(0);
+        }
+        kept.push((picture.id, made.clone()));
+        Some(made)
+    }
+
+    /// The abstract picture for this scene at this size, drawn the first
+    /// time it is asked for.
+    fn scene_of(&self, scene: &Scene, key: (u32, u32, u32), scale: f32) -> Option<ID2D1Bitmap> {
+        let mut kept = self.scenes.borrow_mut();
+        if let Some(at) = kept
+            .iter()
+            .position(|drawn| drawn.scene == *scene && drawn.size == key)
+        {
+            let found = kept.remove(at);
+            let bitmap = found.bitmap.clone();
+            kept.push(found);
+            return Some(bitmap);
+        }
+        // SAFETY: a drawing of its own, made beside the canvas's and
+        // closed before its picture is taken; drawing into it while the
+        // canvas is being drawn is what such a drawing is for.
+        let made = unsafe {
+            let layer = self
+                .target
+                .CreateCompatibleRenderTarget(
+                    Some(&D2D_SIZE_F {
+                        width: key.0 as f32,
+                        height: key.1 as f32,
+                    }),
+                    None,
+                    None,
+                    D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
+                )
+                .ok()?;
+            layer.BeginDraw();
+            layer.Clear(Some(&tint(Colour::TRANSPARENT)));
+            crate::art::draw(
+                &layer,
+                &self.factory,
+                &self.style,
+                scene,
+                (key.0 as f32, key.1 as f32),
+                scale,
+            );
+            layer.EndDraw(None, None).ok()?;
+            layer.GetBitmap().ok()?
+        };
+        if kept.len() >= SCENES_KEPT {
+            kept.remove(0);
+        }
+        kept.push(Drawn {
+            scene: *scene,
+            size: key,
+            bitmap: made.clone(),
+        });
+        Some(made)
+    }
+
+    /// Lays a bitmap of that size over a rounded rectangle, covering it
+    /// and centred.
+    ///
+    /// Through a brush that fills the rounded shape rather than a bitmap
+    /// drawn and clipped: that is what rounds its corners as smoothly as
+    /// any other shape, without a layer.
+    fn lay(
+        &self,
+        bitmap: &ID2D1Bitmap,
+        (wide, high): (f32, f32),
+        rect: Rect,
+        radius: f32,
+        opacity: f32,
+    ) {
+        let (room_wide, room_high) = (rect.right - rect.left, rect.bottom - rect.top);
+        if wide <= 0.0 || high <= 0.0 || room_wide <= 0.0 || room_high <= 0.0 {
+            return;
+        }
+        let part = (room_wide / wide).max(room_high / high);
+        // SAFETY: a target of ours between the start and the end of a
+        // drawing, and a brush made from it for this one fill.
+        unsafe {
+            let Ok(brush) = self.target.CreateBitmapBrush(
+                bitmap,
+                Some(&D2D1_BITMAP_BRUSH_PROPERTIES {
+                    extendModeX: D2D1_EXTEND_MODE_CLAMP,
+                    extendModeY: D2D1_EXTEND_MODE_CLAMP,
+                    interpolationMode: D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                }),
+                Some(&D2D1_BRUSH_PROPERTIES {
+                    opacity,
+                    transform: Matrix3x2 {
+                        M11: part,
+                        M12: 0.0,
+                        M21: 0.0,
+                        M22: part,
+                        M31: rect.left + (room_wide - wide * part) / 2.0,
+                        M32: rect.top + (room_high - high * part) / 2.0,
+                    },
+                }),
+            ) else {
+                return;
+            };
+            self.target.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: rect.d2d(),
+                    radiusX: radius,
+                    radiusY: radius,
+                },
+                &brush,
+            );
+        }
+    }
+
     /// Writes a word in this rect, aligned as the pen says and centred
     /// vertically.
     ///
@@ -773,10 +1071,10 @@ impl Canvas {
         } else {
             DWRITE_FONT_WEIGHT_NORMAL
         };
-        let families = if pen.mono {
-            [MONO, MONO_BEFORE]
-        } else {
-            [FAMILY, FAMILY_BEFORE]
+        let families = match pen.family {
+            Family::Text => [FAMILY, FAMILY_BEFORE],
+            Family::Mono => [MONO, MONO_BEFORE],
+            Family::Serif => [SERIF, SERIF_BEFORE],
         };
         // SAFETY: a factory of ours; a refusal is an answer and not a
         // fault, hence the second attempt.
@@ -839,6 +1137,40 @@ impl Canvas {
 
 /// Wide enough for no word to wrap, and no wider.
 const UNBOUNDED: f32 = 100_000.0;
+
+/// Pixels of this size for this surface, four bytes each and the right
+/// way up.
+///
+/// # Safety
+///
+/// `surface` is a surface of ours; what comes back is the caller's to
+/// give back.
+unsafe fn pixels(surface: HDC, width: i32, height: i32) -> Option<HBITMAP> {
+    let mut info: BITMAPINFO = unsafe { std::mem::zeroed() };
+    info.bmiHeader = BITMAPINFOHEADER {
+        biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+        biWidth: width,
+        // The right way up, which for an image is said with a negative
+        // height.
+        biHeight: -height,
+        biPlanes: 1,
+        biBitCount: 32,
+        biCompression: BI_RGB.0,
+        ..Default::default()
+    };
+    let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+    // SAFETY: as the caller vouches, and a description of ours.
+    unsafe { CreateDIBSection(Some(surface), &info, DIB_RGB_COLORS, &mut bits, None, 0) }.ok()
+}
+
+/// The pixels every drawing here is made of: four bytes, blue first,
+/// with their transparency already applied.
+fn format() -> D2D1_PIXEL_FORMAT {
+    D2D1_PIXEL_FORMAT {
+        format: DXGI_FORMAT_B8G8R8A8_UNORM,
+        alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+    }
+}
 
 impl Drop for Canvas {
     fn drop(&mut self) {

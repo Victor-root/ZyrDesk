@@ -1,16 +1,17 @@
-//! The product's icons, taken stroke for stroke from the pages that used
-//! to carry them.
+//! The product's icons.
 //!
-//! Copied and not redrawn: they are the same icons, and redrawing them
-//! would give different ones.
+//! Two families. Those of a session, taken stroke for stroke from the
+//! pages that used to carry them: copied and not redrawn, since they are
+//! the same icons and redrawing them would give different ones. And
+//! those of the home window, which are Tabler's (MIT licence, credited on
+//! the « About » page), written exactly as Tabler publishes them.
 //!
-//! All together and not each beside its own screen: the session menu and
-//! the home window share some, and an icon drawn in two places is
-//! heading for the day one of the two changes.
+//! All together and not each beside its own screen: an icon drawn in two
+//! places is heading for the day one of the two changes.
 //!
-//! All on a grid of twenty-four with a stroke of one point eight, every
-//! one of them without exception. The ones with a different grid say
-//! so.
+//! All on a grid of twenty-four. A session's are drawn with a stroke of
+//! one point eight, Tabler's with one point seven five. The ones with a
+//! different grid say so.
 
 /// A piece of an icon, written in the same words as the drawing it
 /// comes from.
@@ -179,34 +180,466 @@ pub const TICK: Icon = Icon {
     thickness: 2.2,
     strokes: &[Stroke::SvgPath("M4 12.5l5.5 5.5L20 6")],
 };
-/* ---- The home window ------------------------------------------------- */
+/* ---- The home window, in Tabler's icons -------------------------------- */
 
-pub const JOURNAL: Icon = icon_of(&[
-    Stroke::SvgPath("M5 3h11l3 3v15H5z"),
-    Stroke::SvgPath("M9 9h6M9 13h6M9 17h4"),
-]);
-
-/// A house: reaching a computer without leaving here.
+/// Tabler's grid and stroke, written once.
 ///
-/// The drawing says the place and not the wire, because the place is
-/// what makes the difference: the session does not leave the house, and
-/// nothing outside can bring it down.
-pub const LOCAL_NETWORK: Icon = icon_of(&[
-    Stroke::SvgPath("M3 10.5 12 3.5l9 7V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"),
-    Stroke::SvgPath("M9.5 21v-6h5v6"),
+/// A little lighter than a session's: these sit beside text on a calm
+/// page, at sizes where Tabler's own two units would weigh more than the
+/// words around them.
+const fn tabler(strokes: &'static [Stroke]) -> Icon {
+    Icon {
+        grid: 24.0,
+        thickness: 1.75,
+        strokes,
+    }
+}
+
+/// Tabler « home ».
+pub const HOME: Icon = tabler(&[
+    Stroke::SvgPath("M5 12l-2 0l9 -9l9 9l-2 0"),
+    Stroke::SvgPath("M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7"),
+    Stroke::SvgPath("M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6"),
 ]);
 
-pub const SETTINGS: Icon = icon_of(&[
-    Stroke::SvgPath("M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3"),
-    Stroke::SvgPath("M14 2v4M8 10v4M16 18v4"),
+/// Tabler « device-desktop ».
+pub const COMPUTERS: Icon = tabler(&[
+    Stroke::SvgPath(
+        "M3 5a1 1 0 0 1 1 -1h16a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-16a1 1 0 0 1 -1 -1v-10",
+    ),
+    Stroke::SvgPath("M7 20h10"),
+    Stroke::SvgPath("M9 16v4"),
+    Stroke::SvgPath("M15 16v4"),
 ]);
 
-pub const CROSS: Icon = icon_of(&[Stroke::SvgPath("M18 6 6 18M6 6l12 12")]);
+/// Tabler « users ».
+pub const CONTACTS: Icon = tabler(&[
+    Stroke::SvgPath("M5 7a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"),
+    Stroke::SvgPath("M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"),
+    Stroke::SvgPath("M16 3.13a4 4 0 0 1 0 7.75"),
+    Stroke::SvgPath("M21 21v-2a4 4 0 0 0 -3 -3.85"),
+]);
 
-pub const PLUS: Icon = icon_of(&[Stroke::SvgPath("M12 5v14M5 12h14")]);
+/// Tabler « activity ».
+pub const ACTIVITY: Icon = tabler(&[Stroke::SvgPath("M3 12h4l3 8l4 -16l3 8h4")]);
 
-/// The chevron of the "Avancé" fold, opening downwards.
-pub const CHEVRON_DOWN: Icon = icon_of(&[Stroke::SvgPath("M5 9l7 7 7-7")]);
+/// Tabler « settings ».
+pub const SETTINGS: Icon = tabler(&[
+    Stroke::SvgPath(
+        "M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065",
+    ),
+    Stroke::SvgPath("M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"),
+]);
+
+/// Tabler « info-circle ».
+pub const ABOUT: Icon = tabler(&[
+    Stroke::SvgPath("M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"),
+    Stroke::SvgPath("M12 9h.01"),
+    Stroke::SvgPath("M11 12h1v4h1"),
+]);
+
+/// Tabler « menu-2 ».
+pub const MENU: Icon = tabler(&[
+    Stroke::SvgPath("M4 6l16 0"),
+    Stroke::SvgPath("M4 12l16 0"),
+    Stroke::SvgPath("M4 18l16 0"),
+]);
+
+/// Tabler « search ».
+pub const SEARCH: Icon = tabler(&[
+    Stroke::SvgPath("M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"),
+    Stroke::SvgPath("M21 21l-6 -6"),
+]);
+
+/// Tabler « filter ».
+pub const FILTER: Icon = tabler(&[Stroke::SvgPath(
+    "M4 4h16v2.172a2 2 0 0 1 -.586 1.414l-4.414 4.414v7l-6 2v-8.5l-4.48 -4.928a2 2 0 0 1 -.52 -1.345v-2.227",
+)]);
+
+/// Tabler « layout-grid ».
+pub const GRID: Icon = tabler(&[
+    Stroke::SvgPath("M4 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4"),
+    Stroke::SvgPath(
+        "M14 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4",
+    ),
+    Stroke::SvgPath(
+        "M4 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4",
+    ),
+    Stroke::SvgPath(
+        "M14 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4",
+    ),
+]);
+
+/// Tabler « list-details ».
+pub const LIST: Icon = tabler(&[
+    Stroke::SvgPath("M13 5h8"),
+    Stroke::SvgPath("M13 9h5"),
+    Stroke::SvgPath("M13 15h8"),
+    Stroke::SvgPath("M13 19h5"),
+    Stroke::SvgPath("M3 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4"),
+    Stroke::SvgPath(
+        "M3 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4",
+    ),
+]);
+
+/// Tabler « device-laptop ».
+pub const LAPTOP: Icon = tabler(&[
+    Stroke::SvgPath("M3 19l18 0"),
+    Stroke::SvgPath(
+        "M5 7a1 1 0 0 1 1 -1h12a1 1 0 0 1 1 1v8a1 1 0 0 1 -1 1h-12a1 1 0 0 1 -1 -1l0 -8",
+    ),
+]);
+
+/// Tabler « world ».
+pub const WORLD: Icon = tabler(&[
+    Stroke::SvgPath("M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"),
+    Stroke::SvgPath("M3.6 9h16.8"),
+    Stroke::SvgPath("M3.6 15h16.8"),
+    Stroke::SvgPath("M11.5 3a17 17 0 0 0 0 18"),
+    Stroke::SvgPath("M12.5 3a17 17 0 0 1 0 18"),
+]);
+
+/// Tabler « shield-check ».
+pub const SHIELD: Icon = tabler(&[
+    Stroke::SvgPath(
+        "M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06",
+    ),
+    Stroke::SvgPath("M15 19l2 2l4 -4"),
+]);
+
+/// Tabler « pencil ».
+pub const PENCIL: Icon = tabler(&[
+    Stroke::SvgPath("M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"),
+    Stroke::SvgPath("M13.5 6.5l4 4"),
+]);
+
+/// Tabler « brand-windows ».
+pub const WINDOWS: Icon = tabler(&[
+    Stroke::SvgPath(
+        "M17.8 20l-12 -1.5c-1 -.1 -1.8 -.9 -1.8 -1.9v-9.2c0 -1 .8 -1.8 1.8 -1.9l12 -1.5c1.2 -.1 2.2 .8 2.2 1.9v12.1c0 1.2 -1.1 2.1 -2.2 1.9l0 .1",
+    ),
+    Stroke::SvgPath("M12 5l0 14"),
+    Stroke::SvgPath("M4 12l16 0"),
+]);
+
+/// Tabler « cpu ».
+pub const PROCESSOR: Icon = tabler(&[
+    Stroke::SvgPath(
+        "M5 6a1 1 0 0 1 1 -1h12a1 1 0 0 1 1 1v12a1 1 0 0 1 -1 1h-12a1 1 0 0 1 -1 -1l0 -12",
+    ),
+    Stroke::SvgPath("M9 9h6v6h-6l0 -6"),
+    Stroke::SvgPath("M3 10h2"),
+    Stroke::SvgPath("M3 14h2"),
+    Stroke::SvgPath("M10 3v2"),
+    Stroke::SvgPath("M14 3v2"),
+    Stroke::SvgPath("M21 10h-2"),
+    Stroke::SvgPath("M21 14h-2"),
+    Stroke::SvgPath("M14 21v-2"),
+    Stroke::SvgPath("M10 21v-2"),
+]);
+
+/// Tabler « memory ».
+pub const MEMORY: Icon = tabler(&[
+    Stroke::SvgPath("M12 11v2"),
+    Stroke::SvgPath("M16 11v2"),
+    Stroke::SvgPath(
+        "M3 7h18a1 1 0 0 1 1 1v1a1 1 0 0 1 -1 1a1 1 0 0 0 -1 1v1a1 1 0 0 0 1 1a1 1 0 0 1 1 1v2a1 1 0 0 1 -1 1h-18a1 1 0 0 1 -1 -1v-2a1 1 0 0 1 1 -1a1 1 0 0 0 1 -1v-1a1 1 0 0 0 -1 -1a1 1 0 0 1 -1 -1v-1a1 1 0 0 1 1 -1",
+    ),
+    Stroke::SvgPath("M8 11v2"),
+    Stroke::SvgPath("M4 17v2"),
+    Stroke::SvgPath("M7 17v2"),
+    Stroke::SvgPath("M10 17v2"),
+    Stroke::SvgPath("M20 17v2"),
+    Stroke::SvgPath("M17 17v2"),
+    Stroke::SvgPath("M13 17v2"),
+]);
+
+/// Tabler « gpu ».
+pub const GRAPHICS: Icon = tabler(&[
+    Stroke::SvgPath("M3 4v14"),
+    Stroke::SvgPath("M3 6h17a1 1 0 0 1 1 1v8a1 1 0 0 1 -1 1h-17"),
+    Stroke::SvgPath("M9 13a2 2 0 1 0 0 -4a2 2 0 0 0 0 4"),
+    Stroke::SvgPath("M15 9v4"),
+    Stroke::SvgPath("M18 9v4"),
+    Stroke::SvgPath("M7 16v3h8v-3"),
+]);
+
+/// Tabler « arrows-move ».
+pub const MOVE: Icon = tabler(&[
+    Stroke::SvgPath("M18 9l3 3l-3 3"),
+    Stroke::SvgPath("M15 12h6"),
+    Stroke::SvgPath("M6 9l-3 3l3 3"),
+    Stroke::SvgPath("M3 12h6"),
+    Stroke::SvgPath("M9 18l3 3l3 -3"),
+    Stroke::SvgPath("M12 15v6"),
+    Stroke::SvgPath("M15 6l-3 -3l-3 3"),
+    Stroke::SvgPath("M12 3v6"),
+]);
+
+/// Tabler « power ».
+pub const POWER: Icon = tabler(&[
+    Stroke::SvgPath("M7 6a7.75 7.75 0 1 0 10 0"),
+    Stroke::SvgPath("M12 4l0 8"),
+]);
+
+/// Tabler « home-signal ».
+pub const LOCAL_NETWORK: Icon = tabler(&[
+    Stroke::SvgPath("M15 22v-2"),
+    Stroke::SvgPath("M18 22v-4"),
+    Stroke::SvgPath("M21 22v-6"),
+    Stroke::SvgPath("M19 12.494v-.494h2l-9 -9l-9 9h2v7a2 2 0 0 0 2 2h4"),
+    Stroke::SvgPath("M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v.5"),
+]);
+
+/// Tabler « arrows-down-up ».
+pub const ROUND_TRIP: Icon = tabler(&[
+    Stroke::SvgPath("M17 3l0 18"),
+    Stroke::SvgPath("M10 18l-3 3l-3 -3"),
+    Stroke::SvgPath("M7 21l0 -18"),
+    Stroke::SvgPath("M20 6l-3 -3l-3 3"),
+]);
+
+/// Tabler « dots ».
+pub const MORE: Icon = tabler(&[
+    Stroke::SvgPath("M4 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"),
+    Stroke::SvgPath("M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"),
+    Stroke::SvgPath("M18 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"),
+]);
+
+/// Tabler « dots-vertical ».
+pub const MORE_VERTICAL: Icon = tabler(&[
+    Stroke::SvgPath("M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"),
+    Stroke::SvgPath("M11 19a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"),
+    Stroke::SvgPath("M11 5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"),
+]);
+
+/// Tabler « user-plus ».
+pub const USER_PLUS: Icon = tabler(&[
+    Stroke::SvgPath("M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"),
+    Stroke::SvgPath("M16 19h6"),
+    Stroke::SvgPath("M19 16v6"),
+    Stroke::SvgPath("M6 21v-2a4 4 0 0 1 4 -4h4"),
+]);
+
+/// Tabler « plus ».
+pub const PLUS: Icon = tabler(&[Stroke::SvgPath("M12 5l0 14"), Stroke::SvgPath("M5 12l14 0")]);
+
+/// Tabler « file-description ».
+pub const REPORT: Icon = tabler(&[
+    Stroke::SvgPath("M14 3v4a1 1 0 0 0 1 1h4"),
+    Stroke::SvgPath("M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2"),
+    Stroke::SvgPath("M9 17h6"),
+    Stroke::SvgPath("M9 13h6"),
+]);
+
+/// Tabler « arrow-right ».
+pub const ARROW_RIGHT: Icon = tabler(&[
+    Stroke::SvgPath("M5 12l14 0"),
+    Stroke::SvgPath("M13 18l6 -6"),
+    Stroke::SvgPath("M13 6l6 6"),
+]);
+
+/// Tabler « chevron-down ».
+pub const CHEVRON_DOWN: Icon = tabler(&[Stroke::SvgPath("M6 9l6 6l6 -6")]);
+
+/// Tabler « x ».
+pub const CROSS: Icon = tabler(&[
+    Stroke::SvgPath("M18 6l-12 12"),
+    Stroke::SvgPath("M6 6l12 12"),
+]);
+
+/// Tabler « copy ».
+pub const COPY: Icon = tabler(&[
+    Stroke::SvgPath(
+        "M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666",
+    ),
+    Stroke::SvgPath(
+        "M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1",
+    ),
+]);
+
+/// Tabler « check ».
+pub const CHECK: Icon = tabler(&[Stroke::SvgPath("M5 12l5 5l10 -10")]);
+
+/// Tabler « circle-check ».
+pub const DONE: Icon = tabler(&[
+    Stroke::SvgPath("M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"),
+    Stroke::SvgPath("M9 12l2 2l4 -4"),
+]);
+
+/// Tabler « alert-circle ».
+pub const TROUBLE: Icon = tabler(&[
+    Stroke::SvgPath("M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"),
+    Stroke::SvgPath("M12 8v4"),
+    Stroke::SvgPath("M12 16h.01"),
+]);
+
+/// Tabler « alert-triangle ».
+pub const WARNING: Icon = tabler(&[
+    Stroke::SvgPath("M12 9v4"),
+    Stroke::SvgPath(
+        "M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0",
+    ),
+    Stroke::SvgPath("M12 16h.01"),
+]);
+
+/// Tabler « folder-open ».
+pub const FOLDER: Icon = tabler(&[Stroke::SvgPath(
+    "M5 19l2.757 -7.351a1 1 0 0 1 .936 -.649h12.307a1 1 0 0 1 .986 1.164l-.996 5.211a2 2 0 0 1 -1.964 1.625h-14.026a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h4l3 3h7a2 2 0 0 1 2 2v2",
+)]);
+
+/// Tabler « refresh ».
+pub const REFRESH: Icon = tabler(&[
+    Stroke::SvgPath("M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"),
+    Stroke::SvgPath("M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"),
+]);
+
+/// Tabler « eraser ».
+pub const ERASER: Icon = tabler(&[
+    Stroke::SvgPath(
+        "M19 20h-10.5l-4.21 -4.3a1 1 0 0 1 0 -1.41l10 -10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-9.2 9.3",
+    ),
+    Stroke::SvgPath("M18 13.3l-6.3 -6.3"),
+]);
+
+/// Tabler « external-link ».
+pub const EXTERNAL: Icon = tabler(&[
+    Stroke::SvgPath("M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6"),
+    Stroke::SvgPath("M11 13l9 -9"),
+    Stroke::SvgPath("M15 4h5v5"),
+]);
+
+/// Tabler « fingerprint ».
+pub const FINGERPRINT: Icon = tabler(&[
+    Stroke::SvgPath("M18.9 7a8 8 0 0 1 1.1 5v1a6 6 0 0 0 .8 3"),
+    Stroke::SvgPath("M8 11a4 4 0 0 1 8 0v1a10 10 0 0 0 2 6"),
+    Stroke::SvgPath("M12 11v2a14 14 0 0 0 2.5 8"),
+    Stroke::SvgPath("M8 15a18 18 0 0 0 1.8 6"),
+    Stroke::SvgPath("M4.9 19a22 22 0 0 1 -.9 -7v-1a8 8 0 0 1 12 -6.95"),
+]);
+
+/// Tabler « logout ».
+pub const LOGOUT: Icon = tabler(&[
+    Stroke::SvgPath(
+        "M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2",
+    ),
+    Stroke::SvgPath("M9 12h12l-3 -3"),
+    Stroke::SvgPath("M18 15l3 -3"),
+]);
+
+/// Tabler « login ».
+pub const LOGIN: Icon = tabler(&[
+    Stroke::SvgPath(
+        "M15 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2",
+    ),
+    Stroke::SvgPath("M21 12h-13l3 -3"),
+    Stroke::SvgPath("M11 15l-3 -3"),
+]);
+
+/// Tabler « keyboard ».
+pub const SHORTCUTS: Icon = tabler(&[
+    Stroke::SvgPath(
+        "M2 8a2 2 0 0 1 2 -2h16a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-16a2 2 0 0 1 -2 -2l0 -8",
+    ),
+    Stroke::SvgPath("M6 10l0 .01"),
+    Stroke::SvgPath("M10 10l0 .01"),
+    Stroke::SvgPath("M14 10l0 .01"),
+    Stroke::SvgPath("M18 10l0 .01"),
+    Stroke::SvgPath("M6 14l0 .01"),
+    Stroke::SvgPath("M18 14l0 .01"),
+    Stroke::SvgPath("M10 14l4 .01"),
+]);
+
+/// Tabler « sun-moon ».
+pub const THEME: Icon = tabler(&[
+    Stroke::SvgPath("M9.173 14.83a4 4 0 1 1 5.657 -5.657"),
+    Stroke::SvgPath("M11.294 12.707l.174 .247a7.5 7.5 0 0 0 8.845 2.492a9 9 0 0 1 -14.671 2.914"),
+    Stroke::SvgPath("M3 12h1"),
+    Stroke::SvgPath("M12 3v1"),
+    Stroke::SvgPath("M5.6 5.6l.7 .7"),
+    Stroke::SvgPath("M3 21l18 -18"),
+]);
+
+/// Tabler « network ».
+pub const NETWORK: Icon = tabler(&[
+    Stroke::SvgPath("M6 9a6 6 0 1 0 12 0a6 6 0 0 0 -12 0"),
+    Stroke::SvgPath("M12 3c1.333 .333 2 2.333 2 6s-.667 5.667 -2 6"),
+    Stroke::SvgPath("M12 3c-1.333 .333 -2 2.333 -2 6s.667 5.667 2 6"),
+    Stroke::SvgPath("M6 9h12"),
+    Stroke::SvgPath("M3 20h7"),
+    Stroke::SvgPath("M14 20h7"),
+    Stroke::SvgPath("M10 20a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"),
+    Stroke::SvgPath("M12 15v3"),
+]);
+
+/// Tabler « server ».
+pub const SERVER: Icon = tabler(&[
+    Stroke::SvgPath("M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-2"),
+    Stroke::SvgPath(
+        "M3 15a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3l0 -2",
+    ),
+    Stroke::SvgPath("M7 8l0 .01"),
+    Stroke::SvgPath("M7 16l0 .01"),
+]);
+
+/// Tabler « adjustments-horizontal ».
+pub const ADJUSTMENTS: Icon = tabler(&[
+    Stroke::SvgPath("M12 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"),
+    Stroke::SvgPath("M4 6l8 0"),
+    Stroke::SvgPath("M16 6l4 0"),
+    Stroke::SvgPath("M6 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"),
+    Stroke::SvgPath("M4 12l2 0"),
+    Stroke::SvgPath("M10 12l10 0"),
+    Stroke::SvgPath("M15 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"),
+    Stroke::SvgPath("M4 18l11 0"),
+    Stroke::SvgPath("M19 18l1 0"),
+]);
+
+/// Tabler « notes ».
+pub const JOURNAL: Icon = tabler(&[
+    Stroke::SvgPath(
+        "M5 5a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2l0 -14",
+    ),
+    Stroke::SvgPath("M9 7l6 0"),
+    Stroke::SvgPath("M9 11l6 0"),
+    Stroke::SvgPath("M9 15l4 0"),
+]);
+
+/// Tabler « license ».
+pub const LICENSE: Icon = tabler(&[
+    Stroke::SvgPath(
+        "M15 21h-9a3 3 0 0 1 -3 -3v-1h10v2a2 2 0 0 0 4 0v-14a2 2 0 1 1 2 2h-2m2 -4h-11a3 3 0 0 0 -3 3v11",
+    ),
+    Stroke::SvgPath("M9 7l4 0"),
+    Stroke::SvgPath("M9 11l4 0"),
+]);
+
+/// Tabler « code ».
+pub const CODE: Icon = tabler(&[
+    Stroke::SvgPath("M7 8l-4 4l4 4"),
+    Stroke::SvgPath("M17 8l4 4l-4 4"),
+    Stroke::SvgPath("M14 4l-4 16"),
+]);
+
+/// Tabler « heart ».
+pub const HEART: Icon = tabler(&[Stroke::SvgPath(
+    "M19.5 12.572l-7.5 7.428l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.5 6.572",
+)]);
+
+/// Tabler « plug-connected-x ».
+pub const DISCONNECT: Icon = tabler(&[
+    Stroke::SvgPath("M20 16l-4 4"),
+    Stroke::SvgPath("M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5"),
+    Stroke::SvgPath("M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5"),
+    Stroke::SvgPath("M3 21l2.5 -2.5"),
+    Stroke::SvgPath("M18.5 5.5l2.5 -2.5"),
+    Stroke::SvgPath("M10 11l-2 2"),
+    Stroke::SvgPath("M13 14l-2 2"),
+    Stroke::SvgPath("M16 16l4 4"),
+]);
+
+/// Tabler « bolt ».
+pub const BOLT: Icon = tabler(&[Stroke::SvgPath("M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11")]);
 
 /// The drawing of the empty screen: a computer, on its own grid.
 ///
