@@ -4687,6 +4687,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Un bandeau et une barre de gauche baignés d'une lumière dorée et bleutée, discrète, sous un texte qui se lit.
 
+## D301. Les halos passent aux jaunes, et bien plus forts (2026-10-14, pendant MZ)
+
+**Pourquoi.** Les halos de [D300](#d300-le-bandeau-et-la-barre-de-gauche-brillent-de-halos-dégradés-2026-10-14-pendant-mz) étaient trop pâles : le bandeau et la barre de gauche restaient presque blancs, dans une fenêtre déjà blanche partout autour.
+
+**Ce qui est fait.** Le bleu s'en va : trois halos, tous des jaunes, posés sur la surface. Un lavis qui couvre toute la pièce (`--halo-wash`), l'or du logo en haut à droite du bandeau et en haut de la barre (`--halo-gold`), et un ambre plus profond en bas (`--halo-amber`), deux à trois fois plus forts qu'avant. En sombre, les mêmes, plus retenus, sur le bleu nuit.
+
+**Ce qui se voit.** Un bandeau et une barre de gauche franchement dorés, qui tranchent sur la page.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

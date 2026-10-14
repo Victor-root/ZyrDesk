@@ -316,8 +316,9 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
 fn sidebar(painter: &mut Painter, at: Rect) {
     let colours = painter.colours;
     painter.fill(at, 0.0, colours.surface_2);
-    painter.halo(at, 0.0, (0.0, 0.0), (1.8, 0.4), colours.halo_gold);
-    painter.halo(at, 0.0, (1.0, 1.0), (1.6, 0.45), colours.halo_cool);
+    painter.halo(at, 0.0, (0.5, 0.5), (1.5, 1.2), colours.halo_wash);
+    painter.halo(at, 0.0, (0.0, 0.0), (1.8, 0.45), colours.halo_gold);
+    painter.halo(at, 0.0, (1.0, 1.0), (1.6, 0.45), colours.halo_amber);
     painter.upright(
         at.right - painter.px(1.0),
         at.top,

@@ -123,8 +123,9 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
     let card = Rect::at(at.left, at.top, width, height);
     let radius = painter.px(design::RADIUS_LARGE);
     painter.fill(card, radius, colours.surface_1);
-    painter.halo(card, radius, (0.82, 0.0), (0.55, 1.6), colours.halo_gold);
-    painter.halo(card, radius, (0.4, 1.15), (0.45, 1.1), colours.halo_cool);
+    painter.halo(card, radius, (0.5, 0.5), (1.0, 2.5), colours.halo_wash);
+    painter.halo(card, radius, (0.85, 0.0), (0.6, 1.8), colours.halo_gold);
+    painter.halo(card, radius, (0.25, 1.1), (0.5, 1.2), colours.halo_amber);
     painter.stroke(card, radius, colours.border);
 
     painter.text(
