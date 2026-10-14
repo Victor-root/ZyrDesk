@@ -15,7 +15,7 @@ Règle de ce plan : **tout ce qui est prévu se voit dès le premier jour.** Ce 
 - **Les données séparées du dessin** : ce que l'accueil affiche lui est donné (par le service, le compte, la session) ; le dessin ne va rien chercher lui-même.
 - **Fenêtre étroite** : la barre de gauche se replie derrière un bouton « menu » (trois traits) en haut à gauche ; les rangées de cartes passent à la ligne.
 - **Barre de titre : celle de Windows, comme la fenêtre d'aujourd'hui**, avec ses boutons réduire, agrandir et fermer, et non une barre dessinée par ZyrDesk (contrairement à la maquette). C'est Windows qui la dessine et la colore selon ses propres réglages : la couleur d'accentuation de Windows quand la personne l'a choisie pour les barres de titre, une barre sombre en thème sombre (`shell/main_window.rs` le fait déjà).
-- **Images** : la page est unie. Le bandeau et la barre de gauche sont habillés d'un paysage de dunes fait pour ZyrDesk : sous un soleil voilé en clair, sous la lune en sombre ([D303](DECISIONS.md)). Les cartes des ordinateurs sans fond d'écran portent l'image abstraite dessinée par ZyrDesk.
+- **Images** : la page est unie. Le bandeau et la barre de gauche sont habillés d'un paysage de dunes fait pour ZyrDesk : sous un soleil voilé en clair, sous la lune en sombre ([D303](DECISIONS.md)) ; dans la barre de gauche, les pages et le pied (la personne, l'état, la version) sont posés sur deux plaques de verre dépoli ([D305](DECISIONS.md)). Les cartes des ordinateurs sans fond d'écran portent l'image abstraite dessinée par ZyrDesk.
 
 Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est dessiné mais attend sa fonction.
 

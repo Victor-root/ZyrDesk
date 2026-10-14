@@ -315,20 +315,14 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
 /// bottom the person, whether everything is up to date, and the build.
 fn sidebar(painter: &mut Painter, at: Rect) {
     let colours = painter.colours;
-    // Strong behind the pages at the top and the person at the foot, thin
-    // in between, where the dunes show.
+    // Strong behind the name at the top, thin below, where the panes of
+    // glass carry the words and the dunes show between them.
     painter.scenery(
         at,
         0.0,
         colours.surface_2,
         ((at.left, at.top), (at.left, at.bottom)),
-        &[
-            (0.0, 1.0),
-            (0.45, 0.9),
-            (0.7, 0.35),
-            (0.85, 0.6),
-            (1.0, 0.9),
-        ],
+        &[(0.0, 0.8), (0.25, 0.5), (0.7, 0.2), (1.0, 0.5)],
     );
     painter.upright(
         at.right - painter.px(1.0),
@@ -364,38 +358,59 @@ fn sidebar(painter: &mut Painter, at: Rect) {
         (at.left + edge, tagline_top, tagline_width),
     );
 
-    let inset = painter.px(design::SPACE_3);
-    let mut y = tagline_top
+    // The pages, on a pane of frosted glass.
+    let margin = painter.px(design::SPACE_3);
+    let pad = painter.px(design::SPACE_2);
+    let row = painter.px(44.0);
+    let between = painter.px(design::SPACE_1);
+    let apart = painter.px(design::SPACE_2 + design::SPACE_3);
+    let top = tagline_top
         + painter.height_of(&tagline, caption, tagline_width)
         + painter.px(design::SPACE_5);
+    let rows = NAVIGATION.len() as f32;
+    let pages_height = rows * row + (rows - 1.0) * between + apart;
+    let radius = painter.px(design::RADIUS);
+    let pages = Rect::at(
+        at.left + margin,
+        top - pad,
+        size(at).0 - margin * 2.0,
+        pages_height + pad * 2.0,
+    );
+    painter.glass(pages, radius, at);
+    let mut y = top;
     for (rank, (page, label, icon)) in NAVIGATION.iter().enumerate() {
         if rank == 4 {
             y += painter.px(design::SPACE_2);
-            painter.rule(at.left + edge, y, size(at).0 - edge * 2.0);
+            painter.rule(pages.left + pad, y, size(pages).0 - pad * 2.0);
             y += painter.px(design::SPACE_3);
         }
-        let item = Rect::at(
-            at.left + inset,
-            y,
-            size(at).0 - inset * 2.0,
-            painter.px(44.0),
-        );
+        let item = Rect::at(pages.left + pad, y, size(pages).0 - pad * 2.0, row);
         navigation_item(painter, item, *page, &zyr_i18n::text(label), icon);
-        y += painter.px(44.0 + design::SPACE_1);
+        y += row + between;
     }
 
-    // At the bottom, from the floor up.
+    // At the bottom, from the floor up, on a pane of its own: the person,
+    // whether everything is up to date, and the build.
     let line = painter.line(caption);
-    let floor = at.bottom
-        - edge
-        - version(
-            painter,
-            (at.left + edge, at.bottom - edge, size(at).0 - edge * 2.0),
-        )
-        - painter.px(design::SPACE_3);
+    let words = (at.left + edge, at.bottom - edge, size(at).0 - edge * 2.0);
+    let build = painter.measured(|painter| version(painter, words));
+    let floor = at.bottom - edge - build - painter.px(design::SPACE_3);
+    let status = Rect::at(at.left + edge, floor - line, size(at).0 - edge * 2.0, line);
+    let person = Rect::at(
+        pages.left + pad,
+        status.top - painter.px(design::SPACE_4 + 52.0),
+        size(pages).0 - pad * 2.0,
+        painter.px(52.0),
+    );
+    let foot = Rect {
+        top: person.top - pad,
+        bottom: at.bottom - margin,
+        ..pages
+    };
+    painter.glass(foot, radius, at);
+    version(painter, words);
     let up_to_date = say!("nav.up_to_date");
     let dot = painter.px(8.0);
-    let status = Rect::at(at.left + edge, floor - line, size(at).0 - edge * 2.0, line);
     painter.dot(
         (status.left + dot / 2.0, middle(status).1),
         dot,
@@ -412,17 +427,6 @@ fn sidebar(painter: &mut Painter, at: Rect) {
         },
     );
     painter.tells(status, say!("soon.tip"));
-    let person = Rect::at(
-        at.left + inset,
-        status.top - painter.px(design::SPACE_4 + 52.0),
-        size(at).0 - inset * 2.0,
-        painter.px(52.0),
-    );
-    painter.rule(
-        at.left + edge,
-        person.top - painter.px(design::SPACE_3),
-        size(at).0 - edge * 2.0,
-    );
     person_row(painter, person);
 }
 

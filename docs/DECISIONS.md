@@ -4719,6 +4719,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Des mots nets sur le paysage, et des dunes qui se montrent là où il n'y a rien à lire.
 
+## D305. La barre de gauche range ses mots sur deux plaques de verre (2026-10-14, pendant MZ)
+
+**Pourquoi.** Malgré le voile en dégradé ([D304](#d304-le-voile-du-paysage-se-fait-dégradé-fort-sous-les-mots-2026-10-14-pendant-mz)), les pages de la barre de gauche manquaient encore de netteté sur les dunes. Victor demande un cadre en verre pour les pages, et un pour le bas.
+
+**Ce qui est fait.** Deux plaques de verre dépoli dans la barre : l'une sous les pages, l'autre sous la personne, l'état et la version. Le verre montre le paysage flouté, à sa place exacte derrière la plaque, sous une teinte de la charte (`--glass`) et un liseré de lumière (`--glass-edge`). Le flou est fait une fois, dans une copie floutée de chaque image livrée avec elle (`scenery/*-frosted.jpg`) : à l'affichage, une plaque ne coûte qu'une image posée. La toile sait poser un morceau d'image couvrant une place plus grande, à sa place (`Canvas::picture_within`). Le voile de la barre s'allège, les plaques portant désormais les mots.
+
+**Ce qui se voit.** Des pages et un pied de barre nets, sur deux plaques de verre entre lesquelles les dunes se montrent.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

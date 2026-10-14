@@ -1074,12 +1074,27 @@ impl Canvas {
     /// edges and cropping what is beyond, as a wallpaper covers a screen
     /// of another shape.
     pub fn picture(&self, picture: &Picture, rect: Rect, radius: f32, opacity: f32) {
+        self.picture_within(picture, rect, rect, radius, opacity);
+    }
+
+    /// Lays a picture so that it covers `cover`, and lets only what falls
+    /// in the rounded `rect` show: a piece of a picture laid over a larger
+    /// place, in its place.
+    pub fn picture_within(
+        &self,
+        picture: &Picture,
+        cover: Rect,
+        rect: Rect,
+        radius: f32,
+        opacity: f32,
+    ) {
         let Some(bitmap) = self.bitmap_of(picture) else {
             return;
         };
-        self.lay(
+        self.lay_within(
             &bitmap,
             (picture.width as f32, picture.height as f32),
+            cover,
             rect,
             radius,
             opacity,
@@ -1247,15 +1262,22 @@ impl Canvas {
     /// Through a brush that fills the rounded shape rather than a bitmap
     /// drawn and clipped: that is what rounds its corners as smoothly as
     /// any other shape, without a layer.
-    fn lay(
+    fn lay(&self, bitmap: &ID2D1Bitmap, size: (f32, f32), rect: Rect, radius: f32, opacity: f32) {
+        self.lay_within(bitmap, size, rect, rect, radius, opacity);
+    }
+
+    /// Lays a picture so that it covers `cover`, and lets only what falls
+    /// in the rounded `rect` show.
+    fn lay_within(
         &self,
         bitmap: &ID2D1Bitmap,
         (wide, high): (f32, f32),
+        cover: Rect,
         rect: Rect,
         radius: f32,
         opacity: f32,
     ) {
-        let (room_wide, room_high) = (rect.right - rect.left, rect.bottom - rect.top);
+        let (room_wide, room_high) = (cover.right - cover.left, cover.bottom - cover.top);
         if wide <= 0.0 || high <= 0.0 || room_wide <= 0.0 || room_high <= 0.0 {
             return;
         }
@@ -1277,8 +1299,8 @@ impl Canvas {
                         M12: 0.0,
                         M21: 0.0,
                         M22: part,
-                        M31: rect.left + (room_wide - wide * part) / 2.0,
-                        M32: rect.top + (room_high - high * part) / 2.0,
+                        M31: cover.left + (room_wide - wide * part) / 2.0,
+                        M32: cover.top + (room_high - high * part) / 2.0,
                     },
                 }),
             ) else {

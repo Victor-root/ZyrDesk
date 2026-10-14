@@ -371,7 +371,7 @@ impl<'a> Painter<'a> {
         if self.silent {
             return;
         }
-        let Some(picture) = zyr_draw::scenery::scenery(self.light) else {
+        let Some(picture) = zyr_draw::scenery::scenery(self.light, false) else {
             self.fill(at, radius, plain);
             return;
         };
@@ -381,6 +381,20 @@ impl<'a> Painter<'a> {
             .map(|(share, strength)| (*share, self.colours.scenery_veil.faded(*strength)))
             .collect();
         self.canvas.gradient(at, radius, along, &stops);
+    }
+
+    /// Frosted glass in the rounded `at`, over the scenery laid across
+    /// `behind`: the same scenery, blurred, in its place under the glass,
+    /// the glass's tint, and the light along its edge.
+    pub fn glass(&self, at: Rect, radius: f32, behind: Rect) {
+        if self.silent {
+            return;
+        }
+        if let Some(picture) = zyr_draw::scenery::scenery(self.light, true) {
+            self.canvas.picture_within(picture, behind, at, radius, 1.0);
+        }
+        self.fill(at, radius, self.colours.glass);
+        self.stroke(at, radius, self.colours.glass_edge);
     }
 
     pub fn picture(&self, picture: &Picture, at: Rect, radius: f32) {
