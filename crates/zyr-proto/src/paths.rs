@@ -154,6 +154,12 @@ pub fn far_wallpapers() -> PathBuf {
     data_dir().join("wallpapers")
 }
 
+/// The cards of the computers of this network, kept by the service to
+/// wake them when they are off.
+pub fn cards_to_wake() -> PathBuf {
+    data_dir().join("cards-to-wake.conf")
+}
+
 /// The sessions that took place on this computer, kept by the service.
 pub fn session_history() -> PathBuf {
     data_dir().join("session-history.txt")
@@ -336,6 +342,7 @@ mod tests {
             home_layout(),
             session_history(),
             far_wallpapers(),
+            cards_to_wake(),
         ] {
             assert!(
                 path.starts_with(&root),

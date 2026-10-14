@@ -1,4 +1,5 @@
-//! Announcing this computer on the local network, and finding the others.
+//! Announcing this computer on the local network, finding the others,
+//! and waking one that is switched off.
 //!
 //! Two computers on the same network should find each other without
 //! anyone reading an address out loud. That is all this does: it says
@@ -25,8 +26,10 @@ use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::net::TUNNEL_PORT;
 
 mod calling;
+mod waking;
 
 pub use calling::PORT as CALLING_PORT;
+pub use waking::wake;
 
 /// The kind of service ZyrDesk answers to, in the shape mDNS expects.
 ///

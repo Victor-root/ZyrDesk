@@ -88,6 +88,10 @@ pub fn start_a_helper(_arguments: &[String], _whose: Whose) -> io::Result<()> {
     Err(not_here())
 }
 
+pub fn card_of(_address: std::net::Ipv4Addr) -> Option<[u8; 6]> {
+    None
+}
+
 pub fn wallpaper_on_screen() -> Option<std::path::PathBuf> {
     None
 }

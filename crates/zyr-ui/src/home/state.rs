@@ -160,6 +160,8 @@ pub enum Target {
     RenameThis,
     Details,
     Connect(String),
+    /// Wakes the computer of that fingerprint, switched off.
+    Wake(String),
     /// Opens or closes a menu.
     Menu(Menu),
     Offer(String, Offer),

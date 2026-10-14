@@ -362,6 +362,7 @@ fn keep_the_door(order: &StopOrder, log: &Log, wiring: Wiring) -> End {
         ways: Ways::new(log.clone(), remembered.clone(), history.clone()),
         incoming: crate::incoming::Incoming::new(history.clone()),
         history,
+        cards: crate::waking::Cards::at(paths::cards_to_wake(), log.clone()),
         remembered,
         neighbours: neighbourhood
             .as_ref()
@@ -403,6 +404,12 @@ fn keep_the_door(order: &StopOrder, log: &Log, wiring: Wiring) -> End {
         }
     };
     runtime.spawn(machine.ways.clone().keep_tidy());
+    runtime.spawn(
+        machine
+            .cards
+            .clone()
+            .keep_learning(machine.neighbours.clone()),
+    );
     runtime.spawn(machine.ways.clone().keep_the_clipboards_in_step());
     runtime.spawn(machine.ways.clone().carry_the_pieces());
 

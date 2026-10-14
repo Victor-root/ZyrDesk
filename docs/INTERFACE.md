@@ -78,7 +78,7 @@ Une carte par ordinateur connu (réseau local et compte), ou une ligne en vue li
 | Nom, adresse ou « En ligne », compte | Oui | |
 | Étiquette LAN ou Internet, et la latence | Oui | |
 | « Se connecter » | Oui | Ouvre la session |
-| « Réveiller » (ordinateur éteint) | Grisé | Réveil par le réseau, à faire |
+| « Réveiller » (ordinateur éteint) | Oui | Réveil par le réseau local, une fois sa carte réseau connue ; grisé avant ([D313](DECISIONS.md)) |
 | Poignée pour réordonner les cartes | Grisé | |
 
 ## 7. Le bas de la page

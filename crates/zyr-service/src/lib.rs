@@ -38,6 +38,7 @@ mod speakers;
 mod supervisor;
 mod transfer;
 mod vitals;
+mod waking;
 mod wallpapers;
 mod ways;
 

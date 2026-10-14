@@ -70,6 +70,7 @@ pub fn act(app: &App, target: Target) {
         }
         Target::Details => dialogs::open(app, Dialog::Details),
         Target::Connect(fingerprint) => connect(app, &fingerprint, false),
+        Target::Wake(fingerprint) => wake(app, fingerprint),
         Target::Menu(menu) => {
             let mut state = crate::home::state();
             let open = state.menu.as_ref().is_some_and(|(open, _)| *open == menu);
@@ -436,6 +437,21 @@ fn forget(app: &App, fingerprint: String) {
             Err(reason) => crate::home::state().tell_trouble(&reason),
         }
         seen::again(&app).await;
+        crate::home::redraw(&app);
+    });
+}
+
+/// Wakes a computer of this network that is switched off, and says the
+/// signal went: it takes the computer a moment to come up.
+fn wake(app: &App, fingerprint: String) {
+    let name = seen::with(|seen| seen.peer(&fingerprint).map(|peer| peer.name.clone()));
+    let app = app.clone();
+    crate::shell::app::spawn(async move {
+        match crate::shell::desk::wake(fingerprint).await {
+            Ok(()) => crate::home::state()
+                .tell_news(say!("computer.wake_sent", name = name.unwrap_or_default())),
+            Err(reason) => crate::home::state().tell_trouble(&reason),
+        }
         crate::home::redraw(&app);
     });
 }

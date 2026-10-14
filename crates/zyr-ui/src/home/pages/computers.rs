@@ -185,6 +185,8 @@ fn more(painter: &mut Painter, at: Rect, count: usize) {
 struct Shown {
     fingerprint: String,
     presence: Presence,
+    /// Whether it can be woken from here, its card being known.
+    wakeable: bool,
     reachable: bool,
     connect: Target,
     menu: Target,
@@ -212,6 +214,7 @@ impl Shown {
             0.0
         };
         Shown {
+            wakeable: peer.wakeable,
             fingerprint,
             presence,
             reachable,
@@ -283,9 +286,18 @@ impl Shown {
     }
 
     /// The way to it at the bottom: « Connect », or « Wake up » for one
-    /// that is gone, which does not work yet.
+    /// that is gone, faded while its card is not known.
     fn way_to(&self, painter: &mut Painter, at: Rect) {
         let colours = painter.colours;
+        if self.presence == Presence::Gone && self.wakeable {
+            let label = say!("computer.wake");
+            painter.button(
+                at,
+                Target::Wake(self.fingerprint.clone()),
+                Button::new(&label, Kind::Quiet).with_icon(&icons::POWER),
+            );
+            return;
+        }
         if self.presence != Presence::Gone {
             let label = say!("computer.connect");
             painter.button(
@@ -323,7 +335,7 @@ impl Shown {
                 size(at).1,
             ),
         );
-        painter.tells(at, say!("soon.tip"));
+        painter.tells(at, say!("computer.wake_unknown"));
     }
 }
 

@@ -123,6 +123,8 @@ pub struct Machine {
     pub incoming: Incoming,
     /// The sessions that took place, both ways.
     pub history: History,
+    /// The cards of the computers of this network, to wake them.
+    pub cards: crate::waking::Cards,
     pub remembered: Remembered,
     pub neighbours: Found,
     pub account: Account,
@@ -265,6 +267,7 @@ impl Machine {
         let wallpapers = paths::far_wallpapers();
         for peer in &mut shown {
             peer.wallpaper = crate::wallpapers::stamp(&wallpapers, peer.fingerprint);
+            peer.wakeable = self.cards.knows(peer.fingerprint);
         }
         shown
     }
@@ -301,6 +304,7 @@ fn merged(
             port: peer.port,
             seen: true,
             wallpaper: None,
+            wakeable: false,
         })
         .collect();
 
@@ -321,6 +325,7 @@ fn merged(
             written: true,
             round_trip_ms: None,
             wallpaper: None,
+            wakeable: false,
         });
     }
 
@@ -348,6 +353,7 @@ fn merged(
             }),
             round_trip_ms: None,
             wallpaper: None,
+            wakeable: false,
         });
     }
     shown
@@ -392,6 +398,7 @@ mod tests {
             ways: Ways::new(log.clone(), remembered.clone(), history.clone()),
             incoming: Incoming::new(history.clone()),
             history,
+            cards: crate::waking::Cards::at(folder.join("cards-to-wake.conf"), log.clone()),
             remembered,
             neighbours: Found::new(),
             account: Account::at(folder.join("account.conf"), log.clone()),

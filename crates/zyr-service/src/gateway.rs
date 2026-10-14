@@ -1680,6 +1680,7 @@ mod tests {
             ways: crate::ways::Ways::new(log.clone(), remembered.clone(), history.clone()),
             incoming: crate::incoming::Incoming::new(history.clone()),
             history,
+            cards: crate::waking::Cards::at(folder.join("cards-to-wake.conf"), log.clone()),
             remembered,
             neighbours: zyr_lan::Found::new(),
             account: crate::account::Account::at(folder.join("account.conf"), log),

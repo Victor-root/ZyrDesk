@@ -28,7 +28,7 @@ use zyr_proto::session::{Preferred, WantedScreen};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 37;
+pub const PROTOCOL: u32 = 38;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -209,6 +209,8 @@ pub enum Request {
     /// The thumbnail of that computer's wallpaper, as the last session
     /// with it brought it.
     Wallpaper { peer: Fingerprint },
+    /// Wakes that computer of this network, switched off or asleep.
+    Wake { peer: Fingerprint },
     /// Decides whether this computer accepts being controlled.
     ///
     /// A decision and not a state: it survives a restart, since a
@@ -387,6 +389,9 @@ impl Request {
             "wallpaper" => Ok(Request::Wallpaper {
                 peer: fields.parsed("peer")?,
             }),
+            "wake" => Ok(Request::Wake {
+                peer: fields.parsed("peer")?,
+            }),
             "hosting" => Ok(Request::SetHosting {
                 on: fields.text("on")? == "yes",
             }),
@@ -497,6 +502,7 @@ impl fmt::Display for Request {
             Request::Watching => f.write_str("watching"),
             Request::History => f.write_str("history"),
             Request::Wallpaper { peer } => write!(f, "wallpaper peer={peer}"),
+            Request::Wake { peer } => write!(f, "wake peer={peer}"),
             Request::SetHosting { on } => write!(f, "hosting on={}", said(*on)),
             Request::SetTrust { on } => write!(f, "trusting on={}", said(*on)),
             Request::SetEcn { on } => write!(f, "ecn on={}", said(*on)),
@@ -701,6 +707,8 @@ pub struct Peer {
     /// since 1970: what tells the window to ask for it again. Nothing
     /// before a first session brought one.
     pub wallpaper: Option<u64>,
+    /// Whether it can be woken from here, its card being known.
+    pub wakeable: bool,
 }
 
 /// What the account says of a computer.
@@ -977,6 +985,7 @@ impl Answer {
                 }),
                 round_trip_ms: fields.parsed("rtt").ok(),
                 wallpaper: fields.parsed("wallpaper").ok(),
+                wakeable: fields.flag("wake", false),
             })),
             "session" => Ok(Answer::Session(Session {
                 way: WayId(fields.parsed("way")?),
@@ -1117,6 +1126,9 @@ impl fmt::Display for Answer {
                 }
                 if let Some(stamp) = peer.wallpaper {
                     write!(f, " wallpaper={stamp}")?;
+                }
+                if peer.wakeable {
+                    f.write_str(" wake=yes")?;
                 }
                 Ok(())
             }
@@ -1394,6 +1406,9 @@ mod tests {
             Request::Wallpaper {
                 peer: fingerprint(),
             },
+            Request::Wake {
+                peer: fingerprint(),
+            },
             Request::SetHosting { on: true },
             Request::SetHosting { on: false },
             Request::SetTrust { on: true },
@@ -1578,6 +1593,7 @@ mod tests {
                 account: None,
                 round_trip_ms: Some(2),
                 wallpaper: Some(1_791_000_000),
+                wakeable: true,
             }),
             Answer::Peer(Peer {
                 name: "Desktop PC".to_string(),
@@ -1589,6 +1605,7 @@ mod tests {
                 account: None,
                 round_trip_ms: None,
                 wallpaper: None,
+                wakeable: false,
             }),
             // A computer of the account that the network does not
             // carry: its road is its identifier at the server.
@@ -1607,6 +1624,7 @@ mod tests {
                 }),
                 round_trip_ms: None,
                 wallpaper: None,
+                wakeable: false,
             }),
             // And a computer a contact has shared, also seen on the local
             // network: a single card, with the address from the network
@@ -1626,6 +1644,7 @@ mod tests {
                 }),
                 round_trip_ms: Some(1),
                 wallpaper: None,
+                wakeable: false,
             }),
             Answer::Session(Session {
                 way: WayId(3),
@@ -1930,6 +1949,7 @@ mod tests {
                 account: None,
                 round_trip_ms: None,
                 wallpaper: None,
+                wakeable: false,
             })
             .to_string();
             let Ok(Answer::Peer(read)) = Answer::parse(&sent) else {

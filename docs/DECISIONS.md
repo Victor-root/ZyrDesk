@@ -4801,6 +4801,19 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Après une session avec un ordinateur, sa carte porte son vrai fond d'écran. Les deux PC se mettent à jour ensemble.
 
+## D313. « Réveiller » un ordinateur éteint, par le réseau local (2026-10-14, pendant MZ)
+
+**Pourquoi.** La carte d'un ordinateur hors ligne portait un bouton « Réveiller » grisé depuis [D280](#d280-le-nouvel-accueil-remplace-lancien-dune-seule-pièce-2026-10-14-pendant-mz).
+
+**Ce qui est fait.**
+- Un ordinateur éteint se réveille par un paquet qui porte l'adresse matérielle de sa carte réseau, qu'il n'annonce pas. Le service l'apprend tant que les deux s'entendent : toutes les trente secondes, pour chaque ordinateur vu sur le réseau local, il lit dans la table des voisins de Windows la carte qui répond à son adresse (`zyr-system`, « pas ici » ailleurs que sous Windows). Il la garde dans `data/cards-to-wake.conf`, une ligne par ordinateur, pour le jour où il sera éteint. Rien ne change de ce que les ordinateurs se disent : un ordinateur d'une version plus ancienne se réveille aussi.
+- Le paquet (six octets à 255, puis seize fois la carte) part de `zyr-lan`, vers tout le réseau de chacune des cartes de cet ordinateur, et vers tout le réseau. Le calcul du paquet et la lecture du fichier sont essayés sur tout système.
+- La fenêtre le demande par un message du tube, `wake`, et chaque ordinateur de la liste dit s'il peut être réveillé (`wake=yes`) : le protocole passe de 37 à 38.
+- Sur la carte d'un ordinateur hors ligne, « Réveiller » marche dès que sa carte est connue, et dit en bas de la fenêtre que le signal est parti ; avant, il reste grisé, avec une bulle qui dit pourquoi.
+- Limite : le réveil ne passe pas Internet, et un ordinateur seulement vu sur le réseau local disparaît de l'accueil quand il s'éteint. « Réveiller » sert donc aux ordinateurs du compte, qui restent à l'écran hors ligne, et qui ont été vus allumés sur ce réseau. La carte réseau doit aussi accepter le réveil (réglage du BIOS et de Windows).
+
+**Ce qui se voit.** « Réveiller » allume un ordinateur du compte éteint sur le même réseau. Les deux PC se mettent à jour ensemble.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -153,6 +153,10 @@ async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
                 .map(Answer::Watching)
                 .collect(),
         ),
+        Request::Wake { peer } => vec![match answering.machine.cards.wake(peer) {
+            Ok(()) => Answer::Done,
+            Err(reason) => Answer::Refused(reason),
+        }],
         Request::Wallpaper { peer } => vec![Answer::Wallpaper(crate::wallpapers::read(
             &paths::far_wallpapers(),
             peer,
@@ -716,6 +720,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
         | Request::Watching
         | Request::History
         | Request::Wallpaper { .. }
+        | Request::Wake { .. }
         | Request::Devices => Answer::Done,
     }
 }
@@ -756,6 +761,7 @@ mod tests {
                 ways: crate::ways::Ways::new(log.clone(), remembered.clone(), history.clone()),
                 incoming: crate::incoming::Incoming::new(history.clone()),
                 history,
+                cards: crate::waking::Cards::at(folder.join("cards-to-wake.conf"), log.clone()),
                 remembered,
                 neighbours: zyr_lan::Found::new(),
                 account: crate::account::Account::at(folder.join("account.conf"), log.clone()),

@@ -145,6 +145,18 @@ pub async fn watching() -> Vec<Watcher> {
     .unwrap_or_default()
 }
 
+/// Wakes a computer of this network that is switched off or asleep.
+pub async fn wake(fingerprint: String) -> Result<(), Fact> {
+    let peer = fingerprint_of(&fingerprint)?;
+    match service::ask(&Request::Wake { peer }).await? {
+        Answer::Done => {
+            note(&format!("{peer} asked to wake up"));
+            Ok(())
+        }
+        other => Err(other.unexpected()),
+    }
+}
+
 /// The thumbnail of that computer's wallpaper, as the last session with
 /// it brought it, a bitmap file.
 pub async fn far_wallpaper(fingerprint: &str) -> Option<Vec<u8>> {
