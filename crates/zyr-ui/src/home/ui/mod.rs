@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use zyr_draw::design::{self, Colour, Palette, Shadow};
 use zyr_draw::icons::Icon;
-use zyr_draw::{Canvas, Pen, Picture, Rect, Scene};
+use zyr_draw::{Canvas, Pen, Picture, Rect};
 
 use crate::home::seen::Seen;
 use crate::home::state::{Hit, Kept, Scroller, State, Target};
@@ -34,6 +34,10 @@ pub const STEADY: Duration = Duration::from_millis(design::DURATION);
 
 /// The size something arriving starts from, against its own.
 const GROWS_FROM: f32 = 0.94;
+
+/// How much a computer's view of the dunes is enlarged from the
+/// scenery, so that each card shows a piece of it rather than all of it.
+const DUNES_ZOOM: f32 = 2.2;
 
 /// The thickness of a line and of a border.
 pub const HAIRLINE: f32 = 1.0;
@@ -338,20 +342,32 @@ impl<'a> Painter<'a> {
         }
     }
 
-    /// ZyrDesk's own picture, its ridges drawn from `seed`, with words on
-    /// its left or not.
-    pub fn art(&self, at: Rect, radius: f32, seed: u32) {
-        if !self.silent {
-            self.canvas.art(
-                &Scene {
-                    light: self.light,
-                    seed,
-                },
-                at,
-                radius,
-                self.scale,
-            );
+    /// A view of the dunes for a computer that shows no wallpaper of its
+    /// own: a piece of the scenery, enlarged, at a place taken from
+    /// `seed`, so that two cards side by side never show the same view
+    /// and a card keeps its own from one day to the next.
+    pub fn dunes(&self, at: Rect, radius: f32, seed: u32) {
+        if self.silent {
+            return;
         }
+        let Some(picture) = zyr_draw::scenery::scenery(self.light, false) else {
+            self.fill(at, radius, self.colours.surface_2);
+            return;
+        };
+        let (width, height) = size(at);
+        let (wide, high) = (width * DUNES_ZOOM, height * DUNES_ZOOM);
+        let share = |bits: u32| (bits & 0xffff) as f32 / f32::from(u16::MAX);
+        // Anywhere across, and in the lower part of the picture, where
+        // the dunes are rather than the sky.
+        let across = share(seed);
+        let down = 0.45 + 0.55 * share(seed >> 16);
+        let cover = Rect::at(
+            at.left - (wide - width) * across,
+            at.top - (high - height) * down,
+            wide,
+            high,
+        );
+        self.canvas.picture_within(picture, cover, at, radius, 1.0);
     }
 
     /// The scenery of the window, covering the rounded `at` under its

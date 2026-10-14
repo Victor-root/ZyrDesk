@@ -159,6 +159,7 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
         access(
             painter,
             seen,
+            card,
             Rect::at(
                 card.right - inside - painter.px(ACCESS),
                 card.top,
@@ -172,6 +173,7 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
         access(
             painter,
             seen,
+            card,
             Rect::at(
                 card.left + inside,
                 card.bottom - inside - strip + painter.px(8.0),
@@ -203,8 +205,10 @@ pub fn tone_colour(painter: &Painter, tone: Tone) -> Colour {
 
 /// The block of remote access: the switch, where this computer stands in
 /// words, and what to do when something is in the way. Laid as a block
-/// within `room`, centred in its height, or as a strip across it.
-fn access(painter: &mut Painter, seen: &Seen, room: Rect, strip: bool) {
+/// within `room`, centred in its height, or as a strip across it, on a
+/// pane of frosted glass over the banner's scenery, which covers
+/// `banner`.
+fn access(painter: &mut Painter, seen: &Seen, banner: Rect, room: Rect, strip: bool) {
     let colours = painter.colours;
     let inside = painter.px(design::SPACE_5);
     let (said, tone, remedy) = access_state(seen);
@@ -217,9 +221,7 @@ fn access(painter: &mut Painter, seen: &Seen, room: Rect, strip: bool) {
     let radius = painter.px(design::RADIUS);
 
     if strip {
-        painter.shadow(room, radius, colours.shadow_2);
-        painter.fill(room, radius, colours.surface_1.faded(0.95));
-        painter.stroke(room, radius, colours.border);
+        painter.glass(room, radius, banner);
         let (_, centre) = middle(room);
         let title_width = painter.width_of(&title, title_pen);
         painter.text(
@@ -306,9 +308,7 @@ fn access(painter: &mut Painter, seen: &Seen, room: Rect, strip: bool) {
         width,
         height,
     );
-    painter.shadow(at, radius, colours.shadow_2);
-    painter.fill(at, radius, colours.surface_1.faded(0.95));
-    painter.stroke(at, radius, colours.border);
+    painter.glass(at, radius, banner);
     let mut y = at.top + inside;
     painter.text(
         &title,
@@ -558,14 +558,29 @@ fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect) {
     }
     y += row_height + painter.px(design::SPACE_3);
 
-    // What it is made of, two by two.
+    // What it is made of, two by two. The first column takes what its
+    // words need, and the second all the rest: a processor's name runs
+    // long, and the first column's short.
     let spec_line = painter.px(32.0);
-    let column = width / 2.0;
-    for (rank, (spec_icon, said)) in specs_of(seen).iter().enumerate() {
+    let specs = specs_of(seen);
+    let lead = icon + painter.px(12.0);
+    let first = specs
+        .iter()
+        .step_by(2)
+        .map(|(_, said)| lead + painter.width_of(said, pen))
+        .fold(0.0_f32, f32::max)
+        + painter.px(design::SPACE_6);
+    let first = first.min(width / 2.0);
+    for (rank, (spec_icon, said)) in specs.iter().enumerate() {
+        let (column_left, column_width) = if rank % 2 == 0 {
+            (left, first)
+        } else {
+            (left + first, width - first)
+        };
         let row = Rect::at(
-            left + column * (rank % 2) as f32,
+            column_left,
             y + spec_line * (rank / 2) as f32,
-            column,
+            column_width,
             spec_line,
         );
         let (_, centre) = middle(row);
@@ -625,7 +640,7 @@ fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect) {
 }
 
 /// This computer's wallpaper in its frame: the picture, the desktop's
-/// colour when there is none, or ZyrDesk's own picture while it is read.
+/// colour when there is none, or a view of the dunes while it is read.
 fn wallpaper(painter: &Painter, seen: &Seen, at: Rect) {
     let radius = painter.px(design::RADIUS_SMALL + 2.0);
     match seen.wallpaper.as_ref() {
@@ -645,7 +660,7 @@ fn wallpaper(painter: &Painter, seen: &Seen, at: Rect) {
                 );
             }
         },
-        None => painter.art(at, radius, seed_of(&own_fingerprint(seen))),
+        None => painter.dunes(at, radius, seed_of(&own_fingerprint(seen))),
     }
     painter.stroke(at, radius, painter.colours.text.faded(0.07));
 }
@@ -679,8 +694,8 @@ fn specs_of(seen: &Seen) -> Vec<(&'static Icon, String)> {
     specs
 }
 
-/// The number a computer's picture is drawn from, taken from its
-/// fingerprint so that it keeps its mountains from one day to the next.
+/// The number a computer's view of the dunes is taken from, read from
+/// its fingerprint so that it keeps its view from one day to the next.
 pub fn seed_of(fingerprint: &str) -> u32 {
     u32::from_str_radix(fingerprint.get(..8).unwrap_or_default(), 16).unwrap_or(0)
 }
@@ -794,7 +809,7 @@ fn computer_card(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
         painter.px(PICTURE),
     );
     let radius = painter.px(design::RADIUS_SMALL + 1.0);
-    painter.art(picture, radius, seed_of(&fingerprint));
+    painter.dunes(picture, radius, seed_of(&fingerprint));
     painter.stroke(picture, radius, colours.text.faded(0.07));
     let tip = say!("computer.wallpaper_soon");
     if reachable {

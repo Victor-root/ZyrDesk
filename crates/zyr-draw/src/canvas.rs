@@ -81,7 +81,6 @@ use windows::Win32::UI::WindowsAndMessaging::{ULW_ALPHA, UpdateLayeredWindow};
 use windows::core::{HSTRING, Interface};
 use windows_numerics::{Matrix3x2, Vector2};
 
-use crate::art::Scene;
 use crate::design::{Colour, Shadow};
 use crate::icons::{Icon, Stroke};
 use crate::path::Step;
@@ -321,11 +320,6 @@ pub struct Canvas {
     /// drawn last: a wallpaper is drawn at every frame, and handing its
     /// pixels over again each time would copy them for nothing.
     bitmaps: std::cell::RefCell<Vec<(u64, ID2D1Bitmap)>>,
-    /// The abstract pictures already drawn, at the size, scale and in the
-    /// colours they were drawn for, the most recently drawn last. Drawn
-    /// once and then laid down like a photograph: its gradients cost far
-    /// more than laying it down.
-    scenes: std::cell::RefCell<Vec<Drawn>>,
     shades: std::cell::RefCell<Vec<Shade>>,
     /// What was drawn so far in a frame, kept to be laid down again as
     /// it is: see `keep`.
@@ -379,20 +373,10 @@ struct Shade {
 
 type ShadeKey = (u32, u32, u32, u32, [u32; 3]);
 
-/// An abstract picture already drawn: what it shows, how many pixels
-/// wide and high and at what scale, in hundredths, and its pixels.
-struct Drawn {
-    scene: Scene,
-    size: (u32, u32, u32),
-    bitmap: ID2D1Bitmap,
-}
-
-/// How many pictures, and how many abstract ones, the canvas keeps
-/// ready. More than a home screen shows at once, so none is made again
-/// while the hand moves, and few enough that the ones nobody shows any
-/// more are let go.
+/// How many pictures the canvas keeps ready. More than a home screen
+/// shows at once, so none is handed over again while the hand moves, and
+/// few enough that the ones nobody shows any more are let go.
 const PICTURES_KEPT: usize = 24;
-const SCENES_KEPT: usize = 16;
 /// How many shadows: one per size of card, dialog and block on screen.
 const SHADES_KEPT: usize = 16;
 
@@ -530,7 +514,6 @@ impl Canvas {
                 dashed,
                 factory,
                 bitmaps: std::cell::RefCell::new(Vec::new()),
-                scenes: std::cell::RefCell::new(Vec::new()),
                 shades: std::cell::RefCell::new(Vec::new()),
                 kept: std::cell::RefCell::new(None),
                 growth: std::cell::Cell::new(Matrix3x2::identity()),
@@ -1101,23 +1084,6 @@ impl Canvas {
         );
     }
 
-    /// Lays ZyrDesk's abstract picture over this rounded rectangle.
-    ///
-    /// Drawn at the exact size of the rectangle once, then laid down at
-    /// every frame like a photograph. `scale` is how much a page pixel
-    /// counts for, which the light on the ridges is drawn at.
-    pub fn art(&self, scene: &Scene, rect: Rect, radius: f32, scale: f32) {
-        let size = (
-            (rect.right - rect.left).round().max(1.0) as u32,
-            (rect.bottom - rect.top).round().max(1.0) as u32,
-        );
-        let key = (size.0, size.1, (scale * 100.0).round() as u32);
-        let Some(bitmap) = self.scene_of(scene, key, scale) else {
-            return;
-        };
-        self.lay(&bitmap, (size.0 as f32, size.1 as f32), rect, radius, 1.0);
-    }
-
     /// Fills the rounded `rect` with colours that change along the line
     /// from `from` to `to`: each stop a share of the way and its colour.
     pub fn gradient(
@@ -1200,59 +1166,6 @@ impl Canvas {
             kept.remove(0);
         }
         kept.push((picture.id, made.clone()));
-        Some(made)
-    }
-
-    /// The abstract picture for this scene at this size, drawn the first
-    /// time it is asked for.
-    fn scene_of(&self, scene: &Scene, key: (u32, u32, u32), scale: f32) -> Option<ID2D1Bitmap> {
-        let mut kept = self.scenes.borrow_mut();
-        if let Some(at) = kept
-            .iter()
-            .position(|drawn| drawn.scene == *scene && drawn.size == key)
-        {
-            let found = kept.remove(at);
-            let bitmap = found.bitmap.clone();
-            kept.push(found);
-            return Some(bitmap);
-        }
-        // SAFETY: a drawing of its own, made beside the canvas's and
-        // closed before its picture is taken; drawing into it while the
-        // canvas is being drawn is what such a drawing is for.
-        let made = unsafe {
-            let layer = self
-                .target
-                .CreateCompatibleRenderTarget(
-                    Some(&D2D_SIZE_F {
-                        width: key.0 as f32,
-                        height: key.1 as f32,
-                    }),
-                    None,
-                    Some(&format()),
-                    D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
-                )
-                .ok()?;
-            layer.BeginDraw();
-            layer.Clear(Some(&tint(Colour::TRANSPARENT)));
-            crate::art::draw(
-                &layer,
-                &self.factory,
-                &self.style,
-                scene,
-                (key.0 as f32, key.1 as f32),
-                scale,
-            );
-            layer.EndDraw(None, None).ok()?;
-            layer.GetBitmap().ok()?
-        };
-        if kept.len() >= SCENES_KEPT {
-            kept.remove(0);
-        }
-        kept.push(Drawn {
-            scene: *scene,
-            size: key,
-            bitmap: made.clone(),
-        });
         Some(made)
     }
 

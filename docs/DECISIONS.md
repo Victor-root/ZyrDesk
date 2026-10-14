@@ -4727,6 +4727,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Des pages et un pied de barre nets, sur deux plaques de verre entre lesquelles les dunes se montrent.
 
+## D306. Les dunes partout : bloc d'accès en verre, cartes sans fond d'écran, caractéristiques entières (2026-10-14, pendant MZ)
+
+**Pourquoi.** Le paysage de dunes et ses plaques de verre ([D303](#d303-un-paysage-de-dunes-habille-le-bandeau-et-la-barre-de-gauche-2026-10-14-pendant-mz) à [D305](#d305-la-barre-de-gauche-range-ses-mots-sur-deux-plaques-de-verre-2026-10-14-pendant-mz)) plaisent. Restaient trois choses : le bloc « Accès distant », plein, jurait dans le bandeau ; les cartes des ordinateurs sans fond d'écran portaient encore les crêtes abstraites, d'un autre style ; et le nom du processeur était coupé d'une ellipse.
+
+**Ce qui est fait.** Le bloc « Accès distant » est une plaque de verre comme celles de la barre de gauche, sur les dunes floutées du bandeau. Les cartes sans fond d'écran montrent un morceau des dunes, agrandi deux fois et un peu plus, à un endroit tiré de l'empreinte de l'ordinateur : deux cartes voisines ne montrent jamais la même vue, et une carte garde la sienne d'un jour à l'autre. Le dessin des crêtes abstraites (`art.rs`), sa mémoire dans la toile et ses couleurs dans la charte quittent le dépôt : plus rien ne s'en sert. Les caractéristiques de cet ordinateur, deux par deux, ne se partagent plus la largeur à parts égales : la première colonne prend ce que ses mots demandent, la seconde tout le reste, et un nom de processeur long y tient en entier.
+
+**Ce qui se voit.** Un bloc d'accès en verre, des cartes aux dunes toutes différentes, et le processeur écrit en entier.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

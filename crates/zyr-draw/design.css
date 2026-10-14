@@ -72,22 +72,6 @@
   --road-local: #60a5fa;
   --road-internet: #a78bfa;
 
-  /* The abstract picture ZyrDesk draws for itself: every computer
-     whose own wallpaper has not come, and this one's until its own is
-     read.
-     Ridges one behind the other under a sky warmed by the gold, which
-     is what « further, together » looks like without a photograph.
-     From the sky down to the nearest ridge, then the light on the
-     ridges. */
-  --art-sky: #0e121b;
-  --art-horizon: #1a2030;
-  --art-glow: rgba(239, 181, 54, 0.22);
-  --art-ridge-far: #1e2534;
-  --art-ridge-mid: #232b3d;
-  --art-ridge-near: #29334a;
-  --art-ridge-front: #303b55;
-  --art-rim: rgba(248, 205, 106, 0.28);
-
   /* The veil over the scenery of the banner and of the bar on the
      left, at its strongest where words are written: the left of the
      banner, the top and the foot of the bar. It thins out elsewhere,
@@ -173,17 +157,6 @@
 
   --road-local: #2563eb;
   --road-internet: #7c3aed;
-
-  /* A dawn: a warm sky, slate ridges, and the gold of the logo for the
-     light. */
-  --art-sky: #f6f0e7;
-  --art-horizon: #ebe2d5;
-  --art-glow: rgba(239, 181, 54, 0.3);
-  --art-ridge-far: #d6d4d3;
-  --art-ridge-mid: #babdc3;
-  --art-ridge-near: #9ba2ad;
-  --art-ridge-front: #7f8794;
-  --art-rim: rgba(255, 255, 255, 0.45);
 
   --scenery-veil: rgba(250, 247, 240, 0.85);
   --glass: rgba(255, 255, 255, 0.55);
