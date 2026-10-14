@@ -15,11 +15,12 @@ repository.workspace = true
 name = "ZyrDesk"
 path = "src/main.rs"
 
-[build-dependencies]
+[target.'cfg(windows)'.build-dependencies]
 # The program's Windows resource: its manifest, which asks for the
 # system's modern controls and says this program counts in real pixels,
-# and its icon, the one the taskbar draws.
-embed-resource = "3.0.12"
+# and its icon, the one the taskbar draws. The same tool as the other
+# programs of the product.
+winresource = "0.1.34"
 
 [dependencies]
 zyr-proto.workspace = true
