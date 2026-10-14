@@ -287,7 +287,6 @@ soon.tip = Coming soon
 # The home page.
 home.hello = Hello, {name}
 home.tagline = Access your computers wherever you are.
-home.windows_unknown = Windows
 home.network = Network
 home.connected = Connected
 home.local_only = Local network only
