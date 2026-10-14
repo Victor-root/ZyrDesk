@@ -52,7 +52,7 @@ Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est des
 | Réseau : connecté ou non | Oui | |
 | ZyrDesk : « Tout est opérationnel », ou ce qui ne va pas | Oui | L'état du service, avec le fait qui l'explique |
 | Bloc « Accès distant » : l'interrupteur | Oui | Active ou coupe l'accès distant |
-| Bloc « Accès distant » : « Votre ordinateur est prêt à être contrôlé », ou ce qui l'empêche | Oui | |
+| Bloc « Accès distant » : « Cet ordinateur accepte les connexions à distance », ou ce qui l'empêche | Oui | |
 | Image abstraite et devise « Plus loin ensemble » | Oui | |
 
 L'empreinte de l'ordinateur **ne figure pas** sur l'accueil : elle ne sert qu'à ajouter un ordinateur à la main. Elle vit dans « Ajouter un ordinateur » et dans les détails de « Cet ordinateur ».
@@ -63,7 +63,7 @@ L'empreinte de l'ordinateur **ne figure pas** sur l'accueil : elle ne sert qu'à
 |---|---|---|
 | Fond d'écran de cet ordinateur | Oui | Le sien, lu sur place |
 | Nom, avec le crayon pour le renommer | Oui | Renommer passe par le compte quand il y en a un, sinon grisé |
-| « Prêt à être contrôlé » ou ce qui l'empêche | Oui | |
+| « Accepte les connexions » ou ce qui l'empêche | Oui | |
 | Système, processeur, mémoire, carte graphique | Oui | Lus sur place |
 | « Voir les détails » | Oui | Ouvre les détails, empreinte comprise |
 
@@ -73,7 +73,7 @@ Une carte par ordinateur connu (réseau local et compte), avec « Voir tout » e
 
 | Élément de la carte | État | Note |
 |---|---|---|
-| Fond d'écran de l'ordinateur | Grisé | L'ordinateur d'en face enverra le sien. D'ici là, et tant qu'on ne l'a pas, une image abstraite de ZyrDesk. Plus tard : un fond choisi par la personne |
+| Fond d'écran de l'ordinateur | Grisé | L'ordinateur distant enverra le sien. D'ici là, et tant qu'on ne l'a pas, une image abstraite de ZyrDesk. Plus tard : un fond choisi par la personne |
 | Pastille en ligne ou hors ligne | Oui | |
 | Nom, adresse ou « En ligne », compte | Oui | |
 | Étiquette LAN ou Internet, et la latence | Oui | |

@@ -215,11 +215,11 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 
 > **R2 (le service se démarre depuis la fenêtre)**
 >
-> À faire une fois par PC, la première fois seulement. Le service s'enregistre alors, et c'est la seule fois où Windows demande quelque chose : ensuite, ouvrir ZyrDesk le démarre et « Quitter » l'arrête, sans jamais rien redemander. Si le service tourne déjà, l'accueil affiche « Prêt à être contrôlé » et il n'y a rien à faire ici.
+> À faire une fois par PC, la première fois seulement. Le service s'enregistre alors, et c'est la seule fois où Windows demande quelque chose : ensuite, ouvrir ZyrDesk le démarre et « Quitter » l'arrête, sans jamais rien redemander. Si le service tourne déjà, l'accueil affiche « Accepte les connexions » et il n'y a rien à faire ici.
 >
 > Sur le **PC où le service n'est pas installé** : l'accueil affiche un bandeau rouge « Le service ZyrDesk ne tourne pas ». Cliquer **Démarrer le service**.
 >
-> Attendu : la demande d'autorisation de Windows apparaît, une fois. Après avoir accepté, le bandeau disparaît de lui-même en quelques secondes et l'état passe à « Prêt à être contrôlé ».
+> Attendu : la demande d'autorisation de Windows apparaît, une fois. Après avoir accepté, le bandeau disparaît de lui-même en quelques secondes et l'état passe à « Accepte les connexions ».
 >
 > Ce même geste pose les trois règles de pare-feu dont le service a besoin : le port du tunnel, celui de l'annonce sur le réseau local, et celui de l'appel direct qui la remplace quand le réseau ne la porte pas. Elles sont d'ailleurs réécrites à chaque démarrage du service. Le journal (partie 7) le dit en toutes lettres, ligne `firewall opened for …`.
 >
@@ -231,7 +231,7 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 >
 > Attendu : depuis le **PC client**, l'ordinateur hôte **n'apparaît pas**. Rien de ZyrDesk ne tourne, et c'est le but ([D20](../DECISIONS.md)).
 >
-> Ouvrir une session Windows sur le PC hôte, puis ZyrDesk. Attendu : l'icône apparaît en bas à droite, l'état passe à « Prêt à être contrôlé » sans aucune demande de droits administrateur, et le PC réapparaît côté client.
+> Ouvrir une session Windows sur le PC hôte, puis ZyrDesk. Attendu : l'icône apparaît en bas à droite, l'état passe à « Accepte les connexions » sans aucune demande de droits administrateur, et le PC réapparaît côté client.
 
 > **R3bis (l'ordinateur répond avant l'ouverture de session)**
 >
@@ -263,7 +263,7 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 >
 > Vérifier ensuite que **la fenêtre continue de marcher** : les autres ordinateurs restent listés, et une session sortante reste possible depuis ce PC. Un ordinateur sans moteur hôte reste un client à part entière ([D18](../DECISIONS.md)).
 >
-> Remettre le nom du fichier. En dix secondes, l'état doit repasser à « Prêt à être contrôlé » sans rien relancer.
+> Remettre le nom du fichier. En dix secondes, l'état doit repasser à « Accepte les connexions » sans rien relancer.
 
 > **R5 (le logo est net partout, et c'est le même partout)**
 >
@@ -1188,7 +1188,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Le débit.** Pousser le curseur et le lâcher : l'image continue sans le moindre arrêt, et dans les deux secondes le chiffre **Débit** de la barre du menu (ou des statistiques, Ctrl+Alt+Maj+S) suit le nouveau réglage, pour peu que quelque chose bouge dans l'image. Le pousser de 5 à 80 Mb/s en dix crans d'affilée : jamais d'écran d'ouverture, jamais de reconnexion, jamais d'image qui s'arrête.
 >
-> **Écran d'en face.** Basculer Économe / Fluide : l'image continue, et la cadence lue dans les statistiques change dans les deux secondes (R46ter dit ce qu'on doit lire). **Plus de redémarrage du moteur d'en face**, plus d'écran d'ouverture.
+> **Cadence de l'écran distant.** Basculer Économe / Fluide : l'image continue, et la cadence lue dans les statistiques change dans les deux secondes (R46ter dit ce qu'on doit lire). **Plus de redémarrage du moteur d'en face**, plus d'écran d'ouverture.
 >
 > **Le codec.** Choisir un autre codec : l'image se fige environ une seconde, puis revient, **dans la même fenêtre, sans écran d'ouverture**, et la phrase du flux dans le menu dit le nouveau codec. C'est le lecteur qui refait son flux sur place.
 >
@@ -1485,7 +1485,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 
 > **R46ter (« Fluide » tient enfin la cadence demandée)**
 >
-> **L'essai le plus simple de la série** : ouvrir une session, mettre **Écran d'en face : Fluide**, puis ouvrir les statistiques (Ctrl+Alt+Maj+S) et lire la cadence.
+> **L'essai le plus simple de la série** : ouvrir une session, mettre **Cadence de l'écran distant : Fluide**, puis ouvrir les statistiques (Ctrl+Alt+Maj+S) et lire la cadence.
 >
 > Attendu : **la cadence demandée**, soixante si la session est ouverte à soixante, et stable. Ce qu'on voyait avant : cinquante, ou quarante-huit, variant sans arrêt, exactement comme en **Économe**.
 >
@@ -1682,7 +1682,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Le codec.** Les noms côte à côte, celui qui est en place plein. Un codec que la machine d'en face ne sait pas encoder est **barré**, et cliquer dessus ne fait rien du tout.
 >
-> **Écran d'en face.** « Économe | Fluide », comme le menu web.
+> **Cadence de l'écran distant.** « Économe | Fluide », comme le menu web.
 >
 > **Les deux listes.** « Résolution » et « Écran de l'hôte » portent un chevron. Cliquer ouvre une carte **à gauche** de la première, avec son titre en tête, un trait, puis les valeurs, la valeur en place portant une coche dorée et sa taille ou son rapport écrits à droite. Le chevron de la ligne se retourne pendant que la liste est ouverte. Cliquer la même ligne referme. Cliquer le titre de la liste referme aussi. Choisir une valeur referme la liste et coche la nouvelle.
 >
@@ -2220,7 +2220,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 
 > **R46 (la cadence de l'écran d'en face se règle depuis ici)**
 >
-> Pendant une session, ouvrir le menu et regarder la ligne **Écran d'en face**. Deux mots : **Économe** et **Fluide**.
+> Pendant une session, ouvrir le menu et regarder la ligne **Cadence de l'écran distant**. Deux mots : **Économe** et **Fluide**.
 >
 > Mettre **Fluide**. L'image continue sans s'arrêter : le moteur de la machine d'en face change de cadence là où il est (R77).
 >
@@ -2240,7 +2240,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **C'est le défaut relevé par Victor** : mettre **Économe** pendant une session, appliquer, et la session tombait avec « L'ordinateur distant a refusé l'appairage ». Se reconnecter marchait, et le réglage était bien pris.
 >
-> Pendant une session, basculer **Écran d'en face** d'un côté à l'autre. À refaire **dans les deux sens**, deux fois chacun.
+> Pendant une session, basculer **Cadence de l'écran distant** d'un côté à l'autre. À refaire **dans les deux sens**, deux fois chacun.
 >
 > Attendu, depuis R77 : **l'image ne s'arrête pas**, aucune session ne tombe, et aucune ligne d'appairage refusé n'apparaît. Le moteur d'en face change de cadence là où il est.
 >
