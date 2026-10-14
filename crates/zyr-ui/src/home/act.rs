@@ -11,6 +11,7 @@ use std::time::Instant;
 
 use zyr_i18n::say;
 use zyr_proto::fact::Fact;
+use zyr_session::presence::Narrowed;
 
 use crate::home::dialogs;
 use crate::home::pages::settings::{CODECS, DISPLAYS};
@@ -69,18 +70,36 @@ pub fn act(app: &App, target: Target) {
         }
         Target::Details => dialogs::open(app, Dialog::Details),
         Target::Connect(fingerprint) => connect(app, &fingerprint, false),
-        Target::CardMenu(fingerprint) => {
+        Target::Menu(menu) => {
             let mut state = crate::home::state();
-            let open = state
-                .menu
-                .as_ref()
-                .is_some_and(|(open, _)| *open == fingerprint);
+            let open = state.menu.as_ref().is_some_and(|(open, _)| *open == menu);
             state.menu = if open {
                 None
             } else {
-                Some((fingerprint, zyr_draw::Rect::at(0.0, 0.0, 0.0, 0.0)))
+                Some((menu, zyr_draw::Rect::at(0.0, 0.0, 0.0, 0.0)))
             };
             drop(state);
+            crate::home::redraw(app);
+        }
+        Target::Search => fields::focus(Field::Search),
+        // Emptied, the field says so, and the search follows.
+        Target::ClearSearch => fields::write(Field::Search, ""),
+        Target::Narrow(narrowed) => {
+            let mut state = crate::home::state();
+            state.narrowed = narrowed;
+            state.menu = None;
+            state.page_scroll.reset();
+            drop(state);
+            crate::home::redraw(app);
+        }
+        Target::ShowAll => {
+            crate::home::state().narrowed = Narrowed::All;
+            fields::write(Field::Search, "");
+            crate::home::redraw(app);
+        }
+        Target::View(view) => {
+            crate::home::state().view = view;
+            crate::home::arranged::keep(view);
             crate::home::redraw(app);
         }
         Target::Offer(fingerprint, offer) => {
@@ -195,6 +214,36 @@ fn go_to(app: &App, page: Page) {
         state.listening = None;
     }
     crate::home::redraw(app);
+}
+
+/// Narrows the computers to what the search holds now. Typed from a page
+/// that shows none, it leads to the page of computers.
+pub fn searched(app: &App, words: String) {
+    let away = {
+        let mut state = crate::home::state();
+        if state.search == words {
+            return;
+        }
+        state.search = words;
+        state.page_scroll.reset();
+        !matches!(state.page, Page::Home | Page::Computers) && !state.search.is_empty()
+    };
+    if away {
+        go_to(app, Page::Computers);
+    } else {
+        crate::home::redraw(app);
+    }
+}
+
+/// What Enter and Escape do in the search: Enter shows every computer
+/// found, on their page; Escape empties it and lets go of the keyboard.
+pub fn search_key(app: &App, enter: bool) {
+    if enter {
+        go_to(app, Page::Computers);
+    } else {
+        fields::write(Field::Search, "");
+        fields::leave();
+    }
 }
 
 /// Opens the account's dialog, this computer's name already written.

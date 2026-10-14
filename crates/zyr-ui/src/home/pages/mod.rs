@@ -1,11 +1,12 @@
 //! The pages of the home window, and what they are laid out with.
 //!
-//! The home page has its own shape; the others are titled pages of
-//! cards, each card a section of lines, each line what it is about on
+//! The home page and the computers have their own shape; the others are
+//! titled pages of cards, each card a section of lines, each line what it is about on
 //! the left and what decides it on the right. That shape is written here
 //! once, for all of them.
 
 pub mod about;
+pub mod computers;
 pub mod home;
 pub mod settings;
 

@@ -1,8 +1,9 @@
 //! Where a computer of the home screen stands, and the road to it.
 //!
-//! What its card shows and whether a session can be asked of it, read
-//! once here from what the service says rather than worked out by the
-//! window: the window draws a dot and a button, and this says which.
+//! What its card shows, whether a session can be asked of it, and whether
+//! the search and the filter keep it in view, read once here from what
+//! the service says rather than worked out by the window: the window
+//! draws a dot and a button, and this says which.
 
 use zyr_control::{Access, Peer};
 use zyr_proto::fact::Fact;
@@ -87,6 +88,51 @@ pub fn road(peer: &Peer) -> Road {
     }
 }
 
+/// Which computers the home screen keeps in view, as its filter says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Narrowed {
+    #[default]
+    All,
+    /// Those that are there, whether they take a session or not.
+    Online,
+    /// Those that are not, or that nothing says are.
+    Offline,
+    Local,
+    Internet,
+}
+
+impl Narrowed {
+    /// The five, in the order the filter offers them.
+    pub const ALL: [Narrowed; 5] = [
+        Narrowed::All,
+        Narrowed::Online,
+        Narrowed::Offline,
+        Narrowed::Local,
+        Narrowed::Internet,
+    ];
+}
+
+/// Whether a computer stays in view under that filter and those words.
+///
+/// Every word typed has to be found, in any case, in its name or in its
+/// address: « bureau 192.168 » finds the office computer on that network.
+/// Online and offline go by the dot the card shows.
+pub fn kept(peer: &Peer, narrowed: Narrowed, words: &str) -> bool {
+    let fits = match narrowed {
+        Narrowed::All => true,
+        Narrowed::Online => matches!(presence(peer), Presence::Ready | Presence::Closed { .. }),
+        Narrowed::Offline => matches!(presence(peer), Presence::Gone | Presence::Unknown),
+        Narrowed::Local => road(peer) == Road::Local,
+        Narrowed::Internet => road(peer) == Road::Internet,
+    };
+    let name = peer.name.to_lowercase();
+    let host = peer.host.to_lowercase();
+    fits && words
+        .to_lowercase()
+        .split_whitespace()
+        .all(|word| name.contains(word) || host.contains(word))
+}
+
 #[cfg(test)]
 mod tests {
     use zyr_control::Answer;
@@ -164,6 +210,42 @@ mod tests {
         reachable_first(&mut peers);
         let order: Vec<&str> = peers.iter().map(|peer| peer.name.as_str()).collect();
         assert_eq!(order, ["first", "second", "written", "closed", "gone"]);
+    }
+
+    #[test]
+    fn every_word_typed_is_found_in_the_name_or_the_address() {
+        let mut peer = said("seen=yes written=no");
+        peer.name = "Bureau Victor".to_string();
+        assert!(kept(&peer, Narrowed::All, ""));
+        assert!(kept(&peer, Narrowed::All, "  bureau  "));
+        assert!(kept(&peer, Narrowed::All, "VICTOR 192.168"));
+        assert!(!kept(&peer, Narrowed::All, "bureau salon"));
+    }
+
+    #[test]
+    fn the_filter_goes_by_the_dot_and_the_road() {
+        let here = said("seen=yes written=no");
+        let closed = said("seen=yes written=no device=d1 online=yes access=off");
+        let far = said("seen=no written=no device=d2 online=yes access=ready");
+        let gone = said("seen=no written=no device=d3 online=no access=ready");
+        let written = said("seen=no written=yes");
+        let kept_by = |narrowed| {
+            [&here, &closed, &far, &gone, &written]
+                .iter()
+                .map(|peer| kept(peer, narrowed, ""))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(kept_by(Narrowed::All), [true; 5]);
+        assert_eq!(kept_by(Narrowed::Online), [true, true, true, false, false]);
+        assert_eq!(
+            kept_by(Narrowed::Offline),
+            [false, false, false, true, true]
+        );
+        assert_eq!(kept_by(Narrowed::Local), [true, true, false, false, false]);
+        assert_eq!(
+            kept_by(Narrowed::Internet),
+            [false, false, true, true, false]
+        );
     }
 
     #[test]

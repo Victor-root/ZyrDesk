@@ -280,9 +280,17 @@ nav.tagline = Open-source remote desktop.
 nav.open_menu = Open the menu
 nav.account_tip = Your account
 nav.up_to_date = Everything is up to date
-bar.search = Search for a computer or a contact…
+bar.search = Search for a computer…
 bar.search_keys = Ctrl K
-bar.all = All
+bar.clear_search = Clear the search
+bar.filter_tip = Show only some computers
+bar.grid = Grid view
+bar.list = List view
+filter.all = All
+filter.online = Online
+filter.offline = Offline
+filter.local = Local network
+filter.internet = Internet
 soon.tip = Coming soon
 
 # The home page.
@@ -310,7 +318,7 @@ home.ready_long = This computer accepts remote connections.
 home.access_off_long = Remote access is disabled: no one can control this computer.
 home.this_computer = This computer
 home.my_computers = My computers
-home.more_computers = more computers
+home.more_computers_count = {count} more
 home.see_all = See all
 home.rename_needs_an_account = Renaming goes through the account: sign in to a server first.
 home.see_details = See the details
@@ -326,6 +334,13 @@ home.quick_actions = Quick actions
 home.action_activity = View activity
 home.action_settings = Open settings
 home.version_differs = Window {window}, service {service}
+
+# The page of computers.
+computers.title = Computers
+computers.lead = Every computer ZyrDesk knows: on this network, on your account, and those added by hand.
+computers.nothing_found = No computer found
+computers.nothing_found_text = No computer matches this search and this filter.
+computers.show_all = Show all
 
 # Windows, by its edition.
 edition.home = Home

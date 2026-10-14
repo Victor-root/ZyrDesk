@@ -3,8 +3,9 @@
 //! Writing text is the one place where Windows does better than any
 //! drawing: the caret, the selection, the clipboard, the keyboards that
 //! compose their letters. So these are Windows' own fields, laid inside a
-//! frame the window draws, and they live only as long as the dialog that
-//! carries them.
+//! frame the window draws. A dialog's live only as long as the dialog
+//! that carries them; the search, in the bar at the top, for as long as
+//! the window.
 
 use std::sync::Mutex;
 
@@ -29,6 +30,7 @@ pub enum Field {
     Invitation,
     NewName,
     Sift,
+    Search,
 }
 
 impl Field {
@@ -47,7 +49,14 @@ impl Field {
             Field::Invitation => zyr_i18n::say!("field.invitation_example"),
             Field::NewName => zyr_i18n::say!("field.name_example"),
             Field::Sift => zyr_i18n::say!("field.sift_example"),
+            Field::Search => zyr_i18n::say!("bar.search"),
         }
+    }
+
+    /// Whether it stays when a dialog opens or closes: it belongs to the
+    /// window rather than to a dialog.
+    fn stays(self) -> bool {
+        self == Field::Search
     }
 }
 
@@ -79,12 +88,48 @@ pub const ACT: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
 /// The name under which the field's guard is set.
 const GUARD: usize = 3;
 
-/// Opens these fields, empty, in that window, in place of any open.
+/// Opens these fields of a dialog, empty, in that window, in place of
+/// those of the dialog before. The keyboard leaves a field that stays:
+/// what is typed now is for the dialog.
 ///
 /// Nothing here holds the list of fields while Windows is called: a
 /// field being made, moved or destroyed may ask its window for its
 /// colours on the spot, and that question reads the list.
 pub fn open(parent: isize, which: &[Field], scale: f32) {
+    close();
+    if focused().is_some_and(Field::stays) {
+        leave();
+    }
+    let made: Vec<(Field, isize)> = which
+        .iter()
+        .filter_map(|field| Some((*field, make(parent, *field)?)))
+        .collect();
+    {
+        let mut open = OPEN.lock().expect("the fields");
+        open.parent = parent;
+        open.fields.extend(made);
+    }
+    dress(scale);
+}
+
+/// Opens a field that stays with the window, unless it is already open.
+pub fn stand(parent: isize, field: Field, scale: f32) {
+    if handle(field).is_some() {
+        return;
+    }
+    let Some(edit) = make(parent, field) else {
+        return;
+    };
+    {
+        let mut open = OPEN.lock().expect("the fields");
+        open.parent = parent;
+        open.fields.push((field, edit));
+    }
+    dress(scale);
+}
+
+/// Makes a field of the system, empty, in that window.
+fn make(parent: isize, field: Field) -> Option<isize> {
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::Controls::EM_SETCUEBANNER;
     use windows_sys::Win32::UI::Shell::SetWindowSubclass;
@@ -92,61 +137,54 @@ pub fn open(parent: isize, which: &[Field], scale: f32) {
         CreateWindowExW, ES_AUTOHSCROLL, ES_PASSWORD, SendMessageW, WS_CHILD, WS_VISIBLE,
     };
 
-    close();
     let class = wide("EDIT");
-    let mut made = Vec::with_capacity(which.len());
-    for field in which.iter().copied() {
-        let secret = if field == Field::Password {
-            ES_PASSWORD as u32
-        } else {
-            0
-        };
-        // SAFETY: a field of the system, a child of our window, made on
-        // the thread that owns both.
-        let edit = unsafe {
-            CreateWindowExW(
-                0,
-                class.as_ptr(),
-                std::ptr::null(),
-                WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL as u32 | secret,
-                0,
-                0,
-                0,
-                0,
-                parent as HWND,
-                std::ptr::null_mut(),
-                GetModuleHandleW(std::ptr::null()),
-                std::ptr::null(),
-            )
-        };
-        if edit.is_null() {
-            continue;
-        }
-        let example = wide(field.example());
-        // SAFETY: a field of ours, given a word that outlives the call,
-        // then a guard that is a plain function of this program.
-        unsafe {
-            SendMessageW(edit, EM_SETCUEBANNER, 1, example.as_ptr() as isize);
-            SetWindowSubclass(edit, Some(guard), GUARD, 0);
-        }
-        made.push((field, edit as isize));
+    let secret = if field == Field::Password {
+        ES_PASSWORD as u32
+    } else {
+        0
+    };
+    // SAFETY: a field of the system, a child of our window, made on the
+    // thread that owns both.
+    let edit = unsafe {
+        CreateWindowExW(
+            0,
+            class.as_ptr(),
+            std::ptr::null(),
+            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL as u32 | secret,
+            0,
+            0,
+            0,
+            0,
+            parent as HWND,
+            std::ptr::null_mut(),
+            GetModuleHandleW(std::ptr::null()),
+            std::ptr::null(),
+        )
+    };
+    if edit.is_null() {
+        return None;
     }
-    {
-        let mut open = OPEN.lock().expect("the fields");
-        open.parent = parent;
-        open.fields = made;
+    let example = wide(field.example());
+    // SAFETY: a field of ours, given a word that outlives the call, then
+    // a guard that is a plain function of this program.
+    unsafe {
+        SendMessageW(edit, EM_SETCUEBANNER, 1, example.as_ptr() as isize);
+        SetWindowSubclass(edit, Some(guard), GUARD, 0);
     }
-    dress(scale);
+    Some(edit as isize)
 }
 
-/// Closes the open fields.
+/// Closes the fields of the dialog, and leaves those that stay.
 pub fn close() {
     use windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow;
 
-    let closing = {
+    let closing: Vec<(Field, isize)> = {
         let mut open = OPEN.lock().expect("the fields");
-        open.places.clear();
-        std::mem::take(&mut open.fields)
+        let (closing, staying) = std::mem::take(&mut open.fields)
+            .into_iter()
+            .partition(|(field, _)| !field.stays());
+        open.fields = staying;
+        closing
     };
     for (_, edit) in closing {
         // SAFETY: a field of ours, destroyed once.
@@ -186,13 +224,30 @@ pub fn write(field: Field, text: &str) {
     }
 }
 
-/// Puts the keyboard in a field.
+/// Puts the keyboard in a field, what it holds chosen: typing replaces
+/// it, as one expects of a name already written or a search done before.
 pub fn focus(field: Field) {
+    use windows_sys::Win32::UI::Controls::EM_SETSEL;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW;
 
     if let Some(edit) = handle(field) {
         // SAFETY: a field of ours, on its thread.
-        unsafe { SetFocus(edit) };
+        unsafe {
+            SetFocus(edit);
+            SendMessageW(edit, EM_SETSEL, 0, -1);
+        }
+    }
+}
+
+/// Gives the keyboard back to the window, out of any field.
+pub fn leave() {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+
+    let parent = OPEN.lock().expect("the fields").parent;
+    if parent != 0 {
+        // SAFETY: our window, on its thread.
+        unsafe { SetFocus(parent as HWND) };
     }
 }
 
@@ -241,7 +296,6 @@ pub fn unplace() {
 pub fn lay_out(scale: f32) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
 
-    let side = design::SPACE_3 * scale;
     let line = (design::BODY * 1.45 * scale).round();
     let placed: Vec<(isize, (i32, i32, i32, i32))> = {
         let open = OPEN.lock().expect("the fields");
@@ -250,9 +304,9 @@ pub fn lay_out(scale: f32) {
             .map(|(field, edit)| {
                 let place = match open.places.iter().find(|(placed, _)| placed == field) {
                     Some((_, at)) => (
-                        (at.left + side).round() as i32,
+                        at.left.round() as i32,
                         (at.top + ((at.bottom - at.top) - line) / 2.0).round() as i32,
-                        (at.right - at.left - side * 2.0).round() as i32,
+                        (at.right - at.left).round() as i32,
                         line as i32,
                     ),
                     None => (0, 0, 0, 0),
@@ -397,8 +451,16 @@ unsafe extern "system" fn guard(
         }
         if key == VK_RETURN || key == VK_ESCAPE {
             let parent = OPEN.lock().expect("the fields").parent;
-            // SAFETY: our window, posted a message that is ours alone.
-            unsafe { PostMessageW(parent as HWND, ACT, usize::from(key == VK_RETURN), 0) };
+            // SAFETY: our window, posted a message that is ours alone,
+            // which says which field asks.
+            unsafe {
+                PostMessageW(
+                    parent as HWND,
+                    ACT,
+                    usize::from(key == VK_RETURN),
+                    window as isize,
+                )
+            };
             return 0;
         }
     }
@@ -465,16 +527,30 @@ impl Painter<'_> {
         } else {
             self.stroke(at, radius, colours.border_strong);
         }
-        if !self.is_silent() {
-            let seen = self.canvas.as_seen(at);
-            OPEN.lock().expect("the fields").places.push((field, seen));
-        }
+        let side = self.px(design::SPACE_3);
+        self.place(
+            field,
+            Rect {
+                left: at.left + side,
+                right: at.right - side,
+                ..at
+            },
+        );
         let mut taken = label_height + gap + self.px(FIELD);
         if let Some((hint, ink)) = hint {
             taken += self.px(design::SPACE_1);
             taken += self.paragraph(hint, self.caption(), ink, (left, top + taken, width));
         }
         taken
+    }
+
+    /// Lays the real field across `at`, centred in its height, after this
+    /// frame.
+    pub fn place(&self, field: Field, at: Rect) {
+        if !self.is_silent() {
+            let seen = self.canvas.as_seen(at);
+            OPEN.lock().expect("the fields").places.push((field, seen));
+        }
     }
 }
 

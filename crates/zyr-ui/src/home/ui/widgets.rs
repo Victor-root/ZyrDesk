@@ -614,5 +614,5 @@ pub const SIDES_HEIGHT: f32 = 32.0;
 const SIDES_INSET: f32 = 3.0;
 
 /// A tag's height and the icon inside it.
-const TAG: f32 = 22.0;
+pub const TAG: f32 = 22.0;
 const TAG_ICON: f32 = 14.0;

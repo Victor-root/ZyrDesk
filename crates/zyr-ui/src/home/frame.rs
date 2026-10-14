@@ -13,7 +13,12 @@ use zyr_draw::icons::{self, Icon};
 use zyr_draw::{Align, Rect};
 use zyr_i18n::say;
 
-use crate::home::state::{CONFIRM_TIME, COPIED_TIME, NEWS_TIME, Page, Scroller, Target};
+use zyr_session::presence::Narrowed;
+
+use crate::home::state::{
+    CONFIRM_TIME, COPIED_TIME, Menu, NEWS_TIME, Page, Scroller, Target, View,
+};
+use crate::home::ui::fields::{self, Field};
 use crate::home::ui::{Painter, QUICK, STEADY, middle, size, square};
 use crate::home::{dialogs, opening, pages, words};
 
@@ -34,7 +39,11 @@ const BUBBLE_WAITS: Duration = Duration::from_millis(450);
 /// whether it exists yet: those that do not are shown, faded, and say so.
 const NAVIGATION: [(Option<Page>, &str, &Icon); 6] = [
     (Some(Page::Home), zyr_i18n::key!("nav.home"), &icons::HOME),
-    (None, zyr_i18n::key!("nav.computers"), &icons::COMPUTERS),
+    (
+        Some(Page::Computers),
+        zyr_i18n::key!("nav.computers"),
+        &icons::COMPUTERS,
+    ),
     (None, zyr_i18n::key!("nav.contacts"), &icons::CONTACTS),
     (None, zyr_i18n::key!("nav.activity"), &icons::ACTIVITY),
     (
@@ -70,7 +79,7 @@ pub fn draw(painter: &mut Painter, width: f32, height: f32) {
             drawer(painter, width, height, covered);
         }
         painter.living(!covered, |painter| {
-            pages::home::menu(painter, width, height)
+            pages::computers::menu(painter, width, height)
         });
     });
     if painter.state.dialog.is_some() && painter.state.opening.is_none() {
@@ -132,6 +141,7 @@ fn page(painter: &mut Painter, at: Rect, narrow: bool) {
                 inner,
                 size(room).1 - painter.px(design::SPACE_2 + design::SPACE_6),
             ),
+            Page::Computers => pages::computers::draw(painter, inner),
             Page::Settings => pages::settings::draw(painter, inner),
             Page::About => pages::about::draw(painter, inner),
         } + painter.px(design::SPACE_2 + design::SPACE_6);
@@ -163,14 +173,13 @@ fn page(painter: &mut Painter, at: Rect, narrow: bool) {
 
 /// The bar at the top of the page: the button that unfolds the bar on
 /// the left in a narrow window, and on the right the search, the filter
-/// and the two views, which are drawn and do not work yet, then the
-/// journal, one click away from wherever the window is.
+/// and the two views of the computers, then the journal, one click away
+/// from wherever the window is.
 fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
     let colours = painter.colours;
     let height = size(at).1;
     let radius = painter.px(design::RADIUS_SMALL + 1.0);
     let gap = painter.px(design::SPACE_3);
-    let soon = say!("soon.tip");
     if narrow {
         painter.icon_button(
             Rect::at(at.left - painter.px(6.0), at.top, height, height),
@@ -213,61 +222,11 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
 
     let list = journal.shifted(-(view + gap * 2.0), 0.0);
     let grid = list.shifted(-(view + painter.px(design::SPACE_2)), 0.0);
-    painter.fill(grid, radius, colours.surface_1);
-    painter.stroke(grid, radius, colours.border);
-    let side = painter.px(20.0);
-    painter.icon(&icons::GRID, square(middle(grid), side), colours.accent);
-    painter.icon(&icons::LIST, square(middle(list), side), colours.text_faint);
-    painter.tells(
-        Rect {
-            left: grid.left,
-            ..list
-        },
-        soon.clone(),
-    );
+    view_button(painter, grid, View::Grid, (&icons::GRID, say!("bar.grid")));
+    view_button(painter, list, View::List, (&icons::LIST, say!("bar.list")));
     divider(painter, grid.left - gap);
 
-    let pen = painter.body();
-    let all = say!("bar.all");
-    let filter_width =
-        painter.px(16.0 + 10.0 + 16.0 + 6.0) + painter.width_of(&all, pen) + gap * 2.0;
-    let filter = Rect::at(
-        grid.left - gap * 2.0 - filter_width,
-        at.top,
-        filter_width,
-        height,
-    );
-    painter.fill(filter, radius, colours.surface_1);
-    painter.stroke(filter, radius, colours.border);
-    let small = painter.px(17.0);
-    let (_, centre) = middle(filter);
-    painter.icon(
-        &icons::FILTER,
-        Rect::at(filter.left + gap, centre - small / 2.0, small, small),
-        colours.text_faint,
-    );
-    painter.text(
-        &all,
-        pen,
-        colours.text_faint,
-        Rect::at(
-            filter.left + gap + small + painter.px(8.0),
-            at.top,
-            painter.width_of(&all, pen) + painter.px(2.0),
-            height,
-        ),
-    );
-    painter.icon(
-        &icons::CHEVRON_DOWN,
-        Rect::at(
-            filter.right - gap - painter.px(16.0),
-            centre - painter.px(8.0),
-            painter.px(16.0),
-            painter.px(16.0),
-        ),
-        colours.text_faint,
-    );
-    painter.tells(filter, soon.clone());
+    let filter = filter(painter, grid.left - gap * 2.0, at);
     divider(painter, filter.left - gap);
 
     let floor = at.left + if narrow { height + gap } else { 0.0 };
@@ -276,39 +235,196 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
     if search_width < painter.px(160.0) {
         return;
     }
-    let search = Rect::at(search_right - search_width, at.top, search_width, height);
-    painter.fill(search, radius, colours.surface_1);
-    painter.stroke(search, radius, colours.border);
+    search(
+        painter,
+        Rect::at(search_right - search_width, at.top, search_width, height),
+    );
+}
+
+/// One of the two views of the computers: the one chosen stands out.
+fn view_button(painter: &mut Painter, at: Rect, view: View, (icon, tip): (&Icon, String)) {
+    let colours = painter.colours;
+    let radius = painter.px(design::RADIUS_SMALL + 1.0);
+    let target = Target::View(view);
+    let chosen = painter.state.view == view;
+    let hover = painter.hover_of(&target);
+    if chosen {
+        painter.fill(at, radius, colours.surface_1);
+        painter.stroke(at, radius, colours.border);
+    } else if hover > 0.0 {
+        painter.fill(at, radius, colours.surface_3.faded(hover * 0.8));
+    }
+    painter.icon(
+        icon,
+        square(middle(at), painter.px(20.0)),
+        if chosen {
+            colours.accent
+        } else {
+            colours.text_soft
+        },
+    );
+    if painter.focused(&target) {
+        painter.focus_ring(at, radius);
+    }
+    painter.answers_with_tip(target, at, tip);
+}
+
+/// The filter, whose right edge is `right`: which computers it keeps, and
+/// the menu that changes it. Gives back where it was laid.
+fn filter(painter: &mut Painter, right: f32, bar: Rect) -> Rect {
+    let colours = painter.colours;
+    let height = size(bar).1;
+    let radius = painter.px(design::RADIUS_SMALL + 1.0);
+    let gap = painter.px(design::SPACE_3);
+    let pen = painter.body();
+    let narrowed = painter.state.narrowed;
+    let (label, _) = pages::computers::narrowed_to(narrowed);
+    let label_width = painter.width_of(&label, pen);
+    let width = painter.px(16.0 + 10.0 + 16.0 + 6.0) + label_width + gap * 2.0;
+    let at = Rect::at(right - width, bar.top, width, height);
+    let target = Target::Menu(Menu::Filter);
+    let hover = painter.hover_of(&target);
+    let narrowing = narrowed != Narrowed::All;
+    painter.fill(
+        at,
+        radius,
+        colours.surface_1.mixed_with(colours.surface_3, 1.0 - hover),
+    );
+    painter.stroke(
+        at,
+        radius,
+        if narrowing {
+            colours.accent
+        } else {
+            colours.border
+        },
+    );
+    let small = painter.px(17.0);
+    let (_, centre) = middle(at);
+    let ink = if narrowing {
+        colours.accent
+    } else {
+        colours.text_soft
+    };
+    painter.icon(
+        &icons::FILTER,
+        Rect::at(at.left + gap, centre - small / 2.0, small, small),
+        ink,
+    );
+    painter.text(
+        &label,
+        pen,
+        colours.text,
+        Rect::at(
+            at.left + gap + small + painter.px(8.0),
+            at.top,
+            label_width + painter.px(2.0),
+            height,
+        ),
+    );
+    painter.icon(
+        &icons::CHEVRON_DOWN,
+        Rect::at(
+            at.right - gap - painter.px(16.0),
+            centre - painter.px(8.0),
+            painter.px(16.0),
+            painter.px(16.0),
+        ),
+        colours.text_soft,
+    );
+    if matches!(painter.state.menu, Some((Menu::Filter, _))) {
+        painter.state.menu = Some((Menu::Filter, at));
+    }
+    if painter.focused(&target) {
+        painter.focus_ring(at, radius);
+    }
+    painter.answers_with_tip(target, at, say!("bar.filter_tip"));
+    at
+}
+
+/// The search: the real field of the system, laid in its frame while the
+/// page answers the hand, and what it holds written in its place while a
+/// dialog covers it, since a field of the system would show through.
+fn search(painter: &mut Painter, at: Rect) {
+    let colours = painter.colours;
+    let radius = painter.px(design::RADIUS_SMALL + 1.0);
+    let height = size(at).1;
+    let (_, centre) = middle(at);
+    let inside = fields::focused() == Some(Field::Search);
+    if inside {
+        painter.fill(
+            at.grown(painter.px(3.0)),
+            radius + painter.px(3.0),
+            colours.accent.faded(0.14),
+        );
+    }
+    painter.fill(at, radius, colours.surface_1);
+    if inside {
+        painter.stroke_of(at, radius, painter.px(1.5), colours.accent);
+    } else {
+        painter.stroke(at, radius, colours.border);
+    }
     let glass = painter.px(18.0);
     painter.icon(
         &icons::SEARCH,
         Rect::at(
-            search.left + painter.px(14.0),
+            at.left + painter.px(14.0),
             centre - glass / 2.0,
             glass,
             glass,
         ),
-        colours.text_faint,
+        colours.text_soft,
     );
-    let keys = say!("bar.search_keys");
-    let caption = painter.caption();
-    let keys_width = painter.width_of(&keys, caption) + painter.px(design::SPACE_3);
-    let cap = Rect::at(
-        search.right - painter.px(8.0) - keys_width,
-        centre - painter.px(11.0),
-        keys_width,
-        painter.px(22.0),
+    painter.answers(Target::Search, at);
+
+    // On the right, the keys that lead here, or the cross that empties
+    // what was searched.
+    let typed = painter.state.search.clone();
+    let end = if typed.is_empty() {
+        let keys = say!("bar.search_keys");
+        let caption = painter.caption();
+        let keys_width = painter.width_of(&keys, caption) + painter.px(design::SPACE_3);
+        let cap = Rect::at(
+            at.right - painter.px(8.0) - keys_width,
+            centre - painter.px(11.0),
+            keys_width,
+            painter.px(22.0),
+        );
+        painter.keycap(cap, &keys, colours.text_faint);
+        cap.left
+    } else {
+        let cross = painter.px(28.0);
+        let clear = Rect::at(
+            at.right - painter.px(6.0) - cross,
+            centre - cross / 2.0,
+            cross,
+            cross,
+        );
+        painter.icon_button(
+            clear,
+            &icons::CROSS,
+            Target::ClearSearch,
+            say!("bar.clear_search"),
+        );
+        clear.left
+    };
+    let words_left = at.left + painter.px(14.0) + glass + painter.px(10.0);
+    let words = Rect::at(
+        words_left,
+        at.top,
+        (end - painter.px(8.0) - words_left).max(0.0),
+        height,
     );
-    let words_left = search.left + painter.px(14.0) + glass + painter.px(10.0);
-    let words_width = (cap.left - painter.px(8.0) - words_left).max(0.0);
-    painter.text(
-        &say!("bar.search"),
-        pen.ellipsized(),
-        colours.text_faint,
-        Rect::at(words_left, at.top, words_width, height),
-    );
-    painter.keycap(cap, &keys, colours.text_faint);
-    painter.tells(search, soon);
+    if painter.is_live() {
+        painter.place(Field::Search, words);
+    } else {
+        let (shown, ink) = if typed.is_empty() {
+            (say!("bar.search"), colours.text_faint)
+        } else {
+            (typed, colours.text)
+        };
+        painter.text(&shown, painter.body().ellipsized(), ink, words);
+    }
 }
 
 /// The bar on the left: the mark and the name, the pages, and at the

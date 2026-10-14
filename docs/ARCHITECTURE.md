@@ -160,7 +160,7 @@ ZyrDesk/
 │  ├─ zyr-tunnel/              # le passage entre le tube du moteur et la connexion : flux du moteur, datagrammes d'image et de son, canal ZyrDesk
 │  ├─ zyr-clipboard/           # le presse-papiers de l'ordinateur : ce qu'il porte, ce qu'on lui donne, les images en PNG, et la place tenue aux fichiers d'en face
 │  ├─ zyr-control/             # le dialecte entre la fenêtre et le service, sur le tube de commande
-│  ├─ zyr-session/             # ouverture d'une session de bout en bout, partagée par l'interface et la ligne de commande, la session menée jusqu'au bout et reprise quand elle tombe, ce que ses mesures disent de sa santé (ce qui allume les voyants), et où en est un ordinateur de l'accueil (prêt, fermé, absent) et la route qui y mène
+│  ├─ zyr-session/             # ouverture d'une session de bout en bout, partagée par l'interface et la ligne de commande, la session menée jusqu'au bout et reprise quand elle tombe, ce que ses mesures disent de sa santé (ce qui allume les voyants), et où en est un ordinateur de l'accueil (prêt, fermé, absent), la route qui y mène et si la recherche et le filtre le gardent
 │  ├─ zyr-launch/              # comment les programmes du produit se mettent en route : le service démarré sans rien demander ou mis en place avec les droits administrateur, et la fenêtre qui revient à l'ouverture de session
 │  ├─ zyr-lan/                 # annonce mDNS de cet ordinateur, appel direct, découverte des autres
 │  ├─ zyr-broker/              # ce que le service et le serveur se disent : messages, tickets et laissez-passer signés

@@ -25,7 +25,7 @@ Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est des
 |---|---|---|
 | Logo ZyrDesk et nom | Oui | |
 | Accueil | Oui | La page de ce plan |
-| Ordinateurs | Grisé | Page faite après l'accueil, dans son style |
+| Ordinateurs | Oui | Tous les ordinateurs, en grille ou en liste ([D310](DECISIONS.md)) |
 | Contacts | Grisé | Idem |
 | Activité | Grisé | Idem |
 | Paramètres | Oui | Les réglages d'aujourd'hui, remis au style de l'accueil |
@@ -37,9 +37,9 @@ Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est des
 
 | Élément | État | Note |
 |---|---|---|
-| Recherche « Rechercher un ordinateur, un contact… » avec Ctrl+K | Grisé | |
-| Filtre « Tous » | Grisé | |
-| Vue en grille ou en liste | Grisé | La grille est la vue du premier jour |
+| Recherche « Rechercher un ordinateur… » avec Ctrl+K | Oui | Par le nom ou l'adresse, sur l'accueil et la page « Ordinateurs » ; les contacts s'y ajouteront avec eux |
+| Filtre « Tous » | Oui | Tous, en ligne, hors ligne, réseau local, Internet |
+| Vue en grille ou en liste | Oui | Le choix est gardé d'une ouverture à l'autre |
 | Réduire, agrandir, fermer | Oui | Ceux de la barre de titre de Windows (§1) |
 
 ## 4. Le bandeau
@@ -69,7 +69,7 @@ Dans le bandeau, sous le message d'accueil : une carte à part le répétait ([D
 
 ## 6. Mes ordinateurs
 
-Une carte par ordinateur connu (réseau local et compte), avec « Voir tout » et le nombre. Ceux qui acceptent une session viennent d'abord, ceux qui sont hors ligne en dernier.
+Une carte par ordinateur connu (réseau local et compte), ou une ligne en vue liste, avec « Voir tout », qui mène à la page « Ordinateurs », et le nombre. Ceux qui acceptent une session viennent d'abord, ceux qui sont hors ligne en dernier. La recherche et le filtre de la barre du haut s'y appliquent.
 
 | Élément de la carte | État | Note |
 |---|---|---|
@@ -105,4 +105,4 @@ Une page à elle, sous Paramètres dans la barre de gauche. Une partie de son co
 
 ## 9. Ce qui vient après l'accueil
 
-Les pages Ordinateurs, Contacts et Activité, faites une fois l'accueil terminé, dans son style. Puis, bloc par bloc, les fonctions grisées : chacune qui arrive retire son gris.
+Les pages Contacts et Activité, faites une fois l'accueil terminé, dans son style (la page Ordinateurs est faite, [D310](DECISIONS.md)). Puis, bloc par bloc, les fonctions grisées : chacune qui arrive retire son gris.

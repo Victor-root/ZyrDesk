@@ -288,6 +288,14 @@ pub fn chosen_theme() -> PathBuf {
     data_dir().join("theme.conf")
 }
 
+/// How the computers of the home screen are laid out.
+///
+/// Apart for the same reason as the theme: it says how somebody likes to
+/// look at their computers on this machine.
+pub fn home_layout() -> PathBuf {
+    data_dir().join("home-layout.conf")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,6 +322,7 @@ mod tests {
             keyboard_shortcuts(),
             floating_button(),
             chosen_theme(),
+            home_layout(),
         ] {
             assert!(
                 path.starts_with(&root),

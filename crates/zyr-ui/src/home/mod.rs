@@ -12,13 +12,15 @@
 //! comes back.
 //!
 //! What it is made of, from the bottom up: what it shows (`seen`) and
-//! what it remembers from one frame to the next (`state`); the pieces it
-//! is drawn with (`ui`), the words (`words`); the frame around every
-//! page (`frame`), the pages (`pages`), the dialogs (`dialogs`) and the
-//! opening of a session (`opening`); and the window itself, the hand and
-//! the keys (`window`, `input`, `act`).
+//! what it remembers from one frame to the next (`state`) and from one
+//! opening to the next (`arranged`); the pieces it is drawn with (`ui`),
+//! the words (`words`); the frame around every page (`frame`), the pages
+//! (`pages`), the dialogs (`dialogs`) and the opening of a session
+//! (`opening`); and the window itself, the hand and the keys (`window`,
+//! `input`, `act`).
 
 mod act;
+mod arranged;
 mod dialogs;
 mod frame;
 mod input;
@@ -62,6 +64,7 @@ fn state() -> MutexGuard<'static, state::State> {
 /// Opens the home window in the window Windows frames, and starts
 /// gathering what it shows.
 pub fn raise(app: &App) {
+    arranged::read_back();
     if window::open(app) {
         seen::watch(app.clone());
     }

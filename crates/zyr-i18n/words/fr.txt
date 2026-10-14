@@ -277,9 +277,17 @@ nav.tagline = Le bureau à distance open source.
 nav.open_menu = Ouvrir le menu
 nav.account_tip = Votre compte
 nav.up_to_date = Tout est à jour
-bar.search = Rechercher un ordinateur ou un contact…
+bar.search = Rechercher un ordinateur…
 bar.search_keys = Ctrl K
-bar.all = Tous
+bar.clear_search = Effacer la recherche
+bar.filter_tip = N'afficher que certains ordinateurs
+bar.grid = Vue en grille
+bar.list = Vue en liste
+filter.all = Tous
+filter.online = En ligne
+filter.offline = Hors ligne
+filter.local = Réseau local
+filter.internet = Internet
 soon.tip = Bientôt
 
 # The home page.
@@ -307,7 +315,7 @@ home.ready_long = Cet ordinateur accepte les connexions à distance.
 home.access_off_long = L'accès distant est désactivé : personne ne peut contrôler cet ordinateur.
 home.this_computer = Cet ordinateur
 home.my_computers = Mes ordinateurs
-home.more_computers = autres ordinateurs
+home.more_computers_count = {count} de plus
 home.see_all = Voir tout
 home.rename_needs_an_account = Le renommage passe par le compte : connectez-vous d'abord à un serveur.
 home.see_details = Voir les détails
@@ -323,6 +331,13 @@ home.quick_actions = Actions rapides
 home.action_activity = Voir l'activité
 home.action_settings = Ouvrir les paramètres
 home.version_differs = Fenêtre {window}, service {service}
+
+# The page of computers.
+computers.title = Ordinateurs
+computers.lead = Tous les ordinateurs que ZyrDesk connaît : sur ce réseau, sur votre compte, et ceux ajoutés à la main.
+computers.nothing_found = Aucun ordinateur trouvé
+computers.nothing_found_text = Aucun ordinateur ne correspond à cette recherche et à ce filtre.
+computers.show_all = Tout afficher
 
 # Windows, by its edition.
 edition.home = Famille

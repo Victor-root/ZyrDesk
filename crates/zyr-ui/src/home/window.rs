@@ -149,6 +149,7 @@ pub fn open(app: &App) -> bool {
         return false;
     }
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);
+    fields::stand(window as isize, Field::Search, scale());
     note(&format!(
         "home page drawn by ZyrDesk: canvas of {}x{} px",
         inside.right, inside.bottom
@@ -304,7 +305,12 @@ unsafe extern "system" fn answer(
         // colours to paint it in, so that it matches the rest.
         WM_CTLCOLOREDIT => {
             let colours = zyr_draw::design::palette(crate::shell::theme::light());
-            fields::tint(holding, colours.surface_2, colours.text)
+            let background = if fields::which(with) == Some(Field::Search) {
+                colours.surface_1
+            } else {
+                colours.surface_2
+            };
+            fields::tint(holding, background, colours.text)
         }
         WM_COMMAND => {
             let said = ((holding >> 16) & 0xFFFF) as u32;
@@ -313,6 +319,13 @@ unsafe extern "system" fn answer(
                 // what its buttons allow; the field the keyboard is in
                 // is drawn ringed.
                 invalidate();
+            }
+            // The search narrows the computers at every letter.
+            if said == EN_CHANGE
+                && fields::which(with) == Some(Field::Search)
+                && let Some(app) = program()
+            {
+                crate::home::act::searched(&app, fields::text(Field::Search));
             }
             // The sift reads this computer's journal again by itself,
             // after a pause. Not a far one's: reading it again opens a
@@ -331,11 +344,13 @@ unsafe extern "system" fn answer(
             }
             0
         }
-        // What a field asked for: Enter or Escape, done here because both
-        // close the dialog, and so destroy the field asking.
+        // What a field asked for: Enter or Escape, done here because in a
+        // dialog both close it, and so destroy the field asking.
         fields::ACT => {
             if let Some(app) = program() {
-                if holding == 1 {
+                if fields::which(with) == Some(Field::Search) {
+                    crate::home::act::search_key(&app, holding == 1);
+                } else if holding == 1 {
                     crate::home::dialogs::confirm(&app);
                 } else {
                     crate::home::dialogs::close(&app);

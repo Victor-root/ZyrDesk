@@ -7,15 +7,15 @@
 //! that says it is coming.
 
 use zyr_control::Peer;
+use zyr_draw::Rect;
 use zyr_draw::design::{self, Colour};
 use zyr_draw::icons::{self, Icon};
-use zyr_draw::{Align, Rect};
 use zyr_i18n::say;
-use zyr_session::presence::{Presence, Road};
 
+use crate::home::pages::computers::{self, seed_of};
 use crate::home::seen::Seen;
-use crate::home::state::{Offer, Page, State, Target, Toggle};
-use crate::home::ui::{Button, Kind, Painter, QUICK, SWITCH_SIZE, middle, size, square};
+use crate::home::state::{Page, State, Target, Toggle};
+use crate::home::ui::{Button, Kind, Painter, SWITCH_SIZE, middle, size, square};
 use crate::home::words::{self, Tone};
 
 /// What is added to the banner when its block of remote access has to go
@@ -30,15 +30,8 @@ const ACCESS: f32 = 340.0;
 const IDENTITY: f32 = 640.0;
 const PORTRAIT: (f32, f32) = (272.0, 170.0);
 
-/// A card's height, the gap between cards, and the narrowest and widest a
-/// computer's card is.
-const CARD: f32 = 262.0;
+/// The gap between the blocks of the bottom row.
 const GAP: f32 = 16.0;
-const NARROWEST: f32 = 220.0;
-const WIDEST: f32 = 300.0;
-
-/// A computer's picture on its card.
-const PICTURE: f32 = 104.0;
 
 /// The space between two sections, and between a heading and what it
 /// heads.
@@ -63,7 +56,6 @@ const BOTTOM_LEAST: f32 = 150.0;
 pub fn draw(painter: &mut Painter, at: Rect, room: f32) -> f32 {
     let seen = painter.seen;
     let between = painter.px(BETWEEN);
-    let gap = painter.px(GAP);
     let heading = painter.line(painter.subtitle()) + painter.px(UNDER_HEADING);
     let floor = at.top + room;
 
@@ -71,8 +63,9 @@ pub fn draw(painter: &mut Painter, at: Rect, room: f32) -> f32 {
     y += banner(painter, seen, Rect { top: y, ..at });
     y += between;
 
-    let card_row = painter.px(CARD) + gap;
-    let rows_in = |height: f32| ((height - heading + gap) / card_row).floor();
+    let peers = computers::shown(seen, painter.state);
+    let (columns, _, row, gap) = computers::laid(painter, size(at).0, peers.len());
+    let rows_in = |height: f32| ((height - heading + gap) / (row + gap)).floor();
     let with_bottom_rows = rows_in(floor - y - between - heading - painter.px(BOTTOM_LEAST));
     let with_bottom = with_bottom_rows >= 1.0;
     let fit = if with_bottom {
@@ -80,10 +73,9 @@ pub fn draw(painter: &mut Painter, at: Rect, room: f32) -> f32 {
     } else {
         rows_in(floor - y)
     };
-    let (columns, _) = grid(painter, size(at).0, seen.peers.len());
-    let needed = seen.peers.len().div_ceil(columns).max(1);
+    let needed = peers.len().div_ceil(columns).max(1);
     let rows = (fit.max(1.0) as usize).min(needed);
-    y += computers(painter, seen, Rect { top: y, ..at }, rows);
+    y += computers(painter, seen, &peers, Rect { top: y, ..at }, rows);
 
     if with_bottom {
         y += between;
@@ -400,14 +392,15 @@ fn access_state(seen: &Seen) -> (String, Tone, Option<(String, Target)>) {
 
 /* ---- This computer, and the others --------------------------------------- */
 
-/// The other computers, under their heading, on as many rows as the page
-/// has room for, and gives back the height they take.
-fn computers(painter: &mut Painter, seen: &Seen, at: Rect, rows: usize) -> f32 {
+/// The other computers the search and the filter keep, under their
+/// heading, on as many rows as the page has room for, and gives back the
+/// height they take.
+fn computers(painter: &mut Painter, seen: &Seen, peers: &[&Peer], at: Rect, rows: usize) -> f32 {
     let heading = painter.line(painter.subtitle()) + painter.px(UNDER_HEADING);
     painter.heading(
         (at.left, at.top),
         &say!("home.my_computers"),
-        Some(seen.peers.len()),
+        Some(peers.len()),
     );
     see_all(
         painter,
@@ -419,20 +412,25 @@ fn computers(painter: &mut Painter, seen: &Seen, at: Rect, rows: usize) -> f32 {
         ),
     );
     heading
-        + their_cards(
+        + computers::lay(
             painter,
             seen,
+            peers,
             Rect {
                 top: at.top + heading,
                 ..at
             },
-            rows,
+            Some(rows),
         )
 }
 
-/// « See all », which leads to the page of computers once there is one.
+/// « See all », which leads to the page of computers.
 fn see_all(painter: &mut Painter, row: Rect) {
     let colours = painter.colours;
+    let target = Target::Nav(Page::Computers);
+    let ink = colours
+        .text_faint
+        .mixed_with(colours.accent, 1.0 - painter.hover_of(&target));
     let pen = painter.caption().in_bold();
     let label = say!("home.see_all");
     let arrow = painter.px(16.0);
@@ -447,7 +445,7 @@ fn see_all(painter: &mut Painter, row: Rect) {
     painter.text(
         &label,
         pen,
-        colours.text_faint,
+        ink,
         Rect {
             right: at.left + label_width + painter.px(2.0),
             ..at
@@ -456,9 +454,12 @@ fn see_all(painter: &mut Painter, row: Rect) {
     painter.icon(
         &icons::ARROW_RIGHT,
         Rect::at(at.right - arrow, centre - arrow / 2.0, arrow, arrow),
-        colours.text_faint,
+        ink,
     );
-    painter.tells(at, say!("soon.tip"));
+    if painter.focused(&target) {
+        painter.focus_ring(at, painter.px(design::RADIUS_SMALL));
+    }
+    painter.answers(target, at);
 }
 
 /// This computer, in the banner: its wallpaper, its name, what it is made
@@ -692,437 +693,6 @@ fn specs_of(seen: &Seen) -> Vec<(&'static Icon, String)> {
         specs.push((&icons::GRAPHICS, card.name.clone()));
     }
     specs
-}
-
-/// The number a computer's view of the dunes is taken from, read from
-/// its fingerprint so that it keeps its view from one day to the next.
-pub fn seed_of(fingerprint: &str) -> u32 {
-    u32::from_str_radix(fingerprint.get(..8).unwrap_or_default(), 16).unwrap_or(0)
-}
-
-/// How many cards go across a row of that width, for that many
-/// computers, and how wide each is.
-fn grid(painter: &Painter, width: f32, count: usize) -> (usize, f32) {
-    let gap = painter.px(GAP);
-    let fit = ((width + gap) / (painter.px(NARROWEST) + gap))
-        .floor()
-        .max(1.0) as usize;
-    let columns = fit.min(count.max(1));
-    let column = ((width - gap * (columns as f32 - 1.0)) / columns as f32).min(painter.px(WIDEST));
-    (columns, column)
-}
-
-/// The other computers' cards, in a grid of at most that many rows, and
-/// gives back its height. A card when there is none, which says how they
-/// come; and when they do not all fit, the last place says how many more
-/// there are, the first ones being those that can be reached.
-fn their_cards(painter: &mut Painter, seen: &Seen, at: Rect, rows: usize) -> f32 {
-    let width = size(at).0;
-    let gap = painter.px(GAP);
-    if seen.peers.is_empty() {
-        return no_computer(painter, Rect::at(at.left, at.top, width, painter.px(CARD)));
-    }
-    let (columns, column) = grid(painter, width, seen.peers.len());
-    let places = columns * rows.max(1);
-    let all = seen.peers.len() <= places;
-    let shown = if all { seen.peers.len() } else { places - 1 };
-    let height = painter.px(CARD);
-    let place = |rank: usize| {
-        Rect::at(
-            at.left + (rank % columns) as f32 * (column + gap),
-            at.top + (rank / columns) as f32 * (height + gap),
-            column,
-            height,
-        )
-    };
-    for (rank, peer) in seen.peers.iter().take(shown).enumerate() {
-        computer_card(painter, seen, peer, place(rank));
-    }
-    if !all {
-        more_computers(painter, place(shown), seen.peers.len() - shown);
-    }
-    let laid = if all { shown } else { places };
-    let rows = laid.div_ceil(columns) as f32;
-    rows * height + (rows - 1.0) * gap
-}
-
-/// The place of the computers that did not fit: how many there are, until
-/// the page of computers shows them all.
-fn more_computers(painter: &mut Painter, at: Rect, count: usize) {
-    let colours = painter.colours;
-    let radius = painter.px(design::RADIUS);
-    painter.dashed(at, radius, colours.border_strong);
-    let (_, centre) = middle(at);
-    let title = painter.title().aligned(Align::Centre);
-    let caption = painter.body().aligned(Align::Centre);
-    let (title_line, caption_line) = (painter.line(title), painter.line(caption));
-    let top = centre - (title_line + caption_line) / 2.0;
-    painter.text(
-        &format!("+{count}"),
-        title,
-        colours.text,
-        Rect::at(at.left, top, size(at).0, title_line),
-    );
-    painter.text(
-        &say!("home.more_computers"),
-        caption,
-        colours.text_soft,
-        Rect::at(at.left, top + title_line, size(at).0, caption_line),
-    );
-    painter.tells(at, say!("soon.tip"));
-}
-
-/// One computer's card: its picture, its presence, its name, the road to
-/// it and how long it takes, and the way to it.
-fn computer_card(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
-    let colours = painter.colours;
-    let fingerprint = peer.fingerprint.to_string();
-    let presence = zyr_session::presence::presence(peer);
-    let busy = seen.busy(painter.state.opening.is_some());
-    let reachable = presence.can_be_reached() && !busy;
-    let connect = Target::Connect(fingerprint.clone());
-    let menu = Target::CardMenu(fingerprint.clone());
-    let menu_open = painter
-        .state
-        .menu
-        .as_ref()
-        .is_some_and(|(open, _)| *open == fingerprint);
-    let lit = if reachable {
-        painter.hover_of(&connect)
-    } else {
-        0.0
-    };
-    let near = painter
-        .hover_of(&menu)
-        .max(lit)
-        .max(f32::from(u8::from(menu_open)));
-    painter.card_lit(at, lit);
-    if reachable {
-        painter.answers(connect.clone(), at);
-    }
-
-    let inside = painter.px(14.0);
-    let picture = Rect::at(
-        at.left + inside,
-        at.top + inside,
-        size(at).0 - inside * 2.0,
-        painter.px(PICTURE),
-    );
-    let radius = painter.px(design::RADIUS_SMALL + 1.0);
-    painter.dunes(picture, radius, seed_of(&fingerprint));
-    painter.stroke(picture, radius, colours.text.faded(0.07));
-    let tip = say!("computer.wallpaper_soon");
-    if reachable {
-        painter.answers_with_tip(connect.clone(), picture, tip);
-    } else {
-        painter.tells(picture, tip);
-    }
-
-    // On the picture: the presence, and in its corner the handle that
-    // will move the card, and the computer's menu.
-    let (dot_colour, live) = match presence {
-        Presence::Ready => (colours.online, true),
-        Presence::Closed { .. } => (colours.warning, false),
-        Presence::Gone | Presence::Unknown => (colours.offline, false),
-    };
-    let disc = painter.px(18.0);
-    let disc_at = Rect::at(
-        picture.left + painter.px(8.0),
-        picture.top + painter.px(8.0),
-        disc,
-        disc,
-    );
-    painter.fill(disc_at, disc / 2.0, colours.surface_1);
-    painter.dot(middle(disc_at), painter.px(8.0), dot_colour, live);
-    let corner = painter.px(28.0);
-    let handle = Rect::at(
-        picture.right - painter.px(6.0) - corner,
-        picture.top + painter.px(6.0),
-        corner,
-        corner,
-    );
-    let small = painter.px(16.0);
-    painter.fill(handle, painter.px(7.0), colours.surface_1.faded(0.92));
-    painter.icon(
-        &icons::MOVE,
-        square(middle(handle), small),
-        colours.text_faint,
-    );
-    painter.tells(handle, say!("computer.move_soon"));
-    let more = handle.shifted(-(corner + painter.px(6.0)), 0.0);
-    if near > 0.0 || painter.focused(&menu) {
-        painter.fill(
-            more,
-            painter.px(7.0),
-            colours.surface_1.faded(0.92 * near.max(0.6)),
-        );
-        painter.icon(
-            &icons::MORE,
-            square(middle(more), small),
-            colours.text_soft.faded(near.max(0.6)),
-        );
-    }
-    painter.answers_with_tip(menu, more, say!("computer.more"));
-    if menu_open {
-        painter.state.menu = Some((fingerprint.clone(), more));
-    }
-
-    // Under the picture: the name, what is known of it, its tags.
-    let left = at.left + inside;
-    let width = size(at).0 - inside * 2.0;
-    let mut y = picture.bottom + painter.px(design::SPACE_3);
-    let name_pen = painter.body().in_bold().ellipsized();
-    let name_height = painter.line(name_pen);
-    painter.text(
-        &peer.name,
-        name_pen,
-        colours.text,
-        Rect::at(left, y, width, name_height),
-    );
-    y += name_height + painter.px(2.0);
-    let caption = painter.caption();
-    let caption_height = painter.line(caption);
-    painter.text(
-        &words::below_the_name(peer, seen.device_of(peer)),
-        caption.ellipsized(),
-        colours.text_soft,
-        Rect::at(left, y, width, caption_height),
-    );
-    y += caption_height + painter.px(design::SPACE_2);
-    tags(painter, seen, peer, &presence, (left, y, left + width));
-
-    // And at the bottom, the way to it.
-    let button = Rect::at(
-        left,
-        at.bottom - inside - painter.px(38.0),
-        width,
-        painter.px(38.0),
-    );
-    match presence {
-        Presence::Gone => {
-            painter.fill(button, painter.px(design::RADIUS_SMALL), colours.surface_1);
-            painter.stroke(button, painter.px(design::RADIUS_SMALL), colours.border);
-            let label = say!("computer.wake");
-            let pen = painter.body().in_bold();
-            let label_width = painter.width_of(&label, pen);
-            let icon = painter.px(18.0);
-            let (centre_x, centre_y) = middle(button);
-            let start = centre_x - (label_width + icon + painter.px(design::SPACE_2)) / 2.0;
-            painter.icon(
-                &icons::POWER,
-                Rect::at(start, centre_y - icon / 2.0, icon, icon),
-                colours.text_faint,
-            );
-            painter.text(
-                &label,
-                pen,
-                colours.text_faint,
-                Rect::at(
-                    start + icon + painter.px(design::SPACE_2),
-                    button.top,
-                    label_width + painter.px(2.0),
-                    size(button).1,
-                ),
-            );
-            painter.tells(button, say!("soon.tip"));
-        }
-        _ => {
-            let label = say!("computer.connect");
-            painter.button(
-                button,
-                connect,
-                Button::new(&label, Kind::Action)
-                    .with_icon(&icons::COMPUTERS)
-                    .enabled(reachable)
-                    .lit(lit),
-            );
-        }
-    }
-}
-
-/// A card's tags: the road to the computer, how long it takes, and what
-/// is going on with it right now, as many as fit before `right`.
-///
-/// During a session, the road and the delay are the session's own, as
-/// the service measures them: through the relay or straight there, and
-/// the bubble over the road says where the packets go.
-fn tags(
-    painter: &mut Painter,
-    seen: &Seen,
-    peer: &Peer,
-    presence: &Presence,
-    (left, top, right): (f32, f32, f32),
-) {
-    let colours = painter.colours;
-    let mut row = Row {
-        x: left,
-        top,
-        right,
-    };
-    let fingerprint = peer.fingerprint.to_string();
-    let session = seen
-        .sessions
-        .iter()
-        .find(|session| session.fingerprint == fingerprint);
-    let (road, icon, tint) = match (session, zyr_session::presence::road(peer)) {
-        (Some(session), _) if session.relayed => {
-            (say!("computer.road_relay"), &icons::SERVER, colours.warning)
-        }
-        (_, Road::Local) => (
-            say!("computer.road_local"),
-            &icons::LOCAL_NETWORK,
-            colours.road_local,
-        ),
-        (_, Road::Internet) => (
-            say!("computer.road_internet"),
-            &icons::WORLD,
-            colours.road_internet,
-        ),
-        (_, Road::Written) => (
-            say!("computer.road_written"),
-            &icons::PENCIL,
-            colours.text_soft,
-        ),
-    };
-    let laid = row.lay(painter, &road, Some(icon), tint);
-    if let Some(session) = session {
-        if let Some(laid) = laid {
-            let via = if session.relayed {
-                say!("computer.via_relay", via = session.via)
-            } else {
-                say!("computer.via_direct", via = session.via)
-            };
-            painter.tells(laid, via);
-        }
-        let during = say!(
-            "computer.in_session",
-            duration = words::duration(session.since)
-        );
-        row.lay(painter, &during, None, colours.online);
-        row.latency(painter, session.round_trip_ms);
-        return;
-    }
-    if seen
-        .watching
-        .iter()
-        .any(|watcher| watcher.fingerprint == fingerprint)
-    {
-        row.lay(
-            painter,
-            &say!("computer.controls_this_one"),
-            None,
-            colours.warning,
-        );
-        return;
-    }
-    // Only when it was measured and still holds: a computer that is gone
-    // has no delay, and a number left from before would say it is there.
-    if let Some(round_trip) = peer
-        .round_trip_ms
-        .filter(|_| !matches!(presence, Presence::Gone))
-    {
-        row.latency(painter, u64::from(round_trip));
-    }
-}
-
-/// A row of tags, laid from the left as long as they fit: once one does
-/// not, nothing after it shows, so that a narrow card keeps what matters
-/// first rather than spilling over its edge.
-struct Row {
-    x: f32,
-    top: f32,
-    right: f32,
-}
-
-impl Row {
-    fn lay(
-        &mut self,
-        painter: &Painter,
-        label: &str,
-        icon: Option<&Icon>,
-        tint: Colour,
-    ) -> Option<Rect> {
-        if self.x + painter.tag_width(label, icon) > self.right {
-            self.x = self.right;
-            return None;
-        }
-        let laid = painter.tag((self.x, self.top), label, icon, tint);
-        self.x = laid.right + painter.px(design::SPACE_2);
-        Some(laid)
-    }
-
-    /// How long a question takes to come back from the computer.
-    fn latency(&mut self, painter: &Painter, round_trip: u64) {
-        self.lay(
-            painter,
-            &say!("computer.round_trip", ms = round_trip.max(1)),
-            Some(&icons::ROUND_TRIP),
-            painter.colours.online,
-        );
-    }
-}
-
-/// The card shown while no computer is known, which says how they come.
-fn no_computer(painter: &mut Painter, at: Rect) -> f32 {
-    let colours = painter.colours;
-    let radius = painter.px(design::RADIUS);
-    painter.dashed(at, radius, colours.border_strong);
-    let inside = painter.px(design::SPACE_6);
-    let width = (size(at).0 - inside * 2.0).min(painter.px(440.0));
-    let title = say!("home.no_computer");
-    let text = say!("home.no_computer_text");
-    let button_label = say!("adding.title");
-    let title_pen = painter.subtitle().aligned(Align::Centre);
-    let pen = painter.caption().aligned(Align::Centre);
-    let icon = painter.px(36.0);
-    let text_height = painter.height_of(&text, pen, width);
-    let content = icon
-        + painter.px(design::SPACE_3)
-        + painter.line(title_pen)
-        + painter.px(design::SPACE_2)
-        + text_height
-        + painter.px(design::SPACE_4)
-        + painter.px(38.0);
-    let height = (content + inside * 2.0).max(size(at).1);
-    let at = Rect {
-        bottom: at.top + height,
-        ..at
-    };
-    let (centre, _) = middle(at);
-    let mut y = at.top + (height - content) / 2.0;
-    painter.icon(
-        &icons::COMPUTERS,
-        Rect::at(centre - icon / 2.0, y, icon, icon),
-        colours.text_faint,
-    );
-    y += icon + painter.px(design::SPACE_3);
-    let title_height = painter.line(title_pen);
-    painter.text(
-        &title,
-        title_pen,
-        colours.text,
-        Rect::at(at.left, y, size(at).0, title_height),
-    );
-    y += title_height + painter.px(design::SPACE_2);
-    painter.paragraph(
-        &text,
-        pen,
-        colours.text_soft,
-        (centre - width / 2.0, y, width),
-    );
-    y += text_height + painter.px(design::SPACE_4);
-    let button_width = painter.button_width(&button_label, Some(&icons::PLUS));
-    painter.button(
-        Rect::at(
-            centre - button_width / 2.0,
-            y,
-            button_width,
-            painter.px(38.0),
-        ),
-        Target::AddComputer,
-        Button::new(&button_label, Kind::Primary).with_icon(&icons::PLUS),
-    );
-    height
 }
 
 /* ---- The bottom of the page ----------------------------------------------- */
@@ -1451,125 +1021,5 @@ pub fn toggle_enabled(seen: &Seen, state: &State, toggle: Toggle) -> bool {
             .standing
             .as_ref()
             .is_some_and(|said| said.unreachable.is_none()),
-    }
-}
-
-/* ---- A computer's menu ------------------------------------------------------ */
-
-/// What a computer's menu offers, in the order it shows them.
-pub fn offers(seen: &Seen, peer: &Peer, opening: bool) -> Vec<Offer> {
-    let fingerprint = peer.fingerprint.to_string();
-    let mut offers = Vec::new();
-    if peer.seen && !seen.busy(opening) {
-        offers.push(Offer::HereOnly);
-    }
-    offers.push(Offer::Journal);
-    if seen
-        .watching
-        .iter()
-        .any(|watcher| watcher.fingerprint == fingerprint)
-    {
-        offers.push(Offer::SendBack);
-    }
-    if peer.written {
-        offers.push(Offer::Forget);
-    }
-    offers
-}
-
-/// The menu of the computer whose button was clicked, under that button.
-pub fn menu(painter: &mut Painter, width: f32, height: f32) {
-    let Some((fingerprint, anchor)) = painter.state.menu.clone() else {
-        return;
-    };
-    let seen = painter.seen;
-    let Some(peer) = seen.peer(&fingerprint) else {
-        painter.state.menu = None;
-        return;
-    };
-    let colours = painter.colours;
-    let offers = offers(seen, peer, painter.state.opening.is_some());
-    let shown = painter.arriving(&format!("menu {fingerprint}"), QUICK);
-    let row = painter.px(38.0);
-    let inside = painter.px(design::SPACE_1 + 2.0);
-    let pen = painter.body();
-    let icon = painter.px(18.0);
-    let labels: Vec<(Offer, String, &Icon)> = offers
-        .into_iter()
-        .map(|offer| match offer {
-            Offer::HereOnly => (offer, say!("computer.here_only"), &icons::LOCAL_NETWORK),
-            Offer::Journal => (offer, say!("computer.journal"), &icons::JOURNAL),
-            Offer::SendBack => (offer, say!("computer.send_back"), &icons::DISCONNECT),
-            Offer::Forget => (offer, say!("computer.forget"), &icons::CROSS),
-        })
-        .collect();
-    let wide = labels
-        .iter()
-        .map(|(_, label, _)| painter.width_of(label, pen))
-        .fold(0.0, f32::max)
-        + icon
-        + painter.px(design::SPACE_3 * 2.0 + design::SPACE_4);
-    let tall = row * labels.len() as f32 + inside * 2.0;
-    let left = (anchor.right - wide).clamp(
-        painter.px(design::SPACE_2),
-        width - wide - painter.px(design::SPACE_2),
-    );
-    let below = anchor.bottom + painter.px(design::SPACE_1);
-    let top = if below + tall <= height - painter.px(design::SPACE_2) {
-        below
-    } else {
-        anchor.top - painter.px(design::SPACE_1) - tall
-    };
-    let at = Rect::at(left, top - painter.px(6.0) * (1.0 - shown), wide, tall);
-    let radius = painter.px(design::RADIUS);
-    painter.shadow(at, radius, colours.shadow_2);
-    painter.fill(at, radius, colours.surface_1);
-    painter.stroke(at, radius, colours.border_strong);
-    painter.answers(Target::CardMenu(fingerprint.clone()), at);
-    for (rank, (offer, label, glyph)) in labels.iter().enumerate() {
-        let line = Rect::at(
-            at.left + inside,
-            at.top + inside + row * rank as f32,
-            wide - inside * 2.0,
-            row,
-        );
-        let target = Target::Offer(fingerprint.clone(), *offer);
-        let hover = painter.hover_of(&target);
-        if hover > 0.0 {
-            painter.fill(
-                line,
-                painter.px(design::RADIUS_SMALL),
-                colours.surface_3.faded(hover),
-            );
-        }
-        let (_, centre) = middle(line);
-        let ink = if *offer == Offer::Forget {
-            colours.warning
-        } else {
-            colours.text
-        };
-        painter.icon(
-            glyph,
-            Rect::at(
-                line.left + painter.px(design::SPACE_3),
-                centre - icon / 2.0,
-                icon,
-                icon,
-            ),
-            ink,
-        );
-        painter.text(
-            label,
-            pen,
-            ink,
-            Rect {
-                left: line.left + painter.px(design::SPACE_3) + icon + painter.px(design::SPACE_3),
-                ..line
-            },
-        );
-        if painter.focused(&target) {
-            painter.focus_ring(line, painter.px(design::RADIUS_SMALL));
-        }
-        painter.answers(target, line);
     }
 }

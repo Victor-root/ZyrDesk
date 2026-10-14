@@ -11,7 +11,8 @@ use std::time::Instant;
 use windows_sys::Win32::Foundation::{HWND, LPARAM};
 
 use crate::home::act::act;
-use crate::home::state::{Hit, Scroller, Target};
+use crate::home::state::{Hit, Menu, Scroller, Target};
+use crate::home::ui::fields::{self, Field};
 use crate::home::window::{invalidate, program, scale};
 use crate::shell::shortcuts::{Combination, Doing, Held};
 
@@ -117,7 +118,12 @@ pub fn presses(window: HWND, (x, y): (i32, i32)) {
     // A click beside an open menu only closes it: what is under it was
     // not aimed at.
     if let Some((open, _)) = state.menu.clone() {
-        let in_the_menu = matches!(&target, Some(Target::Offer(fingerprint, _) | Target::CardMenu(fingerprint)) if *fingerprint == open);
+        let in_the_menu = match (&target, &open) {
+            (Some(Target::Menu(menu)), _) => *menu == open,
+            (Some(Target::Offer(fingerprint, _)), Menu::Computer(of)) => fingerprint == of,
+            (Some(Target::Narrow(_)), Menu::Filter) => true,
+            _ => false,
+        };
         if !in_the_menu {
             state.menu = None;
             drop(state);
@@ -195,8 +201,8 @@ pub fn wheel(notches: f32, across: bool) {
 /// What a key does, and whether it was taken.
 pub fn key_down(key: u32, with: LPARAM) -> bool {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        GetKeyState, VK_END, VK_ESCAPE, VK_HOME, VK_NEXT, VK_PRIOR, VK_RETURN, VK_SHIFT, VK_SPACE,
-        VK_TAB,
+        GetKeyState, VK_CONTROL, VK_END, VK_ESCAPE, VK_HOME, VK_NEXT, VK_PRIOR, VK_RETURN,
+        VK_SHIFT, VK_SPACE, VK_TAB,
     };
 
     let Some(app) = program() else {
@@ -207,6 +213,21 @@ pub fn key_down(key: u32, with: LPARAM) -> bool {
     let listening = crate::home::state().listening;
     if let Some(doing) = listening {
         return combination(&app, doing, key, with);
+    }
+    // SAFETY: a question about this thread's keyboard.
+    let ctrl = unsafe { GetKeyState(i32::from(VK_CONTROL)) } < 0;
+    if ctrl && key == u32::from(b'K') {
+        let free = {
+            let mut state = crate::home::state();
+            // The bar on the left, unfolded, hides the search.
+            state.drawer = false;
+            state.dialog.is_none() && state.opening.is_none()
+        };
+        if free {
+            fields::focus(Field::Search);
+            invalidate();
+        }
+        return true;
     }
     match key as u16 {
         VK_TAB => {

@@ -4759,6 +4759,21 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Des dunes lisses, sans marches, dans le bandeau, la barre de gauche et les cartes.
 
+## D310. La page « Ordinateurs », la recherche, le filtre et les deux vues (2026-10-14, pendant MZ)
+
+**Pourquoi.** L'accueil ne montre que les ordinateurs qui tiennent dans la fenêtre ; « Voir tout », la recherche, le filtre et les vues de la barre du haut étaient dessinés grisés depuis [D280](#d280-le-nouvel-accueil-remplace-lancien-dune-seule-pièce-2026-10-14-pendant-mz).
+
+**Ce qui est fait.**
+- Une page « Ordinateurs » dans la barre de gauche : tous les ordinateurs connus, avec « Ajouter un ordinateur ». Les cartes, la vue en liste et les menus vivent dans `home/pages/computers.rs`, que l'accueil et cette page partagent.
+- La recherche est un vrai champ de Windows, posé dans la barre du haut pour toute la vie de la fenêtre, à côté de ceux des dialogues qui naissent et meurent avec eux. Ctrl+K y mène. Tant qu'un dialogue ou la barre de gauche dépliée la couvre, le champ est rangé et son texte dessiné à sa place : un champ du système passerait par-dessus. Entrée mène à la page « Ordinateurs », Échap vide la recherche. Tapée depuis une page sans ordinateurs, elle mène aussi à leur page.
+- Le filtre ouvre un menu : tous, en ligne, hors ligne, réseau local, Internet. En ligne et hors ligne suivent la pastille de la carte. Choisi autre que « Tous », le filtre se colore.
+- Chaque mot tapé doit se trouver dans le nom ou l'adresse, sans tenir compte des majuscules. Ce tri est un calcul pur, rangé avec la présence dans `zyr-session` et essayé sur tout système.
+- Deux vues : la grille de cartes, ou une liste de lignes (image, nom, étiquettes, menu, « Se connecter »). Le choix est gardé dans `home-layout.conf`, lu au démarrage et écrit loin du fil qui dessine.
+- La recherche et le filtre s'appliquent aussi aux ordinateurs de l'accueil ; quand ils n'en laissent aucun, une carte le dit, avec « Tout afficher ». La dernière place de l'accueil, quand tout ne tient pas, mène à la page.
+- Le texte de la recherche ne parle plus de contacts : ils viendront avec le partage entre comptes.
+
+**Ce qui se voit.** « Ordinateurs », « Voir tout », la recherche, le filtre et les deux vues perdent leur gris.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

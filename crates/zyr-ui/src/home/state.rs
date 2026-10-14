@@ -10,6 +10,7 @@ use std::time::Instant;
 use zyr_draw::Rect;
 use zyr_draw::motion::Motion;
 use zyr_proto::fact::Fact;
+use zyr_session::presence::Narrowed;
 
 use crate::shell::shortcuts::Doing;
 use crate::shell::theme::Choice;
@@ -18,8 +19,26 @@ use crate::shell::theme::Choice;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Page {
     Home,
+    Computers,
     Settings,
     About,
+}
+
+/// How the computers are laid out: cards in a grid, or rows in a list.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+pub enum View {
+    #[default]
+    Grid,
+    List,
+}
+
+/// A menu open over the page.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Menu {
+    /// What can be done with the computer of this fingerprint.
+    Computer(String),
+    /// Which computers stay in view.
+    Filter,
 }
 
 /// What the picture kept under a cover was drawn from: the same again
@@ -140,8 +159,17 @@ pub enum Target {
     RenameThis,
     Details,
     Connect(String),
-    CardMenu(String),
+    /// Opens or closes a menu.
+    Menu(Menu),
     Offer(String, Offer),
+    /// The search at the top, which a click puts the keyboard in, and the
+    /// cross that empties it.
+    Search,
+    ClearSearch,
+    Narrow(Narrowed),
+    /// Empties the search and lifts the filter.
+    ShowAll,
+    View(View),
     AddComputer,
     Theme(Choice),
     Side(Pick, usize),
@@ -228,13 +256,19 @@ pub struct State {
     pub dialog: Option<Dialog>,
     /// The bar on the left, unfolded over a narrow window.
     pub drawer: bool,
-    /// The computer whose menu is open, and where its button was.
-    pub menu: Option<(String, Rect)>,
+    /// The menu open, and where the button that opened it was.
+    pub menu: Option<(Menu, Rect)>,
     pub opening: Option<Opening>,
     pub notice: Option<Notice>,
     /// What went wrong in the open dialog, said inside it rather than
     /// at the bottom of the window, where the dialog would hide it.
     pub trouble: Option<String>,
+
+    /// What the computers are narrowed to: the words searched for, the
+    /// filter, and how they are laid out.
+    pub search: String,
+    pub narrowed: Narrowed,
+    pub view: View,
 
     /// What the last frame laid down, the last laid on top, and where
     /// the hand was last seen over the window.
@@ -305,6 +339,9 @@ impl State {
             opening: None,
             notice: None,
             trouble: None,
+            search: String::new(),
+            narrowed: Narrowed::All,
+            view: View::Grid,
             hits: Vec::new(),
             pointer: None,
             hover: None,

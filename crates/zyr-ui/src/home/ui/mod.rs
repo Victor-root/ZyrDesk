@@ -23,7 +23,7 @@ use crate::home::seen::Seen;
 use crate::home::state::{Hit, Kept, Scroller, State, Target};
 use crate::shell::app::App;
 
-pub use widgets::{Button, Kind, SIDES_HEIGHT, SWITCH as SWITCH_SIZE};
+pub use widgets::{Button, Kind, SIDES_HEIGHT, SWITCH as SWITCH_SIZE, TAG as TAG_HEIGHT};
 
 /// How long a hover takes to come and go: the design system's short
 /// beat.
@@ -232,6 +232,12 @@ impl<'a> Painter<'a> {
         let taken = inside(self);
         self.silent = before;
         taken
+    }
+
+    /// Whether what is drawn now answers the hand: not under a dialog, nor
+    /// under the bar on the left unfolded.
+    pub fn is_live(&self) -> bool {
+        self.live
     }
 
     /// Whether the walk only measures.
