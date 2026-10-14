@@ -67,9 +67,9 @@ enum UserAction {
         #[arg(long)]
         password_stdin: bool,
     },
-    /// Gives an account another name, its devices and sign-ins kept.
-    /// The devices connected learn it when they next connect: restart
-    /// the server for them to learn it at once.
+    /// Renames an account, keeping its devices and sign-ins.
+    /// Connected devices learn the new name at their next connection:
+    /// restart the server for them to learn it at once.
     Rename {
         username: String,
         new_name: String,
