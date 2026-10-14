@@ -47,7 +47,8 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_EXTEND_MODE_CLAMP, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
     D2D1_LINE_JOIN_ROUND, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE,
     D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES,
-    D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1CreateFactory,
+    D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
+    D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory,
     ID2D1Bitmap, ID2D1DCRenderTarget, ID2D1Factory, ID2D1PathGeometry, ID2D1SolidColorBrush,
     ID2D1StrokeStyle,
 };
@@ -467,6 +468,11 @@ impl Canvas {
     /// lets what is behind show through; a background from the design
     /// system for an ordinary window, which is opaque and has nothing
     /// behind it.
+    ///
+    /// On an opaque background the text is smoothed the way Windows
+    /// smooths its own (ClearType), which reads sharper than shades of
+    /// grey. ClearType needs to know what lies under each letter, so a
+    /// canvas that lets the screen show through keeps the grey.
     pub fn begin(&self, background: Colour) {
         let whole = RECT {
             left: 0,
@@ -478,6 +484,12 @@ impl Canvas {
         // length of the drawing as the documentation asks.
         unsafe {
             let _ = self.target.BindDC(self.surface, &whole);
+            self.target
+                .SetTextAntialiasMode(if background.alpha >= 1.0 {
+                    D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE
+                } else {
+                    D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE
+                });
             self.target.BeginDraw();
             self.target.Clear(Some(&tint(background)));
         }

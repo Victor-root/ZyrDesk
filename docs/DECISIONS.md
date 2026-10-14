@@ -4549,6 +4549,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Un accueil plus court, sans doublon, et les ordinateurs en ligne en premier.
 
+## D284. Le texte de l'accueil gagne en netteté et en contraste (2026-10-14, pendant MZ)
+
+**Pourquoi.** Victor, à l'usage : le texte paraissait transparent et pas net.
+
+**Ce qui est fait.** Deux causes, deux réponses. Le texte était lissé en niveaux de gris, parce que la toile de dessin garde une transparence ; une toile posée sur un fond opaque, comme l'accueil, lisse désormais son texte avec ClearType, comme Windows le fait pour le sien. Les fenêtres transparentes (bouton flottant, menu de session) gardent les niveaux de gris, seuls justes quand l'écran se voit au travers. Et les deux gris secondaires de la charte se rapprochent du texte principal, en sombre (`#bcc2cf`, `#8a92a4`) comme en clair (`#3a4150`, `#5f6778`) ; le script d'installation, qui reprend la palette, suit.
+
+**Ce qui se voit.** Un texte plus noir en clair, plus blanc en sombre, et des lettres plus nettes dans l'accueil.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -504,8 +504,8 @@ Ce qui change, pour que ce soit ZyrDesk et non Proxmox : la palette, tirée de [
 | Accent | `#efb536` | 214 | Logo, titres des panneaux de récapitulatif et d'état |
 | Accent vif | `#f8cd6a` | 221 | Sous-titre, chevron `›`, `?` des questions, roue |
 | Accent sourd | `#6a4a12` | 94 | Le trait sous la bannière |
-| Texte doux | `#a0a7b8` | 248 | Panneaux de contexte, mentions secondaires, défauts entre crochets |
-| Texte faible | `#6b7385` | 243 | Indications, « · par Victor-root » |
+| Texte doux | `#bcc2cf` | 250 | Panneaux de contexte, mentions secondaires, défauts entre crochets |
+| Texte faible | `#8a92a4` | 245 | Indications, « · par Victor-root » |
 | En ligne | `#34d399` | 78 | `✓`, panneau final |
 | Attention | `#f97316` | 208 | `⚠`, panneaux d'avertissement, `?` d'une confirmation qui engage |
 | Erreur | `#f87171` | 203 | `✗` |

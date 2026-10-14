@@ -26,8 +26,8 @@
 
   /* Texts, by decreasing importance. */
   --text: #e8eaf0;
-  --text-soft: #a0a7b8;
-  --text-faint: #6b7385;
+  --text-soft: #bcc2cf;
+  --text-faint: #8a92a4;
 
   /* The only accent colour, kept for the main action and for what is
      alive. Using it anywhere else cheapens it.
@@ -141,8 +141,8 @@
   --border-strong: #cdd2dd;
 
   --text: #12151d;
-  --text-soft: #4d5566;
-  --text-faint: #798091;
+  --text-soft: #3a4150;
+  --text-faint: #5f6778;
 
   /* The same gold, brought down until it reads on white: the gold of the
      logo is too light there to carry text, and an accent nobody can read
