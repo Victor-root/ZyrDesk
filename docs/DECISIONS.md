@@ -4735,6 +4735,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Un bloc d'accès en verre, des cartes aux dunes toutes différentes, et le processeur écrit en entier.
 
+## D307. Le paysage passe à une version plus nette (2026-10-14, pendant MZ)
+
+**Pourquoi.** Les images du paysage ([D303](#d303-un-paysage-de-dunes-habille-le-bandeau-et-la-barre-de-gauche-2026-10-14-pendant-mz)) faisaient 1672 pixels de large et se voyaient agrandies sur un grand écran. Victor les a agrandies proprement.
+
+**Ce qui est fait.** Les deux images sont remplacées par leurs versions agrandies, telles qu'elles sont arrivées (2000 pixels de large). Leurs copies floutées, pour le verre, sont faites au quart de cette taille : floutée, une image ne perd rien à être petite, et elle tient seize fois moins de place en mémoire.
+
+**Ce qui se voit.** Des dunes plus nettes dans le bandeau, la barre de gauche et les cartes.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
