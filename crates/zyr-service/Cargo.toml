@@ -21,7 +21,7 @@ zyr-system.workspace = true
 zyr-win32.workspace = true
 zyr-broker.workspace = true
 zyr-account.workspace = true
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
+tokio = { version = "1.53.3", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
 
 [dev-dependencies]
 # The account link is tried against a real server, in the same process,

@@ -14,7 +14,7 @@ testing = []
 
 [dependencies]
 bytes = "1.12.1"
-tokio = { version = "1.53.1", features = ["net", "io-util", "time"] }
+tokio = { version = "1.53.3", features = ["net", "io-util", "time"] }
 zyr-proto.workspace = true
 
 [target.'cfg(windows)'.dependencies]
@@ -26,4 +26,4 @@ windows-sys = { version = "0.61.2", features = [
 ] }
 
 [dev-dependencies]
-tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread"] }

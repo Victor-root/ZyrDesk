@@ -14,12 +14,12 @@ quinn = "0.11.12"
 # as soon as the queue overflows once, then panics in the middle of a
 # send, which kills the session without a word. 0.11.18 keeps that
 # bookkeeping in the queue alone. The zyr-transport burst test guards it.
-quinn-proto = "0.11.18"
+quinn-proto = "0.11.19"
 rcgen = "0.14.10"
 ring = "0.17.14"
-rustls = { version = "0.23.45", default-features = false, features = ["ring", "std"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
 rustls-webpki = { version = "0.103.15", features = ["ring"] }
 socket2 = "0.6.5"
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "macros", "io-util", "time", "sync"] }
+tokio = { version = "1.53.3", features = ["rt-multi-thread", "net", "macros", "io-util", "time", "sync"] }
 webpki-roots = "1.0.9"
 zyr-proto.workspace = true

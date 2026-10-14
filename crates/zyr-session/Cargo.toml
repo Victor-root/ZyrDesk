@@ -12,4 +12,4 @@ zyr-control.workspace = true
 # The player's own words for what it wants, and the FFmpeg it loads.
 zyr-player.workspace = true
 zyr-sound.workspace = true
-tokio = { version = "1.53.1", features = ["rt", "net", "time"] }
+tokio = { version = "1.53.3", features = ["rt", "net", "time"] }

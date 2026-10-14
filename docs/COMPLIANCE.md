@@ -12,7 +12,7 @@
 | x264, compilé dans les DLL FFmpeg | GPL version 2 ou ultérieure | Commit épinglé de sa branche `stable` |
 | Opus 1.6.1, compilé dans les DLL FFmpeg | BSD | Notice à conserver |
 | libvpl 2.17.0 (répartiteur Intel), compilé dans les DLL FFmpeg | MIT | Notice à conserver |
-| En-têtes AMF 1.5.2 (AMD) | MIT | Seuls les en-têtes servent à la compilation ; le pilote AMD est celui de la machine |
+| En-têtes AMF 1.5.3 (AMD) | MIT | Seuls les en-têtes servent à la compilation ; le pilote AMD est celui de la machine |
 | nv-codec-headers n13.0.19.1 (NVIDIA) | MIT | Même chose : le pilote NVIDIA est celui de la machine. Chaque en-tête porte sa notice, recopiée dans un seul fichier |
 | Virtual-Display-Driver (écran virtuel) | MIT | Signé par SignPath Foundation. Redistribué **tel quel** dans `vendor/ecran-virtuel/` avec sa licence, jamais modifié ni recompressé : ses trois fichiers sont signés comme un tout. Voir [ECRAN-VIRTUEL.md](ECRAN-VIRTUEL.md) |
 
@@ -26,7 +26,7 @@ Le produit client/hôte est entièrement sous GPLv3, par choix : c'est cohérent
 
 ## 3. Obligations concrètes (liste de contrôle)
 
-- Publier le code source correspondant de CHAQUE binaire distribué. Pour ZyrDesk, c'est le dépôt au commit de la publication. Pour les DLL FFmpeg, ce sont les sources exactes épinglées en tête de `packaging/ffmpeg/build.sh` (FFmpeg 9.0.2, x264 au commit noté, Opus 1.6.1, nv-codec-headers n13.0.19.1, en-têtes AMF 1.5.2, libvpl 2.17.0), plus ce script, qui les recompile. Chaque publication qui contient les DLL joint les archives de ces sources, plutôt que de compter sur les sites d'origine, qui peuvent changer ou disparaître ; et elles restent disponibles aussi longtemps que la publication est distribuée. Le détail est dans `vendor/ffmpeg/README.md`.
+- Publier le code source correspondant de CHAQUE binaire distribué. Pour ZyrDesk, c'est le dépôt au commit de la publication. Pour les DLL FFmpeg, ce sont les sources exactes épinglées en tête de `packaging/ffmpeg/build.sh` (FFmpeg 9.0.2, x264 au commit noté, Opus 1.6.1, nv-codec-headers n13.0.19.1, en-têtes AMF 1.5.3, libvpl 2.17.0), plus ce script, qui les recompile. Chaque publication qui contient les DLL joint les archives de ces sources, plutôt que de compter sur les sites d'origine, qui peuvent changer ou disparaître ; et elles restent disponibles aussi longtemps que la publication est distribuée. Le détail est dans `vendor/ffmpeg/README.md`.
 - Conserver toutes les notices de copyright et fichiers de licence des composants dans ce qui est distribué. `vendor/ffmpeg/licenses/` accompagne les DLL partout où elles sont livrées. Le pilote d'écran virtuel aussi : sa licence MIT voyage avec lui dans `vendor/ecran-virtuel/LICENSE`, et exige de conserver son avis de copyright dans toute redistribution.
 - Ne modifier aucune source tierce sans le dire. Aujourd'hui aucune ne l'est : FFmpeg et ses dépendances sont compilés tels que publiés, seules les options de compilation sont les nôtres, écrites dans le script et rapportées par les DLL elles-mêmes (`avcodec_configuration()`).
 - Écran « À propos » dans l'application : versions, crédits (FFmpeg, x264, Opus, l'écran virtuel), licences complètes consultables, lien vers le code source.

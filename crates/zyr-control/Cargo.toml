@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-tokio = { version = "1.53.1", features = ["net", "io-util", "rt"] }
+tokio = { version = "1.53.3", features = ["net", "io-util", "rt"] }
 zyr-proto.workspace = true
 zyr-broker.workspace = true
 
@@ -17,4 +17,4 @@ zyr-broker.workspace = true
 zyr-link.workspace = true
 
 [dev-dependencies]
-tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread"] }

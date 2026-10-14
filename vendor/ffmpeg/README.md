@@ -65,9 +65,9 @@ encodeur.
 
 | Fichier | Taille | Empreinte SHA-256 |
 |---|---|---|
-| `avcodec-63.dll` | 7 273 984 octets | `dc77a3fe6e89911728f79aa8b39d894b1df6efdf1e28f95a10607f6b04439bce` |
-| `avutil-61.dll` | 2 363 392 octets | `5a4937b2d3d56700b9e27cb89aa803675a7e50d7ddaeb878eed97a9c035db70b` |
-| `swresample-7.dll` | 139 264 octets | `06245d16116ecf1fd0a9f65ef03ff1c0c366eaa5765326d07ed16af1f86200c4` |
+| `avcodec-63.dll` | 7 273 984 octets | `e6912ba8216ff616887565ef0e4d66873884abd923ae70b6ed76aa9e783309b2` |
+| `avutil-61.dll` | 2 363 392 octets | `b89a0fe14b34ff4132ef4017a786510d2d0a4ad1baed025af305b34ce2914857` |
+| `swresample-7.dll` | 139 264 octets | `f3d6e9de010827436760ee719780e4345f0e5e4fae9f4b25c085f482441f9392` |
 
 Chaque compilation inscrit sa date et son dossier de travail dans les
 fichiers : une nouvelle compilation donne donc d'autres empreintes, même
@@ -94,7 +94,7 @@ script refuse de terminer si une autre dépendance apparaît.
 | x264 | branche `stable` (version 165) | commit `b35605ace3ddf7c1a5d67a2eb553f034aef41d55` de https://code.videolan.org/videolan/x264 |
 | Opus | 1.6.1 | `opus-1.6.1.tar.gz`, SHA-256 `6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1` (identique à celle publiée par Xiph) |
 | nv-codec-headers (NVIDIA) | n13.0.19.1 | commit `88fee5c37318c991a8762d423530f91681e32e3a` de https://github.com/FFmpeg/nv-codec-headers |
-| En-têtes AMF (AMD) | 1.5.2 | `AMF-headers-v1.5.2.tar.gz`, SHA-256 `d3c12eb324edf05e214608b6a395a51dd95770ed9d45520185d6c3a206811c99` ; licence prise au commit `eadd00804d5f7e5cd8c85d540073198312870776` de https://github.com/GPUOpen-LibrariesAndSDKs/AMF |
+| En-têtes AMF (AMD) | 1.5.3 | `AMF-headers-v1.5.3.tar.gz`, SHA-256 `570c8f6593b8c24a6e47a0a9c59b216a7198138e660ba4011590ae913343d5c3` ; licence prise au commit `8c648005e07d4309033282bfd9947df2c7e76104` de https://github.com/GPUOpen-LibrariesAndSDKs/AMF |
 | libvpl (Intel) | 2.17.0 | commit `d77f9195cf495b937631607333288fd917ae8939` de https://github.com/intel/libvpl, répartiteur seul |
 
 Chacune était la dernière version stable au moment de la compilation,
@@ -119,7 +119,7 @@ Options passées à FFmpeg, telles que les DLL les rapportent
 --enable-decoder='h264,hevc,av1,opus' --enable-parser='h264,hevc,av1,opus'
 --enable-encoder='libx264,libopus' --target-os=mingw32 --arch=x86_64
 --cross-prefix=x86_64-w64-mingw32-
---extra-cflags=-I/tmp/zyrdesk-ffmpeg.gtN1RG/deps/include
+--extra-cflags=-I/tmp/zyrdesk-ffmpeg.g9b68o/deps/include
 --extra-ldflags=-static --extra-libs=-lstdc++ --enable-w32threads
 --enable-d3d11va --enable-ffnvcodec --enable-nvenc --enable-amf
 --enable-libvpl --enable-mediafoundation

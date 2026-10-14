@@ -21,7 +21,9 @@ windows = { version = "0.62.2", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 # The points and matrices Direct2D uses: a separate crate of the family,
-# already in the project's lock file since `windows` depends on it.
+# already in the project's lock file since `windows` depends on it. Held
+# at the version `windows` 0.62.2 asks for: its 0.100 would be another
+# crate to `windows`, whose points it could no longer pass (D221).
 windows-numerics = "0.3.1"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",

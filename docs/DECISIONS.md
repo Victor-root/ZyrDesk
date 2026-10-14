@@ -4466,6 +4466,20 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Des mouvements réguliers, une image par rafraîchissement, au prix d'un peu d'attente pour les images arrivées dans les 3 dernières millisecondes avant un rafraîchissement.
 
+## D278. Les outils et les dépendances remis à leur dernière version avant le nouvel accueil (2026-10-14, pendant MZ)
+
+> Applique [D221](#d221-les-outils-et-les-dépendances-suivent-leur-dernière-version-stable-2026-09-24-pendant-m6).
+
+**Pourquoi maintenant.** Le nouvel accueil va être écrit de zéro et essayé de bout en bout : c'est le moment de tout mettre à jour, pour ne pas avoir à tout réessayer plus tard à cause d'un outil resté en arrière.
+
+**Le relevé du jour.** Rust 1.99.0, que `rust-toolchain.toml` (« stable ») et la CI prennent d'eux-mêmes ; aucune alerte nouvelle de clippy, ni pour Linux ni pour Windows. Dix bibliothèques avaient une version de retard, sans rien qui casse : `tokio` 1.53.3, `hyper` 1.12.0, `rustls` 0.23.46, `quinn-proto` 0.11.19, `mdns-sd` 0.21.5, `serde_json` 1.0.154, `sha2` 0.11.1, `toml` 1.1.8, `winresource` 0.1.34, `embed-resource` 3.0.12. `Cargo.lock` suit, `cargo deny` ne trouve rien. Les actions de la CI et `cargo-deny` 0.20.2 étaient déjà à jour.
+
+**FFmpeg recompilé.** Les en-têtes AMD passent de 1.5.2 à 1.5.3, la seule source du moteur qui avait du retard : la différence se résume à l'identifiant d'une interface qu'AMD a corrigé. Les DLL de `vendor/ffmpeg` sont refaites par `packaging/ffmpeg/build.sh`, avec les mêmes outils qu'avant ; elles ont les mêmes tailles et demandent les mêmes bibliothèques à Windows. FFmpeg 9.0.2, x264, Opus 1.6.1 et libvpl 2.17.0 étaient déjà les derniers.
+
+**Les retards qui restent, inchangés depuis D221.** `windows-core` et `windows-numerics` restent aux versions qu'exige `windows` 0.62.2, le plus récent ; la raison est désormais écrite aussi dans chaque manifeste qui les nomme. `generic-array` et `matchit` restent fixés par des bibliothèques tierces. Les en-têtes NVIDIA restent en 13.0, pour les GeForce 10.
+
+**Ce qui se voit.** Rien : le produit fait la même chose, avec des fondations à jour.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

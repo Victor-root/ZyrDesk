@@ -45,4 +45,6 @@ windows = { version = "0.62.2", features = [
 # What the macro that builds a COM object writes: it names this crate by
 # its own name, and does not find it under the family's. It is the same
 # one, republished by `windows`, already in the repository's lock file.
+# Held at the version `windows` 0.62.2 asks for: its 0.100 would be a
+# second COM runtime beside the one `windows` speaks (D221).
 windows-core = "0.62.2"

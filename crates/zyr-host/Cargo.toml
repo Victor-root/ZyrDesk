@@ -13,7 +13,7 @@ repository.workspace = true
 fake = []
 
 [dependencies]
-tokio = { version = "1.53.1", features = ["macros", "rt", "sync"] }
+tokio = { version = "1.53.3", features = ["macros", "rt", "sync"] }
 zyr-codec.workspace = true
 zyr-link.workspace = true
 zyr-media.workspace = true
@@ -57,6 +57,6 @@ windows = { version = "0.62.2", features = [
 ] }
 
 [dev-dependencies]
-tokio = { version = "1.53.1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.53.3", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 zyr-codec = { workspace = true, features = ["testing"] }
 zyr-link = { workspace = true, features = ["testing"] }

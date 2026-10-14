@@ -39,11 +39,11 @@ opus_sha256=6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1
 nv_codec_headers_tag=n13.0.19.1
 nv_codec_headers_commit=88fee5c37318c991a8762d423530f91681e32e3a
 
-amf_version=1.5.2
-amf_headers_sha256=d3c12eb324edf05e214608b6a395a51dd95770ed9d45520185d6c3a206811c99
+amf_version=1.5.3
+amf_headers_sha256=570c8f6593b8c24a6e47a0a9c59b216a7198138e660ba4011590ae913343d5c3
 # The headers archive carries no licence file; this is the one of the
 # repository at the commit the release was made from.
-amf_commit=eadd00804d5f7e5cd8c85d540073198312870776
+amf_commit=8c648005e07d4309033282bfd9947df2c7e76104
 amf_license_sha256=eb297397aaa455b5668ab67d216b83828466152dab123fa92384c6ec16b74170
 
 libvpl_tag=v2.17.0

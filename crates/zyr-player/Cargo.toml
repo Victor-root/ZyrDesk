@@ -11,7 +11,7 @@ repository.workspace = true
 # video and sound threads without a copy.
 bytes = "1.12.1"
 # The link runs on a small runtime of its own, one thread.
-tokio = { version = "1.53.1", features = ["rt", "sync", "time", "macros"] }
+tokio = { version = "1.53.3", features = ["rt", "sync", "time", "macros"] }
 zyr-codec.workspace = true
 zyr-link.workspace = true
 zyr-media.workspace = true
@@ -55,12 +55,14 @@ windows = { version = "0.62.2", features = [
 # What the macro that builds a COM object writes (the object Windows
 # tells of another default sound card): it names this crate by its own
 # name. The same one `windows` republishes, already in the lock file.
+# Held at the version `windows` 0.62.2 asks for: its 0.100 would be a
+# second COM runtime beside the one `windows` speaks (D221).
 windows-core = "0.62.2"
 
 [dev-dependencies]
 # The end-to-end tests carry both ends of the tunnel on a runtime of
 # their own, with worker threads as two computers would have.
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.53.3", features = ["rt-multi-thread", "sync", "time"] }
 # The real host engine, on stand-ins for the screen, the keyboard and
 # mouse and the sound card, at the other end of a real tunnel.
 zyr-host = { workspace = true, features = ["fake"] }
