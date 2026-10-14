@@ -46,7 +46,7 @@ Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est des
 
 | Élément | État | Note |
 |---|---|---|
-| « Bienvenue, {prénom} » | Oui | Le nom du compte ZyrDesk ; sans serveur, celui de la session Windows ou Linux |
+| « Bienvenue {prénom} » | Oui | Le nom du compte ZyrDesk ; sans serveur, celui de la session Windows ou Linux |
 | Cet ordinateur, sous le message d'accueil | Oui | Voir la section 5 : il vit dans le bandeau ([D283](DECISIONS.md)) |
 | Bloc « Accès distant » : l'interrupteur | Oui | Active ou coupe l'accès distant |
 | Bloc « Accès distant » : « Cet ordinateur accepte les connexions à distance », ou ce qui l'empêche | Oui | |

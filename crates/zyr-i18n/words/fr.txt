@@ -283,7 +283,7 @@ bar.all = Tous
 soon.tip = Bientôt
 
 # The home page.
-home.hello = Bienvenue, {name}
+home.hello = Bienvenue {name}
 home.network = Réseau
 home.connected = Connecté
 home.local_only = Réseau local uniquement

@@ -286,7 +286,7 @@ bar.all = All
 soon.tip = Coming soon
 
 # The home page.
-home.hello = Welcome, {name}
+home.hello = Welcome {name}
 home.network = Network
 home.connected = Connected
 home.local_only = Local network only
