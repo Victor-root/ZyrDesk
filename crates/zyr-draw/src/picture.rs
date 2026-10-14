@@ -1,10 +1,8 @@
-//! A picture read from a file, at the size it will be shown, or from the
-//! program itself.
+//! A picture read from a file, at the size it will be shown.
 //!
-//! The wallpaper of a computer, shown on its card, and the picture the
-//! home window lies on. Read by the Windows Imaging Component, which ships
-//! with Windows and reads every format a wallpaper comes in, so nothing
-//! is bundled to read them.
+//! The wallpaper of a computer, shown on its card. Read by the Windows
+//! Imaging Component, which ships with Windows and reads every format a
+//! wallpaper comes in, so nothing is bundled.
 //!
 //! Brought down once, when it is read, to the size it will be shown at,
 //! and never up: a four thousand pixel photograph drawn into a card two
@@ -23,8 +21,8 @@ mod reading {
 
     use windows::Win32::Foundation::GENERIC_READ;
     use windows::Win32::Graphics::Imaging::{
-        CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICBitmapDecoder,
-        IWICImagingFactory, WICBitmapDitherTypeNone, WICBitmapInterpolationModeHighQualityCubic,
+        CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICImagingFactory,
+        WICBitmapDitherTypeNone, WICBitmapInterpolationModeHighQualityCubic,
         WICBitmapPaletteTypeCustom, WICDecodeMetadataCacheOnDemand,
     };
     use windows::Win32::System::Com::{
@@ -55,49 +53,17 @@ mod reading {
         /// can be gone, or be a format the system has no reader for, and
         /// the card then shows something else rather than nothing.
         pub fn read(path: &Path, room: (u32, u32)) -> Option<Picture> {
-            with_the_system(|| {
-                decoded(
-                    |factory| {
-                        // SAFETY: an object of the system, and a name that
-                        // outlives the call.
-                        unsafe {
-                            factory.CreateDecoderFromFilename(
-                                &HSTRING::from(path.as_os_str()),
-                                None,
-                                GENERIC_READ,
-                                WICDecodeMetadataCacheOnDemand,
-                            )
-                        }
-                        .ok()
-                    },
-                    room,
-                )
-            })
-        }
-
-        /// The picture written in these bytes, at its own size: one the
-        /// program carries, made for what it is drawn on.
-        pub fn decode(bytes: &'static [u8]) -> Option<Picture> {
-            with_the_system(|| {
-                decoded(
-                    |factory| {
-                        // SAFETY: objects of the system, and bytes that
-                        // live as long as the program.
-                        unsafe {
-                            let stream = factory.CreateStream().ok()?;
-                            stream.InitializeFromMemory(bytes).ok()?;
-                            factory
-                                .CreateDecoderFromStream(
-                                    &stream,
-                                    std::ptr::null(),
-                                    WICDecodeMetadataCacheOnDemand,
-                                )
-                                .ok()
-                        }
-                    },
-                    (u32::MAX, u32::MAX),
-                )
-            })
+            // SAFETY: the threading of this thread, said once for what
+            // follows and taken back before leaving. Already said another
+            // way, it stands as it is, and the reading works all the same.
+            let started = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
+            let read = decoded(path, room);
+            if started {
+                // SAFETY: the `CoInitializeEx` above, which succeeded, and
+                // after every object it served has been let go.
+                unsafe { CoUninitialize() };
+            }
+            read
         }
 
         /// Its width and height, in real pixels.
@@ -106,33 +72,21 @@ mod reading {
         }
     }
 
-    /// Runs `read` with the system's objects at hand on this thread.
-    fn with_the_system(read: impl FnOnce() -> Option<Picture>) -> Option<Picture> {
-        // SAFETY: the threading of this thread, said once for what follows
-        // and taken back before leaving. Already said another way, it
-        // stands as it is, and the reading works all the same.
-        let started = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
-        let read = read();
-        if started {
-            // SAFETY: the `CoInitializeEx` above, which succeeded, and
-            // after every object it served has been let go.
-            unsafe { CoUninitialize() };
-        }
-        read
-    }
-
-    /// The reading itself, from what `open` opens, every object of which
-    /// is let go when it returns.
-    fn decoded(
-        open: impl FnOnce(&IWICImagingFactory) -> Option<IWICBitmapDecoder>,
-        room: (u32, u32),
-    ) -> Option<Picture> {
+    /// The reading itself, every object of which is let go when it returns.
+    fn decoded(path: &Path, room: (u32, u32)) -> Option<Picture> {
         // SAFETY: objects of the system, each held for the length of this
         // call, and pixels copied into a buffer of exactly the size asked.
         unsafe {
             let factory: IWICImagingFactory =
                 CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).ok()?;
-            let decoder = open(&factory)?;
+            let decoder = factory
+                .CreateDecoderFromFilename(
+                    &HSTRING::from(path.as_os_str()),
+                    None,
+                    GENERIC_READ,
+                    WICDecodeMetadataCacheOnDemand,
+                )
+                .ok()?;
             let frame = decoder.GetFrame(0).ok()?;
             let (mut wide, mut high) = (0u32, 0u32);
             frame.GetSize(&mut wide, &mut high).ok()?;

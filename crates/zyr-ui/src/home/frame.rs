@@ -10,7 +10,6 @@ use std::time::{Duration, Instant};
 
 use zyr_draw::design;
 use zyr_draw::icons::{self, Icon};
-use zyr_draw::ribbons::Place;
 use zyr_draw::{Align, Rect};
 use zyr_i18n::say;
 
@@ -316,7 +315,9 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
 /// bottom the person, whether everything is up to date, and the build.
 fn sidebar(painter: &mut Painter, at: Rect) {
     let colours = painter.colours;
-    painter.ribbons(Place::Bar, at, 0.0, colours.surface_2);
+    painter.fill(at, 0.0, colours.surface_2);
+    painter.halo(at, 0.0, (0.0, 0.0), (1.8, 0.4), colours.halo_gold);
+    painter.halo(at, 0.0, (1.0, 1.0), (1.6, 0.45), colours.halo_cool);
     painter.upright(
         at.right - painter.px(1.0),
         at.top,

@@ -17,7 +17,6 @@ use std::time::Duration;
 
 use zyr_draw::design::{self, Colour, Palette, Shadow};
 use zyr_draw::icons::Icon;
-use zyr_draw::ribbons::Place;
 use zyr_draw::{Canvas, Pen, Picture, Rect, Scene};
 
 use crate::home::seen::Seen;
@@ -355,16 +354,27 @@ impl<'a> Painter<'a> {
         }
     }
 
-    /// The ribbons of this place of the window, covering the rounded
-    /// `at` under their veil; `plain` where they could not be read.
-    pub fn ribbons(&self, place: Place, at: Rect, radius: f32, plain: Colour) {
-        match zyr_draw::ribbons::ribbons(place, self.light) {
-            Some(picture) => {
-                self.picture(picture, at, radius);
-                self.fill(at, radius, self.colours.ribbon_veil);
-            }
-            None => self.fill(at, radius, plain),
+    /// A halo of light in the rounded `at`, its centre and how far it
+    /// reaches written in shares of `at`'s width and height.
+    pub fn halo(
+        &self,
+        at: Rect,
+        radius: f32,
+        centre: (f32, f32),
+        reach: (f32, f32),
+        colour: Colour,
+    ) {
+        if self.silent {
+            return;
         }
+        let (width, height) = size(at);
+        self.canvas.halo(
+            at,
+            radius,
+            (at.left + width * centre.0, at.top + height * centre.1),
+            (width * reach.0, height * reach.1),
+            colour,
+        );
     }
 
     pub fn picture(&self, picture: &Picture, at: Rect, radius: f32) {

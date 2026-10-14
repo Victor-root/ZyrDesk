@@ -9,7 +9,6 @@
 use zyr_control::Peer;
 use zyr_draw::design::{self, Colour};
 use zyr_draw::icons::{self, Icon};
-use zyr_draw::ribbons::Place;
 use zyr_draw::{Align, Rect};
 use zyr_i18n::say;
 use zyr_session::presence::{Presence, Road};
@@ -123,7 +122,9 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
         identity_top + identity_height + inside + if beside { 0.0 } else { painter.px(STRIP) };
     let card = Rect::at(at.left, at.top, width, height);
     let radius = painter.px(design::RADIUS_LARGE);
-    painter.ribbons(Place::Banner, card, radius, colours.surface_1);
+    painter.fill(card, radius, colours.surface_1);
+    painter.halo(card, radius, (0.82, 0.0), (0.55, 1.6), colours.halo_gold);
+    painter.halo(card, radius, (0.4, 1.15), (0.45, 1.1), colours.halo_cool);
     painter.stroke(card, radius, colours.border);
 
     painter.text(

@@ -4679,6 +4679,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Des rubans doux, au loin, sous un texte qui se lit.
 
+## D300. Le bandeau et la barre de gauche brillent de halos dégradés (2026-10-14, pendant MZ)
+
+**Pourquoi.** Les rubans, nets ([D298](#d298-des-rubans-de-satin-habillent-le-bandeau-et-la-barre-de-gauche-2026-10-14-pendant-mz)) puis floutés ([D299](#d299-les-rubans-sont-floutés-et-voilés-2026-10-14-pendant-mz)), n'ont pas plu. Victor demande des halos dégradés aux couleurs de ZyrDesk.
+
+**Ce qui est fait.** Les images des rubans quittent le dépôt, et avec elles ce qui ne servait qu'à elles : la lecture d'une image portée par le programme. Le bandeau et la barre de gauche gardent leur surface, et la toile y pose des halos, des dégradés circulaires d'une couleur vers rien (`Canvas::halo`) : l'or du logo (`--halo-gold`) en haut à droite du bandeau et en haut de la barre, et un bleu qui lui répond (`--halo-cool`) en bas. Dessinés à chaque image, ils ne coûtent qu'un remplissage chacun, sont nets à toute taille et suivent le thème.
+
+**Ce qui se voit.** Un bandeau et une barre de gauche baignés d'une lumière dorée et bleutée, discrète, sous un texte qui se lit.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
