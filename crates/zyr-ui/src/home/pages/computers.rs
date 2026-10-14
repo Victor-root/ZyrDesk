@@ -606,14 +606,14 @@ impl Tags {
     }
 }
 
-/// A dashed place saying something in the middle of where the computers
-/// go: an icon, a title, a few words and a button. Gives back its
+/// A dashed place saying something where a list has nothing to show: an
+/// icon, a title, a few words and what to do, if anything. Gives back its
 /// height, at least that of `at`.
-fn empty_place(
+pub fn empty_place(
     painter: &mut Painter,
     at: Rect,
     (icon, title, text): (&Icon, &str, &str),
-    (label, button_icon, target): (&str, &Icon, Target),
+    action: Option<(&str, &Icon, Target)>,
 ) -> f32 {
     let colours = painter.colours;
     let radius = painter.px(design::RADIUS);
@@ -623,13 +623,15 @@ fn empty_place(
     let pen = painter.caption().aligned(Align::Centre);
     let side = painter.px(36.0);
     let text_height = painter.height_of(text, pen, width);
+    let button = action
+        .as_ref()
+        .map_or(0.0, |_| painter.px(design::SPACE_4 + 38.0));
     let content = side
         + painter.px(design::SPACE_3)
         + painter.line(title_pen)
         + painter.px(design::SPACE_2)
         + text_height
-        + painter.px(design::SPACE_4)
-        + painter.px(38.0);
+        + button;
     let height = (content + inside * 2.0).max(size(at).1);
     let at = Rect {
         bottom: at.top + height,
@@ -658,18 +660,20 @@ fn empty_place(
         colours.text_soft,
         (centre - width / 2.0, y, width),
     );
-    y += text_height + painter.px(design::SPACE_4);
-    let button_width = painter.button_width(label, Some(button_icon));
-    painter.button(
-        Rect::at(
-            centre - button_width / 2.0,
-            y,
-            button_width,
-            painter.px(38.0),
-        ),
-        target,
-        Button::new(label, Kind::Primary).with_icon(button_icon),
-    );
+    if let Some((label, button_icon, target)) = action {
+        y += text_height + painter.px(design::SPACE_4);
+        let button_width = painter.button_width(label, Some(button_icon));
+        painter.button(
+            Rect::at(
+                centre - button_width / 2.0,
+                y,
+                button_width,
+                painter.px(38.0),
+            ),
+            target,
+            Button::new(label, Kind::Primary).with_icon(button_icon),
+        );
+    }
     height
 }
 
@@ -683,7 +687,7 @@ fn no_computer(painter: &mut Painter, at: Rect) -> f32 {
             &say!("home.no_computer"),
             &say!("home.no_computer_text"),
         ),
-        (&say!("adding.title"), &icons::PLUS, Target::AddComputer),
+        Some((&say!("adding.title"), &icons::PLUS, Target::AddComputer)),
     )
 }
 
@@ -697,11 +701,11 @@ fn nothing_found(painter: &mut Painter, at: Rect) -> f32 {
             &say!("computers.nothing_found"),
             &say!("computers.nothing_found_text"),
         ),
-        (
+        Some((
             &say!("computers.show_all"),
             &icons::COMPUTERS,
             Target::ShowAll,
-        ),
+        )),
     )
 }
 

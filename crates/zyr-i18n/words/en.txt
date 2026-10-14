@@ -329,7 +329,6 @@ home.contacts = Contacts and shared access
 home.invite = Invite a contact
 home.contacts_soon = Sharing between accounts: coming soon
 home.recent_sessions = Recent sessions
-home.sessions_soon = Session history: coming soon
 home.quick_actions = Quick actions
 home.action_activity = View activity
 home.action_settings = Open settings
@@ -341,6 +340,17 @@ computers.lead = Every computer ZyrDesk knows: on this network, on your account,
 computers.nothing_found = No computer found
 computers.nothing_found_text = No computer matches this search and this filter.
 computers.show_all = Show all
+
+# The page of activity: the sessions that took place.
+activity.title = Activity
+activity.lead = The sessions held from this computer, and those others held on it.
+activity.outgoing = Outgoing
+activity.incoming = Incoming
+activity.outgoing_tip = This computer controlled it
+activity.incoming_tip = It controlled this computer
+activity.said = {direction} · {when}
+activity.none = No session yet
+activity.none_text = The sessions this computer opens, and those opened towards it, appear here once they end.
 
 # Windows, by its edition.
 edition.home = Home
@@ -355,6 +365,10 @@ time.minutes = {minutes} min
 time.hours = {hours} h
 time.hours_minutes = {hours} h {minutes}
 time.days = {days} d
+time.today = Today
+time.yesterday = Yesterday
+time.date = {month}/{day}/{year}
+time.at = {day} at {hour}
 
 # A computer's card, and its menu.
 computer.online = Online

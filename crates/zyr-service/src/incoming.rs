@@ -11,7 +11,8 @@
 //! The shape mirrors [`crate::ways`], the same bookkeeping for the
 //! opposite direction: a shared, cloneable register that the part of the
 //! service taking connections in writes to, and the part answering the
-//! interface only ever reads or asks to close.
+//! interface only ever reads or asks to close. A session an engine served
+//! is written into the history as it leaves the list.
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -22,6 +23,7 @@ use zyr_proto::fingerprint::Fingerprint;
 use zyr_transport::Connection;
 
 use crate::engine::Engine;
+use crate::history::History;
 
 /// How long a computer sent away has to say goodbye before its
 /// connection is closed from under it.
@@ -45,9 +47,10 @@ struct Entry {
 /// Cloning shares the same list. The door is the only side that ever
 /// writes to it; the interface only reads it, or asks for one entry to
 /// be closed.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Incoming {
     entries: Arc<Mutex<Vec<Entry>>>,
+    history: History,
 }
 
 /// Keeps one entry in the list for exactly as long as the session it
@@ -63,15 +66,33 @@ pub struct Held {
 
 impl Drop for Held {
     fn drop(&mut self) {
-        self.incoming
-            .entries
-            .lock()
-            .expect("connected computers")
-            .retain(|entry| entry.connection.stable_id() != self.id);
+        let gone: Vec<Entry> = {
+            let mut entries = self.incoming.entries.lock().expect("connected computers");
+            let (gone, staying) = std::mem::take(&mut *entries)
+                .into_iter()
+                .partition(|entry| entry.connection.stable_id() == self.id);
+            *entries = staying;
+            gone
+        };
+        for entry in gone.iter().filter(|entry| entry.engine.ever_connected()) {
+            self.incoming.history.ended(
+                false,
+                entry.peer,
+                entry.address.ip().to_string(),
+                entry.since.elapsed(),
+            );
+        }
     }
 }
 
 impl Incoming {
+    pub fn new(history: History) -> Self {
+        Incoming {
+            entries: Arc::default(),
+            history,
+        }
+    }
+
     /// Writes a computer down as connected, and hands back what removes
     /// it again once the session that connected it is over.
     pub fn arrived(
@@ -160,7 +181,12 @@ mod tests {
 
     #[test]
     fn a_computer_nobody_ever_connected_is_not_on_the_list() {
-        let incoming = Incoming::default();
+        let folder = std::env::temp_dir().join(format!(
+            "zyrdeskd-incoming-{}",
+            zyr_proto::random::alphanumeric_string(8)
+        ));
+        let log = zyr_proto::log::Log::open(&folder.join("service.log")).unwrap();
+        let incoming = Incoming::new(History::at(folder.join("session-history.txt"), log));
         assert!(incoming.watching().is_empty());
         assert!(!incoming.kick(fingerprint(1)));
     }

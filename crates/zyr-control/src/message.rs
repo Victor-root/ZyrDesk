@@ -28,7 +28,7 @@ use zyr_proto::session::{Preferred, WantedScreen};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 35;
+pub const PROTOCOL: u32 = 36;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -203,6 +203,9 @@ pub enum Request {
     /// who else is looking at it, and the interface it is drawn from
     /// needs an identity to put a name to, and to disconnect.
     Watching,
+    /// The sessions that took place on this computer, the latest first:
+    /// those it opened towards others and those others opened towards it.
+    History,
     /// Decides whether this computer accepts being controlled.
     ///
     /// A decision and not a state: it survives a restart, since a
@@ -377,6 +380,7 @@ impl Request {
             "peers" => Ok(Request::Peers),
             "sessions" => Ok(Request::Sessions),
             "watching" => Ok(Request::Watching),
+            "history" => Ok(Request::History),
             "hosting" => Ok(Request::SetHosting {
                 on: fields.text("on")? == "yes",
             }),
@@ -485,6 +489,7 @@ impl fmt::Display for Request {
             Request::Peers => f.write_str("peers"),
             Request::Sessions => f.write_str("sessions"),
             Request::Watching => f.write_str("watching"),
+            Request::History => f.write_str("history"),
             Request::SetHosting { on } => write!(f, "hosting on={}", said(*on)),
             Request::SetTrust { on } => write!(f, "trusting on={}", said(*on)),
             Request::SetEcn { on } => write!(f, "ecn on={}", said(*on)),
@@ -806,6 +811,54 @@ pub struct Watching {
     pub since: Duration,
 }
 
+/// A session that took place, as the service keeps it.
+///
+/// Written the same way to the window and to the file the service keeps
+/// them in: fields alone, the verb of a message going in front of them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Past {
+    /// Whether this computer controlled the other, rather than the other
+    /// this one.
+    pub outgoing: bool,
+    /// Fingerprint it was recognised by: what puts today's name on it.
+    pub peer: Fingerprint,
+    /// Where it was reached, or where it came from, for one no name is
+    /// known for any more.
+    pub address: String,
+    /// When it began, in seconds since 1970, in universal time.
+    pub began: u64,
+    pub lasted: Duration,
+}
+
+impl fmt::Display for Past {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "direction={} peer={} address={} began={} lasted={}",
+            if self.outgoing { "out" } else { "in" },
+            self.peer,
+            packed(&self.address),
+            self.began,
+            self.lasted.as_secs()
+        )
+    }
+}
+
+impl FromStr for Past {
+    type Err = Malformed;
+
+    fn from_str(said: &str) -> Result<Self, Malformed> {
+        let fields = Fields(said);
+        Ok(Past {
+            outgoing: fields.text("direction")? == "out",
+            peer: fields.parsed("peer")?,
+            address: fields.said("address"),
+            began: fields.parsed("began")?,
+            lasted: Duration::from_secs(fields.parsed("lasted")?),
+        })
+    }
+}
+
 /// What the service answers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Answer {
@@ -818,6 +871,8 @@ pub enum Answer {
     /// One computer connected to this one of a list. The list ends on
     /// `Done`.
     Watching(Watching),
+    /// One session that took place. The list ends on `Done`.
+    Past(Past),
     /// What a session opened from this computer is set to.
     Settings(Preferred),
     /// The size the far computer is going to be showing.
@@ -924,6 +979,7 @@ impl Answer {
                 address: fields.text("address")?.to_string(),
                 since: Duration::from_secs(fields.parsed("since")?),
             })),
+            "past" => rest.parse().map(Answer::Past),
             "settings" => Ok(Answer::Settings(fields.preferred())),
             "showing" => Ok(Answer::Showing {
                 size: match fields.text("size")? {
@@ -1060,6 +1116,7 @@ impl fmt::Display for Answer {
                 watching.address,
                 watching.since.as_secs()
             ),
+            Answer::Past(past) => write!(f, "past {past}"),
             Answer::Settings(preferred) => write!(f, "settings {}", spelled(preferred)),
             Answer::Showing { size } => match size {
                 Some((wide, high)) => write!(f, "showing size={wide}x{high}"),
@@ -1307,6 +1364,7 @@ mod tests {
             Request::Peers,
             Request::Sessions,
             Request::Watching,
+            Request::History,
             Request::SetHosting { on: true },
             Request::SetHosting { on: false },
             Request::SetTrust { on: true },
@@ -1562,6 +1620,21 @@ mod tests {
                 peer: fingerprint(),
                 address: "192.168.1.20:58620".to_string(),
                 since: Duration::from_secs(742),
+            }),
+            Answer::Past(Past {
+                outgoing: true,
+                peer: fingerprint(),
+                address: "192.168.1.20".to_string(),
+                began: 1_791_000_000,
+                lasted: Duration::from_secs(2_520),
+            }),
+            // An address written by hand may hold a space.
+            Answer::Past(Past {
+                outgoing: false,
+                peer: fingerprint(),
+                address: "office computer".to_string(),
+                began: 1_791_000_000,
+                lasted: Duration::from_secs(3),
             }),
             Answer::Settings(preferred()),
             Answer::Settings(Preferred::default()),

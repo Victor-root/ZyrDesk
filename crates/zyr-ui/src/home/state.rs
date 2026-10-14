@@ -20,6 +20,7 @@ use crate::shell::theme::Choice;
 pub enum Page {
     Home,
     Computers,
+    Activity,
     Settings,
     About,
 }

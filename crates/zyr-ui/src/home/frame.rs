@@ -45,7 +45,11 @@ const NAVIGATION: [(Option<Page>, &str, &Icon); 6] = [
         &icons::COMPUTERS,
     ),
     (None, zyr_i18n::key!("nav.contacts"), &icons::CONTACTS),
-    (None, zyr_i18n::key!("nav.activity"), &icons::ACTIVITY),
+    (
+        Some(Page::Activity),
+        zyr_i18n::key!("nav.activity"),
+        &icons::ACTIVITY,
+    ),
     (
         Some(Page::Settings),
         zyr_i18n::key!("nav.settings"),
@@ -142,6 +146,7 @@ fn page(painter: &mut Painter, at: Rect, narrow: bool) {
                 size(room).1 - painter.px(design::SPACE_2 + design::SPACE_6),
             ),
             Page::Computers => pages::computers::draw(painter, inner),
+            Page::Activity => pages::activity::draw(painter, inner),
             Page::Settings => pages::settings::draw(painter, inner),
             Page::About => pages::about::draw(painter, inner),
         } + painter.px(design::SPACE_2 + design::SPACE_6);

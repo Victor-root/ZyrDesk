@@ -50,6 +50,42 @@ pub fn ago(seconds: u64) -> String {
     }
 }
 
+/// The day something took place, as the clock of this computer reads it:
+/// « Today », « Yesterday », or its date.
+pub fn day_of(unix: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    let day = |unix: u64| zyr_system::local_time(unix).map(|at| (at.year, at.month, at.day));
+    let Some((year, month, date)) = day(unix) else {
+        return String::new();
+    };
+    if day(now) == Some((year, month, date)) {
+        say!("time.today")
+    } else if day(now.saturating_sub(DAY)) == Some((year, month, date)) {
+        say!("time.yesterday")
+    } else {
+        say!(
+            "time.date",
+            day = format!("{date:02}"),
+            month = format!("{month:02}"),
+            year = year
+        )
+    }
+}
+
+/// The hour something took place at, on this computer's clock: « 14:32 ».
+pub fn hour_of(unix: u64) -> String {
+    zyr_system::local_time(unix)
+        .map(|at| format!("{:02}:{:02}", at.hour, at.minute))
+        .unwrap_or_default()
+}
+
+/// When something took place: « Today at 14:32 ».
+pub fn when(unix: u64) -> String {
+    say!("time.at", day = day_of(unix), hour = hour_of(unix))
+}
+
 /// The name a person is greeted by: the first of their names, written
 /// with a capital, for « Hello, Camille » rather than « Hello, camille ».
 pub fn first_name(name: &str) -> String {

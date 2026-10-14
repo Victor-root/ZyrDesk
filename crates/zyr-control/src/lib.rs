@@ -19,7 +19,7 @@ pub mod pipe;
 
 pub use client::{ControlError, Service};
 pub use message::{
-    Account, Answer, Attach, Device, Holdup, Malformed, OfAccount, PROTOCOL, Peer, Reached,
+    Account, Answer, Attach, Device, Holdup, Malformed, OfAccount, PROTOCOL, Past, Peer, Reached,
     Registering, Request, Session, Standing, Watching, WayId,
 };
 pub use pipe::{CHANNEL, Door};

@@ -12,7 +12,8 @@
 //! open; reading the shape the pointer has on the desktop this program
 //! stands on, and whether a program drew it for itself; counting how busy the computer is and what its network
 //! has carried and lost; and saying what the computer is, how far its
-//! network reaches, who sits at it and what their desktop shows.
+//! network reaches, who sits at it and what their desktop shows, and
+//! what time its clock says.
 //!
 //! And what gets a program running at all: with no console flashing up,
 //! with administrator rights asked of the person, or when the person
@@ -27,6 +28,8 @@
 mod ahead;
 #[cfg(windows)]
 mod attention;
+#[cfg(windows)]
+mod clock;
 #[cfg(windows)]
 mod connectivity;
 #[cfg(any(windows, test))]
@@ -62,6 +65,8 @@ use std::time::Duration;
 pub use ahead::{Ahead, put_ahead};
 #[cfg(windows)]
 pub use attention::{forget_it, let_it_be_pressed, press};
+#[cfg(windows)]
+pub use clock::{LocalTime, local_time};
 #[cfg(windows)]
 pub use connectivity::{Connectivity, connectivity};
 #[cfg(windows)]

@@ -7,11 +7,12 @@
 //! that says it is coming.
 
 use zyr_control::Peer;
-use zyr_draw::Rect;
 use zyr_draw::design::{self, Colour};
 use zyr_draw::icons::{self, Icon};
+use zyr_draw::{Align, Rect};
 use zyr_i18n::say;
 
+use crate::home::pages::activity;
 use crate::home::pages::computers::{self, seed_of};
 use crate::home::seen::Seen;
 use crate::home::state::{Page, State, Target, Toggle};
@@ -410,6 +411,7 @@ fn computers(painter: &mut Painter, seen: &Seen, peers: &[&Peer], at: Rect, rows
             size(at).0,
             heading - painter.px(UNDER_HEADING),
         ),
+        Page::Computers,
     );
     heading
         + computers::lay(
@@ -424,10 +426,10 @@ fn computers(painter: &mut Painter, seen: &Seen, peers: &[&Peer], at: Rect, rows
         )
 }
 
-/// « See all », which leads to the page of computers.
-fn see_all(painter: &mut Painter, row: Rect) {
+/// « See all », at the end of a heading's row, which leads to that page.
+fn see_all(painter: &mut Painter, row: Rect, page: Page) {
     let colours = painter.colours;
-    let target = Target::Nav(Page::Computers);
+    let target = Target::Nav(page);
     let ink = colours
         .text_faint
         .mixed_with(colours.accent, 1.0 - painter.hover_of(&target));
@@ -784,60 +786,59 @@ fn contacts(painter: &mut Painter, at: Rect, heading: f32) {
     painter.tells(card, say!("home.contacts_soon"));
 }
 
-/// The sessions that took place, which will come once they are kept.
+/// The sessions that took place lately, as many as the card holds, and
+/// the way to all of them.
 fn sessions(painter: &mut Painter, at: Rect, heading: f32) {
-    let colours = painter.colours;
+    let seen = painter.seen;
     painter.heading((at.left, at.top), &say!("home.recent_sessions"), None);
+    see_all(
+        painter,
+        Rect::at(
+            at.left,
+            at.top,
+            size(at).0,
+            heading - painter.px(UNDER_HEADING),
+        ),
+        Page::Activity,
+    );
     let card = Rect {
         top: at.top + heading,
         ..at
     };
     painter.card(card);
-    let inside = painter.px(design::SPACE_5);
-    let row = painter.px(52.0);
-    let icon = painter.px(20.0);
-    for rank in 0..4 {
-        let top = card.top + painter.px(design::SPACE_4) + row * rank as f32;
-        if top + row > card.bottom - painter.px(design::SPACE_2) {
-            break;
-        }
-        painter.icon(
-            &icons::COMPUTERS,
-            Rect::at(card.left + inside, top + painter.px(8.0), icon, icon),
-            colours.border_strong,
-        );
-        let words = card.left + inside + icon + painter.px(design::SPACE_4);
-        painter.stand_in(Rect::at(
-            words,
-            top + painter.px(6.0),
-            painter.px(110.0),
-            painter.px(10.0),
-        ));
-        painter.stand_in(Rect::at(
-            words,
-            top + painter.px(22.0),
-            painter.px(150.0),
-            painter.px(8.0),
-        ));
-        painter.icon(
-            &icons::MORE,
-            Rect::at(
-                card.right - inside - icon,
-                top + painter.px(8.0),
-                icon,
-                icon,
+    if seen.history.is_empty() {
+        let pen = painter.body().aligned(Align::Centre);
+        let width = size(card).0 - painter.px(design::SPACE_5) * 2.0;
+        let said = say!("activity.none");
+        let height = painter.height_of(&said, pen, width);
+        painter.paragraph(
+            &said,
+            pen,
+            painter.colours.text_faint,
+            (
+                card.left + painter.px(design::SPACE_5),
+                middle(card).1 - height / 2.0,
+                width,
             ),
-            colours.border_strong,
         );
-        if rank < 3 && top + row * 2.0 <= card.bottom - painter.px(design::SPACE_2) {
-            painter.rule(
-                card.left + inside,
-                top + painter.px(46.0),
-                size(card).0 - inside * 2.0,
-            );
-        }
+        return;
     }
-    painter.tells(card, say!("home.sessions_soon"));
+    let inside = painter.px(design::SPACE_2);
+    let line = painter.px(activity::LINE);
+    let fit = ((size(card).1 - inside * 2.0) / line).floor().max(1.0) as usize;
+    for (rank, past) in seen.history.iter().take(fit).enumerate() {
+        let at = Rect::at(
+            card.left,
+            card.top + inside + line * rank as f32,
+            size(card).0,
+            line,
+        );
+        if rank > 0 {
+            let edge = painter.px(design::SPACE_5);
+            painter.rule(at.left + edge, at.top, size(at).0 - edge * 2.0);
+        }
+        activity::past_line(painter, seen, past, at, true);
+    }
 }
 
 /// The quick actions, two by two, or four in a row when they have the
@@ -865,7 +866,7 @@ fn actions(painter: &mut Painter, at: Rect, heading: f32, in_a_row: bool, height
             &icons::REPORT,
             say!("home.action_activity"),
             &icons::CHEVRON,
-            None,
+            Some(Target::Nav(Page::Activity)),
         ),
         (
             &icons::SETTINGS,

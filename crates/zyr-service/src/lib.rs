@@ -24,6 +24,7 @@ mod control;
 mod engine;
 mod errands;
 mod gateway;
+mod history;
 mod incoming;
 mod keeper;
 mod known;

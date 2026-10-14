@@ -28,6 +28,7 @@ use zyr_proto::sifting::Sifting;
 use zyr_transport::{Junction, Media};
 
 use crate::account::{self, Account};
+use crate::history::History;
 use crate::incoming::Incoming;
 use crate::known::{self, Known};
 use crate::preferences::Remembered;
@@ -120,6 +121,8 @@ pub struct Machine {
     /// Who is connected to this computer right now: the reverse of
     /// `ways`, and the same shape.
     pub incoming: Incoming,
+    /// The sessions that took place, both ways.
+    pub history: History,
     pub remembered: Remembered,
     pub neighbours: Found,
     pub account: Account,
@@ -375,10 +378,12 @@ mod tests {
         ));
         let log = Log::open(&folder.join("service.log")).unwrap();
         let remembered = Remembered::at(folder.join("preferences.conf"));
+        let history = History::at(folder.join("session-history.txt"), log.clone());
         let machine = Machine {
             hosting: Hosting::new(),
-            ways: Ways::new(log.clone(), remembered.clone()),
-            incoming: Incoming::default(),
+            ways: Ways::new(log.clone(), remembered.clone(), history.clone()),
+            incoming: Incoming::new(history.clone()),
+            history,
             remembered,
             neighbours: Found::new(),
             account: Account::at(folder.join("account.conf"), log.clone()),

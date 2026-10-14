@@ -85,6 +85,12 @@ impl Engine {
         *self.telling.lock().expect("session's engine") = Some(telling);
     }
 
+    /// Whether an engine ever served this session: a connection that only
+    /// asked a question, a journal or a screen's size, had none.
+    pub fn ever_connected(&self) -> bool {
+        self.telling.lock().expect("session's engine").is_some()
+    }
+
     /// Tells the engine something, never waiting: what the engine is
     /// told is a handful of messages a session, and a queue full of them
     /// is an engine that has stopped reading.

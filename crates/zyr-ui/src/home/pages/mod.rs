@@ -6,6 +6,7 @@
 //! once, for all of them.
 
 pub mod about;
+pub mod activity;
 pub mod computers;
 pub mod home;
 pub mod settings;

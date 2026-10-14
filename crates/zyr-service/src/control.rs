@@ -153,6 +153,15 @@ async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
                 .map(Answer::Watching)
                 .collect(),
         ),
+        Request::History => ended(
+            answering
+                .machine
+                .history
+                .recent()
+                .into_iter()
+                .map(Answer::Past)
+                .collect(),
+        ),
         Request::Devices => ended(
             answering
                 .machine
@@ -698,7 +707,11 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             Err(reason) => Answer::Refused(reason),
         },
         // Handled above, where several answers can be given.
-        Request::Peers | Request::Sessions | Request::Watching | Request::Devices => Answer::Done,
+        Request::Peers
+        | Request::Sessions
+        | Request::Watching
+        | Request::History
+        | Request::Devices => Answer::Done,
     }
 }
 
@@ -731,10 +744,13 @@ mod tests {
             let channel = format!("zyrdeskd-test-{}-{what}", std::process::id());
             let fingerprint = zyr_transport::Identity::generate().unwrap().fingerprint();
             let remembered = crate::preferences::Remembered::at(folder.join("preferences.conf"));
+            let history =
+                crate::history::History::at(folder.join("session-history.txt"), log.clone());
             let machine = Machine {
                 hosting: Hosting::new(),
-                ways: crate::ways::Ways::new(log.clone(), remembered.clone()),
-                incoming: crate::incoming::Incoming::default(),
+                ways: crate::ways::Ways::new(log.clone(), remembered.clone(), history.clone()),
+                incoming: crate::incoming::Incoming::new(history.clone()),
+                history,
                 remembered,
                 neighbours: zyr_lan::Found::new(),
                 account: crate::account::Account::at(folder.join("account.conf"), log.clone()),
@@ -825,7 +841,12 @@ mod tests {
 
         runtime.block_on(async {
             let mut caller = bench.caller().await;
-            for request in [Request::Peers, Request::Sessions, Request::Watching] {
+            for request in [
+                Request::Peers,
+                Request::Sessions,
+                Request::Watching,
+                Request::History,
+            ] {
                 let found = caller.ask_for_a_list(&request).await.unwrap();
                 assert!(found.is_empty(), "on « {request} »: {found:?}");
             }

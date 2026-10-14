@@ -33,6 +33,7 @@ use zyr_proto::paths;
 use crate::account::Account;
 use crate::control::{Answering, Desk};
 use crate::gateway::Gateway;
+use crate::history::History;
 use crate::machine::{Hosting, Machine};
 use crate::preferences::Remembered;
 use crate::ways::Ways;
@@ -355,10 +356,12 @@ fn keep_the_door(order: &StopOrder, log: &Log, wiring: Wiring) -> End {
     // What was asked for last time, honoured before anyone has said
     // anything this time.
     let remembered = Remembered::at(paths::preferences());
+    let history = History::at(paths::session_history(), log.clone());
     let machine = Machine {
         hosting: Hosting::new(),
-        ways: Ways::new(log.clone(), remembered.clone()),
-        incoming: crate::incoming::Incoming::default(),
+        ways: Ways::new(log.clone(), remembered.clone(), history.clone()),
+        incoming: crate::incoming::Incoming::new(history.clone()),
+        history,
         remembered,
         neighbours: neighbourhood
             .as_ref()

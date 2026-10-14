@@ -27,7 +27,7 @@ Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est des
 | Accueil | Oui | La page de ce plan |
 | Ordinateurs | Oui | Tous les ordinateurs, en grille ou en liste ([D310](DECISIONS.md)) |
 | Contacts | Grisé | Idem |
-| Activité | Grisé | Idem |
+| Activité | Oui | Les sessions terminées, jour par jour ([D311](DECISIONS.md)) |
 | Paramètres | Oui | Les réglages d'aujourd'hui, remis au style de l'accueil |
 | À propos | Oui | Juste sous Paramètres (§8) |
 | En bas : la personne (initiales, nom, adresse du compte) | Oui | Sans compte : le nom de la session Windows, sans adresse |
@@ -87,10 +87,10 @@ Une carte par ordinateur connu (réseau local et compte), ou une ligne en vue li
 |---|---|---|
 | Contacts et accès partagés, avec les rôles Admin, Contrôle, Lecture | Grisé | Le partage entre comptes est à faire ; la liste reste vide et grisée |
 | « Inviter un contact » | Grisé | |
-| Sessions récentes : ordinateur, date, durée | Grisé | Il faudra garder l'historique des sessions |
+| Sessions récentes : ordinateur, date, durée | Oui | Gardées par le service, dans les deux sens ([D311](DECISIONS.md)) |
 | Action rapide « Ajouter un ordinateur » | Oui | La fenêtre d'aujourd'hui, avec l'empreinte |
 | Action rapide « Inviter un contact » | Grisé | |
-| Action rapide « Voir l'activité » | Grisé | |
+| Action rapide « Voir l'activité » | Oui | |
 | Action rapide « Ouvrir les paramètres » | Oui | |
 | Version et compilation | Oui | En bas de la barre de gauche, la compilation sous le numéro ([D293](DECISIONS.md)) |
 
@@ -105,4 +105,4 @@ Une page à elle, sous Paramètres dans la barre de gauche. Une partie de son co
 
 ## 9. Ce qui vient après l'accueil
 
-Les pages Contacts et Activité, faites une fois l'accueil terminé, dans son style (la page Ordinateurs est faite, [D310](DECISIONS.md)). Puis, bloc par bloc, les fonctions grisées : chacune qui arrive retire son gris.
+La page Contacts, faite une fois l'accueil terminé, dans son style (les pages Ordinateurs et Activité sont faites, [D310](DECISIONS.md), [D311](DECISIONS.md)). Puis, bloc par bloc, les fonctions grisées : chacune qui arrive retire son gris.

@@ -11,7 +11,7 @@
 // compiled and checked, it is simply called by nobody.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use zyr_control::{Account, Answer, Attach, Device, Holdup, Peer, Request};
+use zyr_control::{Account, Answer, Attach, Device, Holdup, Past, Peer, Request};
 use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 
@@ -139,6 +139,16 @@ pub async fn watching() -> Vec<Watcher> {
             address: watching.address,
             since: watching.since.as_secs(),
         }),
+        _ => None,
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// The sessions that took place on this computer, the latest first.
+pub async fn history() -> Vec<Past> {
+    service::list(&Request::History, |answer| match answer {
+        Answer::Past(past) => Some(past),
         _ => None,
     })
     .await

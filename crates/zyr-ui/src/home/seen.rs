@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use zyr_control::{Account, Device, Peer};
+use zyr_control::{Account, Device, Past, Peer};
 use zyr_draw::Picture;
 use zyr_system::{Connectivity, Machine};
 
@@ -48,6 +48,8 @@ pub struct Seen {
     pub sessions: Vec<Ongoing>,
     /// The computers controlling this one right now.
     pub watching: Vec<Watcher>,
+    /// The sessions that took place, the latest first.
+    pub history: Vec<Past>,
     pub settings: Option<Settings>,
     /// The account, when the service answers: the link if there is one,
     /// and the devices on it.
@@ -142,6 +144,26 @@ impl Seen {
             .find(|peer| peer.fingerprint.to_string() == fingerprint)
     }
 
+    /// What a computer is called today, by its fingerprint: on the
+    /// screen, or on the account, or, for one known by neither any more,
+    /// where it was.
+    pub fn name_of(&self, peer: &zyr_proto::fingerprint::Fingerprint, address: &str) -> String {
+        self.peers
+            .iter()
+            .find(|known| known.fingerprint == *peer)
+            .map(|known| known.name.clone())
+            .or_else(|| {
+                self.account.as_ref().and_then(|account| {
+                    account
+                        .devices
+                        .iter()
+                        .find(|device| device.fingerprint == *peer)
+                        .map(|device| device.name.clone())
+                })
+            })
+            .unwrap_or_else(|| address.to_string())
+    }
+
     /// What the account's server knows of a computer: when it was last
     /// seen, for one that is gone.
     pub fn device_of(&self, peer: &Peer) -> Option<&Device> {
@@ -217,6 +239,7 @@ pub async fn again(app: &App) -> bool {
     zyr_session::presence::reachable_first(&mut peers);
     let sessions = crate::session::sessions().await;
     let watching = crate::shell::desk::watching().await;
+    let history = crate::shell::desk::history().await;
     let settings = crate::shell::settings::settings(app.clone()).await;
     let account = match crate::shell::desk::account().await {
         Ok(link) => Some(AccountState {
@@ -249,6 +272,7 @@ pub async fn again(app: &App) -> bool {
         changed |= replace(&mut seen.peers, peers);
         changed |= replace(&mut seen.sessions, sessions);
         changed |= replace(&mut seen.watching, watching);
+        changed |= replace(&mut seen.history, history);
         changed |= replace(&mut seen.settings, Some(settings));
         changed |= replace(&mut seen.account, account);
         changed |= replace(&mut seen.ffmpeg_here, Some(ffmpeg_here));

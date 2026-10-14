@@ -1655,10 +1655,12 @@ mod tests {
         ));
         let log = Log::open(&folder.join("service.log")).expect("a journal");
         let remembered = crate::preferences::Remembered::at(folder.join("preferences.conf"));
+        let history = crate::history::History::at(folder.join("session-history.txt"), log.clone());
         let machine = Machine {
             hosting: crate::machine::Hosting::new(),
-            ways: crate::ways::Ways::new(log.clone(), remembered.clone()),
-            incoming: crate::incoming::Incoming::default(),
+            ways: crate::ways::Ways::new(log.clone(), remembered.clone(), history.clone()),
+            incoming: crate::incoming::Incoming::new(history.clone()),
+            history,
             remembered,
             neighbours: zyr_lan::Found::new(),
             account: crate::account::Account::at(folder.join("account.conf"), log),

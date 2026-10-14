@@ -4774,6 +4774,19 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** « Ordinateurs », « Voir tout », la recherche, le filtre et les deux vues perdent leur gris.
 
+## D311. L'historique des sessions, les sessions récentes et la page « Activité » (2026-10-14, pendant MZ)
+
+**Pourquoi.** Le bloc « Sessions récentes » de l'accueil et la page « Activité » attendaient que les sessions soient gardées quelque part.
+
+**Ce qui est fait.**
+- Le service écrit chaque session quand elle se termine, dans `data/session-history.txt` : dans quel sens (cet ordinateur en a contrôlé un autre, ou l'inverse), l'empreinte de l'autre, son adresse, l'heure du début en temps universel et la durée. Rien de ce qu'elle a transporté. Une voie sortante compte quand un lecteur l'a tenue, une session entrante quand un moteur l'a servie : une simple question, le journal ou la taille d'un écran, n'est pas une session.
+- Une session qui tombe et se reprend d'elle-même reste une seule session : celle qui commence avec le même ordinateur, dans le même sens, moins d'une minute après la fin de la précédente la prolonge. Les 200 dernières sont gardées. Ce calcul est essayé sur tout système.
+- La fenêtre les demande par un nouveau message du tube, `history`, qui répond une session par ligne (`past`) : le protocole passe de 35 à 36. Le même écrit sert au fichier, qui se lit et se corrige à la main.
+- Chaque session porte le nom que l'ordinateur a aujourd'hui (sur l'accueil ou sur le compte), à défaut son adresse. L'heure est celle de l'horloge de cet ordinateur, heure d'été comprise, que `zyr-system` demande à Windows.
+- L'accueil montre les dernières, autant que la carte en tient, avec « Voir tout » vers la page « Activité », qui les range jour par jour (« Aujourd'hui », « Hier », puis la date). L'action rapide « Voir l'activité » y mène aussi.
+
+**Ce qui se voit.** « Sessions récentes », « Activité » et « Voir l'activité » perdent leur gris. Les deux PC se mettent à jour ensemble : une fenêtre nouvelle face à un service ancien voit un historique vide.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

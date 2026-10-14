@@ -1231,7 +1231,11 @@ login_attempts_per_minute = 1000
                 identity.clone(),
                 hosting.clone(),
                 remembered.clone(),
-                Ways::new(log, remembered),
+                Ways::new(
+                    log.clone(),
+                    remembered,
+                    crate::history::History::at(folder.join("session-history.txt"), log),
+                ),
                 door,
             );
             Self {

@@ -148,6 +148,11 @@ pub fn known_computers() -> PathBuf {
     data_dir().join("known-computers.conf")
 }
 
+/// The sessions that took place on this computer, kept by the service.
+pub fn session_history() -> PathBuf {
+    data_dir().join("session-history.txt")
+}
+
 /// What the person asked the service to do, kept across restarts.
 pub fn preferences() -> PathBuf {
     data_dir().join("preferences.conf")
@@ -323,6 +328,7 @@ mod tests {
             floating_button(),
             chosen_theme(),
             home_layout(),
+            session_history(),
         ] {
             assert!(
                 path.starts_with(&root),

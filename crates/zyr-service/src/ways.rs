@@ -41,6 +41,7 @@ use zyr_transport::{
 use zyr_tunnel::{Presence, ServiceEnd, Tunnel, aside, nudge, service_channel};
 
 use crate::account::{self, Rendezvous};
+use crate::history::History;
 use crate::preferences::Remembered;
 use crate::said::{self, Said};
 
@@ -269,10 +270,15 @@ impl<T> Register<T> {
     }
 
     /// Takes a way out of the register, handing back what has to be
-    /// dropped. Dropping it here would mean closing a tunnel while
-    /// holding the lock every other way is waiting on.
-    fn release(&mut self, way: WayId) -> Option<T> {
-        Some(self.kept.remove(&way)?.thing)
+    /// dropped, with the session it served and for how long, if it served
+    /// one. Dropping it here would mean closing a tunnel while holding
+    /// the lock every other way is waiting on.
+    fn release(&mut self, way: WayId) -> Option<(T, Option<(Towards, Duration)>)> {
+        let kept = self.kept.remove(&way)?;
+        let served = kept
+            .user
+            .map(|serving| (kept.towards, serving.since.elapsed()));
+        Some((kept.thing, served))
     }
 
     /// Ways with nothing left to serve: the process they were tied to is
@@ -347,16 +353,19 @@ pub struct Ways {
     /// What the person asked of this computer, for the two network
     /// switches a way opens under.
     remembered: Remembered,
+    /// Where the sessions served are written down as they end.
+    history: History,
     log: Log,
 }
 
 impl Ways {
-    pub fn new(log: Log, remembered: Remembered) -> Self {
+    pub fn new(log: Log, remembered: Remembered, history: History) -> Self {
         let log = log.about(TAG);
         Self {
             register: Arc::new(Mutex::new(Register::new())),
             alive: still_running,
             remembered,
+            history,
             log,
         }
     }
@@ -898,9 +907,12 @@ impl Ways {
 
     pub fn release(&self, way: WayId) -> bool {
         let closed = self.register.lock().expect("register of ways").release(way);
-        let Some(open) = closed else {
+        let Some((open, served)) = closed else {
             return false;
         };
+        if let Some((towards, lasted)) = served {
+            self.history.ended(true, towards.peer, towards.host, lasted);
+        }
         // Everything the way carried, said once and at the only moment
         // it can still be read: what it holds goes with it.
         self.log.write(&format!(
@@ -1381,9 +1393,26 @@ mod tests {
     fn a_closed_way_is_gone_and_the_next_one_is_another() {
         let mut register = register();
         let way = register.settle(towards("192.168.1.20"), "session");
-        assert_eq!(register.release(way), Some("session"));
+        assert_eq!(
+            register.release(way).map(|(thing, _)| thing),
+            Some("session")
+        );
         let next = register.settle(towards("192.168.1.20"), "session");
         assert_ne!(next, way);
+    }
+
+    #[test]
+    fn only_a_way_that_served_a_session_says_so_as_it_closes() {
+        let mut register = register();
+        let tried = register.settle(towards("192.168.1.20"), "session");
+        assert!(matches!(register.release(tried), Some((_, None))));
+        let served = register.settle(towards("192.168.1.21"), "session");
+        register.hold(served, 11248);
+        let (_, said) = register.release(served).unwrap();
+        assert_eq!(
+            said.map(|(towards, _)| towards.host).as_deref(),
+            Some("192.168.1.21")
+        );
     }
 
     #[test]
@@ -1540,7 +1569,12 @@ mod tests {
             relay: None,
             account: crate::account::Account::at(folder.join("account.conf"), log.clone()),
         };
-        let ways = Ways::new(log, Remembered::at(folder.join("preferences.conf")));
+        let history = History::at(folder.join("session-history.txt"), log.clone());
+        let ways = Ways::new(
+            log,
+            Remembered::at(folder.join("preferences.conf")),
+            history,
+        );
         let word = ways
             .reach(
                 Knock::Through(Box::new(meeting)),
