@@ -921,6 +921,12 @@ reconfigure() {
 rename_an_account() {
   load_the_state
   local accounts=() choice old new said
+  # A server installed before renaming existed does not know the word:
+  # it has to be updated first.
+  if ! "$BIN" user rename --help >/dev/null 2>&1; then
+    warn "$(t 'Le serveur installé est trop ancien pour renommer un compte : choisissez d'"'"'abord « Mettre à jour », puis relancez ce script.' 'The installed server is too old to rename an account: choose "Update" first, then run this script again.')"
+    return 0
+  fi
   mapfile -t accounts < <(runuser -u "$SERVICE_USER" -- "$BIN" --config "$CONF" user list | awk '{print $1}')
   if (( ${#accounts[@]} == 0 )); then
     warn "$(t "Aucun compte sur ce serveur." 'No account on this server.')"
