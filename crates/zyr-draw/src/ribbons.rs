@@ -3,7 +3,9 @@
 //!
 //! Ivory satin ribbons hemmed with gold, made for ZyrDesk. The dark ones
 //! are the same ribbons turned to gold on night blue, and the bar's are
-//! the banner's stood upright, so the two read as one cloth. Carried by
+//! the banner's stood upright, so the two read as one cloth. All are
+//! blurred in the pictures themselves, so the words written over them
+//! read and the blur costs nothing when drawn. Carried by
 //! the program, not read from beside it, so nothing can be missing; and
 //! read once, the first time a window asks for them.
 

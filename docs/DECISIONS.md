@@ -4671,6 +4671,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Une page claire et unie, un bandeau et une barre de gauche drapés de rubans de satin, ivoire et or en clair, or sur bleu nuit en sombre.
 
+## D299. Les rubans sont floutés et voilés (2026-10-14, pendant MZ)
+
+**Pourquoi.** Nets ([D298](#d298-des-rubans-de-satin-habillent-le-bandeau-et-la-barre-de-gauche-2026-10-14-pendant-mz)), les rubans se mêlaient au texte du bandeau et au menu de la barre de gauche : on ne lisait plus rien.
+
+**Ce qui est fait.** Les rubans sont floutés dans les images elles-mêmes (un flou gaussien de 14 pixels de l'image pour le bandeau, de 20 pour la barre, plus petite à l'écran), fait une fois en les préparant : à l'affichage, il ne coûte rien. Un voile de la charte (`--ribbon-veil`, blanc en clair, bleu nuit en sombre, à 40 %) se pose par-dessus, pour qu'on puisse le doser sans refaire les images.
+
+**Ce qui se voit.** Des rubans doux, au loin, sous un texte qui se lit.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -356,10 +356,13 @@ impl<'a> Painter<'a> {
     }
 
     /// The ribbons of this place of the window, covering the rounded
-    /// `at`; `plain` where they could not be read.
+    /// `at` under their veil; `plain` where they could not be read.
     pub fn ribbons(&self, place: Place, at: Rect, radius: f32, plain: Colour) {
         match zyr_draw::ribbons::ribbons(place, self.light) {
-            Some(picture) => self.picture(picture, at, radius),
+            Some(picture) => {
+                self.picture(picture, at, radius);
+                self.fill(at, radius, self.colours.ribbon_veil);
+            }
             None => self.fill(at, radius, plain),
         }
     }

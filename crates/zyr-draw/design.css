@@ -88,6 +88,11 @@
   --art-ridge-front: #303b55;
   --art-rim: rgba(248, 205, 106, 0.28);
 
+  /* The veil laid over the ribbons of the banner and of the bar on the
+     left, already blurred in their pictures: what is written on them
+     reads, and the ribbons stay in the distance. */
+  --ribbon-veil: rgba(11, 13, 18, 0.4);
+
   /* A grid of 8. Every spacing comes from it. */
   --space-1: 4px;
   --space-2: 8px;
@@ -174,6 +179,8 @@
   --art-ridge-near: #9ba2ad;
   --art-ridge-front: #7f8794;
   --art-rim: rgba(255, 255, 255, 0.45);
+
+  --ribbon-veil: rgba(255, 255, 255, 0.4);
 
   --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-2: 0 4px 16px rgba(16, 24, 40, 0.08);
