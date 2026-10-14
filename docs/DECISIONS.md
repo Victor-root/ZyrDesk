@@ -4591,6 +4591,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Une page de paramètres courte, dont on choisit la section en haut.
 
+## D289. Un dialogue s'ouvre sans redessiner la page qu'il couvre (2026-10-14, pendant MZ)
+
+**Pourquoi.** Victor : l'ouverture d'un dialogue ramait. L'accueil est dessiné par le processeur, et chaque image de l'arrivée d'un dialogue redessinait toute la page en dessous, puis l'ombre du dialogue, faite d'une couche par pixel de flou, une trentaine pour un dialogue.
+
+**Ce qui est fait.** Deux choses dessinées une fois au lieu de l'être à chaque image. Chaque ombre est dessinée une fois à sa taille, puis posée comme une photo, comme l'image du bandeau l'était déjà. Et ce qui se trouve sous un dialogue, ou sous l'écran d'ouverture d'une session, est gardé à la première image et reposé tel quel aux suivantes, tant que rien de ce dont il est tiré ne change : ce qui est montré (un compteur avance à chaque mise à jour), le thème, l'échelle et la taille de la fenêtre. Sous un dialogue rien ne répond à la main, donc rien n'y bouge de lui-même. La mesure de [D287](#d287-la-fenêtre-recopie-son-image-juste-après-le-passage-du-compositeur-2026-10-14-pendant-mz) dira ce qu'il en reste.
+
+**Ce qui se voit.** Un dialogue qui glisse et un voile qui s'assombrit au rythme de l'écran.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

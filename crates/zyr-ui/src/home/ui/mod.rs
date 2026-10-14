@@ -20,7 +20,7 @@ use zyr_draw::icons::Icon;
 use zyr_draw::{Canvas, Pen, Picture, Rect, Scene};
 
 use crate::home::seen::Seen;
-use crate::home::state::{Hit, Scroller, State, Target};
+use crate::home::state::{Hit, Kept, Scroller, State, Target};
 use crate::shell::app::App;
 
 pub use widgets::{Button, Kind, SIDES_HEIGHT, SWITCH as SWITCH_SIZE};
@@ -182,6 +182,30 @@ impl<'a> Painter<'a> {
         self.live = live;
         inside(self);
         self.live = before;
+    }
+
+    /// Draws what lies under a cover, a dialog or the opening of a
+    /// session: once, then laid down again as it was at every frame, as
+    /// long as the cover stays and nothing it was drawn from has changed
+    /// (what is shown, the theme, the scale and the size). Under a cover
+    /// nothing answers the hand, so nothing there moves by itself.
+    pub fn under_a_cover(
+        &mut self,
+        covered: bool,
+        size: (f32, f32),
+        inside: impl FnOnce(&mut Self),
+    ) {
+        let drawn_from = Kept {
+            generation: self.seen.generation,
+            light: self.light,
+            scale: self.scale.to_bits(),
+            size: (size.0.to_bits(), size.1.to_bits()),
+        };
+        if covered && self.state.kept == Some(drawn_from) && self.canvas.lay_kept() {
+            return;
+        }
+        inside(self);
+        self.state.kept = (covered && self.canvas.keep()).then_some(drawn_from);
     }
 
     /// What `inside` would take, without laying anything down.

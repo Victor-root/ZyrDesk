@@ -28,6 +28,9 @@ const REFRESH: Duration = Duration::from_secs(3);
 /// What the home window shows.
 #[derive(Default, PartialEq)]
 pub struct Seen {
+    /// How many times it was changed: what was drawn from an older one
+    /// is out of date.
+    pub generation: u64,
     /// This computer as the service says it, or why it cannot.
     pub standing: Option<Standing>,
     /// This computer as Windows says it, read once.
@@ -165,7 +168,9 @@ pub fn with<R>(read: impl FnOnce(&Seen) -> R) -> R {
 /// Changes what is shown, for the length of `change`.
 fn change<R>(change: impl FnOnce(&mut Seen) -> R) -> R {
     let mut guard = SEEN.lock().expect("what the home window shows");
-    change(guard.get_or_insert_with(Seen::default))
+    let seen = guard.get_or_insert_with(Seen::default);
+    seen.generation += 1;
+    change(seen)
 }
 
 /// Keeps asking for what is shown, for as long as the program runs, and

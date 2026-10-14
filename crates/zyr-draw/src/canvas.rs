@@ -41,16 +41,16 @@ use windows::Win32::Graphics::Direct2D::Common::{
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
-    D2D1_BITMAP_BRUSH_PROPERTIES, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, D2D1_BITMAP_PROPERTIES,
-    D2D1_BRUSH_PROPERTIES, D2D1_CAP_STYLE_ROUND, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
-    D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE,
-    D2D1_EXTEND_MODE_CLAMP, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
-    D2D1_LINE_JOIN_ROUND, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE,
-    D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES,
-    D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
-    D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory,
-    ID2D1Bitmap, ID2D1DCRenderTarget, ID2D1Factory, ID2D1PathGeometry, ID2D1SolidColorBrush,
-    ID2D1StrokeStyle,
+    D2D1_BITMAP_BRUSH_PROPERTIES, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+    D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_BITMAP_PROPERTIES, D2D1_BRUSH_PROPERTIES,
+    D2D1_CAP_STYLE_ROUND, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_DASH_STYLE_DASH,
+    D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_EXTEND_MODE_CLAMP,
+    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_LINE_JOIN_ROUND,
+    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE,
+    D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
+    D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE,
+    D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap, ID2D1DCRenderTarget,
+    ID2D1Factory, ID2D1PathGeometry, ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -316,7 +316,21 @@ pub struct Canvas {
     /// once and then laid down like a photograph: its gradients cost far
     /// more than laying it down.
     scenes: std::cell::RefCell<Vec<Drawn>>,
+    shades: std::cell::RefCell<Vec<Shade>>,
+    /// What was drawn so far in a frame, kept to be laid down again as
+    /// it is: see `keep`.
+    kept: std::cell::RefCell<Option<ID2D1Bitmap>>,
 }
+
+/// A shadow already drawn: the size of what casts it, its corners, its
+/// softness and its tint, in the bits they are written with, and its
+/// pixels, with the room its softness spreads into all round.
+struct Shade {
+    key: ShadeKey,
+    bitmap: ID2D1Bitmap,
+}
+
+type ShadeKey = (u32, u32, u32, u32, [u32; 4]);
 
 /// An abstract picture already drawn: what it shows, how many pixels
 /// wide and high and at what scale, in hundredths, and its pixels.
@@ -332,6 +346,8 @@ struct Drawn {
 /// more are let go.
 const PICTURES_KEPT: usize = 24;
 const SCENES_KEPT: usize = 16;
+/// How many shadows: one per size of card, dialog and block on screen.
+const SHADES_KEPT: usize = 16;
 
 impl Canvas {
     /// A canvas of this size, in real pixels.
@@ -407,6 +423,8 @@ impl Canvas {
                 factory,
                 bitmaps: std::cell::RefCell::new(Vec::new()),
                 scenes: std::cell::RefCell::new(Vec::new()),
+                shades: std::cell::RefCell::new(Vec::new()),
+                kept: std::cell::RefCell::new(None),
             })
         }
     }
@@ -434,6 +452,8 @@ impl Canvas {
             let _ = DeleteObject(self.bitmap.into());
             self.bitmap = bitmap;
         }
+        // What was kept is of the old size.
+        self.kept.replace(None);
         self.width = width;
         self.height = height;
         true
@@ -443,6 +463,64 @@ impl Canvas {
     /// still the right size.
     pub fn size(&self) -> (i32, i32) {
         (self.width, self.height)
+    }
+
+    /// Keeps what has been drawn so far in this frame, to be laid down
+    /// again as it is by `lay_kept`, and says whether it could.
+    ///
+    /// What lies under a dialog does not change while the dialog slides
+    /// in over it: kept once, it costs one picture per frame instead of
+    /// a whole page drawn again.
+    pub fn keep(&self) -> bool {
+        let mut kept = self.kept.borrow_mut();
+        // SAFETY: a target of ours between the start and the end of a
+        // drawing, and a bitmap made from it, of its size.
+        unsafe {
+            if kept.is_none() {
+                *kept = self
+                    .target
+                    .CreateBitmap(
+                        D2D_SIZE_U {
+                            width: self.width as u32,
+                            height: self.height as u32,
+                        },
+                        None,
+                        0,
+                        &D2D1_BITMAP_PROPERTIES {
+                            pixelFormat: format(),
+                            dpiX: 96.0,
+                            dpiY: 96.0,
+                        },
+                    )
+                    .ok();
+            }
+            kept.as_ref().is_some_and(|bitmap| {
+                bitmap
+                    .CopyFromRenderTarget(None, &self.target, None)
+                    .is_ok()
+            })
+        }
+    }
+
+    /// Lays down what `keep` kept, at the place it was drawn, and says
+    /// whether there was anything.
+    pub fn lay_kept(&self) -> bool {
+        let kept = self.kept.borrow();
+        let Some(bitmap) = kept.as_ref() else {
+            return false;
+        };
+        // SAFETY: a target of ours between the start and the end of a
+        // drawing, and a bitmap made from it.
+        unsafe {
+            self.target.DrawBitmap(
+                bitmap,
+                None,
+                1.0,
+                D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+                None,
+            );
+        }
+        true
     }
 
     /// Opens the drawing, with the whole canvas in this colour.
@@ -684,19 +762,124 @@ impl Canvas {
     /// outwards. A Gaussian blur would need a graphics device and all
     /// its torments, for a difference nobody sees on a sixteen-pixel
     /// shadow lying under a card.
+    ///
+    /// Its softness is one layer per pixel, a few dozen for a dialog: so
+    /// each shadow is drawn once, at its size, and laid down at every
+    /// frame like a photograph. A dialog that slides in over the page
+    /// then costs one picture per frame, not thirty fills of its size.
     pub fn shadow(&self, rect: Rect, radius: f32, shadow: Shadow, scale: f32) {
         let blur = shadow.soft * scale;
         if blur <= 0.0 {
             return;
         }
         let shifted = rect.shifted(shadow.across * scale, shadow.down * scale);
-        let steps = blur.ceil().max(1.0) as i32;
-        let mut tint = shadow.tint;
-        tint.alpha = shadow.tint.alpha / steps as f32;
-        for step in 0..steps {
-            let gap = blur * (1.0 - step as f32 / steps as f32);
-            self.fill(shifted.grown(gap), radius + gap, tint);
+        let margin = blur.ceil();
+        let (wide, high) = (
+            (shifted.right - shifted.left).round().max(1.0),
+            (shifted.bottom - shifted.top).round().max(1.0),
+        );
+        let colour = shadow.tint;
+        let key = (
+            wide as u32,
+            high as u32,
+            radius.to_bits(),
+            blur.to_bits(),
+            [
+                colour.red.to_bits(),
+                colour.green.to_bits(),
+                colour.blue.to_bits(),
+                colour.alpha.to_bits(),
+            ],
+        );
+        let (whole_wide, whole_high) = (wide + margin * 2.0, high + margin * 2.0);
+        let Some(bitmap) =
+            self.shade_of(key, (whole_wide, whole_high), margin, radius, blur, colour)
+        else {
+            return;
+        };
+        self.lay(
+            &bitmap,
+            (whole_wide, whole_high),
+            Rect::at(
+                shifted.left - margin,
+                shifted.top - margin,
+                whole_wide,
+                whole_high,
+            ),
+            0.0,
+            1.0,
+        );
+    }
+
+    /// The shadow for that key, drawn the first time it is asked for: one
+    /// rounded layer per pixel of softness, each fainter than a solid one.
+    fn shade_of(
+        &self,
+        key: ShadeKey,
+        (whole_wide, whole_high): (f32, f32),
+        margin: f32,
+        radius: f32,
+        blur: f32,
+        colour: Colour,
+    ) -> Option<ID2D1Bitmap> {
+        let mut kept = self.shades.borrow_mut();
+        if let Some(at) = kept.iter().position(|shade| shade.key == key) {
+            let found = kept.remove(at);
+            let bitmap = found.bitmap.clone();
+            kept.push(found);
+            return Some(bitmap);
         }
+        let steps = blur.ceil().max(1.0) as i32;
+        let mut layer_colour = colour;
+        layer_colour.alpha = colour.alpha / steps as f32;
+        let cast = Rect::at(
+            margin,
+            margin,
+            whole_wide - margin * 2.0,
+            whole_high - margin * 2.0,
+        );
+        // SAFETY: a drawing of its own, made beside the canvas's and
+        // closed before its picture is taken, with a brush made from it.
+        let made = unsafe {
+            let layer = self
+                .target
+                .CreateCompatibleRenderTarget(
+                    Some(&D2D_SIZE_F {
+                        width: whole_wide,
+                        height: whole_high,
+                    }),
+                    None,
+                    None,
+                    D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
+                )
+                .ok()?;
+            let brush = layer
+                .CreateSolidColorBrush(&tint(layer_colour), None)
+                .ok()?;
+            layer.BeginDraw();
+            layer.Clear(Some(&tint(Colour::TRANSPARENT)));
+            for step in 0..steps {
+                let gap = blur * (1.0 - step as f32 / steps as f32);
+                layer.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: cast.grown(gap).d2d(),
+                        radiusX: radius + gap,
+                        radiusY: radius + gap,
+                    },
+                    &brush,
+                );
+            }
+            layer.EndDraw(None, None).ok()?;
+            layer.GetBitmap().ok()?
+        };
+        if kept.len() >= SHADES_KEPT {
+            kept.remove(0);
+        }
+        kept.push(Shade {
+            key,
+            bitmap: made.clone(),
+        });
+        Some(made)
     }
 
     /// Draws without letting anything out of this rect.

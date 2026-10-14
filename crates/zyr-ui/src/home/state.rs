@@ -22,6 +22,16 @@ pub enum Page {
     About,
 }
 
+/// What the picture kept under a cover was drawn from: the same again
+/// and it can be laid down as it is.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Kept {
+    pub generation: u64,
+    pub light: bool,
+    pub scale: u32,
+    pub size: (u32, u32),
+}
+
 /// A tab of the settings page, chosen in the row at its top.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum SettingsTab {
@@ -261,6 +271,9 @@ pub struct State {
     pub listening: Option<Doing>,
     /// The tab the settings page shows.
     pub settings_tab: SettingsTab,
+    /// What the picture kept under a dialog was drawn from, while one is
+    /// kept.
+    pub kept: Option<Kept>,
     /// In the account dialog: creating the account rather than signing
     /// in to it.
     pub sign_up: bool,
@@ -309,6 +322,7 @@ impl State {
             copied: None,
             listening: None,
             settings_tab: SettingsTab::General,
+            kept: None,
             sign_up: false,
             pinning: None,
             attaching: false,

@@ -59,17 +59,19 @@ pub fn draw(painter: &mut Painter, width: f32, height: f32) {
     let covered = painter.state.dialog.is_some() || painter.state.opening.is_some();
     let left = if narrow { 0.0 } else { painter.px(SIDEBAR) };
 
-    painter.living(!covered && !painter.state.drawer, |painter| {
-        page(painter, Rect::at(left, 0.0, width - left, height), narrow);
-        if !narrow {
-            sidebar(painter, Rect::at(0.0, 0.0, left, height));
+    painter.under_a_cover(covered, (width, height), |painter| {
+        painter.living(!covered && !painter.state.drawer, |painter| {
+            page(painter, Rect::at(left, 0.0, width - left, height), narrow);
+            if !narrow {
+                sidebar(painter, Rect::at(0.0, 0.0, left, height));
+            }
+        });
+        if narrow {
+            drawer(painter, width, height, covered);
         }
-    });
-    if narrow {
-        drawer(painter, width, height, covered);
-    }
-    painter.living(!covered, |painter| {
-        pages::home::menu(painter, width, height)
+        painter.living(!covered, |painter| {
+            pages::home::menu(painter, width, height)
+        });
     });
     if painter.state.dialog.is_some() && painter.state.opening.is_none() {
         dialogs::draw(painter, width, height);
