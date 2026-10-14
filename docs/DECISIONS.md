@@ -4639,6 +4639,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Des paramètres lisibles sur un grand écran, inchangés sur un petit.
 
+## D295. Les détails de cet ordinateur se rangent en trois tableaux (2026-10-14, pendant MZ)
+
+**Pourquoi.** La fenêtre « Voir les détails » alignait une dizaine d'étiquettes grises et de valeurs sur deux colonnes, sans rien pour guider l'œil ; la carte graphique, avec une ligne par carte et son pilote collé au nom, se lisait mal au premier regard.
+
+**Ce qui est fait.** Sous l'empreinte, trois groupes : « Sur ZyrDesk » (nom, accès distant, version), « Système et matériel » (système, processeur, mémoire, alimentation, cartes graphiques) et « Réseau » (connexion, adresses). Chacun a un titre avec son icône dorée et un tableau encadré, deux faits par rangée séparés par des filets. Chaque fait a son icône dans un disque doré, son étiquette, sa valeur en gras et, en dessous et plus petit, ce qui la précise (version de Windows, nombre de fils, pilote, compilation). Un état (accès distant, connexion) a sa pastille de couleur. Les cartes graphiques prennent toute la largeur, une par entrée, le pilote sous le nom.
+
+**Ce qui se voit.** Une fenêtre de détails qui se parcourt d'un coup d'œil.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

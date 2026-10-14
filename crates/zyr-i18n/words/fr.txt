@@ -411,13 +411,16 @@ details.processor = Processeur
 details.threads = {count} threads
 details.memory = Mémoire
 details.graphics = Carte graphique
-details.card_and_driver = {card}, pilote {driver}
+details.driver = Pilote {driver}
 details.power = Source d'alimentation
 details.on_mains = Sur secteur
 details.on_battery = Sur batterie
 details.addresses = Adresses
 details.no_address = Aucune sur ce réseau
-details.version = ZyrDesk
+details.version = Version
+details.on_zyrdesk = Sur ZyrDesk
+details.hardware = Système et matériel
+details.connection = Connexion
 
 # Signing in to a server.
 signin.title = Se connecter à un serveur ZyrDesk

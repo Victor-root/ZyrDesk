@@ -436,33 +436,6 @@ fn grouped(fingerprint: &str) -> String {
         .join(" ")
 }
 
-/// A label and its value, one over the other: how the details of
-/// something read. Gives back the height it takes.
-pub fn fact(
-    painter: &Painter,
-    (left, top, width): (f32, f32, f32),
-    label: &str,
-    value: &str,
-) -> f32 {
-    let colours = painter.colours;
-    let label_pen = painter.caption().in_bold();
-    let label_height = painter.line(label_pen);
-    painter.text(
-        label,
-        label_pen,
-        colours.text_faint,
-        Rect::at(left, top, width, label_height),
-    );
-    label_height
-        + painter.px(2.0)
-        + painter.paragraph(
-            value,
-            painter.body(),
-            colours.text,
-            (left, top + label_height + painter.px(2.0), width),
-        )
-}
-
 /// What went wrong in the dialog, said inside it. Gives back the height
 /// it takes, nothing when nothing went wrong.
 pub fn trouble(painter: &mut Painter, (left, top, width): (f32, f32, f32)) -> f32 {

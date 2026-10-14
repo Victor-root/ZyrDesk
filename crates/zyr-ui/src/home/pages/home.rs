@@ -187,7 +187,7 @@ fn greeted(seen: &Seen) -> String {
 }
 
 /// The colour a state's dot is drawn in.
-fn tone_colour(painter: &Painter, tone: Tone) -> Colour {
+pub fn tone_colour(painter: &Painter, tone: Tone) -> Colour {
     match tone {
         Tone::Good => painter.colours.online,
         Tone::Waiting => painter.colours.warning,
