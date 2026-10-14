@@ -54,14 +54,14 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_CAP_STYLE_ROUND, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_DASH_STYLE_DASH,
     D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_EXTEND_MODE_CLAMP,
     D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
-    D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_LINE_JOIN_ROUND, D2D1_PRESENT_OPTIONS_NONE,
-    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE, D2D1_RENDER_TARGET_TYPE_DEFAULT,
-    D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
-    D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
-    D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE,
-    D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap, ID2D1DCRenderTarget,
-    ID2D1Factory, ID2D1HwndRenderTarget, ID2D1PathGeometry, ID2D1RenderTarget,
-    ID2D1SolidColorBrush, ID2D1StrokeStyle,
+    D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_LAYER_OPTIONS_NONE, D2D1_LAYER_PARAMETERS,
+    D2D1_LINE_JOIN_ROUND, D2D1_PRESENT_OPTIONS_NONE, D2D1_RENDER_TARGET_PROPERTIES,
+    D2D1_RENDER_TARGET_TYPE, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+    D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES,
+    D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
+    D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory,
+    ID2D1Bitmap, ID2D1DCRenderTarget, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1PathGeometry,
+    ID2D1RenderTarget, ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -329,6 +329,8 @@ pub struct Canvas {
     /// What was drawn so far in a frame, kept to be laid down again as
     /// it is: see `keep`.
     kept: std::cell::RefCell<Option<ID2D1Bitmap>>,
+    /// How what is drawn now is grown and moved: see `growing`.
+    growth: std::cell::Cell<Matrix3x2>,
 }
 
 /// Where a canvas's pixels go.
@@ -530,6 +532,7 @@ impl Canvas {
                 scenes: std::cell::RefCell::new(Vec::new()),
                 shades: std::cell::RefCell::new(Vec::new()),
                 kept: std::cell::RefCell::new(None),
+                growth: std::cell::Cell::new(Matrix3x2::identity()),
             })
         }
     }
@@ -592,8 +595,8 @@ impl Canvas {
     /// Keeps what has been drawn so far in this frame, to be laid down
     /// again as it is by `lay_kept`, and says whether it could.
     ///
-    /// What lies under a dialog does not change while the dialog slides
-    /// in over it: kept once, it costs one picture per frame instead of
+    /// What lies under a dialog does not change while the dialog arrives
+    /// over it: kept once, it costs one picture per frame instead of
     /// a whole page drawn again.
     pub fn keep(&self) -> bool {
         let mut kept = self.kept.borrow_mut();
@@ -862,7 +865,7 @@ impl Canvas {
     ///
     /// Its softness is one layer per pixel, a few dozen for a dialog: so
     /// each shadow is drawn once, at its size, and laid down at every
-    /// frame like a photograph. A dialog that slides in over the page
+    /// frame like a photograph. A dialog that arrives over the page
     /// then costs one picture per frame, not thirty fills of its size.
     pub fn shadow(&self, rect: Rect, radius: f32, shadow: Shadow, scale: f32) {
         let blur = shadow.soft * scale;
@@ -995,6 +998,66 @@ impl Canvas {
         inside();
         // SAFETY: the clip set just above.
         unsafe { self.target.PopAxisAlignedClip() };
+    }
+
+    /// Draws `inside` grown to `factor` around the middle of `rect`, and
+    /// seen through at `opacity`: how something arrives, from a little
+    /// smaller and faint to its place.
+    ///
+    /// The faint part goes through a layer, which costs: a frame at its
+    /// full opacity draws straight on the canvas.
+    pub fn growing(&self, rect: Rect, factor: f32, opacity: f32, inside: impl FnOnce()) {
+        let before = self.growth.get();
+        let centre = Vector2 {
+            X: (rect.left + rect.right) / 2.0,
+            Y: (rect.top + rect.bottom) / 2.0,
+        };
+        let growth = Matrix3x2::scale_around(factor, factor, centre) * before;
+        let faint = opacity < 1.0;
+        self.growth.set(growth);
+        // SAFETY: a target of ours, between the start and the end of a
+        // drawing, whose grid and layer are set back before handing back
+        // control.
+        unsafe {
+            self.target.SetTransform(&growth);
+            if faint {
+                self.target.PushLayer(
+                    &D2D1_LAYER_PARAMETERS {
+                        contentBounds: Rect::at(0.0, 0.0, self.width as f32, self.height as f32)
+                            .d2d(),
+                        geometricMask: std::mem::ManuallyDrop::new(None),
+                        maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                        maskTransform: Matrix3x2::identity(),
+                        opacity,
+                        opacityBrush: std::mem::ManuallyDrop::new(None),
+                        layerOptions: D2D1_LAYER_OPTIONS_NONE,
+                    },
+                    None,
+                );
+            }
+        }
+        inside();
+        // SAFETY: the layer and the grid set just above.
+        unsafe {
+            if faint {
+                self.target.PopLayer();
+            }
+            self.target.SetTransform(&before);
+        }
+        self.growth.set(before);
+    }
+
+    /// Where this rect is seen on the canvas, once grown by `growing`.
+    pub fn as_seen(&self, rect: Rect) -> Rect {
+        let growth = self.growth.get();
+        let x = |x: f32| x * growth.M11 + growth.M31;
+        let y = |y: f32| y * growth.M22 + growth.M32;
+        Rect {
+            left: x(rect.left),
+            top: y(rect.top),
+            right: x(rect.right),
+            bottom: y(rect.bottom),
+        }
     }
 
     /// Lays a picture over this rounded rectangle, covering it to its
@@ -1447,14 +1510,15 @@ impl Canvas {
         // handing back control, otherwise everything that followed would
         // be drawn in the icon's grid.
         unsafe {
-            self.target.SetTransform(&Matrix3x2 {
+            let grid = Matrix3x2 {
                 M11: part,
                 M12: 0.0,
                 M21: 0.0,
                 M22: part,
                 M31: rect.left,
                 M32: rect.top,
-            });
+            };
+            self.target.SetTransform(&(grid * self.growth.get()));
             self.brush.SetColor(&tint(colour));
             for stroke in icon.strokes {
                 match stroke {
@@ -1482,14 +1546,7 @@ impl Canvas {
                     }
                 }
             }
-            self.target.SetTransform(&Matrix3x2 {
-                M11: 1.0,
-                M12: 0.0,
-                M21: 0.0,
-                M22: 1.0,
-                M31: 0.0,
-                M32: 0.0,
-            });
+            self.target.SetTransform(&self.growth.get());
         }
     }
 

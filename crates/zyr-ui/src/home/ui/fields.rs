@@ -466,7 +466,8 @@ impl Painter<'_> {
             self.stroke(at, radius, colours.border_strong);
         }
         if !self.is_silent() {
-            OPEN.lock().expect("the fields").places.push((field, at));
+            let seen = self.canvas.as_seen(at);
+            OPEN.lock().expect("the fields").places.push((field, seen));
         }
         let mut taken = label_height + gap + self.px(FIELD);
         if let Some((hint, ink)) = hint {

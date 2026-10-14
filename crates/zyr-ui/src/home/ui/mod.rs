@@ -32,6 +32,9 @@ pub const QUICK: Duration = Duration::from_millis(design::DURATION_SHORT);
 /// settling.
 pub const STEADY: Duration = Duration::from_millis(design::DURATION);
 
+/// The size something arriving starts from, against its own.
+const GROWS_FROM: f32 = 0.94;
+
 /// The thickness of a line and of a border.
 pub const HAIRLINE: f32 = 1.0;
 
@@ -363,6 +366,18 @@ impl<'a> Painter<'a> {
         }
         let canvas = self.canvas;
         canvas.clipped(at, || inside(self));
+    }
+
+    /// Draws `inside` as something arriving over `at`, from a little
+    /// smaller and faint to its place, as `shown` goes from nothing to one.
+    pub fn grown_in(&mut self, at: Rect, shown: f32, inside: impl FnOnce(&mut Self)) {
+        if self.silent {
+            inside(self);
+            return;
+        }
+        let factor = GROWS_FROM + (1.0 - GROWS_FROM) * shown;
+        let canvas = self.canvas;
+        canvas.growing(at, factor, shown, || inside(self));
     }
 }
 

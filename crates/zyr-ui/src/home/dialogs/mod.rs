@@ -182,7 +182,6 @@ pub fn draw(painter: &mut Painter, width: f32, height: f32) {
     let Some(dialog) = painter.state.dialog.clone() else {
         return;
     };
-    let colours = painter.colours;
     let shown = painter.arriving(&format!("dialog {dialog:?}"), STEADY);
     let whole = Rect::at(0.0, 0.0, width, height);
     painter.fill(whole, 0.0, Colour::BLACK.faded(VEIL * shown));
@@ -213,16 +212,41 @@ pub fn draw(painter: &mut Painter, width: f32, height: f32) {
     let dialog_height = wanted.min(height - margin * 2.0);
     let at = Rect::at(
         (width - dialog_width) / 2.0,
-        (height - dialog_height) / 2.0 + painter.px(14.0) * (1.0 - shown),
+        (height - dialog_height) / 2.0,
         dialog_width,
         dialog_height,
     );
+    painter.grown_in(at, shown, |painter| {
+        frame(
+            painter,
+            &dialog,
+            &shape,
+            at,
+            height,
+            (head_height, body_height, foot_height),
+        );
+    });
+}
+
+/// The dialog itself, in `at`: its frame, its head, what it holds and its
+/// buttons.
+fn frame(
+    painter: &mut Painter,
+    dialog: &Dialog,
+    shape: &Shape,
+    at: Rect,
+    height: f32,
+    (head_height, body_height, foot_height): (f32, f32, f32),
+) {
+    let colours = painter.colours;
+    let edge = painter.px(design::SPACE_6);
+    let inner_width = size(at).0 - edge * 2.0;
     let radius = painter.px(design::RADIUS_LARGE);
     painter.shadow(at, radius, colours.shadow_2);
     painter.fill(at, radius, colours.surface_1);
     painter.stroke(at, radius, colours.border_strong);
 
-    head(painter, &shape, at);
+    head(painter, shape, at);
     let room = Rect {
         top: at.top + head_height,
         bottom: at.bottom - foot_height,
@@ -232,7 +256,7 @@ pub fn draw(painter: &mut Painter, width: f32, height: f32) {
     painter.clipped(room, |painter| {
         inside(
             painter,
-            &dialog,
+            dialog,
             Rect::at(at.left + edge, room.top - now, inner_width, 0.0),
             height,
         );
@@ -246,7 +270,7 @@ pub fn draw(painter: &mut Painter, width: f32, height: f32) {
     if foot_height > 0.0 {
         footer(
             painter,
-            &shape,
+            shape,
             Rect {
                 top: at.bottom - foot_height,
                 ..at

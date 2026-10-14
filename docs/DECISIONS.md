@@ -4607,6 +4607,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Un accueil qui bouge au rythme de l'écran : survols, dialogues, voile.
 
+## D291. Un dialogue arrive en grandissant (2026-10-14, pendant MZ)
+
+**Pourquoi.** Un dialogue montait de quelques pixels depuis le bas en s'ouvrant. Victor trouve ce mouvement étrange : un dialogue n'arrive de nulle part, il apparaît devant la page.
+
+**Ce qui est fait.** Le dialogue part de 94 % de sa taille, autour de son centre, et grandit jusqu'à la sienne en passant du transparent à l'opaque, pendant que le voile s'assombrit. La toile sait dessiner ainsi n'importe quoi (`growing`), et les champs de saisie, qui sont des fenêtres de Windows posées par-dessus, suivent la place que le grossissement leur donne. La transparence passe par un calque, seulement le temps de l'arrivée : une fois ouvert, le dialogue se dessine directement.
+
+**Ce qui se voit.** Les dialogues s'ouvrent par un léger zoom en fondu, au lieu de monter.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
