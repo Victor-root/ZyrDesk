@@ -12,7 +12,7 @@ use zyr_session::presence::{Narrowed, Presence, Road};
 use crate::home::pages::page_title;
 use crate::home::seen::Seen;
 use crate::home::state::{Menu, Offer, Page, State, Target, View};
-use crate::home::ui::{Button, Kind, Painter, QUICK, TAG_HEIGHT, middle, size, square};
+use crate::home::ui::{Button, Kind, Painter, QUICK, STEADY, TAG_HEIGHT, middle, size, square};
 use crate::home::words;
 
 /// A card's height, the gap between cards, and the narrowest and widest a
@@ -60,13 +60,15 @@ pub fn draw(painter: &mut Painter, at: Rect) -> f32 {
     y - at.top
 }
 
-/// The computers the search and the filter keep, in the order they are
-/// shown.
+/// The computers the search and the filter keep, in the order the person
+/// put them in.
 pub fn shown<'s>(seen: &'s Seen, state: &State) -> Vec<&'s Peer> {
-    seen.peers
-        .iter()
-        .filter(|peer| zyr_session::presence::kept(peer, state.narrowed, &state.search))
-        .collect()
+    zyr_session::presence::arranged(
+        seen.peers
+            .iter()
+            .filter(|peer| zyr_session::presence::kept(peer, state.narrowed, &state.search)),
+        &state.order,
+    )
 }
 
 /// How the computers go across a page of that width, in the view chosen:
@@ -122,18 +124,98 @@ pub fn lay(
         )
     };
     let view = painter.state.view;
-    for (rank, peer) in peers.iter().take(shown).enumerate() {
-        match view {
-            View::Grid => card(painter, seen, peer, place(rank)),
-            View::List => row(painter, seen, peer, place(rank)),
+    let draw = |painter: &mut Painter, peer: &Peer, at: Rect| match view {
+        View::Grid => card(painter, seen, peer, at),
+        View::List => row(painter, seen, peer, at),
+    };
+
+    // The card a hand is moving goes where the hand would drop it, and
+    // the others make room for it.
+    let mut laid: Vec<&Peer> = peers[..shown].to_vec();
+    let held = held(painter, &laid, place(0));
+    if let Some((from, corner)) = held {
+        let moving = laid.remove(from);
+        let (centre_x, centre_y) = (corner.0 + column / 2.0, corner.1 + height / 2.0);
+        let across = ((centre_x - at.left) / (column + gap))
+            .floor()
+            .clamp(0.0, columns as f32 - 1.0) as usize;
+        let down = ((centre_y - at.top) / (height + gap)).floor().max(0.0) as usize;
+        laid.insert((down * columns + across).min(laid.len()), moving);
+        if let Some(dragging) = painter.state.dragging.as_mut() {
+            dragging.placed = laid
+                .iter()
+                .map(|peer| peer.fingerprint.to_string())
+                .collect();
         }
+    }
+    let moving = held.map(|(from, _)| peers[from].fingerprint);
+    for (rank, peer) in laid.iter().enumerate() {
+        if Some(peer.fingerprint) == moving {
+            continue;
+        }
+        // Each card slides to its place rather than jumping, so that the
+        // hand sees which ones made room.
+        let goal = place(rank);
+        let target = Target::Move(peer.fingerprint.to_string());
+        let left = painter.ease(&target, 5, goal.left - at.left, STEADY);
+        let top = painter.ease(&target, 6, goal.top - at.top, STEADY);
+        draw(
+            painter,
+            peer,
+            Rect::at(at.left + left, at.top + top, column, height),
+        );
     }
     if !all {
         more(painter, place(shown), peers.len() - shown);
     }
+    if let Some((from, corner)) = held {
+        let at = Rect::at(corner.0, corner.1, column, height);
+        painter.shadow(at, painter.px(design::RADIUS), painter.colours.shadow_2);
+        painter.living(false, |painter| draw(painter, peers[from], at));
+    }
     let laid = if all { shown } else { places };
     let rows = laid.div_ceil(columns) as f32;
     rows * height + (rows - 1.0) * gap
+}
+
+/// The card a hand is moving, if it is one of `laid`: its rank there, and
+/// where its corner follows the hand to. `first` is the first place,
+/// which says how large a card is.
+fn held(painter: &Painter, laid: &[&Peer], first: Rect) -> Option<(usize, (f32, f32))> {
+    let dragging = painter.state.dragging.as_ref()?;
+    let pointer = painter.state.pointer?;
+    let from = laid
+        .iter()
+        .position(|peer| peer.fingerprint.to_string() == dragging.fingerprint)?;
+    let handle = handle_in(painter, painter.state.view, first);
+    Some((
+        from,
+        (
+            pointer.0 - dragging.grab.0 - (handle.left - first.left),
+            pointer.1 - dragging.grab.1 - (handle.top - first.top),
+        ),
+    ))
+}
+
+/// Where a computer's handle is, within its card or its row.
+fn handle_in(painter: &Painter, view: View, at: Rect) -> Rect {
+    match view {
+        View::Grid => {
+            let corner = painter.px(28.0);
+            Rect::at(
+                at.right - painter.px(14.0 + 6.0) - corner,
+                at.top + painter.px(14.0 + 6.0),
+                corner,
+                corner,
+            )
+        }
+        View::List => Rect::at(
+            at.left + painter.px(6.0),
+            middle(at).1 - painter.px(14.0),
+            painter.px(24.0),
+            painter.px(28.0),
+        ),
+    }
 }
 
 /// The number a computer's view of the dunes is taken from, read from
@@ -267,6 +349,26 @@ impl Shown {
         painter.dot(middle(disc_at), painter.px(8.0), ink, live);
     }
 
+    /// The handle a hand moves it by, in `at`, on a backing over a
+    /// picture.
+    fn handle(&self, painter: &mut Painter, at: Rect, backed: bool) {
+        let colours = painter.colours;
+        let target = Target::Move(self.fingerprint.clone());
+        let hover = painter.hover_of(&target);
+        let radius = painter.px(7.0);
+        if backed {
+            painter.fill(at, radius, colours.surface_1.faded(0.92));
+        } else if hover > 0.0 {
+            painter.fill(at, radius, colours.surface_3.faded(hover * 0.8));
+        }
+        painter.icon(
+            &icons::MOVE,
+            square(middle(at), painter.px(16.0)),
+            colours.text.mixed_with(colours.text_faint, hover),
+        );
+        painter.answers_with_tip(target, at, say!("computer.move"));
+    }
+
     /// The button of its menu in `at`, shown as strongly as `shown`, and
     /// where its menu opens from while it is open.
     fn menu_button(&self, painter: &mut Painter, at: Rect, shown: f32) {
@@ -342,7 +444,6 @@ impl Shown {
 /// One computer's card: its picture, its presence, its name, the road to
 /// it and how long it takes, and the way to it.
 fn card(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
-    let colours = painter.colours;
     let shown = Shown::of(painter, seen, peer);
     let near = painter
         .hover_of(&shown.menu)
@@ -363,23 +464,11 @@ fn card(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
     let radius = painter.px(design::RADIUS_SMALL + 1.0);
     shown.picture(painter, picture, radius);
 
-    // In the picture's corner, the handle that will move the card, and
-    // the computer's menu.
-    let corner = painter.px(28.0);
-    let handle = Rect::at(
-        picture.right - painter.px(6.0) - corner,
-        picture.top + painter.px(6.0),
-        corner,
-        corner,
-    );
-    painter.fill(handle, painter.px(7.0), colours.surface_1.faded(0.92));
-    painter.icon(
-        &icons::MOVE,
-        square(middle(handle), painter.px(16.0)),
-        colours.text_faint,
-    );
-    painter.tells(handle, say!("computer.move_soon"));
-    let more = handle.shifted(-(corner + painter.px(6.0)), 0.0);
+    // In the picture's corner, the handle that moves the card, and the
+    // computer's menu.
+    let handle = handle_in(painter, View::Grid, at);
+    shown.handle(painter, handle, true);
+    let more = handle.shifted(-(size(handle).0 + painter.px(6.0)), 0.0);
     let strength = if near > 0.0 || painter.focused(&shown.menu) {
         near.max(0.6)
     } else {
@@ -415,10 +504,11 @@ fn row(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
     if shown.reachable {
         painter.answers(shown.connect.clone(), at);
     }
-    let inside = painter.px(11.0);
     let (_, centre) = middle(at);
+    let handle = handle_in(painter, View::List, at);
+    shown.handle(painter, handle, false);
     let thumbnail = Rect::at(
-        at.left + inside,
+        handle.right + painter.px(4.0),
         centre - painter.px(THUMBNAIL.1) / 2.0,
         painter.px(THUMBNAIL.0),
         painter.px(THUMBNAIL.1),

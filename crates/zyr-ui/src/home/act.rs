@@ -99,8 +99,12 @@ pub fn act(app: &App, target: Target) {
             crate::home::redraw(app);
         }
         Target::View(view) => {
-            crate::home::state().view = view;
-            crate::home::arranged::keep(view);
+            let order = {
+                let mut state = crate::home::state();
+                state.view = view;
+                state.order.clone()
+            };
+            crate::home::arranged::keep(view, order);
             crate::home::redraw(app);
         }
         Target::Offer(fingerprint, offer) => {
@@ -194,7 +198,7 @@ pub fn act(app: &App, target: Target) {
         Target::JournalEmpty => dialogs::empty_the_journal(app),
         Target::JournalTag(name) => dialogs::toggle_tag(app, &name),
         // Held and dragged, never clicked.
-        Target::Scrollbar(_) => {}
+        Target::Scrollbar(_) | Target::Move(_) => {}
         Target::DismissNotice => {
             crate::home::state().notice = None;
             crate::home::redraw(app);

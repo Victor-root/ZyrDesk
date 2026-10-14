@@ -162,6 +162,8 @@ pub enum Target {
     Connect(String),
     /// Wakes the computer of that fingerprint, switched off.
     Wake(String),
+    /// The handle a computer's card is moved by.
+    Move(String),
     /// Opens or closes a menu.
     Menu(Menu),
     Offer(String, Offer),
@@ -198,6 +200,16 @@ pub enum Target {
     JournalTag(String),
     Scrollbar(Scroller),
     DismissNotice,
+}
+
+/// A computer's card being moved by a hand.
+pub struct Dragging {
+    pub fingerprint: String,
+    /// Where the hand took its handle, from the handle's corner.
+    pub grab: (f32, f32),
+    /// The computers shown, in the order the last frame put them in with
+    /// this one where the hand would drop it.
+    pub placed: Vec<String>,
 }
 
 /// What the person has just been told: a success that fades by itself,
@@ -272,6 +284,10 @@ pub struct State {
     pub search: String,
     pub narrowed: Narrowed,
     pub view: View,
+    /// The order the computers were put in, by fingerprint, and the card
+    /// a hand is moving.
+    pub order: Vec<String>,
+    pub dragging: Option<Dragging>,
 
     /// What the last frame laid down, the last laid on top, and where
     /// the hand was last seen over the window.
@@ -345,6 +361,8 @@ impl State {
             search: String::new(),
             narrowed: Narrowed::All,
             view: View::Grid,
+            order: Vec::new(),
+            dragging: None,
             hits: Vec::new(),
             pointer: None,
             hover: None,

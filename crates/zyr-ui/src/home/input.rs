@@ -11,7 +11,7 @@ use std::time::Instant;
 use windows_sys::Win32::Foundation::{HWND, LPARAM};
 
 use crate::home::act::act;
-use crate::home::state::{Hit, Menu, Scroller, Target};
+use crate::home::state::{Dragging, Hit, Menu, Scroller, Target};
 use crate::home::ui::fields::{self, Field};
 use crate::home::window::{invalidate, program, scale};
 use crate::shell::shortcuts::{Combination, Doing, Held};
@@ -77,19 +77,25 @@ pub fn moves(window: HWND, (x, y): (i32, i32)) {
     let point = (x as f32, y as f32);
     let dragged = {
         let mut state = crate::home::state();
-        match state.held {
-            Some((which, from)) => {
-                let scrolled = *state.scrolled(which);
-                if scrolled.travel > 0.0 {
-                    let by =
-                        (point.1 - from) * (scrolled.content - scrolled.room) / scrolled.travel;
-                    state.scrolled(which).go(scrolled.goal + by);
-                }
-                state.held = Some((which, point.1));
-                true
-            }
-            None => false,
+        // A card being moved follows the hand at every move.
+        let moving = state.dragging.is_some();
+        if moving {
+            state.pointer = Some(point);
         }
+        moving
+            || match state.held {
+                Some((which, from)) => {
+                    let scrolled = *state.scrolled(which);
+                    if scrolled.travel > 0.0 {
+                        let by =
+                            (point.1 - from) * (scrolled.content - scrolled.room) / scrolled.travel;
+                        state.scrolled(which).go(scrolled.goal + by);
+                    }
+                    state.held = Some((which, point.1));
+                    true
+                }
+                None => false,
+            }
     };
     if dragged || hover(Some(point)) {
         invalidate();
@@ -97,13 +103,25 @@ pub fn moves(window: HWND, (x, y): (i32, i32)) {
 }
 
 pub fn left() {
+    // A card being moved keeps following the hand outside the window.
+    if crate::home::state().dragging.is_some() {
+        return;
+    }
     if hover(None) {
         invalidate();
     }
 }
 
+/// The mouse was taken away from the window while a card was being
+/// moved, by a window coming in front: the card goes back to its place.
+pub fn mouse_taken() {
+    if crate::home::state().dragging.take().is_some() {
+        invalidate();
+    }
+}
+
 pub fn presses(window: HWND, (x, y): (i32, i32)) {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{SetCapture, SetFocus};
 
     // The keyboard comes back to the window, so that Escape, Enter and
     // the combinations arrive here. Before anything is held: the field
@@ -133,14 +151,38 @@ pub fn presses(window: HWND, (x, y): (i32, i32)) {
     }
     match target {
         Some(Target::Scrollbar(which)) => state.held = Some((which, point.1)),
+        Some(Target::Move(fingerprint)) => {
+            let handle = state
+                .hover
+                .and_then(|at| state.hits.get(at))
+                .map(|hit| hit.at);
+            if let Some(handle) = handle {
+                state.dragging = Some(Dragging {
+                    fingerprint,
+                    grab: (point.0 - handle.left, point.1 - handle.top),
+                    placed: Vec::new(),
+                });
+            }
+        }
         target => state.pressed = target,
     }
+    let moving = state.dragging.is_some();
     drop(state);
+    if moving {
+        // The hand may leave the window while it holds the card: its
+        // letting go must still arrive here. Once the memory is let go,
+        // since taking the mouse can tell this very window at once.
+        // SAFETY: a window of ours, on its thread.
+        unsafe { SetCapture(window) };
+    }
     invalidate();
 }
 
 pub fn releases((x, y): (i32, i32)) {
     let point = (x as f32, y as f32);
+    if put_down() {
+        return;
+    }
     let pressed = {
         let mut state = crate::home::state();
         state.held = None;
@@ -157,6 +199,31 @@ pub fn releases((x, y): (i32, i32)) {
     if let Some(app) = program() {
         act(&app, pressed);
     }
+}
+
+/// Puts down the card a hand was moving, where the last frame showed it
+/// would go, and keeps the order. Says whether there was one.
+fn put_down() -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
+
+    let kept = {
+        let mut state = crate::home::state();
+        let Some(dragging) = state.dragging.take() else {
+            return false;
+        };
+        (!dragging.placed.is_empty()).then(|| {
+            state.order = zyr_session::presence::rearranged(&state.order, &dragging.placed);
+            (state.view, state.order.clone())
+        })
+    };
+    // SAFETY: a question about this thread's mouse, which nothing else
+    // holds.
+    unsafe { ReleaseCapture() };
+    if let Some((view, order)) = kept {
+        crate::home::arranged::keep(view, order);
+    }
+    invalidate();
+    true
 }
 
 /// Scrolls what the wheel is over: the open dialog, or the page.
@@ -251,7 +318,12 @@ pub fn key_down(key: u32, with: LPARAM) -> bool {
         }
         VK_ESCAPE => {
             let mut state = crate::home::state();
-            if state.menu.take().is_some() {
+            if state.dragging.take().is_some() {
+                drop(state);
+                // SAFETY: a question about this thread's mouse.
+                unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture() };
+                invalidate();
+            } else if state.menu.take().is_some() {
                 drop(state);
                 invalidate();
             } else if state.dialog.is_some() {
@@ -326,7 +398,10 @@ fn step_focus(backwards: bool) {
 /// What the keyboard can be on: not what is held and dragged, nor the
 /// veil that only covers.
 fn answers_the_keyboard(target: &Target) -> bool {
-    !matches!(target, Target::Scrollbar(_) | Target::Fold)
+    !matches!(
+        target,
+        Target::Scrollbar(_) | Target::Move(_) | Target::Fold
+    )
 }
 
 /// What a key is worth when a shortcut is waiting for it.

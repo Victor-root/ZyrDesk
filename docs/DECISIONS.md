@@ -4814,6 +4814,17 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** « Réveiller » allume un ordinateur du compte éteint sur le même réseau. Les deux PC se mettent à jour ensemble.
 
+## D314. Réordonner les ordinateurs en les faisant glisser (2026-10-14, pendant MZ)
+
+**Pourquoi.** La poignée dessinée dans le coin de chaque carte attendait sa fonction depuis [D280](#d280-le-nouvel-accueil-remplace-lancien-dune-seule-pièce-2026-10-14-pendant-mz).
+
+**Ce qui est fait.**
+- La poignée d'une carte, ou celle qui ouvre une ligne en vue liste, se prend à la souris : la carte suit la main, soulevée par son ombre, et les autres glissent pour lui faire de la place là où elle tomberait. Lâchée, elle y reste ; Échap, ou une fenêtre qui prend la souris, la remet à sa place.
+- L'ordre est gardé par empreinte dans `home-layout.conf`, avec la vue ([D310](#d310-la-page--ordinateurs--la-recherche-le-filtre-et-les-deux-vues-2026-10-14-pendant-mz)), écrit loin du fil qui dessine. Les ordinateurs rangés viennent d'abord, dans leur ordre ; un ordinateur jamais rangé vient après, à la place que lui donne sa présence. Un rangement fait sous une recherche ou un filtre range ceux qui se voient et garde les autres derrière. Ces deux calculs sont purs, rangés avec la présence dans `zyr-session`, et essayés sur tout système.
+- Toutes les cartes glissent désormais vers leur place au lieu d'y sauter, ce qui se voit aussi quand un filtre ou la largeur de la fenêtre les déplace.
+
+**Ce qui se voit.** La poignée marche, sur l'accueil comme sur la page « Ordinateurs », et l'ordre choisi revient à chaque ouverture.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -14,7 +14,7 @@ use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use zyr_draw::Canvas;
 use zyr_win32::wide;
 
-use crate::home::state::Dialog;
+use crate::home::state::{Dialog, Target};
 use crate::home::ui::Painter;
 use crate::home::ui::fields::{self, Field};
 use crate::home::{frame, input, note, seen};
@@ -229,9 +229,9 @@ unsafe extern "system" fn answer(
     use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         DefWindowProcW, EN_CHANGE, EN_KILLFOCUS, EN_SETFOCUS, HTCLIENT, IDC_ARROW, IDC_HAND,
-        KillTimer, LoadCursorW, SetCursor, SetTimer, WM_COMMAND, WM_CTLCOLOREDIT, WM_ERASEBKGND,
-        WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-        WM_PAINT, WM_SETCURSOR, WM_SYSKEYDOWN, WM_TIMER,
+        IDC_SIZEALL, KillTimer, LoadCursorW, SetCursor, SetTimer, WM_CAPTURECHANGED, WM_COMMAND,
+        WM_CTLCOLOREDIT, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEHWHEEL,
+        WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETCURSOR, WM_SYSKEYDOWN, WM_TIMER,
     };
 
     match message {
@@ -269,6 +269,10 @@ unsafe extern "system" fn answer(
             input::left();
             0
         }
+        WM_CAPTURECHANGED => {
+            input::mouse_taken();
+            0
+        }
         WM_LBUTTONDOWN => {
             input::presses(window, crate::shell::win32::pointer_in(with));
             0
@@ -292,10 +296,15 @@ unsafe extern "system" fn answer(
             unsafe { DefWindowProcW(window, message, holding, with) }
         }
         WM_SETCURSOR if (with as u32 & 0xFFFF) == HTCLIENT => {
-            let shape = if crate::home::state().hovered().is_some() {
-                IDC_HAND
-            } else {
-                IDC_ARROW
+            let shape = {
+                let state = crate::home::state();
+                if state.dragging.is_some() || matches!(state.hovered(), Some(Target::Move(_))) {
+                    IDC_SIZEALL
+                } else if state.hovered().is_some() {
+                    IDC_HAND
+                } else {
+                    IDC_ARROW
+                }
             };
             // SAFETY: a pointer shape of the system, asked for by name.
             unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), shape)) };

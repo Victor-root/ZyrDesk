@@ -1,9 +1,10 @@
 //! Where a computer of the home screen stands, and the road to it.
 //!
-//! What its card shows, whether a session can be asked of it, and whether
-//! the search and the filter keep it in view, read once here from what
-//! the service says rather than worked out by the window: the window
-//! draws a dot and a button, and this says which.
+//! What its card shows, whether a session can be asked of it, whether
+//! the search and the filter keep it in view, and where the person put
+//! it among the others, read once here from what the service says rather
+//! than worked out by the window: the window draws a dot and a button,
+//! and this says which.
 
 use zyr_control::{Access, Peer};
 use zyr_proto::fact::Fact;
@@ -72,6 +73,33 @@ pub fn reachable_first(peers: &mut [Peer]) {
         Presence::Closed { .. } => 2,
         Presence::Gone => 3,
     });
+}
+
+/// The computers in the order the person arranged them: those `order`
+/// names first, as it names them, then the others in the order they come,
+/// a computer never arranged going after those that were.
+pub fn arranged<'p>(peers: impl IntoIterator<Item = &'p Peer>, order: &[String]) -> Vec<&'p Peer> {
+    let mut peers: Vec<&Peer> = peers.into_iter().collect();
+    let rank = |peer: &Peer| {
+        let fingerprint = peer.fingerprint.to_string();
+        order
+            .iter()
+            .position(|named| *named == fingerprint)
+            .unwrap_or(order.len())
+    };
+    peers.sort_by_key(|peer| rank(peer));
+    peers
+}
+
+/// The order to keep once the computers shown were moved into `shown`:
+/// those, then the ones `before` named that were not shown, a search or a
+/// filter having hidden them, in the order they had.
+pub fn rearranged(before: &[String], shown: &[String]) -> Vec<String> {
+    shown
+        .iter()
+        .chain(before.iter().filter(|named| !shown.contains(named)))
+        .cloned()
+        .collect()
 }
 
 /// The road a session towards that computer takes.
@@ -246,6 +274,42 @@ mod tests {
             kept_by(Narrowed::Internet),
             [false, false, true, true, false]
         );
+    }
+
+    #[test]
+    fn the_computers_arranged_come_first_as_arranged_and_the_others_keep_their_order() {
+        let named = |name: &str, seed: u8| {
+            let mut peer = said("seen=yes written=no");
+            peer.name = name.to_string();
+            peer.fingerprint = format!("{seed:02x}").repeat(32).parse().unwrap();
+            peer
+        };
+        let peers = [named("a", 1), named("b", 2), named("c", 3), named("d", 4)];
+        let order = [
+            peers[2].fingerprint.to_string(),
+            "ff".repeat(32),
+            peers[0].fingerprint.to_string(),
+        ];
+        let names: Vec<&str> = arranged(&peers, &order)
+            .iter()
+            .map(|peer| peer.name.as_str())
+            .collect();
+        assert_eq!(names, ["c", "a", "b", "d"]);
+    }
+
+    #[test]
+    fn a_rearranging_keeps_what_was_hidden_behind_what_was_shown() {
+        let order = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| name.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            rearranged(&order(&["a", "b", "c", "d"]), &order(&["c", "a"])),
+            order(&["c", "a", "b", "d"])
+        );
+        assert_eq!(rearranged(&[], &order(&["b", "a"])), order(&["b", "a"]));
     }
 
     #[test]

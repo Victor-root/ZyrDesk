@@ -69,7 +69,7 @@ Dans le bandeau, sous le message d'accueil : une carte à part le répétait ([D
 
 ## 6. Mes ordinateurs
 
-Une carte par ordinateur connu (réseau local et compte), ou une ligne en vue liste, avec « Voir tout », qui mène à la page « Ordinateurs », et le nombre. Ceux qui acceptent une session viennent d'abord, ceux qui sont hors ligne en dernier. La recherche et le filtre de la barre du haut s'y appliquent.
+Une carte par ordinateur connu (réseau local et compte), ou une ligne en vue liste, avec « Voir tout », qui mène à la page « Ordinateurs », et le nombre. Ceux qui acceptent une session viennent d'abord, ceux qui sont hors ligne en dernier, tant que la personne ne les a pas rangés elle-même à la poignée. La recherche et le filtre de la barre du haut s'y appliquent.
 
 | Élément de la carte | État | Note |
 |---|---|---|
@@ -79,7 +79,7 @@ Une carte par ordinateur connu (réseau local et compte), ou une ligne en vue li
 | Étiquette LAN ou Internet, et la latence | Oui | |
 | « Se connecter » | Oui | Ouvre la session |
 | « Réveiller » (ordinateur éteint) | Oui | Réveil par le réseau local, une fois sa carte réseau connue ; grisé avant ([D313](DECISIONS.md)) |
-| Poignée pour réordonner les cartes | Grisé | |
+| Poignée pour réordonner les cartes | Oui | Glisser une carte, ou une ligne en vue liste ; l'ordre est gardé ([D314](DECISIONS.md)) |
 
 ## 7. Le bas de la page
 
