@@ -163,7 +163,8 @@ fn page(painter: &mut Painter, at: Rect, narrow: bool) {
 
 /// The bar at the top of the page: the button that unfolds the bar on
 /// the left in a narrow window, and on the right the search, the filter
-/// and the two views, which are drawn and do not work yet.
+/// and the two views, which are drawn and do not work yet, then the
+/// journal, one click away from wherever the window is.
 fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
     let colours = painter.colours;
     let height = size(at).1;
@@ -179,10 +180,38 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
         );
     }
 
-    // From the right: the views, the filter, then the search, which takes
-    // what is left, within reason.
+    // From the right: the journal, the views, the filter, then the
+    // search, which takes what is left, within reason.
     let view = height - painter.px(2.0);
-    let list = Rect::at(at.right - view, at.top + painter.px(1.0), view, view);
+    let journal = Rect::at(at.right - view, at.top + painter.px(1.0), view, view);
+    let target = Target::OpenJournal;
+    let hover = painter.hover_of(&target);
+    painter.fill(
+        journal,
+        radius,
+        colours.surface_1.mixed_with(colours.surface_3, 1.0 - hover),
+    );
+    painter.stroke(journal, radius, colours.border);
+    painter.icon(
+        &icons::JOURNAL,
+        square(middle(journal), painter.px(20.0)),
+        colours.text.mixed_with(colours.text_soft, hover),
+    );
+    if painter.focused(&target) {
+        painter.focus_ring(journal, radius);
+    }
+    painter.answers_with_tip(target, journal, say!("settings.open_journal"));
+    let divider = |painter: &Painter, x: f32| {
+        painter.upright(
+            x,
+            at.top + painter.px(9.0),
+            height - painter.px(18.0),
+            colours.border,
+        );
+    };
+    divider(painter, journal.left - gap);
+
+    let list = journal.shifted(-(view + gap * 2.0), 0.0);
     let grid = list.shifted(-(view + painter.px(design::SPACE_2)), 0.0);
     painter.fill(grid, radius, colours.surface_1);
     painter.stroke(grid, radius, colours.border);
@@ -196,14 +225,6 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
         },
         soon.clone(),
     );
-    let divider = |painter: &Painter, x: f32| {
-        painter.upright(
-            x,
-            at.top + painter.px(9.0),
-            height - painter.px(18.0),
-            colours.border,
-        );
-    };
     divider(painter, grid.left - gap);
 
     let pen = painter.body();
