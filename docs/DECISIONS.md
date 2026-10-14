@@ -4480,6 +4480,16 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Rien : le produit fait la même chose, avec des fondations à jour.
 
+## D279. La latence des ordinateurs du réseau local se mesure, sans un paquet de plus (2026-10-14, pendant MZ)
+
+**Pourquoi.** Le nouvel accueil ([INTERFACE.md](INTERFACE.md) §6) montre sur chaque carte d'ordinateur la route qui y mène et son délai. Rien ne mesurait ce délai hors d'une session.
+
+**Ce qui est fait.** Chaque ordinateur interroge déjà en face, toutes les trois secondes, chacun de ceux qu'il connaît sur le réseau local, pour s'assurer qu'il est toujours là ([D19](#d19-la-découverte-appelle-au-lieu-dattendre-dêtre-entendue-2026-08-19-pendant-m4)). Le temps entre cette question et sa réponse est maintenant gardé : c'est l'aller-retour de la route. Il se lisse, chaque mesure ne déplaçant la valeur que d'un quart du chemin, pour qu'un Wi-Fi qui trébuche une fois ne fasse pas sauter le chiffre de deux à quarante millisecondes. Une annonce par le réseau ne mesure rien et laisse la valeur connue en place. Le service la transmet à la fenêtre avec chaque ordinateur, arrondie à la milliseconde supérieure : une route de quatre dixièmes ne dure pas zéro.
+
+**Le dialogue entre la fenêtre et le service passe en version 35** : un ordinateur porte désormais son délai (`rtt`). Une moitié plus ancienne l'ignore, ou ne l'envoie pas et la carte n'affiche alors aucun délai.
+
+**Ce qui se voit.** Rien encore : le délai s'affichera sur les cartes du nouvel accueil. Un ordinateur que seul le compte ou une saisie à la main fait connaître n'a pas de délai, rien ne mesurant la route vers lui.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

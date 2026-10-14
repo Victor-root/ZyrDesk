@@ -28,7 +28,7 @@ use zyr_proto::session::{Preferred, WantedScreen};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 34;
+pub const PROTOCOL: u32 = 35;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -680,6 +680,11 @@ pub struct Peer {
     /// hand. A computer on the network and of the account is one card,
     /// with the network's address and the account's word on it.
     pub account: Option<OfAccount>,
+    /// How long a question takes to come back from it, in milliseconds,
+    /// when the local network has measured it. Nothing for a computer
+    /// only the account or a hand knows: nothing here times the road to
+    /// it.
+    pub round_trip_ms: Option<u32>,
 }
 
 /// What the account says of a computer.
@@ -901,6 +906,7 @@ impl Answer {
                     access: access_read(fields.text("access").unwrap_or_default()),
                     shared_by: fields.text("shared").ok().map(unpacked),
                 }),
+                round_trip_ms: fields.parsed("rtt").ok(),
             })),
             "session" => Ok(Answer::Session(Session {
                 way: WayId(fields.parsed("way")?),
@@ -1028,6 +1034,9 @@ impl fmt::Display for Answer {
                     if let Some(owner) = &of_account.shared_by {
                         write!(f, " shared={}", packed(owner))?;
                     }
+                }
+                if let Some(round_trip) = peer.round_trip_ms {
+                    write!(f, " rtt={round_trip}")?;
                 }
                 Ok(())
             }
@@ -1480,6 +1489,7 @@ mod tests {
                 seen: true,
                 written: false,
                 account: None,
+                round_trip_ms: Some(2),
             }),
             Answer::Peer(Peer {
                 name: "Desktop PC".to_string(),
@@ -1489,6 +1499,7 @@ mod tests {
                 seen: false,
                 written: true,
                 account: None,
+                round_trip_ms: None,
             }),
             // A computer of the account that the network does not
             // carry: its road is its identifier at the server.
@@ -1505,6 +1516,7 @@ mod tests {
                     access: Access::Ready,
                     shared_by: None,
                 }),
+                round_trip_ms: None,
             }),
             // And a computer a contact has shared, also seen on the local
             // network: a single card, with the address from the network
@@ -1522,6 +1534,7 @@ mod tests {
                     access: Access::EngineMissing,
                     shared_by: Some("a friend".to_string()),
                 }),
+                round_trip_ms: Some(1),
             }),
             Answer::Session(Session {
                 way: WayId(3),
@@ -1736,6 +1749,8 @@ mod tests {
             panic!("« {line} » is not read back as a computer");
         };
         assert_eq!(read.account, None);
+        // Nor how far it is, which an older service never measured.
+        assert_eq!(read.round_trip_ms, None);
 
         // And an access state this half has never heard of reads as
         // starting up, which is true for as long as it takes to update
@@ -1805,6 +1820,7 @@ mod tests {
                 seen: true,
                 written: false,
                 account: None,
+                round_trip_ms: None,
             })
             .to_string();
             let Ok(Answer::Peer(read)) = Answer::parse(&sent) else {

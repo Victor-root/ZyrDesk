@@ -18,6 +18,7 @@
 //! list, a computer found twice is one computer, and on a network where
 //! the announcements do pass, nothing here ever has anything to do.
 
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -327,6 +328,7 @@ pub fn start(
             swept: None,
             listed: Vec::new(),
             mine: Vec::new(),
+            asked: HashMap::new(),
         };
         while !watching.load(Ordering::Relaxed) {
             me.once();
@@ -364,6 +366,12 @@ struct Calls {
     /// enough that a card plugged in mid-session is named before anyone
     /// notices it was not.
     mine: Vec<Ipv4Addr>,
+    /// When each computer already known was last asked to its face, by
+    /// the address it was asked at: its answer says how long the road
+    /// there and back takes, which is the delay its card shows. Only
+    /// this round's questions: an answer later than a round is no
+    /// measure of anything but a road gone bad.
+    asked: HashMap<IpAddr, Instant>,
 }
 
 impl Calls {
@@ -391,8 +399,10 @@ impl Calls {
         // what keeps the list honest: a broadcast that a box drops would
         // otherwise leave a computer on the screen until it timed out,
         // and one that stopped answering has to fall off it quickly.
+        self.asked.clear();
         for peer in &around {
             self.say(&question, SocketAddr::new(peer.address, PORT));
+            self.asked.insert(peer.address, Instant::now());
         }
         self.say_who_came_and_went(&around);
 
@@ -455,11 +465,14 @@ impl Calls {
                 // they are on a network this computer trusts is a
                 // neighbour, asking or answering.
                 if let Some(asking) = asking {
-                    self.note(from, asking);
+                    self.note(from, asking, None);
                 }
                 self.answer(from);
             }
-            Said::Here(said) => self.note(from, said),
+            Said::Here(said) => {
+                let round_trip = self.asked.remove(&from.ip()).map(|asked| asked.elapsed());
+                self.note(from, said, round_trip);
+            }
             Said::Bye { fingerprint } => self.goodbye(fingerprint, from),
         }
     }
@@ -487,8 +500,9 @@ impl Calls {
         self.say(&Said::Here(self.itself()).spoken(), asking);
     }
 
-    /// Writes down a computer that said where it is.
-    fn note(&self, from: SocketAddr, said: Itself) {
+    /// Writes down a computer that said where it is, and how long it took
+    /// to say it when it was answering a question asked to its face.
+    fn note(&self, from: SocketAddr, said: Itself, round_trip: Option<Duration>) {
         // This computer hears its own broadcast: it is not a neighbour.
         if said.fingerprint == self.fingerprint {
             return;
@@ -510,6 +524,7 @@ impl Calls {
             address: from.ip(),
             addresses,
             port: said.port,
+            round_trip,
         };
         let known = crate::named(&peer);
         if self.found.note(peer, Instant::now()) {
@@ -579,7 +594,46 @@ mod tests {
             swept: None,
             listed: Vec::new(),
             mine: Vec::new(),
+            asked: HashMap::new(),
         }
+    }
+
+    #[test]
+    fn a_computer_asked_to_its_face_is_timed() {
+        // Known already, it is asked directly: its answer says how long
+        // the road takes, there and back.
+        let list = Found::new();
+        let mut asking = computer("PC-PORTABLE", 1, list.clone());
+        let mut answering = computer("PC-BUREAU", 2, Found::new());
+        let door = answering.socket.local_addr().unwrap();
+
+        asking.say(&Said::Who { asking: None }.spoken(), door);
+        asking.asked.insert(door.ip(), Instant::now());
+        answering.listen();
+        asking.listen();
+
+        let found = list.peers();
+        assert_eq!(found.len(), 1, "{found:?}");
+        let measured = found[0].round_trip.expect("a round trip");
+        assert!(measured < Duration::from_secs(2), "{measured:?}");
+        // Taken once: the next answer from there is no answer to it.
+        assert!(asking.asked.is_empty());
+    }
+
+    #[test]
+    fn a_computer_nobody_asked_is_not_timed() {
+        // It answered a broadcast, or introduced itself: nothing was
+        // asked of it, so nothing measures the road.
+        let list = Found::new();
+        let mut asking = computer("PC-PORTABLE", 1, list.clone());
+        let mut answering = computer("PC-BUREAU", 2, Found::new());
+        let door = answering.socket.local_addr().unwrap();
+
+        asking.say(&Said::Who { asking: None }.spoken(), door);
+        answering.listen();
+        asking.listen();
+
+        assert_eq!(list.peers()[0].round_trip, None);
     }
 
     #[test]

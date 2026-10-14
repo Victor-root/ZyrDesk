@@ -286,6 +286,7 @@ fn merged(
                 .iter()
                 .any(|known| known.fingerprint == peer.fingerprint),
             account: of_account(peer.fingerprint),
+            round_trip_ms: peer.round_trip.map(in_milliseconds),
             name: peer.name,
             fingerprint: peer.fingerprint,
             host: peer.address.to_string(),
@@ -309,6 +310,7 @@ fn merged(
             port: TUNNEL_PORT,
             seen: false,
             written: true,
+            round_trip_ms: None,
         });
     }
 
@@ -334,9 +336,16 @@ fn merged(
                 access: device.access,
                 shared_by,
             }),
+            round_trip_ms: None,
         });
     }
     shown
+}
+
+/// A round trip in whole milliseconds, rounded up: a road that takes
+/// four tenths of one is not a road that takes none.
+fn in_milliseconds(round_trip: std::time::Duration) -> u32 {
+    u32::try_from(round_trip.as_micros().div_ceil(1000)).unwrap_or(u32::MAX)
 }
 
 /// Every computer the account names, this one left out: its own, then
@@ -402,6 +411,7 @@ mod tests {
             address,
             addresses: vec![address],
             port: TUNNEL_PORT,
+            round_trip: Some(std::time::Duration::from_micros(400)),
         }];
         let snapshot = Snapshot {
             me: Some("d0".to_string()),
@@ -433,6 +443,10 @@ mod tests {
             shown[0].account.as_ref().map(|it| it.device.as_str()),
             Some("d1")
         );
+        // How far it is, which only the network measures, rounded up to
+        // the millisecond rather than down to none.
+        assert_eq!(shown[0].round_trip_ms, Some(1));
+        assert_eq!(shown[1].round_trip_ms, None);
         // The laptop, which nothing else carries, is reached by its road
         // at the server.
         assert_eq!(shown[1].name, "Portable");

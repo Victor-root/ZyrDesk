@@ -79,6 +79,9 @@ pub struct Peer {
     /// tunnel to reach a machine on the same desk.
     pub addresses: Vec<IpAddr>,
     pub port: u16,
+    /// How long a question takes to come back from it, settled over the
+    /// last few: nothing until it has answered one asked to its face.
+    pub round_trip: Option<Duration>,
 }
 
 /// Everything found so far, forgotten when it stops answering.
@@ -127,6 +130,9 @@ impl Found {
         *seen = now;
         known.name = peer.name;
         known.port = peer.port;
+        if let Some(measured) = peer.round_trip {
+            known.round_trip = Some(settled(known.round_trip, measured));
+        }
         for address in peer.addresses {
             if !known.addresses.contains(&address) {
                 known.addresses.push(address);
@@ -169,6 +175,20 @@ impl Found {
             .map(|(peer, _)| peer.name.clone())?;
         found.retain(|_, (peer, _)| announced_as(&peer.fingerprint) != name);
         Some(gone)
+    }
+}
+
+/// A round trip, settled: each new one moves what is shown by a quarter
+/// of the way.
+///
+/// What a person reads on a card is the computer's usual delay, not the
+/// last packet's: a Wi-Fi that stumbles once must not make the figure
+/// jump from two milliseconds to forty and back, and a road that really
+/// slows down shows within a few rounds.
+fn settled(before: Option<Duration>, measured: Duration) -> Duration {
+    match before {
+        Some(before) => (before * 3 + measured) / 4,
+        None => measured,
     }
 }
 
@@ -411,6 +431,7 @@ fn read(info: &mdns_sd::ResolvedService) -> Option<Peer> {
         address: *announced.first()?,
         addresses: announced,
         port: info.port,
+        round_trip: None,
     })
 }
 
@@ -474,7 +495,32 @@ mod tests {
             address,
             addresses: vec![address],
             port: TUNNEL_PORT,
+            round_trip: None,
         }
+    }
+
+    #[test]
+    fn a_round_trip_settles_rather_than_jumps() {
+        let ms = Duration::from_millis;
+        assert_eq!(settled(None, ms(8)), ms(8));
+        assert_eq!(settled(Some(ms(2)), ms(42)), ms(12));
+        assert_eq!(settled(Some(ms(12)), ms(2)), Duration::from_micros(9_500));
+    }
+
+    #[test]
+    fn a_sighting_that_measured_nothing_keeps_the_round_trip_known() {
+        // An announcement says a computer is there and nothing of how far:
+        // the figure measured by the last question asked to its face stays.
+        let found = Found::new();
+        found.note(
+            Peer {
+                round_trip: Some(Duration::from_millis(3)),
+                ..peer(1, "PC-BUREAU")
+            },
+            Instant::now(),
+        );
+        found.note(peer(1, "PC-BUREAU"), Instant::now());
+        assert_eq!(found.peers()[0].round_trip, Some(Duration::from_millis(3)));
     }
 
     #[test]
