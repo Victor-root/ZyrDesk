@@ -51,7 +51,7 @@ Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est des
 | Cet ordinateur, sous le message d'accueil | Oui | Voir la section 5 : il vit dans le bandeau ([D283](DECISIONS.md)) |
 | Bloc « Accès distant » : l'interrupteur | Oui | Active ou coupe l'accès distant |
 | Bloc « Accès distant » : « Cet ordinateur accepte les connexions à distance », ou ce qui l'empêche | Oui | |
-| Image abstraite et devise « Plus loin ensemble » | Oui | |
+| Image abstraite de ZyrDesk | Oui | La devise de la maquette est retirée ([D285](DECISIONS.md)) |
 
 L'empreinte de l'ordinateur **ne figure pas** sur l'accueil : elle ne sert qu'à ajouter un ordinateur à la main. Elle vit dans « Ajouter un ordinateur » et dans les détails de « Cet ordinateur ».
 

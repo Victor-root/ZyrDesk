@@ -4557,6 +4557,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Un texte plus noir en clair, plus blanc en sombre, et des lettres plus nettes dans l'accueil.
 
+## D285. Le bandeau prend sa place, sans devise (2026-10-14, pendant MZ)
+
+**Pourquoi.** Victor, sur un écran de 27 pouces : dans le bandeau, tout était coupé et trop petit pour être lu, alors que c'est la pièce maîtresse de l'accueil. Et la devise « Plus loin, ensemble » de la maquette n'apportait rien.
+
+**Ce qui est fait.** Ce qu'écrit le bandeau prend toute la largeur que lui laisse le bloc « Accès distant », au lieu d'une largeur mesurée sur le message d'accueil : plus rien n'y est coupé. Il est écrit plus grand que le reste de la page : le message d'accueil passe à 34 pixels, le nom de cet ordinateur à la taille des titres, ses caractéristiques et ses états à celle des sous-titres, avec des icônes, un fond d'écran et un bouton plus grands ; le bloc « Accès distant » suit. La devise s'en va, et avec elle la police à empattements et la couleur qui ne servaient qu'à elle. Cela précise [D283](#d283-cet-ordinateur-rejoint-le-bandeau-et-les-ordinateurs-joignables-passent-en-tête-2026-10-14-pendant-mz).
+
+**Ce qui se voit.** Un bandeau plus haut, dont tout se lit d'un coup d'œil.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -88,7 +88,6 @@
   --art-ridge-front: #303b55;
   --art-rim: rgba(248, 205, 106, 0.28);
   --art-veil: #12151d;
-  --on-art: #f3f4f7;
 
   /* A grid of 8. Every spacing comes from it. */
   --space-1: 4px;
@@ -111,7 +110,7 @@
   /* Four text sizes, not one more. And the greeting of the home
      screen, the one text the whole window is built around, which is
      written larger than any title and nowhere else. */
-  --display: 30px;
+  --display: 34px;
   --title: 22px;
   --subtitle: 16px;
   --body: 14px;
@@ -177,7 +176,6 @@
   --art-ridge-front: #7f8794;
   --art-rim: rgba(255, 255, 255, 0.45);
   --art-veil: #f8f4ee;
-  --on-art: #ffffff;
 
   --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-2: 0 6px 20px rgba(16, 24, 40, 0.08);

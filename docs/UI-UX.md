@@ -8,7 +8,7 @@ Calme, précise, premium. L'application inspire la même confiance qu'un bon mat
 
 - Sombre d'abord : fond quasi noir profond légèrement bleuté, surfaces en élévations subtiles (2 à 3 niveaux), jamais de gris boueux. Thème clair soigné disponible.
 - Une seule couleur d'accent : le doré, fixe, écrit à un seul endroit, la charte graphique `crates/zyr-draw/design.css` ([D242](DECISIONS.md)). Il est réservé aux actions principales, à ce qui est choisi et à ce que la main ou le clavier désigne. Les états système utilisent une palette réduite : vert doux (en ligne), ambre (dégradé, relais), rouge calme (erreur), gris (hors ligne).
-- Typographie : Segoe UI Variable, la police de Windows, en peu de tailles (message d'accueil, titre, sous-titre, corps, légende), interlignage généreux ; une seule ligne à empattements, la devise du bandeau.
+- Typographie : Segoe UI Variable, la police de Windows, en peu de tailles (message d'accueil, titre, sous-titre, corps, légende), interlignage généreux.
 - Grille de 8 px, rayons 10 à 12 px, ombres douces et courtes, pas de bordures dures.
 - Mouvement : 150 à 220 ms, courbes en sortie douce, uniquement au service de la compréhension (apparition de cartes, changement d'état, transitions de pages). Jamais d'animation gratuite. Squelettes de chargement pour les listes, pastilles de présence avec pulsation très discrète.
 

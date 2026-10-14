@@ -90,14 +90,6 @@ const FAMILY_BEFORE: &str = "Segoe UI";
 const MONO: &str = "Cascadia Mono";
 const MONO_BEFORE: &str = "Consolas";
 
-/// The family with serifs, for the one line of the product written as a
-/// motto rather than as information: set on its picture like a caption
-/// on a print, it has to read as something said, not something shown.
-/// Windows 10 and 11 both carry the first; the second is there since
-/// long before.
-const SERIF: &str = "Sitka Heading";
-const SERIF_BEFORE: &str = "Georgia";
-
 /// Which family a word is written in.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Family {
@@ -107,8 +99,6 @@ pub enum Family {
     /// combination, where each character must take up the same room as
     /// its neighbour.
     Mono,
-    /// With serifs, for a motto.
-    Serif,
 }
 
 /// Where a word is aligned in the rect it is given.
@@ -186,13 +176,6 @@ impl Pen {
     pub const fn monospaced(self) -> Self {
         Pen {
             family: Family::Mono,
-            ..self
-        }
-    }
-
-    pub const fn with_serifs(self) -> Self {
-        Pen {
-            family: Family::Serif,
             ..self
         }
     }
@@ -1036,7 +1019,6 @@ impl Canvas {
         let families = match pen.family {
             Family::Text => [FAMILY, FAMILY_BEFORE],
             Family::Mono => [MONO, MONO_BEFORE],
-            Family::Serif => [SERIF, SERIF_BEFORE],
         };
         // SAFETY: a factory of ours; a refusal is an answer and not a
         // fault, hence the second attempt.

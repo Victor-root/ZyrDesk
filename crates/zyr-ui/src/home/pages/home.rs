@@ -23,13 +23,12 @@ use crate::home::words::{self, Tone};
 const STRIP: f32 = 76.0;
 /// The room inside the banner, and the block of remote access.
 const BANNER_INSIDE: f32 = 36.0;
-const ACCESS: f32 = 300.0;
-const MOTTO: f32 = 150.0;
+const ACCESS: f32 = 340.0;
 
 /// This computer within the banner: the narrowest its row is, and its
 /// wallpaper's frame.
-const IDENTITY: f32 = 560.0;
-const PORTRAIT: (f32, f32) = (232.0, 146.0);
+const IDENTITY: f32 = 640.0;
+const PORTRAIT: (f32, f32) = (320.0, 200.0);
 
 /// A card's height, the gap between cards, and the narrowest and widest a
 /// computer's card is.
@@ -68,8 +67,8 @@ pub fn draw(painter: &mut Painter, at: Rect) -> f32 {
 
 /* ---- The banner -------------------------------------------------------- */
 
-/// The banner: the greeting, this computer as it is, the switch of remote
-/// access, and ZyrDesk's picture.
+/// The banner: the greeting, this computer as it is, and the switch of
+/// remote access, on ZyrDesk's picture.
 fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
     let colours = painter.colours;
     let width = size(at).0;
@@ -79,14 +78,19 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
     let tagline = say!("home.tagline");
     let display = painter.display();
     let lead = painter.pen(design::SUBTITLE);
-    let words = painter
+    // The words take everything the block of remote access leaves: the
+    // banner is the page's widest piece, and what it says is not cut.
+    let least = painter
         .width_of(&hello, display)
         .max(painter.width_of(&tagline, lead))
         .max(painter.px(IDENTITY));
-    let room = width - inside * 2.0 - words;
-    let with_motto = room >= painter.px(ACCESS + BANNER_INSIDE + MOTTO);
-    let beside = room >= painter.px(ACCESS);
-    let words = if beside { words } else { width - inside * 2.0 };
+    let beside_room = width - inside * 3.0 - painter.px(ACCESS);
+    let beside = beside_room >= least;
+    let words = if beside {
+        beside_room
+    } else {
+        width - inside * 2.0
+    };
 
     let (hello_height, lead_height) = (painter.line(display), painter.line(lead));
     let identity_top = painter.px(30.0)
@@ -128,18 +132,11 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
     );
 
     if beside {
-        let right = card.right
-            - inside
-            - if with_motto {
-                painter.px(MOTTO) + inside
-            } else {
-                0.0
-            };
         access(
             painter,
             seen,
             Rect::at(
-                right - painter.px(ACCESS),
+                card.right - inside - painter.px(ACCESS),
                 card.top,
                 painter.px(ACCESS),
                 height,
@@ -159,9 +156,6 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
             ),
             true,
         );
-    }
-    if with_motto {
-        motto(painter, card);
     }
     height
 }
@@ -194,8 +188,8 @@ fn access(painter: &mut Painter, seen: &Seen, room: Rect, strip: bool) {
     let inside = painter.px(design::SPACE_5);
     let (said, tone, remedy) = access_state(seen);
     let title = say!("home.remote_access");
-    let title_pen = painter.subtitle();
-    let body = painter.body();
+    let title_pen = painter.title();
+    let body = painter.pen(design::SUBTITLE);
     let switch = Target::Switch(Toggle::Access);
     let on = toggle_is_on(seen, painter.state, Toggle::Access);
     let enabled = toggle_enabled(seen, painter.state, Toggle::Access);
@@ -383,42 +377,6 @@ fn access_state(seen: &Seen) -> (String, Tone, Option<(String, Target)>) {
     (words, tone, None)
 }
 
-/// « Further, together », set on the picture like a caption on a print.
-fn motto(painter: &Painter, card: Rect) {
-    let colours = painter.colours;
-    let pen = painter.pen(19.0).with_serifs().aligned(Align::Right);
-    let line = painter.line(pen);
-    let inside = painter.px(BANNER_INSIDE);
-    let right = card.right - inside;
-    let bottom = card.bottom - painter.px(design::SPACE_5);
-    let rule = painter.px(2.0);
-    painter.fill(
-        Rect::at(
-            right - painter.px(40.0),
-            bottom - rule,
-            painter.px(40.0),
-            rule,
-        ),
-        rule / 2.0,
-        colours.accent,
-    );
-    let lines = [say!("home.motto_first"), say!("home.motto_second")];
-    for (rank, said) in lines.iter().rev().enumerate() {
-        let top = bottom - painter.px(design::SPACE_2) - line * (rank as f32 + 1.0);
-        painter.text(
-            said,
-            pen,
-            colours.on_art,
-            Rect::at(
-                right - painter.px(MOTTO) * 2.0,
-                top,
-                painter.px(MOTTO) * 2.0,
-                line,
-            ),
-        );
-    }
-}
-
 /* ---- This computer, and the others --------------------------------------- */
 
 /// The other computers, under their heading, and gives back the height
@@ -483,7 +441,8 @@ fn see_all(painter: &mut Painter, row: Rect) {
 
 /// This computer, in the banner: its wallpaper, its name, what it is made
 /// of, how its network and ZyrDesk are doing, and the way to everything
-/// else about it.
+/// else about it. Written larger than the rest of the page: it is the
+/// one thing the banner shows besides the greeting.
 fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect) {
     let colours = painter.colours;
     let portrait = Rect::at(
@@ -499,18 +458,19 @@ fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect) {
     );
     wallpaper(painter, seen, portrait);
 
-    let left = portrait.right + painter.px(design::SPACE_5);
+    let left = portrait.right + painter.px(design::SPACE_6);
     let width = (at.right - left).max(0.0);
-    let caption = painter.caption();
-    let caption_line = painter.line(caption);
+    let pen = painter.pen(design::SUBTITLE);
+    let line = painter.line(pen);
+    let icon = painter.px(20.0);
 
     // What this is, above the name: the banner says the rest of it.
-    let small = painter.px(16.0);
-    let eyebrow = caption.in_bold();
+    let eyebrow = painter.body().in_bold();
+    let eyebrow_line = painter.line(eyebrow);
     let mut y = at.top;
     painter.icon(
         &icons::LAPTOP,
-        Rect::at(left, y + (caption_line - small) / 2.0, small, small),
+        Rect::at(left, y + (eyebrow_line - icon) / 2.0, icon, icon),
         colours.text_soft,
     );
     painter.text(
@@ -518,18 +478,18 @@ fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect) {
         eyebrow.ellipsized(),
         colours.text_soft,
         Rect::at(
-            left + small + painter.px(8.0),
+            left + icon + painter.px(10.0),
             y,
-            width - small - painter.px(8.0),
-            caption_line,
+            width - icon - painter.px(10.0),
+            eyebrow_line,
         ),
     );
-    y += caption_line + painter.px(2.0);
+    y += eyebrow_line + painter.px(design::SPACE_1);
 
-    let name_pen = painter.subtitle().ellipsized();
+    let name_pen = painter.title().ellipsized();
     let name_height = painter.line(name_pen);
     let name = seen.this_name();
-    let pencil = painter.px(28.0);
+    let pencil = painter.px(32.0);
     let name_width = painter
         .width_of(&name, name_pen)
         .min(width - pencil - painter.px(design::SPACE_2));
@@ -540,7 +500,7 @@ fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect) {
         Rect::at(left, y, name_width + painter.px(2.0), name_height),
     );
     let pencil_at = Rect::at(
-        left + name_width + painter.px(design::SPACE_1),
+        left + name_width + painter.px(design::SPACE_2),
         y + (name_height - pencil) / 2.0,
         pencil,
         pencil,
@@ -555,17 +515,17 @@ fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect) {
     } else {
         painter.icon(
             &icons::PENCIL,
-            square(middle(pencil_at), small),
+            square(middle(pencil_at), icon),
             colours.text_faint,
         );
         painter.tells(pencil_at, say!("home.rename_needs_an_account"));
     }
-    y += name_height + painter.px(design::SPACE_2);
+    y += name_height + painter.px(design::SPACE_3);
 
     // What it is made of, two by two.
-    let spec_line = painter.px(24.0);
+    let spec_line = painter.px(32.0);
     let column = width / 2.0;
-    for (rank, (icon, said)) in specs_of(seen).iter().enumerate() {
+    for (rank, (spec_icon, said)) in specs_of(seen).iter().enumerate() {
         let row = Rect::at(
             left + column * (rank % 2) as f32,
             y + spec_line * (rank / 2) as f32,
@@ -574,24 +534,24 @@ fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect) {
         );
         let (_, centre) = middle(row);
         painter.icon(
-            icon,
-            Rect::at(row.left, centre - small / 2.0, small, small),
+            spec_icon,
+            Rect::at(row.left, centre - icon / 2.0, icon, icon),
             colours.text_soft,
         );
         painter.text(
             said,
-            caption.ellipsized(),
+            pen.ellipsized(),
             colours.text,
             Rect {
-                left: row.left + small + painter.px(10.0),
-                right: row.right - painter.px(design::SPACE_3),
+                left: row.left + icon + painter.px(12.0),
+                right: row.right - painter.px(design::SPACE_4),
                 ..row
             },
         );
     }
 
     // How its network and ZyrDesk are doing, and the details beside.
-    let button_height = painter.px(34.0);
+    let button_height = painter.px(40.0);
     let row_top = at.bottom - button_height;
     let centre = row_top + button_height / 2.0;
     let label = say!("home.see_details");
@@ -608,42 +568,37 @@ fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect) {
     );
     let (network, network_tone) = words::connectivity(seen.connectivity);
     let (zyrdesk, zyrdesk_tone) = words::zyrdesk(seen);
-    let dot = painter.px(8.0);
+    let dot = painter.px(10.0);
     let mut x = left;
-    let end = at.right - button_width - painter.px(design::SPACE_3);
-    for (icon, said, tone) in [
+    let end = at.right - button_width - painter.px(design::SPACE_4);
+    for (state_icon, said, tone) in [
         (&icons::WORLD, network, network_tone),
         (&icons::SHIELD, zyrdesk, zyrdesk_tone),
     ] {
-        if x + small >= end {
+        if x + icon >= end {
             break;
         }
         painter.icon(
-            icon,
-            Rect::at(x, centre - small / 2.0, small, small),
+            state_icon,
+            Rect::at(x, centre - icon / 2.0, icon, icon),
             colours.text_soft,
         );
-        x += small + painter.px(8.0);
+        x += icon + painter.px(10.0);
         painter.dot(
             (x + dot / 2.0, centre),
             dot,
             tone_colour(painter, tone),
             false,
         );
-        x += dot + painter.px(6.0);
-        let said_width = painter.width_of(&said, caption).min((end - x).max(0.0));
+        x += dot + painter.px(8.0);
+        let said_width = painter.width_of(&said, pen).min((end - x).max(0.0));
         painter.text(
             &said,
-            caption.ellipsized(),
+            pen.ellipsized(),
             colours.text,
-            Rect::at(
-                x,
-                centre - caption_line / 2.0,
-                said_width + painter.px(2.0),
-                caption_line,
-            ),
+            Rect::at(x, centre - line / 2.0, said_width + painter.px(2.0), line),
         );
-        x += said_width + painter.px(design::SPACE_5);
+        x += said_width + painter.px(design::SPACE_6);
     }
 }
 
