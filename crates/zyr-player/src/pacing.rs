@@ -129,6 +129,12 @@ const MOST_WAITING: usize = 2;
 /// place while both wait.
 const BURST: u32 = 4;
 
+/// How close to a window's close, either side, a new picture decoded is
+/// told as on the edge: a little unevenness puts it on the refresh
+/// before or after, and it is shown a refresh more or less than the ones
+/// around it.
+const EDGE: Duration = Duration::from_millis(1);
+
 /// How long the screen may say nothing of its refreshes before the
 /// rhythm known is let go of.
 const UNTIMED_FOR: Duration = Duration::from_millis(500);
@@ -260,6 +266,13 @@ struct Second {
     /// Refreshes from one picture presented to the next: one, two,
     /// three, more.
     apart: [u32; 4],
+    /// The same from one new picture to the next, those sent again left
+    /// out: how many refreshes each new one was on the screen.
+    fresh_apart: [u32; 4],
+    /// How long before the first window it could make each new picture
+    /// was decoded, and how many of them within [`EDGE`] of a close.
+    room: Spread,
+    on_the_edge: u32,
     /// What the screen said of the pictures presented for a refresh:
     /// shown at it, after it (and of those, how many had half a refresh
     /// to spare all the same), before it, or by a refresh its count and
@@ -287,6 +300,8 @@ pub(crate) struct Pacer<T> {
     served: Option<Instant>,
     /// Whether that picture was sent again by the host.
     served_repeat: bool,
+    /// When the refresh the last new picture was presented for is.
+    fresh_served: Option<Instant>,
     /// When the last picture was presented.
     presented_at: Option<Instant>,
     /// When the screen last said when its refreshes are.
@@ -320,6 +335,7 @@ impl<T> Pacer<T> {
             waiting: VecDeque::new(),
             served: None,
             served_repeat: false,
+            fresh_served: None,
             presented_at: None,
             timed_at: None,
             straight: false,
@@ -440,6 +456,9 @@ impl<T> Pacer<T> {
                 .map_or(4, |apart| apart as usize);
             self.second.apart[apart.clamp(1, 4) - 1] += 1;
         }
+        if !waiting.repeat {
+            self.fresh(&refreshes, due, waiting.ready);
+        }
         if waiting.ready < opening {
             self.second.held += 1;
         } else {
@@ -550,6 +569,31 @@ impl<T> Pacer<T> {
         cutoff.min(refreshes.period * 2 / 3)
     }
 
+    /// A new picture, decoded at `ready`, presented for the refresh `due`:
+    /// how long the one before stayed on the screen, and how close to a
+    /// window's close it came.
+    fn fresh(&mut self, refreshes: &Refreshes, due: Instant, ready: Instant) {
+        if let Some(fresh) = self.fresh_served.replace(due)
+            && refreshes.later(due, fresh)
+        {
+            let apart = refreshes
+                .apart(fresh, due)
+                .map_or(4, |apart| apart as usize);
+            self.second.fresh_apart[apart.clamp(1, 4) - 1] += 1;
+        }
+        let cutoff = self.cutoff_for(refreshes);
+        if let Some(close) = self
+            .turn(refreshes, ready)
+            .and_then(|(first, _)| first.checked_sub(cutoff))
+        {
+            let room = close.saturating_duration_since(ready);
+            self.second.room.add(room);
+            if room < EDGE || room + EDGE > refreshes.period {
+                self.second.on_the_edge += 1;
+            }
+        }
+    }
+
     /// Whether the picture just presented could have gone a refresh
     /// earlier: once all of them could for long enough, one is dropped.
     fn early(&mut self, early: bool, now: Instant) {
@@ -576,6 +620,7 @@ impl<T> Pacer<T> {
         self.disagreed = None;
         self.served = None;
         self.served_repeat = false;
+        self.fresh_served = None;
         self.pending.clear();
         self.early_since = None;
         self.early_run = 0;
@@ -784,12 +829,15 @@ impl<T> Pacer<T> {
             None => "the screen's refreshes are not known".to_string(),
         };
         let [one, two, three, more] = second.apart;
+        let [fresh_one, fresh_two, fresh_three, fresh_more] = second.fresh_apart;
         self.log.debug(&format!(
             "pacing: {paced} presented one a refresh ({} as soon as decoded, {} held for \
              their refresh, waiting {} ms), {} before the refreshes were known; {} dropped as \
              newer ones piled up, {} dropped to take a refresh back, {} sent again that gave \
              way to a newer one; refreshes from one picture to the next: {one} one, {two} \
-             two, {three} three, {more} more; the screen showed {} at their refresh, {} later \
+             two, {three} three, {more} more; from one new picture to the next: {fresh_one} \
+             one, {fresh_two} two, {fresh_three} three, {fresh_more} more, decoded {} ms \
+             before their window closed, {} within {} ms of a close; the screen showed {} at their refresh, {} later \
              ({} of them presented with half a refresh to spare), {} sooner, {} not judged \
              as the screen's count and clock disagreed; {screen}",
             second.at_once,
@@ -799,6 +847,9 @@ impl<T> Pacer<T> {
             second.piled_up,
             second.caught_up,
             second.gave_way,
+            second.room,
+            second.on_the_edge,
+            ms(EDGE),
             second.on_time,
             second.late,
             second.late_anyway,
