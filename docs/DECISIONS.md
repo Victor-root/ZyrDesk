@@ -4695,6 +4695,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Un bandeau et une barre de gauche franchement dorés, qui tranchent sur la page.
 
+## D302. Les halos jaunes s'adoucissent de moitié (2026-10-14, pendant MZ)
+
+**Pourquoi.** Aux forces de [D301](#d301-les-halos-passent-aux-jaunes-et-bien-plus-forts-2026-10-14-pendant-mz), le jaune couvrait le bandeau et la barre de gauche d'un aplat trop opaque.
+
+**Ce qui est fait.** Les trois halos gardent leurs places et leurs couleurs, à environ la moitié de leur force : une teinte dorée légère plutôt qu'un aplat.
+
+**Ce qui se voit.** Un bandeau et une barre de gauche teintés d'or, sans être jaunes.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
