@@ -125,7 +125,11 @@ fn page(painter: &mut Painter, at: Rect, narrow: bool) {
     let mut content = 0.0;
     painter.clipped(room, |painter| {
         content = match painter.state.page {
-            Page::Home => pages::home::draw(painter, inner),
+            Page::Home => pages::home::draw(
+                painter,
+                inner,
+                size(room).1 - painter.px(design::SPACE_2 + design::SPACE_6),
+            ),
             Page::Settings => pages::settings::draw(painter, inner),
             Page::About => pages::about::draw(painter, inner),
         } + painter.px(design::SPACE_2 + design::SPACE_6);
@@ -311,9 +315,22 @@ fn sidebar(painter: &mut Painter, at: Rect) {
             mark,
         ),
     );
+    // What ZyrDesk is, in one line under its name.
+    let tagline = say!("nav.tagline");
+    let caption = painter.caption();
+    let tagline_top = at.top + edge + mark + painter.px(design::SPACE_3);
+    let tagline_width = size(at).0 - edge * 2.0;
+    painter.paragraph(
+        &tagline,
+        caption,
+        colours.text_soft,
+        (at.left + edge, tagline_top, tagline_width),
+    );
 
     let inset = painter.px(design::SPACE_3);
-    let mut y = at.top + edge + mark + painter.px(design::SPACE_6);
+    let mut y = tagline_top
+        + painter.height_of(&tagline, caption, tagline_width)
+        + painter.px(design::SPACE_5);
     for (rank, (page, label, icon)) in NAVIGATION.iter().enumerate() {
         if rank == 4 {
             y += painter.px(design::SPACE_2);
@@ -333,7 +350,6 @@ fn sidebar(painter: &mut Painter, at: Rect) {
     // At the bottom, from the floor up.
     let floor = at.bottom - edge;
     let up_to_date = say!("nav.up_to_date");
-    let caption = painter.caption();
     let line = painter.line(caption);
     let dot = painter.px(8.0);
     let status = Rect::at(at.left + edge, floor - line, size(at).0 - edge * 2.0, line);

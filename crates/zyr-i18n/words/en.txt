@@ -276,6 +276,7 @@ nav.contacts = Contacts
 nav.activity = Activity
 nav.settings = Settings
 nav.about = About
+nav.tagline = Open-source remote desktop.
 nav.open_menu = Open the menu
 nav.account_tip = Your account
 nav.up_to_date = Everything is up to date
@@ -285,8 +286,7 @@ bar.all = All
 soon.tip = Coming soon
 
 # The home page.
-home.hello = Hello, {name}
-home.tagline = Access your computers wherever you are.
+home.hello = Welcome, {name}
 home.network = Network
 home.connected = Connected
 home.local_only = Local network only
@@ -310,6 +310,7 @@ home.ready_long = This computer accepts remote connections.
 home.access_off_long = Remote access is disabled: no one can control this computer.
 home.this_computer = This computer
 home.my_computers = My computers
+home.more_computers = more computers
 home.see_all = See all
 home.rename_needs_an_account = Renaming goes through the account: sign in to a server first.
 home.see_details = See the details

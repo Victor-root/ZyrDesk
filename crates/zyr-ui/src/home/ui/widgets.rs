@@ -491,6 +491,8 @@ impl Painter<'_> {
         let scrolled = self.state.scrolled(which);
         scrolled.content = content;
         scrolled.room = room;
+        // A page that became shorter is not left scrolled past its end.
+        scrolled.go(scrolled.goal);
         let position = scrolled.now;
         if content <= room + 1.0 {
             self.state.scrolled(which).travel = 0.0;

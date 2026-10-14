@@ -273,6 +273,7 @@ nav.contacts = Contacts
 nav.activity = Activité
 nav.settings = Paramètres
 nav.about = À propos
+nav.tagline = Le bureau à distance open source.
 nav.open_menu = Ouvrir le menu
 nav.account_tip = Votre compte
 nav.up_to_date = Tout est à jour
@@ -282,8 +283,7 @@ bar.all = Tous
 soon.tip = Bientôt
 
 # The home page.
-home.hello = Bonjour, {name}
-home.tagline = Accédez à vos ordinateurs, où que vous soyez.
+home.hello = Bienvenue, {name}
 home.network = Réseau
 home.connected = Connecté
 home.local_only = Réseau local uniquement
@@ -307,6 +307,7 @@ home.ready_long = Cet ordinateur accepte les connexions à distance.
 home.access_off_long = L'accès distant est désactivé : personne ne peut contrôler cet ordinateur.
 home.this_computer = Cet ordinateur
 home.my_computers = Mes ordinateurs
+home.more_computers = autres ordinateurs
 home.see_all = Voir tout
 home.rename_needs_an_account = Le renommage passe par le compte : connectez-vous d'abord à un serveur.
 home.see_details = Voir les détails

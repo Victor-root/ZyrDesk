@@ -4565,6 +4565,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Un bandeau plus haut, dont tout se lit d'un coup d'œil.
 
+## D286. L'accueil tient dans la fenêtre, sans défiler (2026-10-14, pendant MZ)
+
+**Pourquoi.** Victor : sur l'accueil, il fallait faire défiler la page, ce qui n'est pas pratique pour l'écran qu'on ouvre le plus.
+
+**Ce qui est fait.** La page d'accueil reçoit la hauteur que lui laisse la fenêtre et s'y range. Le bandeau garde sa taille ; il perd la phrase « Accédez à vos ordinateurs… », salue par « Bienvenue, {prénom} », et « Voir les détails » passe à côté du nom de cet ordinateur. Les ordinateurs prennent autant de rangées que la place le permet ; s'ils ne tiennent pas tous, la dernière place dit combien d'autres il y a, les premiers étant ceux qu'on peut joindre ([D283](#d283-cet-ordinateur-rejoint-le-bandeau-et-les-ordinateurs-joignables-passent-en-tête-2026-10-14-pendant-mz)). La rangée du bas prend ce qui reste, entre 150 et 236 pixels, et s'efface quand il reste moins ; sur une page étroite, seules les actions rapides y restent, en une ligne. Seule une fenêtre trop basse pour le bandeau et une rangée d'ordinateurs défile encore. Une page devenue plus courte n'est plus laissée défilée au-delà de sa fin. Sous le nom de ZyrDesk, dans la barre de gauche, une ligne dit ce qu'il est : « Le bureau à distance open source. »
+
+**Ce qui se voit.** Tout l'accueil d'un coup d'œil, quelle que soit la taille de l'écran.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

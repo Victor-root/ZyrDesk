@@ -28,7 +28,7 @@ const ACCESS: f32 = 340.0;
 /// This computer within the banner: the narrowest its row is, and its
 /// wallpaper's frame.
 const IDENTITY: f32 = 640.0;
-const PORTRAIT: (f32, f32) = (320.0, 200.0);
+const PORTRAIT: (f32, f32) = (272.0, 170.0);
 
 /// A card's height, the gap between cards, and the narrowest and widest a
 /// computer's card is.
@@ -49,20 +49,58 @@ const UNDER_HEADING: f32 = 12.0;
 /// height of the row.
 const ACTIONS: f32 = 432.0;
 const BOTTOM: f32 = 236.0;
+/// The least the bottom row is drawn at: below it, it leaves the page to
+/// the computers rather than be squeezed.
+const BOTTOM_LEAST: f32 = 150.0;
 
-/// Draws the page within `at`, from its top, and gives back the height it
-/// takes.
-pub fn draw(painter: &mut Painter, at: Rect) -> f32 {
+/// Draws the page within `at`, from its top, in the `room` the window
+/// gives it, and gives back the height it takes.
+///
+/// The home page is not scrolled: it fits the window. The banner keeps
+/// its size, the computers take as many rows as fit, and the row at the
+/// bottom takes what is left, or leaves when too little is. Only a window
+/// too short for the banner and one row of computers lets it run longer.
+pub fn draw(painter: &mut Painter, at: Rect, room: f32) -> f32 {
     let seen = painter.seen;
+    let between = painter.px(BETWEEN);
+    let gap = painter.px(GAP);
+    let heading = painter.line(painter.subtitle()) + painter.px(UNDER_HEADING);
+    let version_height = painter.px(design::SPACE_4) + painter.line(painter.caption());
+    let floor = at.top + room - version_height;
+
     let mut y = at.top;
     y += banner(painter, seen, Rect { top: y, ..at });
-    y += painter.px(BETWEEN);
-    y += computers(painter, seen, Rect { top: y, ..at });
-    y += painter.px(BETWEEN + 4.0);
-    y += bottom(painter, Rect { top: y, ..at });
-    y += painter.px(design::SPACE_5);
-    y += version(painter, seen, Rect { top: y, ..at });
-    y - at.top
+    y += between;
+
+    let card_row = painter.px(CARD) + gap;
+    let rows_in = |height: f32| ((height - heading + gap) / card_row).floor();
+    let with_bottom_rows = rows_in(floor - y - between - heading - painter.px(BOTTOM_LEAST));
+    let with_bottom = with_bottom_rows >= 1.0;
+    let fit = if with_bottom {
+        with_bottom_rows
+    } else {
+        rows_in(floor - y)
+    };
+    let (columns, _) = grid(painter, size(at).0, seen.peers.len());
+    let needed = seen.peers.len().div_ceil(columns).max(1);
+    let rows = (fit.max(1.0) as usize).min(needed);
+    y += computers(painter, seen, Rect { top: y, ..at }, rows);
+
+    if with_bottom {
+        y += between;
+        let height = (floor - y - heading).min(painter.px(BOTTOM));
+        y += bottom(painter, Rect { top: y, ..at }, height);
+    }
+    let version_top = floor.max(y);
+    version(
+        painter,
+        seen,
+        Rect {
+            top: version_top + painter.px(design::SPACE_4),
+            ..at
+        },
+    );
+    version_top + version_height - at.top
 }
 
 /* ---- The banner -------------------------------------------------------- */
@@ -75,15 +113,10 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
     let inside = painter.px(BANNER_INSIDE);
 
     let hello = say!("home.hello", name = greeted(seen));
-    let tagline = say!("home.tagline");
     let display = painter.display();
-    let lead = painter.pen(design::SUBTITLE);
     // The words take everything the block of remote access leaves: the
     // banner is the page's widest piece, and what it says is not cut.
-    let least = painter
-        .width_of(&hello, display)
-        .max(painter.width_of(&tagline, lead))
-        .max(painter.px(IDENTITY));
+    let least = painter.width_of(&hello, display).max(painter.px(IDENTITY));
     let beside_room = width - inside * 3.0 - painter.px(ACCESS);
     let beside = beside_room >= least;
     let words = if beside {
@@ -92,12 +125,8 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
         width - inside * 2.0
     };
 
-    let (hello_height, lead_height) = (painter.line(display), painter.line(lead));
-    let identity_top = painter.px(30.0)
-        + hello_height
-        + painter.px(design::SPACE_1)
-        + lead_height
-        + painter.px(design::SPACE_6);
+    let hello_height = painter.line(display);
+    let identity_top = painter.px(30.0) + hello_height + painter.px(design::SPACE_5);
     let identity_height = painter.px(PORTRAIT.1);
     let height =
         identity_top + identity_height + inside + if beside { 0.0 } else { painter.px(STRIP) };
@@ -106,19 +135,16 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
     painter.art(card, radius, BANNER_SEED, true);
     painter.stroke(card, radius, colours.border);
 
-    let mut y = card.top + painter.px(30.0);
     painter.text(
         &hello,
         display,
         colours.text,
-        Rect::at(card.left + inside, y, words + painter.px(4.0), hello_height),
-    );
-    y += hello_height + painter.px(design::SPACE_1);
-    painter.text(
-        &tagline,
-        lead,
-        colours.text_soft,
-        Rect::at(card.left + inside, y, words + painter.px(4.0), lead_height),
+        Rect::at(
+            card.left + inside,
+            card.top + painter.px(30.0),
+            words + painter.px(4.0),
+            hello_height,
+        ),
     );
     this_computer(
         painter,
@@ -379,9 +405,9 @@ fn access_state(seen: &Seen) -> (String, Tone, Option<(String, Target)>) {
 
 /* ---- This computer, and the others --------------------------------------- */
 
-/// The other computers, under their heading, and gives back the height
-/// they take.
-fn computers(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
+/// The other computers, under their heading, on as many rows as the page
+/// has room for, and gives back the height they take.
+fn computers(painter: &mut Painter, seen: &Seen, at: Rect, rows: usize) -> f32 {
     let heading = painter.line(painter.subtitle()) + painter.px(UNDER_HEADING);
     painter.heading(
         (at.left, at.top),
@@ -405,6 +431,7 @@ fn computers(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
                 top: at.top + heading,
                 ..at
             },
+            rows,
         )
 }
 
@@ -486,24 +513,38 @@ fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect) {
     );
     y += eyebrow_line + painter.px(design::SPACE_1);
 
+    // The name, the pencil that renames it, and the details beside.
     let name_pen = painter.title().ellipsized();
-    let name_height = painter.line(name_pen);
+    let label = say!("home.see_details");
+    let button_width = painter.button_width(&label, Some(&icons::CHEVRON));
+    let button_height = painter.px(34.0);
+    let row_height = painter.line(name_pen).max(button_height);
     let name = seen.this_name();
     let pencil = painter.px(32.0);
-    let name_width = painter
-        .width_of(&name, name_pen)
-        .min(width - pencil - painter.px(design::SPACE_2));
+    let name_width = painter.width_of(&name, name_pen).min(
+        (width - pencil - button_width - painter.px(design::SPACE_2 + design::SPACE_4)).max(0.0),
+    );
     painter.text(
         &name,
         name_pen,
         colours.text,
-        Rect::at(left, y, name_width + painter.px(2.0), name_height),
+        Rect::at(left, y, name_width + painter.px(2.0), row_height),
     );
     let pencil_at = Rect::at(
         left + name_width + painter.px(design::SPACE_2),
-        y + (name_height - pencil) / 2.0,
+        y + (row_height - pencil) / 2.0,
         pencil,
         pencil,
+    );
+    painter.button(
+        Rect::at(
+            pencil_at.right + painter.px(design::SPACE_4),
+            y + (row_height - button_height) / 2.0,
+            button_width,
+            button_height,
+        ),
+        Target::Details,
+        Button::new(&label, Kind::Quiet).leading_on(&icons::CHEVRON),
     );
     if seen.this_device().is_some() {
         painter.icon_button(
@@ -520,7 +561,7 @@ fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect) {
         );
         painter.tells(pencil_at, say!("home.rename_needs_an_account"));
     }
-    y += name_height + painter.px(design::SPACE_3);
+    y += row_height + painter.px(design::SPACE_3);
 
     // What it is made of, two by two.
     let spec_line = painter.px(32.0);
@@ -550,27 +591,13 @@ fn this_computer(painter: &mut Painter, seen: &Seen, at: Rect) {
         );
     }
 
-    // How its network and ZyrDesk are doing, and the details beside.
-    let button_height = painter.px(40.0);
-    let row_top = at.bottom - button_height;
-    let centre = row_top + button_height / 2.0;
-    let label = say!("home.see_details");
-    let button_width = painter.button_width(&label, Some(&icons::CHEVRON));
-    painter.button(
-        Rect::at(
-            at.right - button_width,
-            row_top,
-            button_width,
-            button_height,
-        ),
-        Target::Details,
-        Button::new(&label, Kind::Quiet).leading_on(&icons::CHEVRON),
-    );
+    // How its network and ZyrDesk are doing, along the bottom.
+    let centre = at.bottom - line / 2.0;
     let (network, network_tone) = words::connectivity(seen.connectivity);
     let (zyrdesk, zyrdesk_tone) = words::zyrdesk(seen);
     let dot = painter.px(10.0);
     let mut x = left;
-    let end = at.right - button_width - painter.px(design::SPACE_4);
+    let end = at.right;
     for (state_icon, said, tone) in [
         (&icons::WORLD, network, network_tone),
         (&icons::SHIELD, zyrdesk, zyrdesk_tone),
@@ -663,31 +690,76 @@ pub fn seed_of(fingerprint: &str) -> u32 {
     u32::from_str_radix(fingerprint.get(..8).unwrap_or_default(), 16).unwrap_or(0)
 }
 
-/// The other computers' cards, in a grid, and gives back its height. A
-/// card when there is none, which says how they come.
-fn their_cards(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
+/// How many cards go across a row of that width, for that many
+/// computers, and how wide each is.
+fn grid(painter: &Painter, width: f32, count: usize) -> (usize, f32) {
+    let gap = painter.px(GAP);
+    let fit = ((width + gap) / (painter.px(NARROWEST) + gap))
+        .floor()
+        .max(1.0) as usize;
+    let columns = fit.min(count.max(1));
+    let column = ((width - gap * (columns as f32 - 1.0)) / columns as f32).min(painter.px(WIDEST));
+    (columns, column)
+}
+
+/// The other computers' cards, in a grid of at most that many rows, and
+/// gives back its height. A card when there is none, which says how they
+/// come; and when they do not all fit, the last place says how many more
+/// there are, the first ones being those that can be reached.
+fn their_cards(painter: &mut Painter, seen: &Seen, at: Rect, rows: usize) -> f32 {
     let width = size(at).0;
     let gap = painter.px(GAP);
     if seen.peers.is_empty() {
         return no_computer(painter, Rect::at(at.left, at.top, width, painter.px(CARD)));
     }
-    let fit = ((width + gap) / (painter.px(NARROWEST) + gap))
-        .floor()
-        .max(1.0) as usize;
-    let columns = fit.min(seen.peers.len());
-    let column = ((width - gap * (columns as f32 - 1.0)) / columns as f32).min(painter.px(WIDEST));
+    let (columns, column) = grid(painter, width, seen.peers.len());
+    let places = columns * rows.max(1);
+    let all = seen.peers.len() <= places;
+    let shown = if all { seen.peers.len() } else { places - 1 };
     let height = painter.px(CARD);
-    for (rank, peer) in seen.peers.iter().enumerate() {
-        let card = Rect::at(
+    let place = |rank: usize| {
+        Rect::at(
             at.left + (rank % columns) as f32 * (column + gap),
             at.top + (rank / columns) as f32 * (height + gap),
             column,
             height,
-        );
-        computer_card(painter, seen, peer, card);
+        )
+    };
+    for (rank, peer) in seen.peers.iter().take(shown).enumerate() {
+        computer_card(painter, seen, peer, place(rank));
     }
-    let rows = seen.peers.len().div_ceil(columns) as f32;
+    if !all {
+        more_computers(painter, place(shown), seen.peers.len() - shown);
+    }
+    let laid = if all { shown } else { places };
+    let rows = laid.div_ceil(columns) as f32;
     rows * height + (rows - 1.0) * gap
+}
+
+/// The place of the computers that did not fit: how many there are, until
+/// the page of computers shows them all.
+fn more_computers(painter: &mut Painter, at: Rect, count: usize) {
+    let colours = painter.colours;
+    let radius = painter.px(design::RADIUS);
+    painter.dashed(at, radius, colours.border_strong);
+    let (_, centre) = middle(at);
+    let title = painter.title().aligned(Align::Centre);
+    let caption = painter.body().aligned(Align::Centre);
+    let (title_line, caption_line) = (painter.line(title), painter.line(caption));
+    let top = centre - (title_line + caption_line) / 2.0;
+    painter.text(
+        &format!("+{count}"),
+        title,
+        colours.text,
+        Rect::at(at.left, top, size(at).0, title_line),
+    );
+    painter.text(
+        &say!("home.more_computers"),
+        caption,
+        colours.text_soft,
+        Rect::at(at.left, top + title_line, size(at).0, caption_line),
+    );
+    painter.tells(at, say!("soon.tip"));
 }
 
 /// One computer's card: its picture, its presence, its name, the road to
@@ -1045,52 +1117,30 @@ fn no_computer(painter: &mut Painter, at: Rect) -> f32 {
 
 /* ---- The bottom of the page ----------------------------------------------- */
 
-/// The contacts, the recent sessions and the quick actions: three columns
-/// when there is room, two then one otherwise.
-fn bottom(painter: &mut Painter, at: Rect) -> f32 {
+/// The contacts, the recent sessions and the quick actions, on one row of
+/// the height the page leaves them.
+fn bottom(painter: &mut Painter, at: Rect, height: f32) -> f32 {
     let width = size(at).0;
     let gap = painter.px(GAP);
     let heading = painter.line(painter.subtitle()) + painter.px(UNDER_HEADING);
-    let height = painter.px(BOTTOM);
-    let three = width >= painter.px(1100.0);
-    let two = width >= painter.px(700.0);
-    let list = if three {
-        (width - painter.px(ACTIONS) - gap * 2.0) / 2.0
-    } else if two {
-        (width - gap) / 2.0
-    } else {
-        width
-    };
+    // On a narrow page only the quick actions stay, in a row: the lists
+    // beside them are still to come, and the page does not grow for them.
+    if width < painter.px(1100.0) {
+        return actions(painter, at, heading, true, height);
+    }
+    let list = (width - painter.px(ACTIONS) - gap * 2.0) / 2.0;
     let contacts_at = Rect::at(at.left, at.top, list, heading + height);
-    let sessions_at = if two {
-        Rect::at(at.left + list + gap, at.top, list, heading + height)
-    } else {
-        Rect::at(
-            at.left,
-            contacts_at.bottom + painter.px(BETWEEN),
-            list,
-            heading + height,
-        )
-    };
-    let actions_at = if three {
-        Rect::at(
-            sessions_at.right + gap,
-            at.top,
-            painter.px(ACTIONS),
-            heading + height,
-        )
-    } else {
-        Rect::at(
-            at.left,
-            sessions_at.bottom + painter.px(BETWEEN),
-            width,
-            0.0,
-        )
-    };
+    let sessions_at = Rect::at(at.left + list + gap, at.top, list, heading + height);
+    let actions_at = Rect::at(
+        sessions_at.right + gap,
+        at.top,
+        painter.px(ACTIONS),
+        heading + height,
+    );
     contacts(painter, contacts_at, heading);
     sessions(painter, sessions_at, heading);
-    let actions_height = actions(painter, actions_at, heading, !three && two);
-    actions_at.top + actions_height - at.top
+    actions(painter, actions_at, heading, false, height);
+    heading + height
 }
 
 /// The contacts and what they may do, which is drawn and does not work
@@ -1105,8 +1155,12 @@ fn contacts(painter: &mut Painter, at: Rect, heading: f32) {
     painter.card(card);
     let inside = painter.px(design::SPACE_5);
     let row = painter.px(52.0);
+    let invite_top = card.bottom - inside - painter.px(38.0);
     for rank in 0..3 {
         let top = card.top + inside + row * rank as f32;
+        if top + row > invite_top {
+            break;
+        }
         let disc = painter.px(36.0);
         painter.fill(
             Rect::at(card.left + inside, top, disc, disc),
@@ -1164,6 +1218,9 @@ fn sessions(painter: &mut Painter, at: Rect, heading: f32) {
     let icon = painter.px(20.0);
     for rank in 0..4 {
         let top = card.top + painter.px(design::SPACE_4) + row * rank as f32;
+        if top + row > card.bottom - painter.px(design::SPACE_2) {
+            break;
+        }
         painter.icon(
             &icons::COMPUTERS,
             Rect::at(card.left + inside, top + painter.px(8.0), icon, icon),
@@ -1192,7 +1249,7 @@ fn sessions(painter: &mut Painter, at: Rect, heading: f32) {
             ),
             colours.border_strong,
         );
-        if rank < 3 {
+        if rank < 3 && top + row * 2.0 <= card.bottom - painter.px(design::SPACE_2) {
             painter.rule(
                 card.left + inside,
                 top + painter.px(46.0),
@@ -1205,13 +1262,17 @@ fn sessions(painter: &mut Painter, at: Rect, heading: f32) {
 
 /// The quick actions, two by two, or four in a row when they have the
 /// page's width. Gives back the height they take.
-fn actions(painter: &mut Painter, at: Rect, heading: f32, in_a_row: bool) -> f32 {
+fn actions(painter: &mut Painter, at: Rect, heading: f32, in_a_row: bool, height: f32) -> f32 {
     painter.heading((at.left, at.top), &say!("home.quick_actions"), None);
     let gap = painter.px(GAP);
     let width = size(at).0;
     let columns = if in_a_row { 4 } else { 2 };
     let tile_width = (width - gap * (columns as f32 - 1.0)) / columns as f32;
-    let tile_height = (painter.px(BOTTOM) - gap) / 2.0;
+    let tile_height = if in_a_row {
+        ((painter.px(BOTTOM) - gap) / 2.0).min(height)
+    } else {
+        (height - gap) / 2.0
+    };
     let tiles: [(&Icon, String, &Icon, Option<Target>); 4] = [
         (
             &icons::COMPUTERS,

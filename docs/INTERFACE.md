@@ -46,8 +46,7 @@ Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est des
 
 | Élément | État | Note |
 |---|---|---|
-| « Bonjour, {prénom} » | Oui | Le nom du compte ZyrDesk ; sans serveur, celui de la session Windows ou Linux |
-| « Accédez à vos ordinateurs, où que vous soyez. » | Oui | |
+| « Bienvenue, {prénom} » | Oui | Le nom du compte ZyrDesk ; sans serveur, celui de la session Windows ou Linux |
 | Cet ordinateur, sous le message d'accueil | Oui | Voir la section 5 : il vit dans le bandeau ([D283](DECISIONS.md)) |
 | Bloc « Accès distant » : l'interrupteur | Oui | Active ou coupe l'accès distant |
 | Bloc « Accès distant » : « Cet ordinateur accepte les connexions à distance », ou ce qui l'empêche | Oui | |
@@ -66,7 +65,7 @@ Dans le bandeau, sous le message d'accueil : une carte à part le répétait ([D
 | Système, processeur, mémoire, carte graphique | Oui | Lus sur place |
 | Réseau : connecté ou non | Oui | |
 | ZyrDesk : « Tout est opérationnel », ou ce qui ne va pas | Oui | L'état du service, avec le fait qui l'explique |
-| « Voir les détails » | Oui | Ouvre les détails, empreinte comprise |
+| « Voir les détails », à côté du nom | Oui | Ouvre les détails, empreinte comprise |
 
 ## 6. Mes ordinateurs
 
