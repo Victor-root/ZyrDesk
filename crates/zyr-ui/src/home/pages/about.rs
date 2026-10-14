@@ -122,7 +122,6 @@ fn credits(painter: &mut Painter, at: Rect) -> f32 {
         icon: &icons::HEART,
         title: say!("about.credits"),
         lead: Some(say!("about.credits_lead")),
-        fold: None,
     };
     section(painter, at, &head, |painter, room| {
         let (left, width) = (room.left, size(room).0);
@@ -136,6 +135,7 @@ fn credits(painter: &mut Painter, at: Rect) -> f32 {
             y += line(
                 painter,
                 (left, y, width),
+                None,
                 credit.name,
                 &caption,
                 Control::Buttons(vec![
@@ -164,7 +164,6 @@ fn studied(painter: &mut Painter, at: Rect) -> f32 {
         icon: &icons::CODE,
         title: say!("about.studied"),
         lead: Some(say!("about.studied_lead")),
-        fold: None,
     };
     section(painter, at, &head, |painter, room| {
         let (left, width) = (room.left, size(room).0);
@@ -173,6 +172,7 @@ fn studied(painter: &mut Painter, at: Rect) -> f32 {
             y += line(
                 painter,
                 (left, y, width),
+                None,
                 name,
                 &say!("about.studied_caption"),
                 Control::Buttons(vec![(

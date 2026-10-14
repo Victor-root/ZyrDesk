@@ -297,6 +297,83 @@ impl Painter<'_> {
             + self.px(SIDES_INSET) * 2.0
     }
 
+    /// A row of tabs across `width`, each its icon and its word, the one
+    /// shown lit and underlined in the accent, a rule under them all. A
+    /// tab that does not fit goes to the next row rather than out of
+    /// reach. Gives back what the rows take.
+    pub fn tabs(
+        &mut self,
+        (left, top, width): (f32, f32, f32),
+        tabs: &[(Target, &Icon, String)],
+        shown: &Target,
+    ) -> f32 {
+        let colours = self.colours;
+        let first_top = top;
+        let height = self.px(46.0);
+        let icon = self.px(18.0);
+        let inside = self.px(design::SPACE_4);
+        let between = self.px(design::SPACE_2);
+        let (mut x, mut top) = (left, top);
+        for (target, glyph, label) in tabs {
+            let current = target == shown;
+            let pen = if current {
+                self.body().in_bold()
+            } else {
+                self.body()
+            };
+            let wide = inside * 2.0 + icon + between + self.width_of(label, pen);
+            if x > left && x + wide > left + width {
+                x = left;
+                top += height;
+            }
+            let at = Rect::at(x, top, wide, height);
+            let hover = self.hover_of(target);
+            let lit = self.ease(target, 1, if current { 1.0 } else { 0.0 }, STEADY);
+            let radius = self.px(design::RADIUS_SMALL);
+            if hover > 0.0 && !current {
+                self.fill(
+                    Rect {
+                        bottom: at.bottom - self.px(4.0),
+                        ..at
+                    },
+                    radius,
+                    colours.surface_3.faded(hover * 0.8),
+                );
+            }
+            let (_, centre) = middle(at);
+            let ink = colours.text_soft.mixed_with(colours.text, lit);
+            self.icon(
+                glyph,
+                Rect::at(x + inside, centre - icon / 2.0, icon, icon),
+                colours.text_soft.mixed_with(colours.accent, lit),
+            );
+            self.text(
+                label,
+                pen,
+                ink,
+                Rect {
+                    left: x + inside + icon + between,
+                    ..at
+                },
+            );
+            if lit > 0.0 {
+                let bar = self.px(3.0);
+                self.fill(
+                    Rect::at(x + inside / 2.0, at.bottom - bar, wide - inside, bar),
+                    bar / 2.0,
+                    colours.accent.faded(lit),
+                );
+            }
+            if self.focused(target) {
+                self.focus_ring(at, radius);
+            }
+            self.answers(target.clone(), at);
+            x += wide + between;
+        }
+        self.rule(left, top + height, width);
+        top + height + self.px(1.0) - first_top
+    }
+
     /// A row of sides, only one of which is chosen, laid from its right
     /// edge and centred on `centre_y`. The chosen side's background
     /// slides from one side to the next.

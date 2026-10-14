@@ -4583,6 +4583,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Plus de déchirure dans l'accueil ni sur le voile des dialogues.
 
+## D288. Les paramètres se rangent en onglets, et chaque réglage a son icône (2026-10-14, pendant MZ)
+
+**Pourquoi.** Victor : les sections des paramètres s'empilaient sur une seule page, et les réglages, sans repère visuel, se lisaient mal.
+
+**Ce qui est fait.** Une rangée d'onglets sous le titre (Général, Compte, Raccourcis clavier, Journal, Réglages avancés) montre une section à la fois ; l'onglet ouvert est souligné dans l'accent, et un onglet qui ne tient pas sur la largeur passe à la ligne au lieu d'être caché. « Réglages avancés » devient un onglet comme les autres et ne se replie plus : le repli de section et son chevron s'en vont. Chaque ligne de réglage porte son icône, dans une pastille à gauche. La rangée d'onglets est dessinée une fois, parmi les pièces de `home/ui/`, pour resservir ailleurs.
+
+**Ce qui se voit.** Une page de paramètres courte, dont on choisit la section en haut.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

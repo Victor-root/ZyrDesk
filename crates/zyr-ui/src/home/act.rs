@@ -120,9 +120,13 @@ pub fn act(app: &App, target: Target) {
             drop(state);
             crate::home::redraw(app);
         }
-        Target::Advanced => {
+        Target::SettingsTab(tab) => {
             let mut state = crate::home::state();
-            state.advanced = !state.advanced;
+            if state.settings_tab != tab {
+                state.page_scroll.reset();
+            }
+            state.settings_tab = tab;
+            state.listening = None;
             drop(state);
             crate::home::redraw(app);
         }

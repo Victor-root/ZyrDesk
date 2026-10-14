@@ -10,13 +10,13 @@ pub mod home;
 pub mod settings;
 
 use zyr_draw::design;
-use zyr_draw::icons::{self, Icon};
+use zyr_draw::icons::Icon;
 use zyr_draw::{Align, Rect};
 use zyr_i18n::say;
 
 use crate::home::pages::home::{toggle_enabled, toggle_is_on};
 use crate::home::state::{Target, Toggle};
-use crate::home::ui::{Button, Kind, Painter, STEADY, SWITCH_SIZE, middle, size, square};
+use crate::home::ui::{Button, Kind, Painter, SWITCH_SIZE, middle, size, square};
 use crate::shell::shortcuts::Doing;
 
 /// A page's title and the line under it. Gives back what they take.
@@ -45,9 +45,6 @@ pub struct Head<'h> {
     pub icon: &'h Icon,
     pub title: String,
     pub lead: Option<String>,
-    /// For a section that folds: whether it is open. The whole head then
-    /// unfolds it, and a chevron says which way it goes.
-    pub fold: Option<bool>,
 }
 
 /// A card: the head of its section, then what `inside` draws from the top
@@ -96,11 +93,7 @@ fn draw_head(painter: &mut Painter, at: Rect, head: &Head) -> f32 {
         colours.accent,
     );
     let left = badge.right + painter.px(design::SPACE_3);
-    let chevron = painter.px(20.0);
-    let folds = head
-        .fold
-        .map_or(0.0, |_| chevron + painter.px(design::SPACE_4));
-    let width = (at.right - edge - folds - left).max(0.0);
+    let width = (at.right - edge - left).max(0.0);
     let title_pen = painter.subtitle();
     let title_height = painter.line(title_pen);
     let lead_height = head.lead.as_deref().map_or(0.0, |lead| {
@@ -122,33 +115,7 @@ fn draw_head(painter: &mut Painter, at: Rect, head: &Head) -> f32 {
             (left, top + title_height + painter.px(2.0), width),
         );
     }
-    let height = edge + words.max(disc) + painter.px(design::SPACE_3);
-    if let Some(open) = head.fold {
-        let target = Target::Advanced;
-        let turn = painter.ease(&target, 1, if open { 1.0 } else { 0.0 }, STEADY);
-        let icon = if turn > 0.5 {
-            &icons::CHEVRON_DOWN
-        } else {
-            &icons::CHEVRON
-        };
-        let hover = painter.hover_of(&target);
-        painter.icon(
-            icon,
-            Rect::at(
-                at.right - edge - chevron,
-                badge.top + (disc - chevron) / 2.0,
-                chevron,
-                chevron,
-            ),
-            colours.text_soft.mixed_with(colours.text_faint, hover),
-        );
-        let fold = Rect::at(at.left, at.top, size(at).0, height);
-        if painter.focused(&target) {
-            painter.focus_ring(fold, painter.px(design::RADIUS));
-        }
-        painter.answers(target, fold);
-    }
-    height
+    edge + words.max(disc) + painter.px(design::SPACE_3)
 }
 
 /// What decides a line, on its right.
@@ -163,17 +130,22 @@ pub enum Control {
     Buttons(Vec<(String, Kind, Target, Option<&'static Icon>)>),
 }
 
-/// A line of settings: a rule above, what it is about on the left, what
-/// decides it on the right. Gives back its height.
+/// A line of settings: a rule above, its icon and what it is about on the
+/// left, what decides it on the right. Gives back its height.
 pub fn line(
     painter: &mut Painter,
     (left, top, width): (f32, f32, f32),
+    icon: Option<&Icon>,
     label: &str,
     caption: &str,
     control: Control,
 ) -> f32 {
     let colours = painter.colours;
     painter.rule(left, top, width);
+    let right = left + width;
+    let badge = painter.px(36.0);
+    let left = icon.map_or(left, |_| left + badge + painter.px(design::SPACE_4));
+    let width = right - left;
     let control_width = control_width(painter, &control);
     let gap = if control_width > 0.0 {
         painter.px(design::SPACE_5)
@@ -195,6 +167,20 @@ pub fn line(
     let height = words.max(control_height(painter, &control)) + inside * 2.0;
     let centre = top + height / 2.0;
     let words_top = centre - words / 2.0;
+    if let Some(icon) = icon {
+        let at = Rect::at(
+            left - badge - painter.px(design::SPACE_4),
+            centre - badge / 2.0,
+            badge,
+            badge,
+        );
+        painter.fill(at, painter.px(10.0), colours.surface_2);
+        painter.icon(
+            icon,
+            square(middle(at), painter.px(20.0)),
+            colours.text_soft,
+        );
+    }
     painter.text(
         label,
         body,
@@ -207,7 +193,6 @@ pub fn line(
         colours.text_soft,
         (left, words_top + label_height + between, words_width),
     );
-    let right = left + width;
     match control {
         Control::Nothing => {}
         Control::Switch(toggle) => {

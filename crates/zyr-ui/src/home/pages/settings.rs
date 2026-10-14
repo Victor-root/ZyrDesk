@@ -5,8 +5,11 @@
 //! it down and says it back at the next question, or to the file this
 //! window keeps for its theme and its keys. What a session asks for while
 //! it is shown, its size, its rate and its codec, lives in the session's
-//! own menu, where its effect can be seen; the line at the head of « More
-//! settings » only says where they stand.
+//! own menu, where its effect can be seen; the line at the head of
+//! « Advanced settings » only says where they stand.
+//!
+//! One section at a time, chosen in a row of tabs under the title: the
+//! page is read where it is needed, not scrolled through.
 
 use zyr_draw::Rect;
 use zyr_draw::design;
@@ -14,7 +17,7 @@ use zyr_draw::icons;
 use zyr_i18n::say;
 
 use crate::home::pages::{Control, Head, line, page_title, section, subheading};
-use crate::home::state::{Pick, Target, Toggle};
+use crate::home::state::{Pick, SettingsTab, Target, Toggle};
 use crate::home::ui::{Kind, Painter, size};
 use crate::home::words;
 use crate::shell::shortcuts::Doing;
@@ -37,14 +40,46 @@ pub fn draw(painter: &mut Painter, at: Rect) -> f32 {
         right: at.left + width,
         ..at
     };
-    let between = painter.px(design::SPACE_5);
     let mut y = at.top;
     y += page_title(painter, at, &say!("nav.settings"), &say!("settings.lead"));
-    y += general(painter, Rect { top: y, ..at }) + between;
-    y += account(painter, Rect { top: y, ..at }) + between;
-    y += shortcuts(painter, Rect { top: y, ..at }) + between;
-    y += journal(painter, Rect { top: y, ..at }) + between;
-    y += more(painter, Rect { top: y, ..at });
+    let tabs = [
+        (
+            Target::SettingsTab(SettingsTab::General),
+            &icons::THEME,
+            say!("settings.general"),
+        ),
+        (
+            Target::SettingsTab(SettingsTab::Account),
+            &icons::SERVER,
+            say!("settings.account"),
+        ),
+        (
+            Target::SettingsTab(SettingsTab::Shortcuts),
+            &icons::SHORTCUTS,
+            say!("settings.shortcuts"),
+        ),
+        (
+            Target::SettingsTab(SettingsTab::Journal),
+            &icons::JOURNAL,
+            say!("settings.journal"),
+        ),
+        (
+            Target::SettingsTab(SettingsTab::Advanced),
+            &icons::ADJUSTMENTS,
+            say!("settings.more"),
+        ),
+    ];
+    let shown = painter.state.settings_tab;
+    y += painter.tabs((at.left, y, size(at).0), &tabs, &Target::SettingsTab(shown));
+    y += painter.px(design::SPACE_5);
+    let section_at = Rect { top: y, ..at };
+    y += match shown {
+        SettingsTab::General => general(painter, section_at),
+        SettingsTab::Account => account(painter, section_at),
+        SettingsTab::Shortcuts => shortcuts(painter, section_at),
+        SettingsTab::Journal => journal(painter, section_at),
+        SettingsTab::Advanced => advanced(painter, section_at),
+    };
     y - at.top
 }
 
@@ -55,7 +90,6 @@ fn general(painter: &mut Painter, at: Rect) -> f32 {
         icon: &icons::THEME,
         title: say!("settings.general"),
         lead: None,
-        fold: None,
     };
     section(painter, at, &head, |painter, room| {
         let (left, width) = (room.left, size(room).0);
@@ -75,6 +109,7 @@ fn general(painter: &mut Painter, at: Rect) -> f32 {
         y += line(
             painter,
             (left, y, width),
+            Some(&icons::THEME),
             &say!("settings.theme"),
             &say!("settings.theme_caption"),
             Control::Sides(words, chosen, true, targets),
@@ -82,6 +117,7 @@ fn general(painter: &mut Painter, at: Rect) -> f32 {
         y += line(
             painter,
             (left, y, width),
+            Some(&icons::POWER),
             &say!("settings.at_boot"),
             &say!("settings.at_boot_caption"),
             Control::Switch(Toggle::AtBoot),
@@ -89,6 +125,7 @@ fn general(painter: &mut Painter, at: Rect) -> f32 {
         y += line(
             painter,
             (left, y, width),
+            Some(&icons::LOCAL_NETWORK),
             &say!("settings.trust"),
             &say!("settings.trust_caption"),
             Control::Switch(Toggle::Trust),
@@ -104,7 +141,6 @@ fn account(painter: &mut Painter, at: Rect) -> f32 {
         icon: &icons::SERVER,
         title: say!("settings.account"),
         lead: Some(say!("settings.account_lead")),
-        fold: None,
     };
     section(painter, at, &head, |painter, room| {
         let seen = painter.seen;
@@ -114,6 +150,7 @@ fn account(painter: &mut Painter, at: Rect) -> f32 {
             return line(
                 painter,
                 (left, y, width),
+                Some(&icons::SERVER),
                 &say!("settings.account_unknown"),
                 &say!("settings.account_unknown_caption"),
                 Control::Nothing,
@@ -123,6 +160,7 @@ fn account(painter: &mut Painter, at: Rect) -> f32 {
             return line(
                 painter,
                 (left, y, width),
+                Some(&icons::LOGIN),
                 &say!("settings.no_account"),
                 &say!("settings.no_account_caption"),
                 Control::Buttons(vec![(
@@ -154,6 +192,7 @@ fn account(painter: &mut Painter, at: Rect) -> f32 {
         y += line(
             painter,
             (left, y, width),
+            Some(&icons::CONTACTS),
             &link.username,
             &state,
             Control::Buttons(vec![(
@@ -210,6 +249,7 @@ fn account(painter: &mut Painter, at: Rect) -> f32 {
             y += line(
                 painter,
                 (left, y, width),
+                Some(&icons::LAPTOP),
                 &label,
                 &words::device_presence(device),
                 Control::Buttons(buttons),
@@ -225,29 +265,32 @@ fn shortcuts(painter: &mut Painter, at: Rect) -> f32 {
         icon: &icons::SHORTCUTS,
         title: say!("settings.shortcuts"),
         lead: Some(say!("settings.shortcuts_lead")),
-        fold: None,
     };
     section(painter, at, &head, |painter, room| {
         let (left, width) = (room.left, size(room).0);
         let mut y = room.top;
-        for (doing, label, caption) in [
+        for (doing, icon, label, caption) in [
             (
                 Doing::End,
+                &icons::QUIT,
                 say!("settings.key_end"),
                 say!("settings.key_end_caption"),
             ),
             (
                 Doing::Menu,
+                &icons::MENU,
                 say!("settings.key_menu"),
                 say!("settings.key_menu_caption"),
             ),
             (
                 Doing::Fullscreen,
+                &icons::FULL_SCREEN,
                 say!("settings.key_fullscreen"),
                 say!("settings.key_fullscreen_caption"),
             ),
             (
                 Doing::NextScreen,
+                &icons::HOST_SCREEN,
                 say!("settings.key_next_screen"),
                 say!("settings.key_next_screen_caption"),
             ),
@@ -255,6 +298,7 @@ fn shortcuts(painter: &mut Painter, at: Rect) -> f32 {
             y += line(
                 painter,
                 (left, y, width),
+                Some(icon),
                 &label,
                 &caption,
                 Control::Key(doing),
@@ -270,13 +314,13 @@ fn journal(painter: &mut Painter, at: Rect) -> f32 {
         icon: &icons::JOURNAL,
         title: say!("settings.journal"),
         lead: None,
-        fold: None,
     };
     section(painter, at, &head, |painter, room| {
         let folder = painter.seen.folder.clone();
         line(
             painter,
             (room.left, room.top, size(room).0),
+            Some(&icons::JOURNAL),
             &say!("settings.journal_line"),
             &say!("settings.journal_caption", folder = folder),
             Control::Buttons(vec![
@@ -297,25 +341,18 @@ fn journal(painter: &mut Painter, at: Rect) -> f32 {
     })
 }
 
-/// What only matters to someone trying things: folded until asked for,
+/// What only matters to someone trying things, in a tab of its own,
 /// since it is the one place jargon is allowed.
-fn more(painter: &mut Painter, at: Rect) -> f32 {
+fn advanced(painter: &mut Painter, at: Rect) -> f32 {
     let head = Head {
         icon: &icons::ADJUSTMENTS,
         title: say!("settings.more"),
         lead: Some(say!("settings.more_lead")),
-        fold: Some(painter.state.advanced),
     };
-    section(painter, at, &head, |painter, room| {
-        if painter.state.advanced {
-            advanced(painter, room)
-        } else {
-            0.0
-        }
-    })
+    section(painter, at, &head, advanced_lines)
 }
 
-fn advanced(painter: &mut Painter, room: Rect) -> f32 {
+fn advanced_lines(painter: &mut Painter, room: Rect) -> f32 {
     let seen = painter.seen;
     let (left, width) = (room.left, size(room).0);
     let mut y = room.top;
@@ -331,6 +368,7 @@ fn advanced(painter: &mut Painter, room: Rect) -> f32 {
     y += line(
         painter,
         (left, y, width),
+        Some(&icons::RESOLUTION),
         &say!("settings.asked"),
         &asked,
         Control::Nothing,
@@ -342,6 +380,7 @@ fn advanced(painter: &mut Painter, room: Rect) -> f32 {
     y += line(
         painter,
         (left, y, width),
+        Some(&icons::CODEC),
         &say!("settings.codec"),
         &say!("settings.codec_caption"),
         Control::Sides(
@@ -362,6 +401,7 @@ fn advanced(painter: &mut Painter, room: Rect) -> f32 {
     y += line(
         painter,
         (left, y, width),
+        Some(&icons::FULL_SCREEN),
         &say!("settings.display"),
         &say!("settings.display_caption"),
         Control::Sides(
@@ -379,6 +419,7 @@ fn advanced(painter: &mut Painter, room: Rect) -> f32 {
     y += line(
         painter,
         (left, y, width),
+        Some(&icons::MOUSE),
         &say!("menu.mouse"),
         &say!("settings.mouse_caption"),
         Control::Sides(
@@ -391,6 +432,7 @@ fn advanced(painter: &mut Painter, room: Rect) -> f32 {
     y += line(
         painter,
         (left, y, width),
+        Some(&icons::FAR_SPEAKERS),
         &say!("settings.far_speakers"),
         &say!("settings.far_speakers_caption"),
         Control::Switch(Toggle::FarSpeakers),
@@ -398,6 +440,7 @@ fn advanced(painter: &mut Painter, room: Rect) -> f32 {
     y += line(
         painter,
         (left, y, width),
+        Some(&icons::STATISTICS),
         &say!("settings.statistics"),
         &say!("settings.statistics_caption"),
         Control::Switch(Toggle::Statistics),
@@ -414,6 +457,7 @@ fn advanced(painter: &mut Painter, room: Rect) -> f32 {
     y += line(
         painter,
         (left, y, width),
+        Some(&icons::ROUND_TRIP),
         &say!("settings.marking"),
         &say!("settings.marking_caption"),
         Control::Switch(Toggle::Marking),
@@ -421,6 +465,7 @@ fn advanced(painter: &mut Painter, room: Rect) -> f32 {
     y += line(
         painter,
         (left, y, width),
+        Some(&icons::LINK),
         &say!("settings.fixed_port", port = zyr_proto::net::TUNNEL_PORT),
         &say!("settings.fixed_port_caption"),
         Control::Switch(Toggle::FixedPort),

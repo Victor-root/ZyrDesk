@@ -139,6 +139,7 @@ pub fn draw(painter: &mut Painter, at: Rect) -> f32 {
             y += line(
                 painter,
                 (left, y, width),
+                None,
                 &name,
                 &host,
                 Control::Buttons(vec![(

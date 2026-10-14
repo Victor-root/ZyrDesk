@@ -22,6 +22,16 @@ pub enum Page {
     About,
 }
 
+/// A tab of the settings page, chosen in the row at its top.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum SettingsTab {
+    General,
+    Account,
+    Shortcuts,
+    Journal,
+    Advanced,
+}
+
 /// A dialog open over the page.
 #[derive(Clone, PartialEq, Debug)]
 pub enum Dialog {
@@ -126,7 +136,7 @@ pub enum Target {
     Theme(Choice),
     Side(Pick, usize),
     Shortcut(Doing),
-    Advanced,
+    SettingsTab(SettingsTab),
     SignIn,
     Detach,
     RenameDevice(String),
@@ -249,7 +259,8 @@ pub struct State {
     pub copied: Option<(Copyable, Instant)>,
     /// The shortcut waiting for its combination.
     pub listening: Option<Doing>,
-    pub advanced: bool,
+    /// The tab the settings page shows.
+    pub settings_tab: SettingsTab,
     /// In the account dialog: creating the account rather than signing
     /// in to it.
     pub sign_up: bool,
@@ -297,7 +308,7 @@ impl State {
             armed: None,
             copied: None,
             listening: None,
-            advanced: false,
+            settings_tab: SettingsTab::General,
             sign_up: false,
             pinning: None,
             attaching: false,

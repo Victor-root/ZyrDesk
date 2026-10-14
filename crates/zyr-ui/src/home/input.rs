@@ -385,8 +385,8 @@ mod tests {
     #[test]
     fn what_was_laid_last_is_what_the_hand_is_on() {
         let hits = [
-            hit(Some(Target::Advanced), Rect::at(0.0, 0.0, 100.0, 100.0)),
-            hit(Some(Target::Detach), Rect::at(10.0, 10.0, 20.0, 20.0)),
+            hit(Some(Target::Detach), Rect::at(0.0, 0.0, 100.0, 100.0)),
+            hit(Some(Target::SignIn), Rect::at(10.0, 10.0, 20.0, 20.0)),
         ];
         assert_eq!(under(&hits, (15.0, 15.0)), Some(1));
         assert_eq!(under(&hits, (50.0, 50.0)), Some(0));
