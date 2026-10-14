@@ -92,7 +92,7 @@ Une carte par ordinateur connu (réseau local et compte), avec « Voir tout » e
 | Action rapide « Inviter un contact » | Grisé | |
 | Action rapide « Voir l'activité » | Grisé | |
 | Action rapide « Ouvrir les paramètres » | Oui | |
-| Version et compilation, en bas à droite | Oui | |
+| Version et compilation | Oui | En bas de la barre de gauche, la compilation sous le numéro ([D293](DECISIONS.md)) |
 
 ## 8. À propos
 

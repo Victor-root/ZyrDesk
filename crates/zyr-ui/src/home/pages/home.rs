@@ -65,8 +65,7 @@ pub fn draw(painter: &mut Painter, at: Rect, room: f32) -> f32 {
     let between = painter.px(BETWEEN);
     let gap = painter.px(GAP);
     let heading = painter.line(painter.subtitle()) + painter.px(UNDER_HEADING);
-    let version_height = painter.px(design::SPACE_4) + painter.line(painter.caption());
-    let floor = at.top + room - version_height;
+    let floor = at.top + room;
 
     let mut y = at.top;
     y += banner(painter, seen, Rect { top: y, ..at });
@@ -91,16 +90,7 @@ pub fn draw(painter: &mut Painter, at: Rect, room: f32) -> f32 {
         let height = (floor - y - heading).min(painter.px(BOTTOM));
         y += bottom(painter, Rect { top: y, ..at }, height);
     }
-    let version_top = floor.max(y);
-    version(
-        painter,
-        seen,
-        Rect {
-            top: version_top + painter.px(design::SPACE_4),
-            ..at
-        },
-    );
-    version_top + version_height - at.top
+    y - at.top
 }
 
 /* ---- The banner -------------------------------------------------------- */
@@ -1404,26 +1394,6 @@ fn soon_label(painter: &Painter, at: Rect, icon: &Icon, label: &str) {
             size(at).1,
         ),
     );
-}
-
-/// The build this window runs, at the bottom on the right, and the
-/// service's in amber when it is not the same.
-fn version(painter: &Painter, seen: &Seen, at: Rect) -> f32 {
-    let pen = painter.caption().aligned(Align::Right);
-    let line = painter.line(pen);
-    let (said, ink) = match words::versions_differ(seen) {
-        Some(service) => (
-            say!(
-                "home.version_differs",
-                window = seen.version,
-                service = service
-            ),
-            painter.colours.warning,
-        ),
-        None => (seen.version.clone(), painter.colours.text_faint),
-    };
-    painter.text(&said, pen, ink, Rect::at(at.left, at.top, size(at).0, line));
-    line
 }
 
 /* ---- What the page asks of the switches ----------------------------------- */

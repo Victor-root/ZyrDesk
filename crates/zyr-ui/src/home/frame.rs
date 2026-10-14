@@ -312,7 +312,7 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
 }
 
 /// The bar on the left: the mark and the name, the pages, and at the
-/// bottom the person and whether everything is up to date.
+/// bottom the person, whether everything is up to date, and the build.
 fn sidebar(painter: &mut Painter, at: Rect) {
     let colours = painter.colours;
     painter.fill(at, 0.0, colours.surface_2);
@@ -345,7 +345,7 @@ fn sidebar(painter: &mut Painter, at: Rect) {
     let tagline_width = size(at).0 - edge * 2.0;
     painter.paragraph(
         &tagline,
-        caption,
+        caption.aligned(Align::Centre),
         colours.text_soft,
         (at.left + edge, tagline_top, tagline_width),
     );
@@ -371,9 +371,15 @@ fn sidebar(painter: &mut Painter, at: Rect) {
     }
 
     // At the bottom, from the floor up.
-    let floor = at.bottom - edge;
-    let up_to_date = say!("nav.up_to_date");
     let line = painter.line(caption);
+    let floor = at.bottom
+        - edge
+        - version(
+            painter,
+            (at.left + edge, at.bottom - edge, size(at).0 - edge * 2.0),
+        )
+        - painter.px(design::SPACE_3);
+    let up_to_date = say!("nav.up_to_date");
     let dot = painter.px(8.0);
     let status = Rect::at(at.left + edge, floor - line, size(at).0 - edge * 2.0, line);
     painter.dot(
@@ -404,6 +410,36 @@ fn sidebar(painter: &mut Painter, at: Rect) {
         size(at).0 - edge * 2.0,
     );
     person_row(painter, person);
+}
+
+/// The build this window runs, its number over what it was built from,
+/// standing on `floor`; and the service's in amber when it is not the
+/// same. Gives back the height it takes.
+fn version(painter: &mut Painter, (left, floor, width): (f32, f32, f32)) -> f32 {
+    let seen = painter.seen;
+    let caption = painter.caption();
+    let (below, ink) = match words::versions_differ(seen) {
+        Some(service) => (
+            say!(
+                "home.version_differs",
+                window = zyr_proto::BUILD,
+                service = service
+            ),
+            painter.colours.warning,
+        ),
+        None => (zyr_proto::BUILD.to_owned(), painter.colours.text_faint),
+    };
+    let line = painter.line(caption);
+    let below_height = painter.height_of(&below, caption, width);
+    let top = floor - line - below_height;
+    painter.text(
+        &format!("ZyrDesk {}", zyr_proto::PRODUCT_VERSION),
+        caption,
+        painter.colours.text_faint,
+        Rect::at(left, top, width, line),
+    );
+    painter.paragraph(&below, caption, ink, (left, top + line, width));
+    line + below_height
 }
 
 /// One page of the bar on the left.

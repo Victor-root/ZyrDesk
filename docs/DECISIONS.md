@@ -4615,6 +4615,22 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Les dialogues s'ouvrent par un léger zoom en fondu, au lieu de monter.
 
+## D292. Les ombres retrouvent la force prévue (2026-10-14, pendant MZ)
+
+**Pourquoi.** Victor trouve les ombres bien trop grosses, sous les bulles comme sous le bloc d'accès. Elles l'étaient : faites de dizaines de couches de quelques pour cent chacune, chaque couche était arrondie à un pas de couleur entier et comptait presque double, et l'ombre partait de toute sa force sur le bord même de la carte.
+
+**Ce qui est fait.** Les couches sont dessinées pleines, l'ombre entière est posée ensuite à sa propre force, et le dégradé va de l'intérieur à l'extérieur du bord, à moitié sombre sur le bord lui-même, comme une ombre floutée. La grande ombre de la charte se resserre (14 pixels de flou en sombre, 16 en clair, 4 pixels de décalage).
+
+**Ce qui se voit.** Des ombres discrètes, qui posent les cartes, les bulles et les dialogues sans les entourer d'un halo.
+
+## D293. La version descend dans la barre de gauche (2026-10-14, pendant MZ)
+
+**Pourquoi.** Le numéro de version, seul en bas à droite de l'accueil, prenait une ligne à la page et ne se lisait pas d'un coup d'œil avec sa compilation entre parenthèses. Le slogan, aligné à gauche sous le nom, paraissait de travers.
+
+**Ce qui est fait.** La version est écrite tout en bas de la barre de gauche, « ZyrDesk » et le numéro sur une ligne, la compilation dessous ; quand le service ne tourne pas la même compilation que la fenêtre, la seconde ligne le dit en ambre. L'accueil récupère la ligne qu'elle prenait. Le slogan est centré sous la marque.
+
+**Ce qui se voit.** Une barre de gauche qui se termine par la version, et un slogan centré.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
