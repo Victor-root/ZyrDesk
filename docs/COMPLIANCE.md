@@ -14,6 +14,7 @@
 | libvpl 2.17.0 (répartiteur Intel), compilé dans les DLL FFmpeg | MIT | Notice à conserver |
 | En-têtes AMF 1.5.3 (AMD) | MIT | Seuls les en-têtes servent à la compilation ; le pilote AMD est celui de la machine |
 | nv-codec-headers n13.0.19.1 (NVIDIA) | MIT | Même chose : le pilote NVIDIA est celui de la machine. Chaque en-tête porte sa notice, recopiée dans un seul fichier |
+| Images de fond de l'accueil (`crates/zyr-draw/backdrop/`) | GPLv3, avec le reste du dépôt | Faites pour ZyrDesk par son mainteneur, avec un outil de génération d'images ; aucune image d'un tiers n'y est reprise |
 | Virtual-Display-Driver (écran virtuel) | MIT | Signé par SignPath Foundation. Redistribué **tel quel** dans `vendor/ecran-virtuel/` avec sa licence, jamais modifié ni recompressé : ses trois fichiers sont signés comme un tout. Voir [ECRAN-VIRTUEL.md](ECRAN-VIRTUEL.md) |
 
 La GPL version 2 « ou ultérieure » de FFmpeg et de x264 est compatible avec la GPLv3 de ZyrDesk : l'ensemble se distribue sous GPLv3.

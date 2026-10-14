@@ -340,19 +340,43 @@ impl<'a> Painter<'a> {
 
     /// ZyrDesk's own picture, its ridges drawn from `seed`, with words on
     /// its left or not.
-    pub fn art(&self, at: Rect, radius: f32, seed: u32, with_words: bool) {
+    pub fn art(&self, at: Rect, radius: f32, seed: u32) {
         if !self.silent {
             self.canvas.art(
                 &Scene {
                     light: self.light,
                     seed,
-                    with_words,
                 },
                 at,
                 radius,
                 self.scale,
             );
         }
+    }
+
+    /// The picture the window lies on, within `at`, or the plain
+    /// background where it could not be read.
+    pub fn backdrop(&self, at: Rect) {
+        if self.silent {
+            return;
+        }
+        match zyr_draw::backdrop::backdrop(self.light) {
+            Some(picture) => self.canvas.backdrop(picture, at),
+            None => self.fill(at, 0.0, self.colours.background),
+        }
+    }
+
+    /// Frosted glass in the rounded `at`: the picture the window lies on,
+    /// blurred, under the glass's tint.
+    pub fn glass(&self, at: Rect, radius: f32) {
+        if self.silent {
+            return;
+        }
+        if let Some(picture) = zyr_draw::backdrop::backdrop(self.light) {
+            self.canvas
+                .frosted(picture, at, radius, self.px(design::GLASS_BLUR));
+        }
+        self.fill(at, radius, self.colours.glass);
     }
 
     pub fn picture(&self, picture: &Picture, at: Rect, radius: f32) {

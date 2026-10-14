@@ -4647,6 +4647,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Une fenêtre de détails qui se parcourt d'un coup d'œil.
 
+## D296. L'accueil repose sur une image de fond, sous du verre dépoli (2026-10-14, pendant MZ)
+
+**Pourquoi.** Victor voulait un accueil plus « premium » : une image sur toute la fenêtre plutôt que dans le seul bandeau, la barre de gauche et le bandeau en verre dépoli par-dessus, à la manière de la maquette qu'il a fait dessiner. Plusieurs images dessinées par ZyrDesk lui-même ont été essayées (soie, réseau de nœuds, courants, fibres, fleur) sans le convaincre ; il a fait faire l'image par un outil de génération d'images, en clair et en sombre.
+
+**Ce qui est fait.** Les deux images sont dans `crates/zyr-draw/backdrop/`, en JPEG, un format que Windows lit toujours (le WebP dépend d'une extension qui peut manquer), et compilées dans le programme : rien ne peut manquer à côté de lui. Elles sont lues une fois, la première fois qu'une fenêtre en demande une. La page repose sur celle du thème, qui couvre toute la fenêtre. La barre de gauche (et le tiroir qui la remplace en fenêtre étroite) et le bandeau sont en verre : la même image, floutée, sous une teinte de la charte (`--glass`, `--glass-edge`, `--glass-blur`). Le flou est celui de la carte graphique (l'effet de flou gaussien de Direct2D), fait une fois sur l'image à sa propre taille puis posé à celle de la fenêtre, ce qui coûte moins et revient au même ; il n'est refait que quand la fenêtre change de taille. Une carte qui ne sait pas flouter montre l'image nette sous la teinte. L'image abstraite que ZyrDesk dessine reste celle des cartes des ordinateurs sans fond d'écran ; ce qui ne servait qu'au bandeau (ses crêtes abaissées à gauche, son voile côté texte) est retiré.
+
+**Ce qui se voit.** Un accueil posé sur des courants dorés, clair ou sombre selon le thème, avec une barre de gauche et un bandeau en verre dépoli. Les images font 1672 pixels de large : sur un très grand écran, elles sont agrandies, ce que leur flou naturel rend peu visible.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

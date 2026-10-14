@@ -1,16 +1,14 @@
 //! The abstract picture ZyrDesk draws for itself.
 //!
-//! The banner of the home screen carries it, and so does every computer
-//! whose own wallpaper has not come: no photograph ships with the
-//! product, and none is fetched. Ridges one behind the other under a
+//! Every computer whose own wallpaper has not come carries it on its
+//! card: no wallpaper is fetched. Ridges one behind the other under a
 //! sky the gold of the logo warms, which is what « further, together »
 //! looks like without a word: each ridge stands in front of the one
 //! before it, and all of them under the same light.
 //!
 //! Every colour is a role of the design system, so the picture follows
-//! the theme like the rest. Its shape comes from a number: the banner
-//! always uses the same one, and a computer's card uses one taken from
-//! its fingerprint, so two cards side by side never show the same
+//! the theme like the rest. Its shape comes from a number taken from the
+//! computer's fingerprint, so two cards side by side never show the same
 //! mountains, and a card shows the same ones from one day to the next.
 //!
 //! Where the ridges go is plain arithmetic and is tried everywhere; the
@@ -41,10 +39,7 @@ const SUMMIT: f32 = 0.45;
 
 /// The points a ridge passes through, in shares of the picture's width
 /// and height, from left to right: summits and the dips between them.
-///
-/// `rising` lifts the ridges towards the right and lowers them on the
-/// left, for a picture whose left side carries words.
-pub(crate) fn ridges(seed: u32, rising: bool) -> [Vec<(f32, f32)>; RIDGES] {
+pub(crate) fn ridges(seed: u32) -> [Vec<(f32, f32)>; RIDGES] {
     let mut chance = Chance::new(seed);
     std::array::from_fn(|ridge| {
         let turns = SUMMITS[ridge] * 2;
@@ -61,20 +56,10 @@ pub(crate) fn ridges(seed: u32, rising: bool) -> [Vec<(f32, f32)>; RIDGES] {
                 } else {
                     0.06 + chance.next() * 0.28
                 };
-                let lift = if rising {
-                    0.35 + 0.65 * smooth(x.clamp(0.0, 1.0))
-                } else {
-                    1.0
-                };
-                (x, BASE[ridge] - RISE[ridge] * height * lift)
+                (x, BASE[ridge] - RISE[ridge] * height)
             })
             .collect()
     })
-}
-
-/// A number between nought and one that eases in and out.
-fn smooth(x: f32) -> f32 {
-    x * x * (3.0 - 2.0 * x)
 }
 
 /// The same row of numbers for the same seed, every time.
@@ -161,9 +146,6 @@ mod drawing {
         pub light: bool,
         /// The number its shape comes from.
         pub seed: u32,
-        /// Whether its left side carries words: the ridges then rise
-        /// towards the right, and the left fades into the page.
-        pub with_words: bool,
     }
 
     /// Draws the scene over `width` by `height` pixels of this target,
@@ -225,7 +207,7 @@ mod drawing {
                 colours.art_ridge_near,
                 colours.art_ridge_front,
             ];
-            let lines = ridges(scene.seed, scene.with_words);
+            let lines = ridges(scene.seed);
             for (ridge, points) in lines.iter().enumerate() {
                 let points: Vec<(f32, f32)> = points
                     .iter()
@@ -258,22 +240,6 @@ mod drawing {
                 ) {
                     target.DrawGeometry(&crest, &brush, scale, style);
                 }
-            }
-
-            // The side the words are written on fades into the page.
-            if scene.with_words
-                && let Some(veil) = linear(
-                    target,
-                    (0.0, 0.0),
-                    (width, 0.0),
-                    &[
-                        (0.0, colours.art_veil),
-                        (0.30, colours.art_veil.faded(0.92)),
-                        (0.64, colours.art_veil.faded(0.0)),
-                    ],
-                )
-            {
-                target.FillRectangle(&whole, &veil);
             }
         }
     }
@@ -376,34 +342,18 @@ mod tests {
 
     #[test]
     fn the_same_seed_draws_the_same_mountains() {
-        assert_eq!(ridges(7, false), ridges(7, false));
-        assert_ne!(ridges(7, false), ridges(8, false));
+        assert_eq!(ridges(7), ridges(7));
+        assert_ne!(ridges(7), ridges(8));
     }
 
     #[test]
     fn every_ridge_runs_past_both_edges_and_stays_in_the_picture() {
         for seed in [0, 1, 42, u32::MAX] {
-            for rising in [false, true] {
-                for points in ridges(seed, rising) {
-                    assert!(points.first().unwrap().0 < 0.0);
-                    assert!(points.last().unwrap().0 > 1.0);
-                    assert!(points.windows(2).all(|pair| pair[0].0 < pair[1].0));
-                    assert!(points.iter().all(|(_, y)| (0.0..1.0).contains(y)));
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn with_words_on_the_left_the_ridges_are_lowered_on_the_left() {
-        // The same mountains, only lowered where the words go, and less
-        // and less towards the right.
-        for (lowered, whole) in ridges(3, true).iter().zip(ridges(3, false)) {
-            for (low, high) in lowered.iter().zip(&whole) {
-                assert_eq!(low.0, high.0);
-                if low.0 < 0.5 {
-                    assert!(low.1 > high.1, "{low:?} is not below {high:?}");
-                }
+            for points in ridges(seed) {
+                assert!(points.first().unwrap().0 < 0.0);
+                assert!(points.last().unwrap().0 > 1.0);
+                assert!(points.windows(2).all(|pair| pair[0].0 < pair[1].0));
+                assert!(points.iter().all(|(_, y)| (0.0..1.0).contains(y)));
             }
         }
     }

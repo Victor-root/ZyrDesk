@@ -103,7 +103,7 @@ fn lapse(painter: &mut Painter) {
 /// The page, under the bar at its top, scrolled.
 fn page(painter: &mut Painter, at: Rect, narrow: bool) {
     let colours = painter.colours;
-    painter.fill(at, 0.0, colours.background);
+    painter.backdrop(at);
     let side = painter.px(SIDE);
     let bar_top = at.top + painter.px(ABOVE);
     let bar = Rect::at(
@@ -144,7 +144,7 @@ fn page(painter: &mut Painter, at: Rect, narrow: bool) {
         bottom: room.top,
         ..at
     };
-    painter.fill(veil, 0.0, colours.background);
+    painter.backdrop(veil);
     if now > 0.0 {
         let shown = (now / painter.px(design::SPACE_4)).min(1.0);
         painter.fill(
@@ -315,12 +315,12 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
 /// bottom the person, whether everything is up to date, and the build.
 fn sidebar(painter: &mut Painter, at: Rect) {
     let colours = painter.colours;
-    painter.fill(at, 0.0, colours.surface_2);
+    painter.glass(at, 0.0);
     painter.upright(
         at.right - painter.px(1.0),
         at.top,
         size(at).1,
-        colours.border,
+        colours.glass_edge,
     );
 
     let edge = painter.px(design::SPACE_5);

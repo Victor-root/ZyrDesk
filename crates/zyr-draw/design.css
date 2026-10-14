@@ -72,13 +72,13 @@
   --road-local: #60a5fa;
   --road-internet: #a78bfa;
 
-  /* The abstract picture ZyrDesk draws for itself: the banner of the
-     home screen, and every computer whose own wallpaper has not come.
+  /* The abstract picture ZyrDesk draws for itself: every computer
+     whose own wallpaper has not come, and this one's until its own is
+     read.
      Ridges one behind the other under a sky warmed by the gold, which
      is what « further, together » looks like without a photograph.
      From the sky down to the nearest ridge, then the light on the
-     ridges, the side the banner's words are written on, and what is
-     written on the picture itself. */
+     ridges. */
   --art-sky: #0e121b;
   --art-horizon: #1a2030;
   --art-glow: rgba(239, 181, 54, 0.22);
@@ -87,7 +87,13 @@
   --art-ridge-near: #29334a;
   --art-ridge-front: #303b55;
   --art-rim: rgba(248, 205, 106, 0.28);
-  --art-veil: #12151d;
+
+  /* Frosted glass, laid over the picture the home window lies on: the
+     tint over the blurred picture, and the light along its edge. How far
+     the picture behind it is blurred is the same in both themes. */
+  --glass: rgba(18, 21, 29, 0.62);
+  --glass-edge: rgba(255, 255, 255, 0.08);
+  --glass-blur: 60px;
 
   /* A grid of 8. Every spacing comes from it. */
   --space-1: 4px;
@@ -175,7 +181,9 @@
   --art-ridge-near: #9ba2ad;
   --art-ridge-front: #7f8794;
   --art-rim: rgba(255, 255, 255, 0.45);
-  --art-veil: #f8f4ee;
+
+  --glass: rgba(255, 255, 255, 0.58);
+  --glass-edge: rgba(255, 255, 255, 0.75);
 
   --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-2: 0 4px 16px rgba(16, 24, 40, 0.08);

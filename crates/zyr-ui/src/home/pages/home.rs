@@ -122,8 +122,8 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
         identity_top + identity_height + inside + if beside { 0.0 } else { painter.px(STRIP) };
     let card = Rect::at(at.left, at.top, width, height);
     let radius = painter.px(design::RADIUS_LARGE);
-    painter.art(card, radius, BANNER_SEED, true);
-    painter.stroke(card, radius, colours.border);
+    painter.glass(card, radius);
+    painter.stroke(card, radius, colours.glass_edge);
 
     painter.text(
         &hello,
@@ -175,9 +175,6 @@ fn banner(painter: &mut Painter, seen: &Seen, at: Rect) -> f32 {
     }
     height
 }
-
-/// The shape of the banner's picture, always the same one.
-const BANNER_SEED: u32 = 1;
 
 /// The name the banner greets: the account's when there is one, the
 /// person's otherwise.
@@ -640,7 +637,7 @@ fn wallpaper(painter: &Painter, seen: &Seen, at: Rect) {
                 );
             }
         },
-        None => painter.art(at, radius, seed_of(&own_fingerprint(seen)), false),
+        None => painter.art(at, radius, seed_of(&own_fingerprint(seen))),
     }
     painter.stroke(at, radius, painter.colours.text.faded(0.07));
 }
@@ -789,7 +786,7 @@ fn computer_card(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
         painter.px(PICTURE),
     );
     let radius = painter.px(design::RADIUS_SMALL + 1.0);
-    painter.art(picture, radius, seed_of(&fingerprint), false);
+    painter.art(picture, radius, seed_of(&fingerprint));
     painter.stroke(picture, radius, colours.text.faded(0.07));
     let tip = say!("computer.wallpaper_soon");
     if reachable {

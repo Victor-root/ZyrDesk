@@ -15,7 +15,7 @@ Règle de ce plan : **tout ce qui est prévu se voit dès le premier jour.** Ce 
 - **Les données séparées du dessin** : ce que l'accueil affiche lui est donné (par le service, le compte, la session) ; le dessin ne va rien chercher lui-même.
 - **Fenêtre étroite** : la barre de gauche se replie derrière un bouton « menu » (trois traits) en haut à gauche ; les rangées de cartes passent à la ligne.
 - **Barre de titre : celle de Windows, comme la fenêtre d'aujourd'hui**, avec ses boutons réduire, agrandir et fermer, et non une barre dessinée par ZyrDesk (contrairement à la maquette). C'est Windows qui la dessine et la colore selon ses propres réglages : la couleur d'accentuation de Windows quand la personne l'a choisie pour les barres de titre, une barre sombre en thème sombre (`shell/main_window.rs` le fait déjà).
-- **Images** : aucune photo d'illustration. Le bandeau porte une image abstraite dessinée pour ZyrDesk, déclinée en clair et en sombre.
+- **Images** : toute la fenêtre repose sur une image de fond faite pour ZyrDesk (des courants dorés sur un paysage), déclinée en clair et en sombre ; la barre de gauche et le bandeau sont en verre dépoli par-dessus ([D296](DECISIONS.md)). Les cartes des ordinateurs sans fond d'écran portent l'image abstraite dessinée par ZyrDesk.
 
 Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est dessiné mais attend sa fonction.
 
@@ -50,7 +50,7 @@ Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est des
 | Cet ordinateur, sous le message d'accueil | Oui | Voir la section 5 : il vit dans le bandeau ([D283](DECISIONS.md)) |
 | Bloc « Accès distant » : l'interrupteur | Oui | Active ou coupe l'accès distant |
 | Bloc « Accès distant » : « Cet ordinateur accepte les connexions à distance », ou ce qui l'empêche | Oui | |
-| Image abstraite de ZyrDesk | Oui | La devise de la maquette est retirée ([D285](DECISIONS.md)) |
+| Verre dépoli sur l'image de fond de la fenêtre | Oui | Remplace l'image abstraite qu'il portait ([D296](DECISIONS.md)) |
 
 L'empreinte de l'ordinateur **ne figure pas** sur l'accueil : elle ne sert qu'à ajouter un ordinateur à la main. Elle vit dans « Ajouter un ordinateur » et dans les détails de « Cet ordinateur ».
 
