@@ -6,22 +6,30 @@
 //! wherever the picture is clear. That is what settled the logo's edging
 //! after twelve trials.
 //!
-//! An ordinary window, for its part, is framed by the system and opaque: the
-//! canvas is poured into it when the system asks for a repaint. Both draw
-//! the same way and only differ at the very end, `lay_on` on one side and
-//! `copy_to` on the other.
+//! An ordinary window, for its part, is framed by the system and opaque,
+//! and its canvas is the window itself (`for_window`): the graphics card
+//! draws into it and shows it at the screen's refresh. Both draw the same
+//! way and only differ at the very end, `lay_on` on one side and the
+//! frame's own end on the other.
 //!
 //! **Direct2D and DirectWrite**, provided by Windows: nothing is bundled,
 //! and the text is rendered by the renderer that renders the system's own,
 //! so it looks like the system's own.
 //!
-//! **Drawn by the processor, and deliberately so.** The graphics card is
-//! already decoding 4K video at sixty frames a second; asking it to draw a
-//! card on top of that would add one more customer to the longest queue in
-//! the product. A menu card costs two or three milliseconds of processor
-//! time, and only when something changes: when it opens, when the mouse
-//! passes from one line to another, at the second that makes the figures
-//! move. Zero the rest of the time.
+//! **What a session shows is drawn by the processor, and deliberately
+//! so.** The graphics card is then already decoding 4K video at sixty
+//! frames a second; asking it to draw a card on top of that would add one
+//! more customer to the longest queue in the product. A menu card costs
+//! two or three milliseconds of processor time, and only when something
+//! changes: when it opens, when the mouse passes from one line to
+//! another, at the second that makes the figures move. Zero the rest of
+//! the time.
+//!
+//! **The home window is drawn by the graphics card.** As large as the
+//! screen, it cost the processor 12 to 17 milliseconds a frame at 175 %,
+//! more than a refresh lasts, and everything in it that moved did so at
+//! half pace. It does not move during a session, which is when the card
+//! is busy.
 //!
 //! Lengths here are counted in **real pixels**, as everywhere on the Rust
 //! side. What the design system writes is in page pixels: `scale` does the
@@ -35,9 +43,9 @@
 
 use windows::Win32::Foundation::{HWND, POINT, RECT, SIZE};
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D_RECT_F, D2D_SIZE_F, D2D_SIZE_U, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT,
-    D2D1_COLOR_F, D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN,
-    D2D1_PIXEL_FORMAT,
+    D2D_RECT_F, D2D_SIZE_F, D2D_SIZE_U, D2D1_ALPHA_MODE_IGNORE, D2D1_ALPHA_MODE_PREMULTIPLIED,
+    D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_CLOSED,
+    D2D1_FIGURE_END_OPEN, D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
@@ -45,12 +53,15 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_BITMAP_PROPERTIES, D2D1_BRUSH_PROPERTIES,
     D2D1_CAP_STYLE_ROUND, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_DASH_STYLE_DASH,
     D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_EXTEND_MODE_CLAMP,
-    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_LINE_JOIN_ROUND,
-    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE,
-    D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
+    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
+    D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_LINE_JOIN_ROUND, D2D1_PRESENT_OPTIONS_NONE,
+    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE, D2D1_RENDER_TARGET_TYPE_DEFAULT,
+    D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
+    D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
     D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE,
     D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap, ID2D1DCRenderTarget,
-    ID2D1Factory, ID2D1PathGeometry, ID2D1SolidColorBrush, ID2D1StrokeStyle,
+    ID2D1Factory, ID2D1HwndRenderTarget, ID2D1PathGeometry, ID2D1RenderTarget,
+    ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -284,10 +295,8 @@ impl Rect {
 pub struct Canvas {
     width: i32,
     height: i32,
-    surface: HDC,
-    bitmap: HBITMAP,
-    before: HGDIOBJ,
-    target: ID2D1DCRenderTarget,
+    output: Output,
+    target: ID2D1RenderTarget,
     brush: ID2D1SolidColorBrush,
     writer: IDWriteFactory,
     /// The text layouts already asked for, one per pen: making them
@@ -320,6 +329,41 @@ pub struct Canvas {
     /// What was drawn so far in a frame, kept to be laid down again as
     /// it is: see `keep`.
     kept: std::cell::RefCell<Option<ID2D1Bitmap>>,
+}
+
+/// Where a canvas's pixels go.
+enum Output {
+    /// Pixels of our own, drawn by the processor: laid on a layered
+    /// window, or turned into an icon.
+    Pixels {
+        surface: HDC,
+        bitmap: HBITMAP,
+        before: HGDIOBJ,
+        binder: ID2D1DCRenderTarget,
+    },
+    /// A framed window the graphics card draws straight into, shown at
+    /// the beat of the screen.
+    Window(ID2D1HwndRenderTarget),
+}
+
+impl Drop for Output {
+    fn drop(&mut self) {
+        if let Output::Pixels {
+            surface,
+            bitmap,
+            before,
+            ..
+        } = self
+        {
+            // SAFETY: everything given back here was asked for when the
+            // pixels were made, and in the reverse order.
+            unsafe {
+                let _ = SelectObject(*surface, *before);
+                let _ = DeleteObject((*bitmap).into());
+                let _ = DeleteDC(*surface);
+            }
+        }
+    }
 }
 
 /// A shadow already drawn: the size of what casts it, its corners, its
@@ -360,8 +404,8 @@ impl Canvas {
         if width <= 0 || height <= 0 {
             return None;
         }
-        // SAFETY: every object asked of the system is ours until `Drop`
-        // gives it back, and none of it leaves here.
+        // SAFETY: every object asked of the system is ours until the
+        // output gives it back, and none of it leaves here.
         unsafe {
             let screen = GetDC(None);
             let surface = CreateCompatibleDC(Some(screen));
@@ -371,22 +415,86 @@ impl Canvas {
                 return None;
             };
             let before = SelectObject(surface, bitmap.into());
-
             let factory: ID2D1Factory =
                 D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None).ok()?;
-            let target = factory
-                .CreateDCRenderTarget(&D2D1_RENDER_TARGET_PROPERTIES {
-                    r#type: D2D1_RENDER_TARGET_TYPE_SOFTWARE,
-                    pixelFormat: format(),
-                    // Everything is already counted in real pixels on
-                    // this side, so the renderer is asked not to rescale
-                    // anything.
-                    dpiX: 96.0,
-                    dpiY: 96.0,
-                    usage: D2D1_RENDER_TARGET_USAGE_NONE,
-                    minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
-                })
+            let binder = factory
+                .CreateDCRenderTarget(&properties(D2D1_RENDER_TARGET_TYPE_SOFTWARE, format()))
                 .ok()?;
+            let target: ID2D1RenderTarget = binder.cast().ok()?;
+            Canvas::around(
+                factory,
+                target,
+                Output::Pixels {
+                    surface,
+                    bitmap,
+                    before,
+                    binder,
+                },
+                (width, height),
+            )
+        }
+    }
+
+    /// A canvas that is a framed window, `width` by `height` real
+    /// pixels, drawn by the graphics card and shown at the beat of the
+    /// screen: what the home window, as large as the screen, needs to
+    /// move at the screen's pace, where the processor could not keep up.
+    ///
+    /// It is never drawn during a session: what is drawn then stays on
+    /// the processor (`new`). The graphics card can lose what it holds
+    /// when its driver restarts: `finish` then says no, and the canvas is
+    /// made again.
+    pub fn for_window(window: isize, width: i32, height: i32) -> Option<Canvas> {
+        if width <= 0 || height <= 0 {
+            return None;
+        }
+        // SAFETY: a window of the caller's, drawn into by a target of
+        // ours, and nothing that leaves here.
+        unsafe {
+            let factory: ID2D1Factory =
+                D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None).ok()?;
+            let drawn = factory
+                .CreateHwndRenderTarget(
+                    &properties(
+                        D2D1_RENDER_TARGET_TYPE_DEFAULT,
+                        D2D1_PIXEL_FORMAT {
+                            format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                            // An opaque window: what is shown has nothing
+                            // behind it, and its text can then be smoothed
+                            // the way Windows smooths its own.
+                            alphaMode: D2D1_ALPHA_MODE_IGNORE,
+                        },
+                    ),
+                    &D2D1_HWND_RENDER_TARGET_PROPERTIES {
+                        hwnd: HWND(window as *mut std::ffi::c_void),
+                        pixelSize: D2D_SIZE_U {
+                            width: width as u32,
+                            height: height as u32,
+                        },
+                        // Shown at the screen's refresh, never torn.
+                        presentOptions: D2D1_PRESENT_OPTIONS_NONE,
+                    },
+                )
+                .ok()?;
+            let target: ID2D1RenderTarget = drawn.cast().ok()?;
+            Canvas::around(factory, target, Output::Window(drawn), (width, height))
+        }
+    }
+
+    /// What every canvas holds around its target: its brush, its words,
+    /// its strokes, and the room for what it draws once.
+    ///
+    /// # Safety
+    ///
+    /// A factory and a target of ours, the target made by the factory.
+    unsafe fn around(
+        factory: ID2D1Factory,
+        target: ID2D1RenderTarget,
+        output: Output,
+        (width, height): (i32, i32),
+    ) -> Option<Canvas> {
+        // SAFETY: as the caller vouches.
+        unsafe {
             let brush = target
                 .CreateSolidColorBrush(&D2D1_COLOR_F::default(), None)
                 .ok()?;
@@ -406,13 +514,10 @@ impl Canvas {
             let dashed = factory
                 .CreateStrokeStyle(&stroke(D2D1_DASH_STYLE_DASH), None)
                 .ok()?;
-
             Some(Canvas {
                 width,
                 height,
-                surface,
-                bitmap,
-                before,
+                output,
                 target,
                 brush,
                 writer,
@@ -442,20 +547,39 @@ impl Canvas {
         if (width, height) == (self.width, self.height) {
             return true;
         }
-        // SAFETY: a surface of ours, given new pixels, the old ones given
-        // back once they are no longer selected into it.
-        unsafe {
-            let Some(bitmap) = pixels(self.surface, width, height) else {
-                return false;
-            };
-            let _ = SelectObject(self.surface, bitmap.into());
-            let _ = DeleteObject(self.bitmap.into());
-            self.bitmap = bitmap;
+        match &mut self.output {
+            Output::Pixels {
+                surface, bitmap, ..
+            } => {
+                // SAFETY: a surface of ours, given new pixels, the old
+                // ones given back once they are no longer selected into
+                // it.
+                unsafe {
+                    let Some(made) = pixels(*surface, width, height) else {
+                        return false;
+                    };
+                    let _ = SelectObject(*surface, made.into());
+                    let _ = DeleteObject((*bitmap).into());
+                    *bitmap = made;
+                }
+            }
+            Output::Window(drawn) => {
+                // SAFETY: a target of ours, outside a drawing.
+                let resized = unsafe {
+                    drawn.Resize(&D2D_SIZE_U {
+                        width: width as u32,
+                        height: height as u32,
+                    })
+                };
+                if resized.is_err() {
+                    return false;
+                }
+            }
         }
-        // What was kept is of the old size.
-        self.kept.replace(None);
         self.width = width;
         self.height = height;
+        // What was kept is of the old size.
+        self.kept.replace(None);
         true
     }
 
@@ -487,7 +611,7 @@ impl Canvas {
                         None,
                         0,
                         &D2D1_BITMAP_PROPERTIES {
-                            pixelFormat: format(),
+                            pixelFormat: self.target.GetPixelFormat(),
                             dpiX: 96.0,
                             dpiY: 96.0,
                         },
@@ -544,7 +668,12 @@ impl Canvas {
         // SAFETY: a target and a surface of ours, bound for the
         // length of the drawing as the documentation asks.
         unsafe {
-            let _ = self.target.BindDC(self.surface, &whole);
+            if let Output::Pixels {
+                surface, binder, ..
+            } = &self.output
+            {
+                let _ = binder.BindDC(*surface, &whole);
+            }
             self.target
                 .SetTextAntialiasMode(if background.alpha >= 1.0 {
                     D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE
@@ -569,6 +698,9 @@ impl Canvas {
     /// One single call for the place and for the picture: so the window
     /// can never be seen in its new place with its old picture.
     pub fn lay_on(&self, window: isize, x: i32, y: i32) -> bool {
+        let Output::Pixels { surface, .. } = &self.output else {
+            return false;
+        };
         let at = POINT { x, y };
         let size = SIZE {
             cx: self.width,
@@ -588,49 +720,11 @@ impl Canvas {
                 None,
                 Some(&at),
                 Some(&size),
-                Some(self.surface),
+                Some(*surface),
                 Some(&source),
                 windows::Win32::Foundation::COLORREF(0),
                 Some(&blend),
                 ULW_ALPHA,
-            )
-            .is_ok()
-        }
-    }
-
-    /// Pours the canvas into a surface, at this spot.
-    ///
-    /// What an ordinary window needs, framed and opaque, which repaints
-    /// itself when the system asks it to: `lay_on` hands over the picture
-    /// and the place in a single gesture, which a layered window allows
-    /// and an ordinary window knows nothing of. The transparency does not
-    /// travel here, and has no business here: what is poured was drawn on
-    /// a background.
-    ///
-    /// The copy waits for the compositor to have just put a frame on the
-    /// screen. Copied at any other moment, the picture can be taken by the
-    /// compositor half old and half new, and a moving veil then shows a
-    /// tear across it; copied right after its passage, it is whole long
-    /// before the next one. Without a compositor, nothing is waited for.
-    pub fn copy_to(&self, dc: isize, x: i32, y: i32) -> bool {
-        use windows::Win32::Graphics::Gdi::{BitBlt, SRCCOPY};
-
-        // SAFETY: a wait that belongs to no window, and a failure that
-        // only says there is no compositor to wait for.
-        let _ = unsafe { windows_sys::Win32::Graphics::Dwm::DwmFlush() };
-        // SAFETY: a surface of ours, copied as it is into the one the
-        // system has just lent.
-        unsafe {
-            BitBlt(
-                HDC(dc as *mut std::ffi::c_void),
-                x,
-                y,
-                self.width,
-                self.height,
-                Some(self.surface),
-                0,
-                0,
-                SRCCOPY,
             )
             .is_ok()
         }
@@ -646,6 +740,9 @@ impl Canvas {
     /// The mask is that of an icon with four bytes per pixel: all zeros,
     /// the transparency being carried by the pixels themselves.
     pub fn to_icon(&self) -> Option<isize> {
+        let Output::Pixels { bitmap, .. } = &self.output else {
+            return None;
+        };
         use windows::Win32::Graphics::Gdi::CreateBitmap;
         use windows::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, ICONINFO};
 
@@ -671,7 +768,7 @@ impl Canvas {
                 xHotspot: 0,
                 yHotspot: 0,
                 hbmMask: mask,
-                hbmColor: self.bitmap,
+                hbmColor: *bitmap,
             });
             let _ = DeleteObject(mask.into());
             icon.ok().map(|icon| icon.0 as isize)
@@ -849,7 +946,7 @@ impl Canvas {
                         height: whole_high,
                     }),
                     None,
-                    None,
+                    Some(&format()),
                     D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
                 )
                 .ok()?;
@@ -993,7 +1090,7 @@ impl Canvas {
                         height: key.1 as f32,
                     }),
                     None,
-                    None,
+                    Some(&format()),
                     D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
                 )
                 .ok()?;
@@ -1299,24 +1396,29 @@ unsafe fn pixels(surface: HDC, width: i32, height: i32) -> Option<HBITMAP> {
     unsafe { CreateDIBSection(Some(surface), &info, DIB_RGB_COLORS, &mut bits, None, 0) }.ok()
 }
 
+/// What a target is asked for: who renders it and in which pixels, at the
+/// scale where a pixel is a pixel, everything being already counted in
+/// real pixels on this side.
+fn properties(
+    kind: D2D1_RENDER_TARGET_TYPE,
+    pixels: D2D1_PIXEL_FORMAT,
+) -> D2D1_RENDER_TARGET_PROPERTIES {
+    D2D1_RENDER_TARGET_PROPERTIES {
+        r#type: kind,
+        pixelFormat: pixels,
+        dpiX: 96.0,
+        dpiY: 96.0,
+        usage: D2D1_RENDER_TARGET_USAGE_NONE,
+        minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
+    }
+}
+
 /// The pixels every drawing here is made of: four bytes, blue first,
 /// with their transparency already applied.
 fn format() -> D2D1_PIXEL_FORMAT {
     D2D1_PIXEL_FORMAT {
         format: DXGI_FORMAT_B8G8R8A8_UNORM,
         alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-    }
-}
-
-impl Drop for Canvas {
-    fn drop(&mut self) {
-        // SAFETY: everything given back here was asked for in `new`,
-        // and in the reverse order.
-        unsafe {
-            let _ = SelectObject(self.surface, self.before);
-            let _ = DeleteObject(self.bitmap.into());
-            let _ = DeleteDC(self.surface);
-        }
     }
 }
 

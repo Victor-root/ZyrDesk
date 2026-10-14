@@ -4599,6 +4599,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Un dialogue qui glisse et un voile qui s'assombrit au rythme de l'écran.
 
+## D290. La fenêtre d'accueil est dessinée par la carte graphique (2026-10-14, pendant MZ)
+
+**Pourquoi.** Les mesures de [D287](#d287-la-fenêtre-recopie-son-image-juste-après-le-passage-du-compositeur-2026-10-14-pendant-mz), sur l'écran de Victor (2286 x 1441 pixels à 175 %) : chaque image de l'accueil coûtait 12 à 17 millisecondes au processeur, page gardée sous le dialogue comprise ([D289](#d289-un-dialogue-souvre-sans-redessiner-la-page-quil-couvre-2026-10-14-pendant-mz)), avant même d'être recopiée. Un rafraîchissement dure 16,7 millisecondes : tout ce qui bougeait le faisait à mi-cadence, et l'ouverture d'un dialogue ramait. À cette taille, aucun réglage du dessin par le processeur ne suffit.
+
+**Ce qui est fait.** La toile a deux sorties. Des pixels en mémoire, dessinés par le processeur, pour ce qu'on voit pendant une session (le bouton flottant, son menu, les voyants, l'icône) : rien n'y change, et la raison d'origine tient, la carte graphique décodant alors l'image. Et une fenêtre que la carte graphique dessine elle-même, pour l'accueil, qui ne bouge pas pendant une session : elle est montrée au rafraîchissement de l'écran, sans déchirure, ce qui remplace l'attente du compositeur de D287. Si le pilote graphique redémarre et que la carte perd ce qu'elle tenait, la toile est refaite à l'image suivante, et le journal le dit. La mesure de D287 reste et compte désormais le temps de poser l'image, avant que la carte la montre.
+
+**Ce qui se voit.** Un accueil qui bouge au rythme de l'écran : survols, dialogues, voile.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

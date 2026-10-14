@@ -386,13 +386,14 @@ fn repaint(window: HWND) {
     let mut next = Next::default();
     let started = Instant::now();
     let mut drawn = None;
+    let mut lost = false;
     CANVAS.with_borrow_mut(|canvas| {
         let fits = match canvas.as_mut() {
             Some(canvas) => canvas.resize(width, height),
             None => false,
         };
         if !fits {
-            *canvas = Canvas::new(width, height);
+            *canvas = Canvas::for_window(window as isize, width, height);
         }
         let Some(canvas) = canvas.as_ref() else {
             return;
@@ -412,11 +413,23 @@ fn repaint(window: HWND) {
                 wake_at: state.wake_at,
             }
         });
+        // What the frame took to lay down, before the graphics card shows
+        // it at the screen's next refresh.
+        let laid = started.elapsed();
         if canvas.finish() {
-            drawn = Some(started.elapsed());
-            canvas.copy_to(surface as isize, 0, 0);
+            drawn = Some(laid);
+        } else {
+            lost = true;
         }
     });
+    if lost {
+        // The graphics card let go of what it held, a driver restarting:
+        // the canvas is made again, and the frame drawn again.
+        CANVAS.with_borrow_mut(|canvas| *canvas = None);
+        note("the canvas was lost by the graphics card, made again");
+        // SAFETY: a window of ours, from its thread.
+        unsafe { windows_sys::Win32::Graphics::Gdi::InvalidateRect(window, std::ptr::null(), 0) };
+    }
     if let Some(drawn) = drawn {
         MOVEMENT.with_borrow_mut(|movement| movement.frame(drawn, next.moving));
     }
