@@ -23,3 +23,7 @@ pub use message::{
     Registering, Request, Session, Standing, Watching, WayId,
 };
 pub use pipe::{CHANNEL, Door};
+/// Whether a computer of the account takes sessions: the word its
+/// messages carry, named here with them so that whoever reads one needs
+/// nothing more than this brick.
+pub use zyr_broker::rest::Access;

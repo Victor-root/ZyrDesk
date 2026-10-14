@@ -37,11 +37,16 @@ fn note(what: &str) {
 /// How wide and how tall the window is when it opens, and what it never
 /// goes below, in page pixels.
 ///
-/// The floor is not a preference: it is the room needed for the
-/// computers' cards to fit in a row and for the menu of a session to
-/// have somewhere to open.
-const OPENS_AT: (i32, i32) = (1060, 720);
+/// Wide enough for the home page to show its bar on the left, and never
+/// more of the screen than `AT_MOST_OF_THE_SCREEN`. The floor is not a
+/// preference: it is the room needed for the computers' cards to fit in
+/// a row and for the menu of a session to have somewhere to open.
+const OPENS_AT: (i32, i32) = (1320, 860);
 const NEVER_SMALLER: (i32, i32) = (880, 600);
+
+/// The share of the screen the window takes at most when it opens, so
+/// that a small screen still shows it whole, edges and all.
+const AT_MOST_OF_THE_SCREEN: f32 = 0.92;
 
 /// The window, as the system knows it.
 static HANDLE: AtomicIsize = AtomicIsize::new(0);
@@ -139,16 +144,16 @@ pub fn open(app: &App) -> Result<(), String> {
     let title = zyr_win32::wide(CLASS_NAME);
     // SAFETY: no argument beyond what is asked for.
     let dpi = unsafe { GetDpiForSystem() };
-    let (width, height) = (
-        scaled(OPENS_AT.0, dpi as i32),
-        scaled(OPENS_AT.1, dpi as i32),
-    );
-    // In the middle of the main screen: that is where a window opens the
-    // first time, and the system does not do it by itself.
-    //
     // SAFETY: no argument beyond the metric asked for.
     let (screen_width, screen_height) =
         unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
+    let at_most = |screen: i32| (screen as f32 * AT_MOST_OF_THE_SCREEN) as i32;
+    let (width, height) = (
+        scaled(OPENS_AT.0, dpi as i32).min(at_most(screen_width)),
+        scaled(OPENS_AT.1, dpi as i32).min(at_most(screen_height)),
+    );
+    // In the middle of the main screen: that is where a window opens the
+    // first time, and the system does not do it by itself.
     let (x, y) = if screen_width > width && screen_height > height {
         ((screen_width - width) / 2, (screen_height - height) / 2)
     } else {

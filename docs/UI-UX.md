@@ -7,49 +7,25 @@ L'interface est une priorité de premier rang, pas un habillage. Cible : la qual
 Calme, précise, premium. L'application inspire la même confiance qu'un bon matériel : sobre au repos, réactive à l'usage, jamais bavarde.
 
 - Sombre d'abord : fond quasi noir profond légèrement bleuté, surfaces en élévations subtiles (2 à 3 niveaux), jamais de gris boueux. Thème clair soigné disponible.
-- Une seule couleur d'accent : bleu électrique, réservée aux actions principales et aux états « en ligne / connecté ». Les états système utilisent une palette réduite : vert doux (en ligne), ambre (dégradé, relais), rouge calme (erreur), gris (hors ligne).
-- Typographie : Inter (ou Geist), 4 tailles seulement (titre, sous-titre, corps, légende), interlignage généreux, chiffres tabulaires pour les métriques.
+- Une seule couleur d'accent : le doré, fixe, écrit à un seul endroit, la charte graphique `crates/zyr-draw/design.css` ([D242](DECISIONS.md)). Il est réservé aux actions principales, à ce qui est choisi et à ce que la main ou le clavier désigne. Les états système utilisent une palette réduite : vert doux (en ligne), ambre (dégradé, relais), rouge calme (erreur), gris (hors ligne).
+- Typographie : Segoe UI Variable, la police de Windows, en peu de tailles (message d'accueil, titre, sous-titre, corps, légende), interlignage généreux ; une seule ligne à empattements, la devise du bandeau.
 - Grille de 8 px, rayons 10 à 12 px, ombres douces et courtes, pas de bordures dures.
 - Mouvement : 150 à 220 ms, courbes en sortie douce, uniquement au service de la compréhension (apparition de cartes, changement d'état, transitions de pages). Jamais d'animation gratuite. Squelettes de chargement pour les listes, pastilles de présence avec pulsation très discrète.
 
 ## 2. Écrans
 
-Accueil :
+Accueil : son plan est [INTERFACE.md](INTERFACE.md), tiré d'une maquette choisie par Victor, et posé par [D280](DECISIONS.md). Une barre à gauche (les pages, et en bas la personne), une barre en haut (recherche, filtre, vues), puis la page.
 
-```text
-┌─────────────────────────────────────────────────────┐
-│  ZyrDesk                                   ▤  ⚙     │
-│                                                     │
-│  CET ORDINATEUR                                     │
-│  ┌───────────────────────────────────────────────┐  │
-│  │  PC-BUREAU                    Accès distant   │  │
-│  │  ● Prêt à être contrôlé            [ ◉ ON ]   │  │
-│  │  Empreinte de cet ordinateur       [ Copier ] │  │
-│  └───────────────────────────────────────────────┘  │
-│  ┌───────────────────────────────────────────────┐  │
-│  │  FFmpeg manque…           [Ouvrir le dossier] │  │
-│  └───────────────────────────────────────────────┘  │
-│                                                     │
-│  MES ORDINATEURS                                    │
-│  ┌─────────────────────┐  ┌─────────────────────┐   │
-│  │ ● PC-PORTABLE       │  │ ○ PC-ATELIER        │   │
-│  │ 192.168.1.31        │  │ Hors ligne · 3 j    │   │
-│  │   Se connecter      │  │                     │   │
-│  └─────────────────────┘  └─────────────────────┘   │
-│                                                     │
-│           ZyrDesk 0.1.0 (599c1c4 2026-08-18)        │
-└─────────────────────────────────────────────────────┘
-```
-
-- La carte « Cet ordinateur » porte l'interrupteur Accès distant et son état en langage humain (« Prêt à être contrôlé », « Accès distant désactivé », « FFmpeg absent », « Démarrage en cours »). Ce qui empêche d'être joignable est dit, jamais laissé à deviner ([D18](DECISIONS.md)).
-- Sous la carte, ce qu'il reste à faire pour que le produit marche, avec de quoi le faire : le service qui ne tourne pas se démarre d'un bouton, et FFmpeg, s'il manque, ouvre son dossier. Rien de tout cela ne demande de ligne de commande.
-- Les cartes machines : pastille de présence, nom, adresse, bouton Se connecter proéminent au survol. Clic simple = connexion. Elles se remplissent seules à partir des annonces du réseau local ; « Ajouter un ordinateur » ne sert qu'aux réseaux où l'annonce ne passe pas. Ce geste-là écrit l'ordinateur dans les deux sens, et se fait donc sur les deux machines : l'adresse n'est demandée que si on veut aussi le contrôler depuis ici. Elle est ce qui le garde à l'écran, sur une carte comme les autres, à une pastille près : grise, avec « ajouté à la main » écrit à côté, parce que ce réseau ne porte pas son annonce et non parce qu'il serait éteint. Le retirer se fait dans le dialogue d'ajout, là où il a été écrit.
-- Une carte porte deux gestes à côté du grand clic, tous deux en haut à droite. L'icône du journal ouvre le journal de **cette machine-là** lu d'ici ([D96](DECISIONS.md)) ; elle ne s'efface pas pendant une session, alors que le reste de la carte s'estompe, parce que c'est justement à ce moment-là qu'on veut lire ce que la machine d'en face a écrit. L'icône de la maison, à sa gauche, ouvre la session **par ce réseau et rien d'autre** ([D148](DECISIONS.md)) : elle n'apparaît que pour un ordinateur que ce réseau annonce, et le mot du survol dit laquelle des deux voies la main est en train de choisir. Le grand clic reste la carte entière, une surface qui la recouvre, et les icônes se posent par-dessus : c'est ce qui permet à une carte d'être un bouton entier sans interdire tout autre bouton dessus.
-- La version tient au bas de l'écran, discrète. Quand la fenêtre et le service ne datent pas du même jour, elle le dit en ambre : c'est la panne que personne ne pense à vérifier.
-- Le journal (icône ▤) rassemble tout ce que le produit a écrit, sous la compilation qui l'a produit, avec un bouton qui copie l'ensemble. Rapporter un problème est un clic et un collage. La même fenêtre sert aux deux journaux, et son titre dit lequel. **Vider** vide celui qui est affiché, y compris celui d'en face : une panne se cherche en vidant les deux, en refaisant l'essai, puis en lisant les deux. Seul **Ouvrir le dossier** ne vaut que chez soi.
+- Le bandeau salue la personne par son prénom, dit en trois mots comment vont ce poste, son réseau et ZyrDesk, et porte l'interrupteur de l'accès distant avec son état en langage humain (« Votre ordinateur est prêt à être contrôlé », « L'accès distant est coupé »). Ce qui empêche d'être joignable est dit, jamais laissé à deviner ([D18](DECISIONS.md)), avec de quoi le réparer : le service qui ne tourne pas se démarre d'un bouton, et FFmpeg, s'il manque, ouvre son dossier. Rien de tout cela ne demande de ligne de commande. Quand un autre ordinateur contrôle celui-ci, le bandeau le dit et offre de reprendre la main.
+- La carte « Cet ordinateur » montre son vrai fond d'écran, son nom (renommé par le compte quand il y en a un), son état, et ce qu'il est : système, processeur, mémoire, carte graphique. « Voir les détails » ouvre tout le reste, dont l'empreinte, qui ne vit plus que là et dans « Ajouter un ordinateur ».
+- Les cartes des autres ordinateurs : une image, la pastille de présence, le nom, ce qu'on en sait, la route (LAN, Internet, à la main) et son délai, et « Se connecter ». La carte entière est le bouton. Son menu, en haut à droite de l'image, offre de passer par ce réseau seulement ([D148](DECISIONS.md)), de lire le journal de **cette machine-là** d'ici ([D96](DECISIONS.md)), de renvoyer celui qui contrôle cet ordinateur, et d'oublier un ordinateur ajouté à la main. Elles se remplissent seules à partir des annonces du réseau local et du compte ; « Ajouter un ordinateur » ne sert qu'aux réseaux où l'annonce ne passe pas, se fait sur les deux machines, et donne d'abord l'empreinte et l'adresse de celle-ci, à écrire sur l'autre.
+- Ce qui est prévu et ne marche pas encore se voit à sa place, grisé, avec « Bientôt » au survol : les pages Ordinateurs, Contacts et Activité, la recherche, les contacts, les sessions récentes, le réveil d'un ordinateur éteint.
+- La version tient au bas de la page, discrète. Quand la fenêtre et le service ne datent pas de la même compilation, elle le dit en ambre : c'est la panne que personne ne pense à vérifier.
+- Les dialogues s'ouvrent par-dessus la page assombrie, tous du même cadre : un titre et ce dont il s'agit, la croix, ce qu'ils portent, et leurs boutons en bas, le principal à droite et ce qui détruit à part, à gauche. Ce qui détruit demande un second clic, et la demande s'éteint d'elle-même.
+- Le journal rassemble tout ce que le produit a écrit, sous la compilation qui l'a produit, avec un bouton qui copie l'ensemble. Rapporter un problème est un clic et un collage. Le même dialogue sert aux deux journaux, et son titre dit lequel. **Vider** vide celui qui est affiché, y compris celui d'en face : une panne se cherche en vidant les deux, en refaisant l'essai, puis en lisant les deux. Seul **Ouvrir le dossier** ne vaut que chez soi.
 - L'icône dans la zone de notification est la seule chose qui reste quand la fenêtre est fermée, et elle est là dès que ZyrDesk tourne ([D20](DECISIONS.md)). Nette quand cet ordinateur peut être pris en main, atténuée sinon, et son infobulle le dit en toutes lettres : un état ne se lit jamais à la couleur seule. Pendant une session, l'infobulle dit cela avant tout le reste, parce que la fenêtre peut être réduite et que l'icône est alors la seule chose à l'écran qui sache que l'ordinateur d'en face est tenu. Sur l'accueil, la croix de la fenêtre range la fenêtre et n'arrête rien, et un clic sur l'icône la rappelle ; sur une session, elle quitte la session et rend l'accueil, l'image étant dans cette fenêtre-là ([D23](DECISIONS.md)). « Quitter » dans le menu de l'icône arrête le service, la session en cours et le produit : c'est le seul geste qui arrête tout.
 
-Fiche machine (panneau latéral, pas une page) : statut, GPU, résolution native, chemin réseau (« Direct disponible » / « Via relais »), latence estimée, réglages propres à cette machine (qualité par défaut, écran cible), actions secondaires (renommer, révoquer).
+Fiche d'un autre ordinateur (à venir, un panneau latéral et non une page) : statut, GPU, résolution native, chemin réseau (« Direct disponible » / « Via relais »), latence estimée, réglages propres à cette machine (qualité par défaut, écran cible), actions secondaires (renommer, révoquer).
 
 Session (l'écran le plus important) : l'image est native et s'affiche dans la fenêtre de ZyrDesk elle-même, qui prend l'écran entier ou reste une fenêtre selon le réglage ([D21](DECISIONS.md)). Une session n'ouvre donc jamais de deuxième fenêtre. L'image remplit exactement ce qu'on lui donne, sans bande noire et sans déformation : la fenêtre prend la forme de l'image, et l'ordinateur d'en face met son bureau à la forme demandée ([D22](DECISIONS.md)). Aucune décoration permanente. Une seule marque de ZyrDesk reste posée dessus, en haut à droite : le logo, en petit. Un clic dessus déplie le menu de la session.
 
@@ -91,7 +67,9 @@ Au milieu, ce qu'une session demande : la résolution, l'écran de l'hôte quand
 
 Posé en M4 ([D16](DECISIONS.md)). L'entrée « Statistiques » pose en haut de l'image un bandeau relu cinq fois par seconde, sur une ligne quand l'image est assez large et sur plusieurs sinon, avec le bouton et les voyants juste en dessous ([D232](DECISIONS.md)) : le codec, la taille et les images par seconde, puis le temps passé chez l'hôte, le réseau, le décodage, l'affichage, le débit, les pertes, et la latence de bout en bout, de la capture là-bas à l'affichage ici ([MOTEUR.md](MOTEUR.md) §9). À venir : le chemin réseau en un coup d'œil.
 
-Réglages : ce qui ne se règle pas en regardant l'image. Le thème, la confiance aux ordinateurs du réseau local, le démarrage avec Windows, le compte, les raccourcis clavier, et, dans « Avancé », le codec, la fenêtre de la session, la souris, le silence des enceintes de l'ordinateur distant, les statistiques et le dossier des journaux. Une ligne y rappelle ce qu'une session demanderait maintenant, sans qu'on puisse la changer là : c'est le menu de la session qui la porte. À venir : taille de paquet, décodeur, choix du relais, mode paranoïaque. Le jargon reste rangé dans « Avancé ».
+Paramètres : une page de l'accueil, ce qui ne se règle pas en regardant l'image, en cartes. Général (le thème, le démarrage avec Windows, la confiance aux ordinateurs du réseau local), le compte et ses appareils, les raccourcis clavier, les journaux, et, repliés dans « Plus de réglages », le codec, la fenêtre de la session, la souris, le silence des enceintes de l'ordinateur distant, les statistiques et les essais réseau. Une ligne y rappelle ce qu'une session demanderait maintenant, sans qu'on puisse la changer là : c'est le menu de la session qui la porte. À venir : taille de paquet, décodeur, choix du relais, mode paranoïaque. Le jargon reste rangé dans « Plus de réglages ».
+
+À propos : une page sous Paramètres. La version, le code source, la licence, et ce dont ZyrDesk est fait, chacun avec sa licence lisible en entier ([COMPLIANCE.md](COMPLIANCE.md)).
 
 Un seul de ces réglages s'écrit aussi tout seul : « fenêtre de la session ». Basculer entre plein écran et fenêtre pendant une session est un choix comme un autre, et il se retrouve écrit ici, donc la session suivante s'ouvre comme la précédente a été laissée. Personne ne doit avoir à dire deux fois la même chose, une fois dans l'image et une fois dans un écran de réglages.
 
@@ -105,7 +83,7 @@ Premier lancement : trois choix clairs : créer un compte, se connecter, « util
 - Composants : boutons (3 variantes x 3 tailles), carte machine, pastille de présence, interrupteur, champs, menus, menus contextuels, dialogues, toasts, badges d'état, squelettes, barres de progression, pilule de session, états vides.
 - Chaque composant définit ses états : normal, survol, focus visible (accessibilité clavier), actif, désactivé, chargement.
 - Accessibilité : contrastes AA minimum, navigation clavier complète, cibles de clic de 32 px minimum, focus toujours visible, texte des états jamais porté par la couleur seule.
-- Iconographie : un seul set cohérent (type Lucide), trait fin, taille unique par contexte.
+- Iconographie : un seul set cohérent, [Tabler Icons](https://tabler.io/icons) pour l'accueil, au trait, taille unique par contexte ([D242](DECISIONS.md)).
 
 ## 4. Ton et langage
 

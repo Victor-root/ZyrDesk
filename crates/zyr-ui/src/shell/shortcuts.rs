@@ -40,7 +40,7 @@ fn note(what: &str) {
 ///
 /// Three, and no more: what a person reaches for without leaving the
 /// picture. Everything else is one click away in the floating menu.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Doing {
     /// Ends the session, and hands the far desktop back.
     End,

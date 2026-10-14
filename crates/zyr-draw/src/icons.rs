@@ -406,13 +406,6 @@ pub const MORE: Icon = tabler(&[
     Stroke::SvgPath("M18 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"),
 ]);
 
-/// Tabler « dots-vertical ».
-pub const MORE_VERTICAL: Icon = tabler(&[
-    Stroke::SvgPath("M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"),
-    Stroke::SvgPath("M11 19a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"),
-    Stroke::SvgPath("M11 5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"),
-]);
-
 /// Tabler « user-plus ».
 pub const USER_PLUS: Icon = tabler(&[
     Stroke::SvgPath("M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"),
@@ -474,15 +467,6 @@ pub const TROUBLE: Icon = tabler(&[
     Stroke::SvgPath("M12 16h.01"),
 ]);
 
-/// Tabler « alert-triangle ».
-pub const WARNING: Icon = tabler(&[
-    Stroke::SvgPath("M12 9v4"),
-    Stroke::SvgPath(
-        "M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0",
-    ),
-    Stroke::SvgPath("M12 16h.01"),
-]);
-
 /// Tabler « folder-open ».
 pub const FOLDER: Icon = tabler(&[Stroke::SvgPath(
     "M5 19l2.757 -7.351a1 1 0 0 1 .936 -.649h12.307a1 1 0 0 1 .986 1.164l-.996 5.211a2 2 0 0 1 -1.964 1.625h-14.026a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h4l3 3h7a2 2 0 0 1 2 2v2",
@@ -507,15 +491,6 @@ pub const EXTERNAL: Icon = tabler(&[
     Stroke::SvgPath("M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6"),
     Stroke::SvgPath("M11 13l9 -9"),
     Stroke::SvgPath("M15 4h5v5"),
-]);
-
-/// Tabler « fingerprint ».
-pub const FINGERPRINT: Icon = tabler(&[
-    Stroke::SvgPath("M18.9 7a8 8 0 0 1 1.1 5v1a6 6 0 0 0 .8 3"),
-    Stroke::SvgPath("M8 11a4 4 0 0 1 8 0v1a10 10 0 0 0 2 6"),
-    Stroke::SvgPath("M12 11v2a14 14 0 0 0 2.5 8"),
-    Stroke::SvgPath("M8 15a18 18 0 0 0 1.8 6"),
-    Stroke::SvgPath("M4.9 19a22 22 0 0 1 -.9 -7v-1a8 8 0 0 1 12 -6.95"),
 ]);
 
 /// Tabler « logout ».
@@ -558,18 +533,6 @@ pub const THEME: Icon = tabler(&[
     Stroke::SvgPath("M12 3v1"),
     Stroke::SvgPath("M5.6 5.6l.7 .7"),
     Stroke::SvgPath("M3 21l18 -18"),
-]);
-
-/// Tabler « network ».
-pub const NETWORK: Icon = tabler(&[
-    Stroke::SvgPath("M6 9a6 6 0 1 0 12 0a6 6 0 0 0 -12 0"),
-    Stroke::SvgPath("M12 3c1.333 .333 2 2.333 2 6s-.667 5.667 -2 6"),
-    Stroke::SvgPath("M12 3c-1.333 .333 -2 2.333 -2 6s.667 5.667 2 6"),
-    Stroke::SvgPath("M6 9h12"),
-    Stroke::SvgPath("M3 20h7"),
-    Stroke::SvgPath("M14 20h7"),
-    Stroke::SvgPath("M10 20a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"),
-    Stroke::SvgPath("M12 15v3"),
 ]);
 
 /// Tabler « server ».
@@ -637,22 +600,6 @@ pub const DISCONNECT: Icon = tabler(&[
     Stroke::SvgPath("M13 14l-2 2"),
     Stroke::SvgPath("M16 16l4 4"),
 ]);
-
-/// Tabler « bolt ».
-pub const BOLT: Icon = tabler(&[Stroke::SvgPath("M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11")]);
-
-/// The drawing of the empty screen: a computer, on its own grid.
-///
-/// Its own because it is not square, and that is what gives it the shape
-/// of a screen standing on its foot.
-pub const NO_COMPUTER: Icon = Icon {
-    grid: 64.0,
-    thickness: 2.0,
-    strokes: &[
-        Stroke::RoundRect(1.5, 1.5, 45.0, 32.0, 4.0),
-        Stroke::SvgPath("M17 41h27M24 33.5v7"),
-    ],
-};
 
 #[cfg(test)]
 mod tests {

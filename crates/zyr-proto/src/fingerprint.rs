@@ -8,6 +8,10 @@
 
 use sha2::{Digest, Sha256};
 
+/// How many characters a fingerprint is written with: two hexadecimal
+/// digits for each of its bytes.
+pub const WRITTEN_LENGTH: usize = 64;
+
 /// Fingerprint of a certificate, the only identity the tunnel cares for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Fingerprint([u8; 32]);
@@ -51,7 +55,7 @@ impl std::str::FromStr for Fingerprint {
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         let text = text.trim();
-        if text.len() != 64 {
+        if text.len() != WRITTEN_LENGTH {
             return Err(InvalidFingerprint);
         }
         let mut bytes = [0u8; 32];

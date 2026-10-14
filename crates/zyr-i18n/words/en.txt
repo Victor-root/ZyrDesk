@@ -171,6 +171,8 @@ window.journal_partly_emptied = part of the journal could not be emptied:\n  {fi
 window.combination_refused = this combination cannot be taken: it needs at least one key held, and a key ZyrDesk knows how to place on a keyboard.
 window.shortcuts_unreadable = the keyboard shortcuts could not be read: {detail}
 window.shortcuts_not_saved = the keyboard shortcuts could not be saved: {detail}
+window.copy_refused = Windows refused the copy.
+window.link_not_opened = the address could not be opened (error {code})
 
 # Setting the service up, and starting with Windows.
 launch.no_location = this program does not know where it is: {detail}
@@ -266,3 +268,304 @@ tray.reachable = ZyrDesk: this computer can be controlled
 tray.not_reachable = ZyrDesk: this computer cannot be reached
 tray.open = Open ZyrDesk
 tray.quit = Quit
+
+# The home window: its bar on the left and its bar at the top.
+nav.home = Home
+nav.computers = Computers
+nav.contacts = Contacts
+nav.activity = Activity
+nav.settings = Settings
+nav.about = About
+nav.open_menu = Open the menu
+nav.account_tip = Your account
+nav.up_to_date = Everything is up to date
+bar.search = Search for a computer, a contact…
+bar.search_keys = Ctrl K
+bar.all = All
+soon.tip = Coming soon
+
+# The home page.
+home.hello = Hello {name}!
+home.tagline = Take control of your computers, wherever you are.
+home.this_station = Local computer
+home.windows_unknown = Windows
+home.network = Network
+home.connected = Connected
+home.local_only = Local network only
+home.network_unknown = Unknown
+home.all_is_well = Everything is working
+home.versions_differ = The window and the service differ
+home.looking_for_the_service = Looking for the service…
+home.service_stopped = Service stopped
+home.ffmpeg_missing = FFmpeg is missing
+home.access_off = Remote access off
+home.ready = Ready to be controlled
+home.starting = Starting…
+home.remote_access = Remote access
+home.controlled_by = {name} is controlling this computer.
+home.take_back = Take it back
+home.service_stopped_long = The ZyrDesk service is not running: nobody can reach this computer.
+home.start_the_service = Start the service
+home.ffmpeg_missing_long = FFmpeg is missing: this computer can neither be controlled nor control another.
+home.open_its_folder = Open its folder
+home.ready_long = Your computer is ready to be controlled.
+home.access_off_long = Remote access is off: nobody can control this computer.
+home.motto_first = Further,
+home.motto_second = together
+home.this_computer = This computer
+home.my_computers = My computers
+home.see_all = See all
+home.rename_needs_an_account = Renaming goes through the account: sign in to a server first.
+home.see_details = See the details
+home.memory = {gigabytes} GB of RAM
+home.no_computer = No computer yet
+home.no_computer_text = The computers of this network show up here by themselves, and those of your account once you are signed in.
+home.contacts = Contacts and shared access
+home.invite = Invite a contact
+home.contacts_soon = Sharing between accounts: coming soon
+home.recent_sessions = Recent sessions
+home.sessions_soon = The history of sessions: coming soon
+home.quick_actions = Quick actions
+home.action_activity = See the activity
+home.action_settings = Open the settings
+home.version_differs = Window {window}, service {service}
+
+# Windows, by its edition.
+edition.home = Home
+edition.pro = Pro
+edition.workstation = Pro for Workstations
+edition.education = Education
+edition.enterprise = Enterprise
+
+# How long something lasted, or how long ago it was.
+time.under_a_minute = under a minute
+time.minutes = {minutes} min
+time.hours = {hours} h
+time.hours_minutes = {hours} h {minutes}
+time.days = {days} d
+
+# A computer's card, and its menu.
+computer.online = Online
+computer.offline = Offline
+computer.offline_since = Offline, seen {since} ago
+computer.of_the_account = account
+computer.shared_by = shared by {owner}
+computer.written = added by hand
+computer.road_local = LAN
+computer.road_internet = Internet
+computer.road_written = By hand
+computer.round_trip = {ms} ms
+computer.road_relay = Relay
+computer.via_relay = Through the relay {via}
+computer.via_direct = Straight to {via}
+computer.in_session = In session · {duration}
+computer.controls_this_one = Controls this one
+computer.connect = Connect
+computer.wake = Wake up
+computer.wallpaper_soon = Its own wallpaper: coming soon
+computer.move_soon = Moving the cards: coming soon
+computer.more = More
+computer.here_only = Connect through this network only
+computer.journal = See its journal
+computer.send_back = Send it back
+computer.forget = Forget
+computer.forgotten = {name} is forgotten.
+
+# What every dialog says the same way.
+dialog.close = Close
+dialog.cancel = Cancel
+dialog.confirm = Confirm
+dialog.copy = Copy
+dialog.copied = Copied
+dialog.fingerprint_unknown = Unknown while the service does not answer.
+
+# What a field shows while it is empty.
+field.fingerprint_example = 0829cc7e cb9e9ba5…
+field.address_example = 192.168.1.20
+field.name_example = Office PC
+field.server_example = zyr.example.com or 192.168.1.40:8443
+field.user_example = camille
+field.email_example = camille@example.com
+field.invitation_example = AB12-CD34
+field.sift_example = clipboard files
+
+# Adding a computer by hand.
+adding.title = Add a computer
+adding.lead = Only for a computer that does not show up by itself. Do it on both computers: each one has to know the other.
+adding.this_computer_lead = To be written on the other computer, in its own “Add a computer”.
+adding.this_address = Its address on this network: {addresses}
+adding.fingerprint = Fingerprint of the other computer
+adding.characters = {count} characters out of {total}
+adding.not_a_fingerprint = This is not a fingerprint: it holds only the digits 0 to 9 and the letters a to f.
+adding.address = Its address
+adding.address_hint = Only to control it from here. It then stays on the home page, with nothing to type again.
+adding.name = Name (optional)
+adding.allow = Allow
+adding.allowed = This computer is allowed to come to this one.
+adding.written = Added by hand
+
+# Everything about this computer.
+details.lead = Everything ZyrDesk knows about it.
+details.fingerprint = Fingerprint
+details.fingerprint_lead = What another computer recognises this one by. To be written on it when it does not see this one by itself.
+details.name = Name
+details.remote_access = Remote access
+details.system = System
+details.version_and_build = Version {version}, build {build}
+details.build = Build {build}
+details.processor = Processor
+details.threads = {count} threads
+details.memory = Memory
+details.graphics = Graphics
+details.card_and_driver = {card}, driver {driver}
+details.power = Power
+details.on_mains = On the mains
+details.on_battery = On battery
+details.addresses = Addresses
+details.no_address = None on this network
+details.version = ZyrDesk
+
+# Signing in to a server.
+signin.title = Sign in to a ZyrDesk server
+signin.lead = The server of your installation, then your account. This computer is attached to it under its name, and your other computers show up on the home page.
+signin.have_an_account = I have an account
+signin.new_account = Create an account
+signin.server = Server
+signin.server_hint = As the server's installation showed it, with the port if it is not 443. Always encrypted: an address in http:// is refused.
+signin.user = User name
+signin.password = Password
+signin.device_name = Name of this computer
+signin.device_name_hint = The name your other devices see it under.
+signin.email = Email address (optional)
+signin.invitation = Invitation code
+signin.invitation_hint = Only if the server asks for one.
+signin.pinning_title = A server nobody vouches for
+signin.pinning_text = This server presents a certificate nobody vouches for. Compare this fingerprint with the one its installation showed. If it is the same, continue: it is kept, and a server presenting another one would be refused.
+signin.pin = It is the same, continue
+signin.create = Create the account
+signin.sign_in = Sign in
+signin.signing_in = Signing in…
+signin.attached = This computer is attached to the account.
+
+# Renaming a device of the account.
+renaming.title = Rename “{name}”
+renaming.lead = The name the account shows of this device, on every other one.
+renaming.new_name = New name
+renaming.rename = Rename
+
+# The journal.
+journal.title = Journal
+journal.of = Journal of {name}
+journal.lead = Everything ZyrDesk wrote on this computer, to be copied as it is when something goes wrong.
+journal.far_lead = What the far computer wrote on its side, read from here, to be copied as it is when something goes wrong.
+journal.reading = Reading…
+journal.emptying = Emptying…
+journal.sift = Sift
+journal.sift_hint = One or more of the names above, apart by spaces: the page keeps one or the other. “Words in quotes” searches the text, and a minus in front leaves out.
+journal.empty = Empty
+journal.open_folder = Open the folder
+journal.refresh = Refresh
+journal.copy_all = Copy everything
+journal.copy_sifted = Copy the sift
+
+# A session being opened from the home window.
+opening.title = Connecting
+opening.first_step = Opening the tunnel…
+opening.coming_back = Connection lost, coming back…
+opening.coming_back_again = Connection lost, coming back… (attempt {attempt})
+
+# The settings.
+settings.lead = What holds for every session, and for this computer.
+settings.general = General
+settings.theme = Theme
+settings.theme_caption = Follows Windows until another one is chosen.
+settings.theme_system = System
+settings.theme_light = Light
+settings.theme_dark = Dark
+settings.at_boot = Start with Windows
+settings.at_boot_caption = This computer answers from the moment it is switched on, before anybody signs in, and ZyrDesk comes back by itself with its icon. Otherwise nothing runs until you open ZyrDesk.
+settings.trust = Computers of the local network
+settings.trust_caption = Those that announce themselves on this network can reach this one with nothing to copy. Only concerns the local network.
+settings.account = Account
+settings.account_lead = A ZyrDesk server finds your computers wherever they are and introduces them to each other. Optional: without an account, everything works as before on the local network.
+settings.account_unknown = Account unknown
+settings.account_unknown_caption = The service does not answer: the account is read while it runs.
+settings.no_account = No account
+settings.no_account_caption = Sign in to a server to find your computers from anywhere.
+settings.linked = Linked to {server}
+settings.unreachable = {server} cannot be reached
+settings.unreachable_because = {server} cannot be reached: {why}
+settings.detach = Detach
+settings.devices = Devices of the account
+settings.no_device = No device for now.
+settings.devices_later = The list will come when the server answers.
+settings.this_device = {name} · this computer
+settings.revoke = Revoke
+settings.device_online = Online · {access}
+settings.device_seen = Offline, seen {since} ago
+settings.shortcuts = Keyboard shortcuts
+settings.shortcuts_lead = They work during a session, over the picture. Click a combination to change it, then type it. Escape cancels, Backspace removes it.
+settings.key_end = End the session
+settings.key_end_caption = Gives the far computer its desktop back.
+settings.key_menu = Open the floating menu
+settings.key_menu_caption = The only way back once the button is hidden.
+settings.key_fullscreen = Windowed or full screen
+settings.key_fullscreen_caption = Switches the picture from one to the other.
+settings.key_next_screen = Next screen of the host
+settings.key_next_screen_caption = Goes from one screen of the far computer to the next, without starting anything again. Does nothing when it has only one.
+settings.key_waiting = Type the combination…
+settings.key_none = None
+settings.journal = Journal
+settings.journal_line = Journals
+settings.journal_caption = Written in {folder}
+settings.open_journal = Open the journal
+settings.more = More settings
+settings.more_lead = For trying things out: the codec, the network, the figures.
+settings.asked = What a session asks for
+settings.asked_caption = {width} × {height}, {fps} frames per second, {rate} Mb/s
+settings.codec = Video codec
+settings.codec_caption = Automatic takes the best both computers can read.
+settings.display = Session window
+settings.display_caption = The picture shows in the ZyrDesk window: this says whether that window takes the whole screen.
+settings.display_fullscreen = Full screen
+settings.display_windowed = Window
+settings.mouse_caption = The game mouse aims by movements rather than by positions.
+settings.far_speakers = Silence the far computer
+settings.far_speakers_caption = Its speakers stay silent for the whole session: the room it stands in stays quiet, and you hear everything. Its sound comes back by itself at the end.
+settings.statistics = Statistics over the picture
+settings.statistics_caption = Frames per second, bitrate, losses.
+settings.network_trials = Network trials
+settings.network_trials_caption = Two ways of talking on the wire, to compare when sessions keep dropping: change one switch at a time, on both computers. Each change opens this computer's door again, and so ends a session opened towards it.
+settings.marking = Mark the packets (ECN)
+settings.marking_caption = The tunnel sets on each packet the congestion mark QUIC sets everywhere. Some equipment treats those packets apart: turn it off to see whether the drops stop.
+settings.fixed_port = Listen on port {port}
+settings.fixed_port_caption = Off, this computer listens on a port Windows chooses at each start. A session through the account finds it; a session on the local network, or a port forwarded on the router, does not.
+
+# About ZyrDesk.
+about.title = About ZyrDesk
+about.lead = What ZyrDesk is, under which licence, and what it is made with.
+about.what = Open-source remote desktop, built for very low latency.
+about.source = Source code
+about.licence = GPLv3 licence
+about.credits = Made with
+about.credits_lead = What ships inside ZyrDesk, or what its pages are drawn with, each under its own licence.
+about.credit = {role} · {licence}
+about.read_licence = Licence
+about.website = Website
+about.studied = Learned from
+about.studied_lead = Projects whose study guided the design of the engine. None of their code is in ZyrDesk.
+about.studied_caption = Studied for the design of the engine
+about.role_ffmpeg = Encoding and decoding the picture
+about.role_x264 = Encoding the picture by the processor
+about.role_opus = Encoding the sound
+about.role_nvidia = Encoding on NVIDIA graphics cards
+about.role_amd = Encoding on AMD graphics cards
+about.role_intel = Encoding on Intel graphics
+about.role_virtual_screen = The virtual screen
+about.role_tabler = The icons
+about.role_quinn = The connection between two computers
+about.role_rustls = The encryption of that connection
+about.role_ring = The cryptography underneath
+about.role_mdns = Finding the computers of the local network
+about.role_tokio = Doing many things at once on the network
+licence.title = Licence of {name}

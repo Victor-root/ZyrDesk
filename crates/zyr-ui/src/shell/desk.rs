@@ -11,7 +11,7 @@
 // compiled and checked, it is simply called by nobody.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use zyr_control::{Account, Answer, Attach, Device, Holdup, OfAccount, Request};
+use zyr_control::{Account, Answer, Attach, Device, Holdup, Peer, Request};
 use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 
@@ -23,24 +23,6 @@ const TAG: &str = "desk";
 /// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::shell::journal::note_about(TAG, what);
-}
-
-/// A ZyrDesk the home screen shows.
-#[derive(Clone, PartialEq)]
-pub struct Peer {
-    pub name: String,
-    pub fingerprint: String,
-    pub address: String,
-    /// Whether it is announcing itself right now. One written down by
-    /// hand shows on a network that carries no announcement at all.
-    pub seen: bool,
-    /// Whether somebody wrote it down by hand. Only those can be taken
-    /// off again.
-    pub written: bool,
-    /// What the account says of it, when it is one of the account's or
-    /// one a contact shared: whether it is there, and whether it accepts
-    /// remote access.
-    pub account: Option<OfAccount>,
 }
 
 /// What the home screen shows about this computer.
@@ -129,14 +111,7 @@ pub fn build() -> String {
 /// absent is worth saying out loud, and the home card already says it.
 pub async fn peers() -> Vec<Peer> {
     service::list(&Request::Peers, |answer| match answer {
-        Answer::Peer(peer) => Some(Peer {
-            name: peer.name,
-            fingerprint: peer.fingerprint.to_string(),
-            address: peer.host,
-            seen: peer.seen,
-            written: peer.written,
-            account: peer.account,
-        }),
+        Answer::Peer(peer) => Some(peer),
         _ => None,
     })
     .await

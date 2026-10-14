@@ -4490,6 +4490,37 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Ce qui se voit.** Rien encore : le délai s'affichera sur les cartes du nouvel accueil. Un ordinateur que seul le compte ou une saisie à la main fait connaître n'a pas de délai, rien ne mesurant la route vers lui.
 
+## D280. Le nouvel accueil remplace l'ancien, d'une seule pièce (2026-10-14, pendant MZ)
+
+> Réalise le plan de [D242](#d242-le-doré-reste-et-le-nouvel-accueil-a-son-plan-2026-09-29-pendant-mz) et d'[INTERFACE.md](INTERFACE.md), sur la maquette choisie par Victor.
+
+**Pourquoi.** Victor a lancé le chantier en demandant que l'ancien accueil parte en entier, que rien du nouveau ne s'appuie dessus, et que l'interface soit séparée du reste par une organisation qui tienne sur la durée.
+
+**Ce qui part.** L'ancien accueil tenait en un fichier de cinq mille cinq cents lignes où se mêlaient ce qui est montré, le dessin, la souris, les champs de saisie et ce que fait chaque clic. Il est retiré, ses textes français en dur avec lui : l'exception que [D236](#d236-des-faits-plutôt-que-des-phrases-et-les-journaux-en-anglais-2026-09-28-pendant-mz) lui laissait n'a plus lieu d'être. Tout ce que l'accueil dit passe par `zyr-i18n`, l'anglais d'abord.
+
+**Comment c'est rangé** (`crates/zyr-ui/src/home/`), chaque fichier pour une seule chose :
+
+- `seen` : ce que l'accueil montre, rassemblé pour lui (le service, Windows, la personne, le fond d'écran) et redemandé toutes les trois secondes ; la fenêtre ne se redessine que si quelque chose a changé. `state` : ce dont la fenêtre se souvient d'une image à l'autre, et rien de ce qui appartient au produit.
+- `ui` : les pièces dont tout est fait, dessinées une seule fois (carte, bouton, interrupteur, rangée de choix, étiquette, pastille, barre de défilement, champs), et les champs de saisie de Windows posés dans un cadre dessiné. `words` : les faits et les nombres mis en mots.
+- `frame` : le cadre de chaque page (la barre de gauche, qui se replie derrière un bouton sous 1120 pixels, la barre du haut, le défilement) et ce qui passe par-dessus (le menu d'un ordinateur, un dialogue, l'ouverture d'une session, les avis, les bulles). `pages` : Accueil, Paramètres, À propos. `dialogs` : Ajouter un ordinateur, les détails de cet ordinateur, la connexion au compte, le renommage d'un appareil, le journal, le texte d'une licence, tous dans le même cadre. `opening` : l'écran d'une session qui s'ouvre ou revient.
+- `window`, `input` et `act` : la fenêtre elle-même, la main et le clavier, et ce que fait chaque clic, toujours sans attendre.
+
+L'interface ne décide rien. Où en est un ordinateur et par quelle route on le joint se décide dans `zyr-session` (`presence`, avec ses essais), ce qu'est cet ordinateur dans `zyr-system`, que la fenêtre utilise désormais (la carte des briques le dit). `zyr-control` nomme avec ses messages le mot qui dit si un appareil du compte accepte les sessions, pour que qui les lit n'ait besoin de rien d'autre.
+
+**Comment ça se comporte.**
+
+- Un seul passage dessine et note ce qui répond à la main ; le même passage, silencieux, mesure ce qu'un dialogue ou une carte va prendre.
+- Ce qui bouge part toujours d'où il en est, jamais de son départ : une main qui passe et repasse ne fait rien sauter. Rien ne bouge quand la personne a demandé à Windows de ne pas animer. Hors mouvement, la fenêtre ne coûte rien : elle ne se redessine qu'à un geste, à un changement, ou à l'instant où une bulle doit s'ouvrir et un avis s'en aller. Ce calcul des valeurs qui bougent, essayé sur tout système, rejoint `zyr-draw`, qui portait déjà le rythme de ce qui bouge.
+- Le clavier va partout : Tab d'une chose à la suivante, Entrée ou Espace pour la faire, Échap pour fermer, Page précédente, Page suivante, Début et Fin pour défiler. L'anneau qui montre où il est n'apparaît qu'une fois une touche utilisée.
+- Ce qui détruit (oublier un ordinateur, vider un journal, se détacher du compte, révoquer un appareil) demande un second clic, et la demande s'éteint d'elle-même.
+- Une session en cours se lit sur la carte de son ordinateur : la route (le relais ou en direct, et l'adresse dans la bulle), depuis combien de temps, et son délai.
+- Une empreinte s'écrit et se lit par groupes de huit, comme deux personnes se la dictent ; tapée avec des espaces, elle est acceptée.
+- Les licences se lisent en entier : chaque paragraphe, coupé pour un terminal dans les fichiers, est rejoint et mesuré une seule fois, et seul ce qui est à l'écran est dessiné. Un lien ne s'ouvre dans le navigateur que s'il est l'un de ceux du produit.
+
+**Les ajustements autour.** La fenêtre s'ouvre en 1320 par 860, assez large pour montrer la barre de gauche, sans jamais prendre plus de 92 % de l'écran. Le sous-titre de la charte passe de 15 à 16 pixels. Les dégradés que le commit `6d72a5c` avait préparés, et six icônes, ne servaient à rien : ils sont retirés.
+
+**Ce qui se voit.** L'accueil de la maquette, en clair et en sombre : le bandeau qui salue la personne et porte l'accès distant, la carte de cet ordinateur avec son fond d'écran, les cartes des autres avec leur route et leur délai, les actions rapides, et la page des paramètres et celle d'À propos dans le même style. Ce qui ne marche pas encore est à sa place, grisé, et dit « Bientôt » au survol. Aucun dialogue entre les composants ne change : les deux PC n'ont pas à être mis à jour ensemble pour cela.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

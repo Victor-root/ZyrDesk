@@ -155,6 +155,7 @@ mod tests {
                 "zyr-player",
                 "zyr-proto",
                 "zyr-session",
+                "zyr-system",
                 "zyr-win32",
             ],
         ),

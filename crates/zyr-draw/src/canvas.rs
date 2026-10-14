@@ -37,7 +37,7 @@ use windows::Win32::Foundation::{HWND, POINT, RECT, SIZE};
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D_RECT_F, D2D_SIZE_F, D2D_SIZE_U, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT,
     D2D1_COLOR_F, D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN,
-    D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT,
+    D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
@@ -45,11 +45,11 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_BRUSH_PROPERTIES, D2D1_CAP_STYLE_ROUND, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
     D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE,
     D2D1_EXTEND_MODE_CLAMP, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
-    D2D1_GAMMA_2_2, D2D1_LINE_JOIN_ROUND, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES,
-    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE,
-    D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
-    D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1CreateFactory, ID2D1Bitmap, ID2D1DCRenderTarget,
-    ID2D1Factory, ID2D1PathGeometry, ID2D1SolidColorBrush, ID2D1StrokeStyle,
+    D2D1_LINE_JOIN_ROUND, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+    D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES,
+    D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1CreateFactory,
+    ID2D1Bitmap, ID2D1DCRenderTarget, ID2D1Factory, ID2D1PathGeometry, ID2D1SolidColorBrush,
+    ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -711,56 +711,6 @@ impl Canvas {
         inside();
         // SAFETY: the clip set just above.
         unsafe { self.target.PopAxisAlignedClip() };
-    }
-
-    /// A rounded rectangle filled with colours that follow one another
-    /// along a line, from `from` to `to`, each at its share of the way.
-    ///
-    /// What CSS writes as `linear-gradient`: a veil that fades a picture
-    /// into the page, a light that falls across a card.
-    pub fn fill_gradient(
-        &self,
-        rect: Rect,
-        radius: f32,
-        (from, to): ((f32, f32), (f32, f32)),
-        stops: &[(f32, Colour)],
-    ) {
-        let stops: Vec<D2D1_GRADIENT_STOP> = stops
-            .iter()
-            .map(|(position, colour)| D2D1_GRADIENT_STOP {
-                position: *position,
-                color: tint(*colour),
-            })
-            .collect();
-        // SAFETY: a target of ours between the start and the end of a
-        // drawing, and a brush made from it for this one fill.
-        unsafe {
-            let Ok(collection) = self.target.CreateGradientStopCollection(
-                &stops,
-                D2D1_GAMMA_2_2,
-                D2D1_EXTEND_MODE_CLAMP,
-            ) else {
-                return;
-            };
-            let Ok(brush) = self.target.CreateLinearGradientBrush(
-                &D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES {
-                    startPoint: point(from),
-                    endPoint: point(to),
-                },
-                None,
-                &collection,
-            ) else {
-                return;
-            };
-            self.target.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: rect.d2d(),
-                    radiusX: radius,
-                    radiusY: radius,
-                },
-                &brush,
-            );
-        }
     }
 
     /// Lays a picture over this rounded rectangle, covering it to its

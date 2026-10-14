@@ -4,17 +4,19 @@
 //! browser and no toolkit: this is what they paint with. The canvas, the
 //! design system its colours and sizes come from, the icons, the ZyrDesk
 //! mark, the abstract picture it draws for itself, the pictures it reads
-//! from files, and the beat whatever moves keeps time to.
+//! from files, the beat whatever moves keeps time to, and how far along
+//! its way each moving thing is.
 //!
 //! It knows how to draw and nothing about what: which screen shows what,
-//! and when, belongs to the windows that use it. The design system and
-//! the icons are plain values, read and tried on any system; what turns
-//! them into pixels is Windows', like the windows it dresses.
+//! and when, belongs to the windows that use it. The design system, the
+//! icons and what moves are plain values, read and tried on any system;
+//! what turns them into pixels is Windows', like the windows it dresses.
 
 #[cfg(any(windows, test))]
 mod art;
 pub mod design;
 pub mod icons;
+pub mod motion;
 #[cfg(any(windows, test))]
 mod path;
 #[cfg(any(windows, test))]

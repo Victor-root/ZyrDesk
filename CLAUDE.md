@@ -26,7 +26,7 @@ Bureau à distance open source en Rust, pour Windows, à très faible latence. U
 - **Code en anglais** : fichiers, modules, types, fonctions, variables, constantes, noms et messages des essais, commentaires, scripts, CI, jetons de `design.css`, aide `--help` des outils.
 - **Journaux en anglais**, comme les erreurs techniques.
 - **En français** : la documentation de `docs/`, les messages de commit, les réponses à Victor.
-- **Ce que la personne lit passe par `zyr-i18n`**, jamais en dur : l'anglais d'abord (`crates/zyr-i18n/words/en.txt`), le français ensuite (`fr.txt`), avec les mêmes valeurs entre accolades. La ligne de commande parle anglais. Seule exception, l'accueil actuel, qui garde ses textes français jusqu'à ce qu'il soit refait.
+- **Ce que la personne lit passe par `zyr-i18n`**, jamais en dur : l'anglais d'abord (`crates/zyr-i18n/words/en.txt`), le français ensuite (`fr.txt`), avec les mêmes valeurs entre accolades. La ligne de commande parle anglais.
 - **Ce qui est écrit sur le disque ou passe sur le réseau garde son nom exact**, même français : valeurs de préférences (`systeme`, `clair`, `sombre`), clés de `install.env`, champs échangés avec le serveur, verbes du tube, noms des règles de pare-feu et des classes de fenêtres, `vendor/ecran-virtuel`. Le renommer casserait une installation existante ou le dialogue entre deux versions.
 - **Le tiret long (em dash) est banni partout** : code, commentaires, textes, documentation, commits.
 
@@ -120,7 +120,7 @@ Une nouvelle brique ne naît que pour une responsabilité qui a sa propre raison
 - Les icônes vivent dans `zyr-draw/src/icons.rs`, et un essai lit chaque tracé.
 - La fenêtre ne parle au lecteur que par des appels qui n'attendent jamais : rien de l'interface ne se met sur le trajet d'une image.
 - L'interface de session est définitive (D238) : on la retouche à la demande, sans la réorganiser.
-- **L'accueil sera refait de zéro**, à partir d'une page vierge, quand Victor le demandera. D'ici là, on ne l'améliore pas : on le garde en état de marche. Son plan est `docs/INTERFACE.md` : ce qui n'existe pas encore y est dessiné grisé. Il naîtra avec l'accès aux données séparé du dessin, tous ses textes par `zyr-i18n`, les jetons de la charte et les icônes Tabler.
+- **L'accueil suit son plan**, `docs/INTERFACE.md`, et la maquette de Victor ([D280](docs/DECISIONS.md)) : ce qui n'existe pas encore y est dessiné grisé, avec « Bientôt » au survol, et perd son gris quand sa fonction arrive. Ce qu'il montre lui est donné (`home/seen.rs`), son dessin n'en va rien chercher, et ce que fait un clic vit à part (`home/act.rs` et chaque dialogue). Ses pièces (carte, bouton, interrupteur, champ) sont dessinées une seule fois, dans `home/ui/` : une page nouvelle les réutilise.
 - Ton, accessibilité et ce que la personne ne voit jamais (noms de bibliothèques, de codecs, de pilotes) : `docs/UI-UX.md`.
 
 ## Windows et les autres systèmes

@@ -75,7 +75,7 @@ pub use elsewhere::{
 #[cfg(windows)]
 pub use inspection::{describe_this_computer, this_computer};
 #[cfg(windows)]
-pub use machine::{Card, Machine, Windows};
+pub use machine::{Card, Machine, Source, Windows};
 #[cfg(windows)]
 pub use onscreen::{
     SessionProcess, errand, errand_code, lock_this_desktop, runs_in, session_on_screen,

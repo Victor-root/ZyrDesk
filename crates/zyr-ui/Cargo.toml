@@ -48,6 +48,8 @@ tokio = { version = "1.53.3", features = [
 
 [target.'cfg(windows)'.dependencies]
 zyr-win32.workspace = true
+# What this computer is and who sits at it, as the home page shows them.
+zyr-system.workspace = true
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     # The languages the person reads Windows in, which choose the words.

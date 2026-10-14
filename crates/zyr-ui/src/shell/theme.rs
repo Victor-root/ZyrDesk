@@ -39,7 +39,7 @@ fn note(what: &str) {
 }
 
 /// The three answers, spelled as the file spells them.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Choice {
     System,
     Light,
@@ -56,15 +56,6 @@ impl Choice {
             Choice::System => "systeme",
             Choice::Light => "clair",
             Choice::Dark => "sombre",
-        }
-    }
-
-    /// What a person reads.
-    pub fn word(self) -> &'static str {
-        match self {
-            Choice::System => "Système",
-            Choice::Light => "Clair",
-            Choice::Dark => "Sombre",
         }
     }
 
@@ -239,7 +230,7 @@ pub fn watch(app: App) {
                 // same picture in the same colours.
                 if chosen() == Choice::System {
                     on_the_window();
-                    crate::home::redraw(&app);
+                    crate::home::theme_changed(&app);
                 }
             }
         }
@@ -311,7 +302,6 @@ mod tests {
         // a name that does not read back is a choice lost on restart.
         for choice in Choice::ALL {
             assert_eq!(Choice::read(choice.name()), Some(choice));
-            assert!(!choice.word().is_empty());
         }
         assert_eq!(Choice::read("blue"), None);
     }

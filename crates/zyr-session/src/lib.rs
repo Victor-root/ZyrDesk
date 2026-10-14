@@ -20,10 +20,13 @@
 //! Once open, a session is played to its end by [`see_it_through`], which
 //! brings its picture back when it falls over on its own; and what its
 //! player measures says how it is doing, which [`health`] reads the same
-//! way for whoever shows it.
+//! way for whoever shows it. Before any of it, whether a computer of the
+//! home screen can be asked for a session at all, and by which road, is
+//! [`presence`]'s to say.
 
 pub mod health;
 mod playing;
+pub mod presence;
 #[cfg(test)]
 mod testing;
 
