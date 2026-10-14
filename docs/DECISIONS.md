@@ -4743,6 +4743,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Des dunes plus nettes dans le bandeau, la barre de gauche et les cartes.
 
+## D308. Le paysage en vraie 4K (2026-10-14, pendant MZ)
+
+**Pourquoi.** Les images de [D307](#d307-le-paysage-passe-à-une-version-plus-nette-2026-10-14-pendant-mz) avaient été réduites à 2000 pixels de large en passant par la conversation ; Victor a fait parvenir les originales agrandies, de 6688 pixels.
+
+**Ce qui est fait.** Elles sont ramenées à 3840 pixels de large, la 4K : plus qu'aucun écran n'en montre dans le bandeau, et lues entières, une image de 6688 pixels tiendrait une centaine de mégaoctets de mémoire pour rien. Les copies floutées restent au quart. Une image de cette taille prend un moment à lire : celle du thème est lue dès le démarrage, loin du fil qui dessine, avec ce qui ne change pas de toute la vie du programme, pour que la première image de la fenêtre ne l'attende pas.
+
+**Ce qui se voit.** Des dunes nettes même sur un grand écran.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

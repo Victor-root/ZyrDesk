@@ -179,8 +179,10 @@ pub fn watch(app: App) {
     crate::shell::app::spawn(async move {
         // What does not change for the life of the program, asked once,
         // away from the thread that draws: the registry is quick but not
-        // free, and the person's name may ask the network of a company.
+        // free, the person's name may ask the network of a company, and
+        // the scenery of the theme takes a moment to read at its size.
         let (machine, person) = crate::shell::app::spawn_blocking(|| {
+            zyr_draw::scenery::scenery(crate::shell::theme::light(), false);
             (
                 zyr_system::this_computer(),
                 zyr_system::name_of_the_person(),
