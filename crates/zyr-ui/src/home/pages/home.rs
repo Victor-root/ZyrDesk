@@ -188,7 +188,7 @@ fn stats_of(seen: &Seen) -> [Stat; 3] {
     [
         Stat {
             icon: &icons::LAPTOP,
-            title: say!("home.this_station"),
+            title: say!("home.this_computer"),
             said: windows,
             tone: None,
         },

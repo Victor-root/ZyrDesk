@@ -245,7 +245,7 @@ mod tests {
             .because(&Fact::new("server.no_right"));
         assert_eq!(
             fact_in(0, &refused),
-            "the server refused the session towards PC-17: no right on this computer"
+            "the server refused the session with PC-17: access to this computer is not authorised"
         );
         let french = languages().position(|code| code == "fr").unwrap();
         assert_eq!(

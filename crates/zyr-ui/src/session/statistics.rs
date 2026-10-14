@@ -743,7 +743,10 @@ mod tests {
         assert_eq!(value("figures.host"), "4.25 ms");
         assert_eq!(value("figures.network"), "12 ms");
         assert_eq!(value("figures.bitrate"), "18.40 Mb/s");
-        assert_eq!(value("figures.losses"), "0.0 % on the way, 0.1 % too late");
+        assert_eq!(
+            value("figures.losses"),
+            "0.0 % lost in transit, 0.1 % too late"
+        );
         assert_eq!(value("figures.latency"), "38 ms");
         // Read in that order, the stream first.
         let pieces: Vec<_> = banner.pieces().collect();
@@ -767,7 +770,7 @@ mod tests {
             dropped_jitter_pct: Some(2.0),
             ..Measures::default()
         };
-        assert_eq!(banner(&half).rows[5].1, "- on the way, 2.0 % too late");
+        assert_eq!(banner(&half).rows[5].1, "- lost in transit, 2.0 % too late");
     }
 
     #[test]

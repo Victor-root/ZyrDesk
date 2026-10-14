@@ -51,7 +51,7 @@ pub fn ago(seconds: u64) -> String {
 }
 
 /// The name a person is greeted by: the first of their names, written
-/// with a capital, for « Hello Camille! » rather than « Hello camille! ».
+/// with a capital, for « Hello, Camille » rather than « Hello, camille ».
 pub fn first_name(name: &str) -> String {
     let first = name.split_whitespace().next().unwrap_or_default();
     let mut letters = first.chars();
