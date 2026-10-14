@@ -528,9 +528,18 @@ impl Canvas {
     /// and an ordinary window knows nothing of. The transparency does not
     /// travel here, and has no business here: what is poured was drawn on
     /// a background.
+    ///
+    /// The copy waits for the compositor to have just put a frame on the
+    /// screen. Copied at any other moment, the picture can be taken by the
+    /// compositor half old and half new, and a moving veil then shows a
+    /// tear across it; copied right after its passage, it is whole long
+    /// before the next one. Without a compositor, nothing is waited for.
     pub fn copy_to(&self, dc: isize, x: i32, y: i32) -> bool {
         use windows::Win32::Graphics::Gdi::{BitBlt, SRCCOPY};
 
+        // SAFETY: a wait that belongs to no window, and a failure that
+        // only says there is no compositor to wait for.
+        let _ = unsafe { windows_sys::Win32::Graphics::Dwm::DwmFlush() };
         // SAFETY: a surface of ours, copied as it is into the one the
         // system has just lent.
         unsafe {

@@ -4573,6 +4573,16 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Tout l'accueil d'un coup d'œil, quelle que soit la taille de l'écran.
 
+## D287. La fenêtre recopie son image juste après le passage du compositeur (2026-10-14, pendant MZ)
+
+**Pourquoi.** Victor voyait déchirer l'image de l'accueil, surtout le voile qui assombrit la page à l'ouverture d'un dialogue.
+
+**Ce qui est fait.** L'accueil est dessiné par le processeur, et c'est voulu (l'en-tête de `crates/zyr-draw/src/canvas.rs` dit pourquoi) ; seule la recopie dans la fenêtre change. Elle se faisait au moment où le dessin finissait, et le compositeur de Windows pouvait prendre l'image à moitié recopiée. Elle attend maintenant qu'il vienne de poser une image à l'écran, puis se fait d'un trait, bien avant son passage suivant. Le bouton flottant et le menu de session, posés d'un seul geste par `lay_on`, n'étaient pas concernés.
+
+**Ce qu'on mesure.** Un mouvement dont une image a mis au moins 12 millisecondes à se dessiner s'écrit dans le journal de la fenêtre, avec son nombre d'images, leur durée moyenne et la plus longue : un voile qui saccade encore se dira alors trop lent à dessiner, et non mal montré.
+
+**Ce qui se voit.** Plus de déchirure dans l'accueil ni sur le voile des dialogues.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

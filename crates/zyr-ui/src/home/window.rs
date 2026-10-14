@@ -8,7 +8,7 @@
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use zyr_draw::Canvas;
@@ -33,6 +33,8 @@ static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
 // and the window it dresses belong to the thread that made them.
 thread_local! {
     static CANVAS: std::cell::RefCell<Option<Canvas>> = const { std::cell::RefCell::new(None) };
+    /// What the frames of the movement under way have cost to draw.
+    static MOVEMENT: std::cell::RefCell<Movement> = const { std::cell::RefCell::new(Movement::new()) };
 }
 
 /// A frame of something moving, asked for by the beat of the screen.
@@ -382,6 +384,8 @@ fn repaint(window: HWND) {
     // away.
     fields::unplace();
     let mut next = Next::default();
+    let started = Instant::now();
+    let mut drawn = None;
     CANVAS.with_borrow_mut(|canvas| {
         let fits = match canvas.as_mut() {
             Some(canvas) => canvas.resize(width, height),
@@ -409,9 +413,13 @@ fn repaint(window: HWND) {
             }
         });
         if canvas.finish() {
+            drawn = Some(started.elapsed());
             canvas.copy_to(surface as isize, 0, 0);
         }
     });
+    if let Some(drawn) = drawn {
+        MOVEMENT.with_borrow_mut(|movement| movement.frame(drawn, next.moving));
+    }
     // SAFETY: the painting opened above.
     unsafe { EndPaint(window, &paint) };
     fields::lay_out(scale);
@@ -419,6 +427,50 @@ fn repaint(window: HWND) {
     // slid under a still mouse is under it all the same.
     input::hover_again();
     schedule(window, next);
+}
+
+/// What the frames of one movement cost to draw, written down once it
+/// stops when one of them came near the time a screen gives a frame: a
+/// movement that does not flow is told apart, in the journal, between
+/// one drawn too slowly and one shown at the wrong moment. The others,
+/// every hover among them, say nothing.
+struct Movement {
+    frames: u32,
+    total: Duration,
+    slowest: Duration,
+}
+
+/// Most of a sixtieth of a second: past it, a frame may miss its turn.
+const NEAR_A_FRAME: Duration = Duration::from_millis(12);
+
+impl Movement {
+    const fn new() -> Self {
+        Movement {
+            frames: 0,
+            total: Duration::ZERO,
+            slowest: Duration::ZERO,
+        }
+    }
+
+    /// One more frame, drawn in that long, and whether the movement goes
+    /// on after it.
+    fn frame(&mut self, drawn: Duration, going_on: bool) {
+        self.frames += 1;
+        self.total += drawn;
+        self.slowest = self.slowest.max(drawn);
+        if going_on {
+            return;
+        }
+        if self.frames > 1 && self.slowest >= NEAR_A_FRAME {
+            note(&format!(
+                "a movement of {} frames, drawn in {:.1} ms on average and {:.1} ms at most",
+                self.frames,
+                self.total.as_secs_f64() * 1000.0 / f64::from(self.frames),
+                self.slowest.as_secs_f64() * 1000.0,
+            ));
+        }
+        *self = Movement::new();
+    }
 }
 
 /// When the next frame is due.
