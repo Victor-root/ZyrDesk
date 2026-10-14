@@ -190,6 +190,17 @@ impl Answers for FarComputer {
         });
         Ok((given, *self.wants.lock().unwrap()))
     }
+
+    fn wallpaper(&self) -> Result<Option<Vec<u8>>, String> {
+        Ok(Some(host_wallpaper()))
+    }
+}
+
+/// A thumbnail the size of the ones the product really sends: a bitmap
+/// of four hundred by two hundred and twenty-five pixels, every byte
+/// value in it.
+fn host_wallpaper() -> Vec<u8> {
+    (0..400 * 225 * 3 + 54).map(|at| (at % 251) as u8).collect()
 }
 
 /// A journal the size of the ones the product really writes: a page and
@@ -790,7 +801,8 @@ async fn the_virtual_screen_is_asked_for_at_the_opening_and_given_back_at_the_en
 }
 
 #[tokio::test]
-async fn the_screens_the_pointer_and_the_screen_to_film_are_asked_while_the_picture_runs() {
+async fn the_screens_the_pointer_the_screen_to_film_and_the_wallpaper_are_asked_while_the_picture_runs()
+ {
     let bench = Bench::bring_up().await;
 
     let listed = before_the_end(aside::ask_what_screens_it_has(&bench.connection))
@@ -821,6 +833,14 @@ async fn the_screens_the_pointer_and_the_screen_to_film_are_asked_while_the_pict
         .await
         .unwrap();
     assert_eq!(*bench.far.filming.lock().unwrap(), None);
+
+    // The far computer's wallpaper, which its card shows from then on.
+    assert_eq!(
+        before_the_end(aside::ask_for_the_wallpaper(&bench.connection))
+            .await
+            .unwrap(),
+        Some(host_wallpaper())
+    );
 }
 
 #[tokio::test]

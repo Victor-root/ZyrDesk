@@ -17,6 +17,20 @@ pub fn packed(text: &str) -> String {
         .replace('\n', r"\n")
 }
 
+/// Bytes written as text that holds no space, to travel in a field:
+/// base64, which costs a third of their weight.
+pub fn bytes_packed(bytes: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+/// The bytes written by `bytes_packed`, or nothing when the text is not
+/// that.
+pub fn bytes_unpacked(text: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.decode(text).ok()
+}
+
 /// Gives a packed value its spaces back.
 pub fn unpacked(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -43,6 +57,15 @@ pub fn unpacked(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bytes_cross_a_field_whole_and_text_that_is_not_bytes_is_refused() {
+        let bytes = [0u8, 255, 32, 10, 92, 7];
+        let packed = bytes_packed(&bytes);
+        assert!(!packed.contains(' '));
+        assert_eq!(bytes_unpacked(&packed).as_deref(), Some(&bytes[..]));
+        assert_eq!(bytes_unpacked("not bytes at all"), None);
+    }
 
     #[test]
     fn a_packed_value_comes_back_whole() {

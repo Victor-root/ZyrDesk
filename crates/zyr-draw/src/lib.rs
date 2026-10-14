@@ -17,7 +17,6 @@ pub mod icons;
 pub mod motion;
 #[cfg(any(windows, test))]
 mod path;
-#[cfg(any(windows, test))]
 mod picture;
 
 #[cfg(windows)]
@@ -34,3 +33,4 @@ pub use canvas::{Align, Canvas, Family, Overflow, Pen, Rect};
 pub use icons::{Icon, Stroke};
 #[cfg(windows)]
 pub use picture::Picture;
+pub use picture::thumbnail;

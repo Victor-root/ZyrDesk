@@ -102,6 +102,10 @@ impl Answers for Bench {
     ) -> Result<(Option<Given>, Option<Wanted>), String> {
         Err("the bench copies no file".to_string())
     }
+
+    fn wallpaper(&self) -> Result<Option<Vec<u8>>, String> {
+        Ok(None)
+    }
 }
 /// Rhythm at which the host bench watches for the traffic to start.
 const WATCH_STEP: Duration = Duration::from_millis(200);

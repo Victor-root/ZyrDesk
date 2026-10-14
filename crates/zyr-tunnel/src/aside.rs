@@ -22,6 +22,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 use zyr_proto::clipboard::{Clip, Stamp};
+use zyr_proto::fields::{bytes_packed, bytes_unpacked};
 use zyr_proto::log::Log;
 use zyr_proto::session::WantedScreen;
 use zyr_transport::{Connection, MediaProfile, RecvStream, SendStream};
@@ -86,7 +87,9 @@ use crate::pump;
 /// code is gone with the engines that wanted one, and the rate, the
 /// cadence of a still screen, the pointer drawn into the picture and the
 /// codecs travel between the player and the engine and no longer here.
-pub const VERSION: u32 = 22;
+/// Version 23 asks for a thumbnail of the far computer's wallpaper, which
+/// its card on the home screen shows from then on.
+pub const VERSION: u32 = 23;
 
 /// Longest question this channel takes.
 ///
@@ -357,6 +360,14 @@ pub trait Answers: Send + Sync + 'static {
         asking: Option<Wanted>,
         giving: Option<Given>,
     ) -> Result<(Option<Given>, Option<Wanted>), String>;
+
+    /// A thumbnail of the picture this computer's desktop shows, as a
+    /// bitmap file, or nothing when it shows none.
+    ///
+    /// Handed to whoever this computer already lets in, for the card that
+    /// stands for it on their home screen: far less than the screen they
+    /// may already take.
+    fn wallpaper(&self) -> Result<Option<Vec<u8>>, String>;
 }
 
 /// A piece of a file somebody copied, asked for.
@@ -536,6 +547,8 @@ pub enum Question {
         asking: Option<Wanted>,
         giving: Option<Given>,
     },
+    /// Hand me a thumbnail of your wallpaper.
+    Wallpaper,
 }
 
 /// What comes back.
@@ -578,6 +591,9 @@ pub enum Told {
     },
     /// The far computer's engine films the screen it was asked to.
     Filming,
+    /// A thumbnail of the far computer's wallpaper, or nothing when its
+    /// desktop shows no picture.
+    Wallpaper { picture: Option<Vec<u8>> },
 }
 
 impl fmt::Display for Question {
@@ -636,6 +652,7 @@ impl fmt::Display for Question {
                 half("asking", asking),
                 half("giving", giving)
             ),
+            Question::Wallpaper => write!(f, "{VERSION} wallpaper"),
         }
     }
 }
@@ -675,6 +692,10 @@ impl fmt::Display for Told {
                 half("wanted", wanted)
             ),
             Told::Filming => write!(f, "{VERSION} filming"),
+            Told::Wallpaper { picture } => match picture {
+                Some(bytes) => write!(f, "{VERSION} wallpaper {}", bytes_packed(bytes)),
+                None => write!(f, "{VERSION} wallpaper {NONE}"),
+            },
         }
     }
 }
@@ -713,6 +734,7 @@ impl Question {
             "empty-journal" => Ok(Question::EmptyTheJournal),
             "pointer" => Ok(Question::Pointer),
             "screens" => Ok(Question::Screens),
+            "wallpaper" => Ok(Question::Wallpaper),
             "film" => Ok(Question::FilmThisScreen {
                 id: match rest {
                     "main" | "" => None,
@@ -795,6 +817,15 @@ impl Told {
                 }))
             }
             "filming" => Ok(Ok(Told::Filming)),
+            "wallpaper" => Ok(Ok(Told::Wallpaper {
+                picture: match rest {
+                    NONE | "" => None,
+                    said => Some(
+                        bytes_unpacked(said)
+                            .ok_or_else(|| unreadable("a wallpaper that is not a picture"))?,
+                    ),
+                },
+            })),
             "no" => Ok(Err(rest.to_string())),
             other => Err(unreadable(format!("unknown answer « {other} »"))),
         }
@@ -1041,6 +1072,17 @@ pub async fn ask_to_empty_the_journal(connection: &Connection) -> io::Result<()>
 pub async fn ask_what_screens_it_has(connection: &Connection) -> io::Result<String> {
     match ask(connection, &Question::Screens).await? {
         Told::Screens { listed } => Ok(listed),
+        other => Err(unreadable(format!("off-topic answer: {other}"))),
+    }
+}
+
+/// Asks the far ZyrDesk for a thumbnail of its wallpaper.
+///
+/// Asked once a session is open, on the tunnel it stands on: the card of
+/// that computer shows it from then on.
+pub async fn ask_for_the_wallpaper(connection: &Connection) -> io::Result<Option<Vec<u8>>> {
+    match ask(connection, &Question::Wallpaper).await? {
+        Told::Wallpaper { picture } => Ok(picture),
         other => Err(unreadable(format!("off-topic answer: {other}"))),
     }
 }
@@ -1368,6 +1410,12 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
                 .map_err(|e| format!("the pieces could not be exchanged: {e}"))?
                 .map(|(given, wanted)| Told::Pieces { given, wanted })
         }
+        // Off it as well: a wallpaper is a large picture read from a disk
+        // and brought down.
+        Question::Wallpaper => tokio::task::spawn_blocking(move || answering.wallpaper())
+            .await
+            .map_err(|e| format!("the wallpaper could not be read: {e}"))?
+            .map(|picture| Told::Wallpaper { picture }),
     }
 }
 
@@ -1507,6 +1555,7 @@ mod tests {
                     bytes: Vec::new(),
                 }),
             },
+            Question::Wallpaper,
         ] {
             let said = question.to_string();
             assert_eq!(Question::parse(&said), Ok(question), "on « {said} »");
@@ -1581,6 +1630,10 @@ mod tests {
                     how_many: A_PIECE as u32,
                 }),
             },
+            Told::Wallpaper {
+                picture: Some(b"BM\0\x01 \n\\".to_vec()),
+            },
+            Told::Wallpaper { picture: None },
         ] {
             let said = told.to_string();
             assert_eq!(Told::parse(&said).unwrap(), Ok(told), "on « {said} »");

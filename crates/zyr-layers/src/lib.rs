@@ -130,6 +130,7 @@ mod tests {
                 "zyr-broker",
                 "zyr-clipboard",
                 "zyr-control",
+                "zyr-draw",
                 "zyr-lan",
                 "zyr-link",
                 "zyr-media",

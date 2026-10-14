@@ -232,16 +232,25 @@ impl Shown {
         }
     }
 
-    /// Its picture: a view of the dunes, with its presence in the corner.
+    /// Its picture: its wallpaper, as its last session brought it, or a
+    /// view of the dunes until one has; its presence in the corner.
     fn picture(&self, painter: &mut Painter, at: Rect, radius: f32) {
         let colours = painter.colours;
-        painter.dunes(at, radius, seed_of(&self.fingerprint));
+        let seen = painter.seen;
+        let far = seen.far_wallpapers.get(&self.fingerprint);
+        match far {
+            Some(far) => painter.picture(&far.picture, at, radius),
+            None => painter.dunes(at, radius, seed_of(&self.fingerprint)),
+        }
         painter.stroke(at, radius, colours.text.faded(0.07));
-        let tip = say!("computer.wallpaper_soon");
-        if self.reachable {
-            painter.answers_with_tip(self.connect.clone(), at, tip);
-        } else {
-            painter.tells(at, tip);
+        let tip = far
+            .is_none()
+            .then(|| say!("computer.wallpaper_after_a_session"));
+        match (self.reachable, tip) {
+            (true, Some(tip)) => painter.answers_with_tip(self.connect.clone(), at, tip),
+            (true, None) => painter.answers(self.connect.clone(), at),
+            (false, Some(tip)) => painter.tells(at, tip),
+            (false, None) => {}
         }
         let (ink, live) = self.dot(painter);
         let disc = painter.px(18.0);

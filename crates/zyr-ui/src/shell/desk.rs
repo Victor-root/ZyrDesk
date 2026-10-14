@@ -145,6 +145,16 @@ pub async fn watching() -> Vec<Watcher> {
     .unwrap_or_default()
 }
 
+/// The thumbnail of that computer's wallpaper, as the last session with
+/// it brought it, a bitmap file.
+pub async fn far_wallpaper(fingerprint: &str) -> Option<Vec<u8>> {
+    let peer = fingerprint_of(fingerprint).ok()?;
+    match service::ask(&Request::Wallpaper { peer }).await {
+        Ok(Answer::Wallpaper(picture)) => picture,
+        _ => None,
+    }
+}
+
 /// The sessions that took place on this computer, the latest first.
 pub async fn history() -> Vec<Past> {
     service::list(&Request::History, |answer| match answer {

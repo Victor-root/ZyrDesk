@@ -4787,6 +4787,20 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** « Sessions récentes », « Activité » et « Voir l'activité » perdent leur gris. Les deux PC se mettent à jour ensemble : une fenêtre nouvelle face à un service ancien voit un historique vide.
 
+## D312. Le vrai fond d'écran des autres ordinateurs sur leurs cartes (2026-10-14, pendant MZ)
+
+**Pourquoi.** Les cartes des autres ordinateurs montraient une vue des dunes ([D306](#d306-les-dunes-partout--bloc-daccès-en-verre-cartes-sans-fond-décran-caractéristiques-entières-2026-10-14-pendant-mz)) en attendant que chaque ordinateur envoie le sien.
+
+**Ce qui est fait.**
+- Le canal ZyrDesk du tunnel gagne une question, `wallpaper` : l'ordinateur d'en face répond une vignette de ce que montre le bureau de la personne devant son écran, ou rien. Le dialecte passe de la version 22 à 23.
+- Ce fond, le service le lit lui-même, sans la fenêtre : la copie que Windows garde de l'image affichée dans le profil de la personne connectée à l'écran (`TranscodedWallpaper`), qui suit un fichier, un diaporama ou l'image du jour. `zyr-system` la trouve par le jeton de cette personne ; ailleurs que sous Windows, il répond qu'il n'y en a pas.
+- La vignette est l'image ramenée à couvrir 400 sur 225 pixels, écrite en simple fichier bitmap : n'importe quel lecteur l'ouvre, et rien n'a à l'encoder. C'est `zyr-draw` qui sait lire une image, et le service s'en sert désormais pour cela : la carte de `zyr-layers` le dit.
+- Dix secondes après l'ouverture de chaque session, quand l'ordinateur d'en face a fini de lancer son moteur, le service lui demande sa vignette et la garde dans `data/wallpapers/`, un fichier par empreinte ; une réponse « aucune » efface celle d'avant. Rien n'est demandé hors d'une session : ouvrir une connexion juste pour cela ferait apparaître, une seconde, un ordinateur « en train de contrôler » sur l'écran d'en face.
+- Chaque ordinateur de la liste du service porte l'heure à laquelle sa vignette est arrivée (`wallpaper=`), et la fenêtre ne la redemande (message `wallpaper` du tube) que quand cette heure change. C'est une page de pixels sur le tube, comme le journal : quelques centaines de kilo-octets, une fois par session, et non le presse-papiers, qui n'y passe toujours pas. Le protocole du tube passe de 36 à 37.
+- La carte montre la vignette, ou les dunes avant une première session, avec une bulle qui le dit.
+
+**Ce qui se voit.** Après une session avec un ordinateur, sa carte porte son vrai fond d'écran. Les deux PC se mettent à jour ensemble.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

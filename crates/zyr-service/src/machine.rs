@@ -257,11 +257,16 @@ impl Machine {
                 Vec::new()
             }
         };
-        merged(
+        let mut shown = merged(
             self.neighbours.peers(),
             written,
             self.account.snapshot().as_ref(),
-        )
+        );
+        let wallpapers = paths::far_wallpapers();
+        for peer in &mut shown {
+            peer.wallpaper = crate::wallpapers::stamp(&wallpapers, peer.fingerprint);
+        }
+        shown
     }
 }
 
@@ -295,6 +300,7 @@ fn merged(
             host: peer.address.to_string(),
             port: peer.port,
             seen: true,
+            wallpaper: None,
         })
         .collect();
 
@@ -314,6 +320,7 @@ fn merged(
             seen: false,
             written: true,
             round_trip_ms: None,
+            wallpaper: None,
         });
     }
 
@@ -340,6 +347,7 @@ fn merged(
                 shared_by,
             }),
             round_trip_ms: None,
+            wallpaper: None,
         });
     }
     shown

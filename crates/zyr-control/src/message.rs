@@ -17,7 +17,7 @@ use std::time::Duration;
 use zyr_broker::rest::Access;
 use zyr_proto::clipboard::HowFar;
 use zyr_proto::fact::Fact;
-use zyr_proto::fields::{packed, unpacked};
+use zyr_proto::fields::{bytes_packed, bytes_unpacked, packed, unpacked};
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::session::{Preferred, WantedScreen};
 
@@ -28,7 +28,7 @@ use zyr_proto::session::{Preferred, WantedScreen};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 36;
+pub const PROTOCOL: u32 = 37;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -206,6 +206,9 @@ pub enum Request {
     /// The sessions that took place on this computer, the latest first:
     /// those it opened towards others and those others opened towards it.
     History,
+    /// The thumbnail of that computer's wallpaper, as the last session
+    /// with it brought it.
+    Wallpaper { peer: Fingerprint },
     /// Decides whether this computer accepts being controlled.
     ///
     /// A decision and not a state: it survives a restart, since a
@@ -381,6 +384,9 @@ impl Request {
             "sessions" => Ok(Request::Sessions),
             "watching" => Ok(Request::Watching),
             "history" => Ok(Request::History),
+            "wallpaper" => Ok(Request::Wallpaper {
+                peer: fields.parsed("peer")?,
+            }),
             "hosting" => Ok(Request::SetHosting {
                 on: fields.text("on")? == "yes",
             }),
@@ -490,6 +496,7 @@ impl fmt::Display for Request {
             Request::Sessions => f.write_str("sessions"),
             Request::Watching => f.write_str("watching"),
             Request::History => f.write_str("history"),
+            Request::Wallpaper { peer } => write!(f, "wallpaper peer={peer}"),
             Request::SetHosting { on } => write!(f, "hosting on={}", said(*on)),
             Request::SetTrust { on } => write!(f, "trusting on={}", said(*on)),
             Request::SetEcn { on } => write!(f, "ecn on={}", said(*on)),
@@ -690,6 +697,10 @@ pub struct Peer {
     /// only the account or a hand knows: nothing here times the road to
     /// it.
     pub round_trip_ms: Option<u32>,
+    /// When a thumbnail of its wallpaper last came from it, in seconds
+    /// since 1970: what tells the window to ask for it again. Nothing
+    /// before a first session brought one.
+    pub wallpaper: Option<u64>,
 }
 
 /// What the account says of a computer.
@@ -873,6 +884,9 @@ pub enum Answer {
     Watching(Watching),
     /// One session that took place. The list ends on `Done`.
     Past(Past),
+    /// The thumbnail of a computer's wallpaper, a bitmap file, or nothing
+    /// when none came from it.
+    Wallpaper(Option<Vec<u8>>),
     /// What a session opened from this computer is set to.
     Settings(Preferred),
     /// The size the far computer is going to be showing.
@@ -962,6 +976,7 @@ impl Answer {
                     shared_by: fields.text("shared").ok().map(unpacked),
                 }),
                 round_trip_ms: fields.parsed("rtt").ok(),
+                wallpaper: fields.parsed("wallpaper").ok(),
             })),
             "session" => Ok(Answer::Session(Session {
                 way: WayId(fields.parsed("way")?),
@@ -980,6 +995,12 @@ impl Answer {
                 since: Duration::from_secs(fields.parsed("since")?),
             })),
             "past" => rest.parse().map(Answer::Past),
+            "wallpaper" => match rest.trim() {
+                "none" => Ok(Answer::Wallpaper(None)),
+                said => bytes_unpacked(said)
+                    .map(|bytes| Answer::Wallpaper(Some(bytes)))
+                    .ok_or_else(|| Malformed("a wallpaper that is not a picture".to_string())),
+            },
             "settings" => Ok(Answer::Settings(fields.preferred())),
             "showing" => Ok(Answer::Showing {
                 size: match fields.text("size")? {
@@ -1094,6 +1115,9 @@ impl fmt::Display for Answer {
                 if let Some(round_trip) = peer.round_trip_ms {
                     write!(f, " rtt={round_trip}")?;
                 }
+                if let Some(stamp) = peer.wallpaper {
+                    write!(f, " wallpaper={stamp}")?;
+                }
                 Ok(())
             }
             Answer::Session(session) => write!(
@@ -1117,6 +1141,8 @@ impl fmt::Display for Answer {
                 watching.since.as_secs()
             ),
             Answer::Past(past) => write!(f, "past {past}"),
+            Answer::Wallpaper(Some(bytes)) => write!(f, "wallpaper {}", bytes_packed(bytes)),
+            Answer::Wallpaper(None) => f.write_str("wallpaper none"),
             Answer::Settings(preferred) => write!(f, "settings {}", spelled(preferred)),
             Answer::Showing { size } => match size {
                 Some((wide, high)) => write!(f, "showing size={wide}x{high}"),
@@ -1365,6 +1391,9 @@ mod tests {
             Request::Sessions,
             Request::Watching,
             Request::History,
+            Request::Wallpaper {
+                peer: fingerprint(),
+            },
             Request::SetHosting { on: true },
             Request::SetHosting { on: false },
             Request::SetTrust { on: true },
@@ -1548,6 +1577,7 @@ mod tests {
                 written: false,
                 account: None,
                 round_trip_ms: Some(2),
+                wallpaper: Some(1_791_000_000),
             }),
             Answer::Peer(Peer {
                 name: "Desktop PC".to_string(),
@@ -1558,6 +1588,7 @@ mod tests {
                 written: true,
                 account: None,
                 round_trip_ms: None,
+                wallpaper: None,
             }),
             // A computer of the account that the network does not
             // carry: its road is its identifier at the server.
@@ -1575,6 +1606,7 @@ mod tests {
                     shared_by: None,
                 }),
                 round_trip_ms: None,
+                wallpaper: None,
             }),
             // And a computer a contact has shared, also seen on the local
             // network: a single card, with the address from the network
@@ -1593,6 +1625,7 @@ mod tests {
                     shared_by: Some("a friend".to_string()),
                 }),
                 round_trip_ms: Some(1),
+                wallpaper: None,
             }),
             Answer::Session(Session {
                 way: WayId(3),
@@ -1636,6 +1669,8 @@ mod tests {
                 began: 1_791_000_000,
                 lasted: Duration::from_secs(3),
             }),
+            Answer::Wallpaper(Some(vec![b'B', b'M', 0, 255, b' ', b'\n'])),
+            Answer::Wallpaper(None),
             Answer::Settings(preferred()),
             Answer::Settings(Preferred::default()),
             // A whole page on one line, with what a journal really
@@ -1894,6 +1929,7 @@ mod tests {
                 written: false,
                 account: None,
                 round_trip_ms: None,
+                wallpaper: None,
             })
             .to_string();
             let Ok(Answer::Peer(read)) = Answer::parse(&sent) else {

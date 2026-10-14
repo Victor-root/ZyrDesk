@@ -73,7 +73,7 @@ Une carte par ordinateur connu (réseau local et compte), ou une ligne en vue li
 
 | Élément de la carte | État | Note |
 |---|---|---|
-| Fond d'écran de l'ordinateur | Grisé | L'ordinateur distant enverra le sien. D'ici là, et tant qu'on ne l'a pas, une vue des dunes du paysage de ZyrDesk, propre à chaque ordinateur ([D306](DECISIONS.md)). Plus tard : un fond choisi par la personne |
+| Fond d'écran de l'ordinateur | Oui | Celui de l'ordinateur distant, rapporté par chaque session avec lui ([D312](DECISIONS.md)). Avant une première session, une vue des dunes du paysage de ZyrDesk, propre à chaque ordinateur ([D306](DECISIONS.md)). Plus tard : un fond choisi par la personne |
 | Pastille en ligne ou hors ligne | Oui | |
 | Nom, adresse ou « En ligne », compte | Oui | |
 | Étiquette LAN ou Internet, et la latence | Oui | |

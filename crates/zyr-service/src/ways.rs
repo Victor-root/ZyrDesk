@@ -48,6 +48,10 @@ use crate::said::{self, Said};
 /// What this module's lines are filed under.
 const TAG: &str = "way";
 
+/// How long after a session opens the far computer is asked for its
+/// wallpaper.
+const WALLPAPER_AFTER: Duration = Duration::from_secs(10);
+
 /// How long a computer presented by the server gets to answer through
 /// one of the addresses named, both sides probing all the while.
 const MEETING_PATIENCE: Duration = Duration::from_secs(15);
@@ -390,9 +394,43 @@ impl Ways {
         let identity =
             Arc::new(Identity::load_or_create(&paths::identity_dir()).map_err(not_prepared)?);
 
-        self.dig(knock, host, peer, media, identity)
+        let reached = self
+            .dig(knock, host, peer, media, identity)
             .await
-            .inspect_err(|e| self.log.write(&format!("no way to {host}: {e}")))
+            .inspect_err(|e| self.log.write(&format!("no way to {host}: {e}")))?;
+        self.bring_back_the_wallpaper(reached.way, peer);
+        Ok(reached)
+    }
+
+    /// Asks the far computer for a thumbnail of its wallpaper once its
+    /// session has settled, and keeps it for its card. Asked of every
+    /// session, so the card follows a wallpaper that changed.
+    fn bring_back_the_wallpaper(&self, way: WayId, peer: Fingerprint) {
+        let ways = self.clone();
+        tokio::spawn(async move {
+            // Not while the session opens: the far computer is starting
+            // its engine, and reading a large picture can wait.
+            tokio::time::sleep(WALLPAPER_AFTER).await;
+            let Ok(connection) = ways.connection_of(way) else {
+                return;
+            };
+            match aside::ask_for_the_wallpaper(&connection).await {
+                Ok(picture) => {
+                    let kept =
+                        crate::wallpapers::keep(&paths::far_wallpapers(), peer, picture.as_deref());
+                    ways.log.write(&match (kept, picture) {
+                        (Err(e), _) => format!("way {way}: its wallpaper could not be kept: {e}"),
+                        (Ok(()), Some(bytes)) => {
+                            format!("way {way}: its wallpaper kept, {} bytes", bytes.len())
+                        }
+                        (Ok(()), None) => format!("way {way}: it shows no wallpaper"),
+                    });
+                }
+                Err(e) => ways
+                    .log
+                    .write(&format!("way {way}: its wallpaper was not given: {e}")),
+            }
+        });
     }
 
     /// Opens a connection to a computer for one question, and no more.

@@ -17,6 +17,7 @@ Principe directeur : le serveur met en relation, il ne peut pas espionner. Les c
 
   Un second fichier, `data/known-computers.conf`, garde l'adresse et le nom des ordinateurs saisis à la main pour qu'ils restent sur l'accueil. Il est tenu à part exprès : il ne décide de rien, personne n'entre parce qu'il y figure, et une ligne qu'il ne comprend pas est ignorée là où la liste des appareils admis, elle, refuse tout le fichier. Oublier un ordinateur depuis la fenêtre le retire des deux.
   Le service tient aussi `data/session-history.txt`, l'historique des sessions terminées dans les deux sens : l'empreinte de l'autre ordinateur, son adresse, l'heure du début et la durée. Rien de ce qu'une session a transporté n'y est écrit ([D311](DECISIONS.md)).
+  Un ordinateur donne aussi une vignette de son fond d'écran à ceux qu'il laisse entrer, par le canal ZyrDesk du tunnel, chiffrée comme le reste : bien moins que l'écran qu'ils peuvent déjà prendre. Elle est gardée dans `data/wallpapers/`, un fichier par empreinte ([D312](DECISIONS.md)).
 
 ### 1.1 Confiance au réseau local (jalon M4)
 

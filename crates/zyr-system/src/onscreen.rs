@@ -21,7 +21,7 @@
 use std::ffi::{OsStr, OsString, c_void};
 use std::io;
 use std::marker::PhantomData;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{
@@ -704,6 +704,31 @@ fn the_person_at(session: u32) -> io::Result<Handle> {
         return Err(refusal_of("WTSQueryUserToken"));
     }
     Ok(Handle(theirs))
+}
+
+/// The picture the desktop of whoever sits at the screen shows, as the
+/// service reads it: the copy Windows keeps of it in their profile, which
+/// is the one on screen whatever chose it, a file, a slideshow or the
+/// picture of the day. Nothing when nobody is signed in there, or their
+/// desktop shows no picture.
+pub fn wallpaper_on_screen() -> Option<PathBuf> {
+    use windows_sys::Win32::UI::Shell::GetUserProfileDirectoryW;
+
+    let person = the_person_at(session_on_screen()?).ok()?;
+    let mut room = 0u32;
+    // Safe: no buffer, which asks how much room the folder's name needs.
+    unsafe { GetUserProfileDirectoryW(person.0, std::ptr::null_mut(), &mut room) };
+    if room == 0 {
+        return None;
+    }
+    let mut spelled = vec![0u16; room as usize];
+    // Safe: a buffer of exactly the room asked for, filled by the call.
+    if unsafe { GetUserProfileDirectoryW(person.0, spelled.as_mut_ptr(), &mut room) } == 0 {
+        return None;
+    }
+    let kept = PathBuf::from(read_wide(&spelled))
+        .join(r"AppData\Roaming\Microsoft\Windows\Themes\TranscodedWallpaper");
+    kept.is_file().then_some(kept)
 }
 
 /// The service's token, duplicated and attached to the wanted session.

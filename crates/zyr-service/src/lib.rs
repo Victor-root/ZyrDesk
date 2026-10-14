@@ -38,6 +38,7 @@ mod speakers;
 mod supervisor;
 mod transfer;
 mod vitals;
+mod wallpapers;
 mod ways;
 
 pub use clipboard::carry_the_clipboard_here;

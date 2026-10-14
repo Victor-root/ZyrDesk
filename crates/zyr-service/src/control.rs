@@ -153,6 +153,10 @@ async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
                 .map(Answer::Watching)
                 .collect(),
         ),
+        Request::Wallpaper { peer } => vec![Answer::Wallpaper(crate::wallpapers::read(
+            &paths::far_wallpapers(),
+            peer,
+        ))],
         Request::History => ended(
             answering
                 .machine
@@ -711,6 +715,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
         | Request::Sessions
         | Request::Watching
         | Request::History
+        | Request::Wallpaper { .. }
         | Request::Devices => Answer::Done,
     }
 }

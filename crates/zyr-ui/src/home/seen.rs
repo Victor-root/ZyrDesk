@@ -7,6 +7,7 @@
 //! other end, the service can stop, a wallpaper can change, and none of
 //! that goes through a click, so this is asked again every few seconds.
 
+use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -45,6 +46,9 @@ pub struct Seen {
     /// Whether FFmpeg is where the player loads it from.
     pub ffmpeg_here: Option<bool>,
     pub peers: Vec<Peer>,
+    /// The other computers' wallpapers, by fingerprint, as their last
+    /// session with this one brought them.
+    pub far_wallpapers: HashMap<String, FarWallpaper>,
     pub sessions: Vec<Ongoing>,
     /// The computers controlling this one right now.
     pub watching: Vec<Watcher>,
@@ -81,6 +85,20 @@ pub struct Wallpaper {
     /// of them changes.
     from: Option<(PathBuf, SystemTime)>,
     size: (u32, u32),
+}
+
+/// Another computer's wallpaper, as its card shows it.
+#[derive(Clone)]
+pub struct FarWallpaper {
+    /// When it came, as the service says: read again when that changes.
+    stamp: u64,
+    pub picture: Arc<Picture>,
+}
+
+impl PartialEq for FarWallpaper {
+    fn eq(&self, other: &Self) -> bool {
+        self.stamp == other.stamp && Arc::ptr_eq(&self.picture, &other.picture)
+    }
 }
 
 impl PartialEq for Wallpaper {
@@ -266,10 +284,12 @@ pub async fn again(app: &App) -> bool {
     .unwrap_or((false, None, Vec::new()));
     let kept = with(|seen| seen.wallpaper.as_ref().map(Wallpaper::read_from));
     let wallpaper = read_the_wallpaper(kept).await;
+    let far_wallpapers = far_wallpapers(&peers).await;
 
     change(|seen| {
         let mut changed = replace(&mut seen.standing, Some(standing));
         changed |= replace(&mut seen.peers, peers);
+        changed |= replace(&mut seen.far_wallpapers, far_wallpapers);
         changed |= replace(&mut seen.sessions, sessions);
         changed |= replace(&mut seen.watching, watching);
         changed |= replace(&mut seen.history, history);
@@ -284,6 +304,49 @@ pub async fn again(app: &App) -> bool {
         }
         changed
     })
+}
+
+/// The size the other computers' thumbnails come at, which is the size
+/// they are read at.
+const THUMBNAIL: (u32, u32) = (400, 225);
+
+/// The other computers' wallpapers: those kept already, and those whose
+/// computer brought a new one since, read anew. A computer that has none
+/// any more loses its own.
+async fn far_wallpapers(peers: &[Peer]) -> HashMap<String, FarWallpaper> {
+    let mut kept = with(|seen| seen.far_wallpapers.clone());
+    let mut gathered = HashMap::new();
+    for peer in peers {
+        let Some(stamp) = peer.wallpaper else {
+            continue;
+        };
+        let fingerprint = peer.fingerprint.to_string();
+        match kept.remove(&fingerprint) {
+            Some(far) if far.stamp == stamp => {
+                gathered.insert(fingerprint, far);
+            }
+            _ => {
+                let Some(bytes) = crate::shell::desk::far_wallpaper(&fingerprint).await else {
+                    continue;
+                };
+                let picture =
+                    crate::shell::app::spawn_blocking(move || Picture::decode(&bytes, THUMBNAIL))
+                        .await
+                        .ok()
+                        .flatten();
+                if let Some(picture) = picture {
+                    gathered.insert(
+                        fingerprint,
+                        FarWallpaper {
+                            stamp,
+                            picture: Arc::new(picture),
+                        },
+                    );
+                }
+            }
+        }
+    }
+    gathered
 }
 
 /// Puts a new value in place, and says whether it was a different one.

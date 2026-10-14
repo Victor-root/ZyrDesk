@@ -240,6 +240,10 @@ impl Answers for NothingAsked {
     ) -> Result<(Option<Given>, Option<aside::Wanted>), String> {
         not_asked_here()
     }
+
+    fn wallpaper(&self) -> Result<Option<Vec<u8>>, String> {
+        not_asked_here()
+    }
 }
 
 async fn within<T>(work: impl Future<Output = T>) -> T {

@@ -148,6 +148,12 @@ pub fn known_computers() -> PathBuf {
     data_dir().join("known-computers.conf")
 }
 
+/// The thumbnails of the wallpapers of the computers this one reached,
+/// one file to a computer, kept by the service for their cards.
+pub fn far_wallpapers() -> PathBuf {
+    data_dir().join("wallpapers")
+}
+
 /// The sessions that took place on this computer, kept by the service.
 pub fn session_history() -> PathBuf {
     data_dir().join("session-history.txt")
@@ -329,6 +335,7 @@ mod tests {
             chosen_theme(),
             home_layout(),
             session_history(),
+            far_wallpapers(),
         ] {
             assert!(
                 path.starts_with(&root),

@@ -6,6 +6,10 @@
 //! with Windows and reads every format a wallpaper comes in, so nothing
 //! is bundled to read them.
 //!
+//! A computer's wallpaper also travels to the computers it lets in, as a
+//! thumbnail: brought down the same way, and written as a plain bitmap
+//! file, which any reader opens and which needs no encoder.
+//!
 //! Brought down once, when it is read, to the size it will be shown at,
 //! and never up: a four thousand pixel photograph drawn into a card two
 //! hundred pixels wide at every frame would cost the processor for
@@ -75,14 +79,15 @@ mod reading {
             })
         }
 
-        /// The picture written in these bytes, one the program carries,
-        /// brought down until it just covers `room` as `read` does.
-        pub fn decode(bytes: &'static [u8], room: (u32, u32)) -> Option<Picture> {
+        /// The picture written in these bytes, brought down until it
+        /// just covers `room` as `read` does.
+        pub fn decode(bytes: &[u8], room: (u32, u32)) -> Option<Picture> {
             with_the_system(|| {
                 decoded(
                     |factory| {
                         // SAFETY: objects of the system, and bytes that
-                        // live as long as the program.
+                        // outlive them: the stream and the decoder reading
+                        // it are let go before `decoded` returns.
                         unsafe {
                             let stream = factory.CreateStream().ok()?;
                             stream.InitializeFromMemory(bytes).ok()?;
@@ -176,12 +181,68 @@ mod reading {
 #[cfg(windows)]
 pub use reading::Picture;
 
+/// The picture in this file, brought down until it just covers `room`,
+/// written as a bitmap file. Nothing when it cannot be read, and nothing
+/// outside Windows, which has no reader for it.
+pub fn thumbnail(path: &std::path::Path, room: (u32, u32)) -> Option<Vec<u8>> {
+    #[cfg(windows)]
+    {
+        let picture = Picture::read(path, room)?;
+        bitmap_file(picture.width, picture.height, &picture.pixels)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (path, room);
+        None
+    }
+}
+
+/// Pixels of four bytes each, blue, green, red and a fourth that an
+/// opaque picture does not need, written as a bitmap file of three bytes
+/// a pixel: rows from the bottom up, each one padded to four bytes, as
+/// the format has them.
+#[cfg(any(windows, test))]
+fn bitmap_file(width: u32, height: u32, pixels: &[u8]) -> Option<Vec<u8>> {
+    const HEADERS: u32 = 14 + 40;
+    let row = (width.checked_mul(3)?).checked_add(3)? & !3;
+    let image = row.checked_mul(height)?;
+    if pixels.len() != width as usize * height as usize * 4 {
+        return None;
+    }
+    let mut file = Vec::with_capacity((HEADERS + image) as usize);
+    file.extend_from_slice(b"BM");
+    file.extend_from_slice(&(HEADERS + image).to_le_bytes());
+    file.extend_from_slice(&0u32.to_le_bytes());
+    file.extend_from_slice(&HEADERS.to_le_bytes());
+    file.extend_from_slice(&40u32.to_le_bytes());
+    file.extend_from_slice(&(width as i32).to_le_bytes());
+    file.extend_from_slice(&(height as i32).to_le_bytes());
+    file.extend_from_slice(&1u16.to_le_bytes());
+    file.extend_from_slice(&24u16.to_le_bytes());
+    file.extend_from_slice(&0u32.to_le_bytes());
+    file.extend_from_slice(&image.to_le_bytes());
+    // Nearly three thousand pixels a metre, the usual 72 to the inch.
+    file.extend_from_slice(&2835u32.to_le_bytes());
+    file.extend_from_slice(&2835u32.to_le_bytes());
+    file.extend_from_slice(&0u32.to_le_bytes());
+    file.extend_from_slice(&0u32.to_le_bytes());
+    let padding = (row - width * 3) as usize;
+    for line in pixels.chunks_exact(width as usize * 4).rev() {
+        for pixel in line.as_chunks::<4>().0 {
+            file.extend_from_slice(&pixel[..3]);
+        }
+        file.extend(std::iter::repeat_n(0u8, padding));
+    }
+    Some(file)
+}
+
 /// The size a picture of this size is brought down to so that it just
 /// covers `room`, keeping its shape and never growing.
 ///
 /// Covers and does not fit: a card shows its picture to the edges and
 /// crops what is beyond, as a wallpaper does on a screen of another
 /// shape.
+#[cfg(any(windows, test))]
 fn covering((wide, high): (u32, u32), (room_wide, room_high): (u32, u32)) -> Option<(u32, u32)> {
     if wide == 0 || high == 0 {
         return None;
@@ -209,6 +270,32 @@ mod tests {
     #[test]
     fn a_small_picture_is_never_made_larger() {
         assert_eq!(covering((320, 200), (640, 400)), Some((320, 200)));
+    }
+
+    #[test]
+    fn a_bitmap_file_says_its_size_and_runs_from_the_bottom_up() {
+        // Two pixels across, two down: blue then green on top, red then
+        // white below, the fourth bytes left behind.
+        let pixels = [
+            255, 0, 0, 255, 0, 255, 0, 255, //
+            0, 0, 255, 255, 255, 255, 255, 255,
+        ];
+        let file = bitmap_file(2, 2, &pixels).unwrap();
+        let read = |at: usize| u32::from_le_bytes(file[at..at + 4].try_into().unwrap());
+        assert_eq!(&file[..2], b"BM");
+        assert_eq!(read(2) as usize, file.len());
+        assert_eq!(read(10), 54);
+        assert_eq!((read(18), read(22)), (2, 2));
+        // Each row, six bytes of colour and two of padding, the bottom
+        // one first.
+        assert_eq!(file.len(), 54 + 8 * 2);
+        assert_eq!(&file[54..62], &[0, 0, 255, 255, 255, 255, 0, 0]);
+        assert_eq!(&file[62..70], &[255, 0, 0, 0, 255, 0, 0, 0]);
+    }
+
+    #[test]
+    fn pixels_that_do_not_make_the_size_make_no_file() {
+        assert_eq!(bitmap_file(2, 2, &[0; 12]), None);
     }
 
     #[test]

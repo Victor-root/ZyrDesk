@@ -88,6 +88,10 @@ pub fn start_a_helper(_arguments: &[String], _whose: Whose) -> io::Result<()> {
     Err(not_here())
 }
 
+pub fn wallpaper_on_screen() -> Option<std::path::PathBuf> {
+    None
+}
+
 pub fn lock_this_desktop() -> bool {
     false
 }

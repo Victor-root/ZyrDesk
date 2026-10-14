@@ -10,6 +10,8 @@ repository.workspace = true
 zyr-proto.workspace = true
 zyr-media.workspace = true
 zyr-clipboard.workspace = true
+# A thumbnail of this computer's wallpaper, for the computers it lets in.
+zyr-draw.workspace = true
 zyr-transport.workspace = true
 zyr-tunnel.workspace = true
 zyr-control.workspace = true

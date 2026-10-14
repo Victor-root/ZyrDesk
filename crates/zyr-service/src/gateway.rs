@@ -90,6 +90,10 @@ const ENGINE_GOES: Duration = Duration::from_secs(2);
 /// engine go.
 const CLOSING_PATIENCE: Duration = Duration::from_secs(3);
 
+/// The room a thumbnail of this computer's wallpaper just covers, in
+/// pixels: a card's picture on a screen of high density, and no more.
+const THUMBNAIL: (u32, u32) = (400, 225);
+
 /// Starts the engine of one session, told the link it is to serve it on.
 pub trait Launcher: Send + Sync {
     /// Who may open the engine's link: the account the engine is started
@@ -531,6 +535,21 @@ impl Answers for Attending {
             None => None,
         };
         Ok((given, crate::clipboard::what_a_paste_here_wants(&self.log)))
+    }
+
+    /// A thumbnail of what the desktop of whoever sits at the screen
+    /// shows, for the card that stands for this computer over there.
+    fn wallpaper(&self) -> Result<Option<Vec<u8>>, String> {
+        let picture = zyr_system::wallpaper_on_screen()
+            .and_then(|path| zyr_draw::thumbnail(&path, THUMBNAIL));
+        self.log.write(&format!(
+            "wallpaper asked for, {}",
+            match &picture {
+                Some(bytes) => format!("a thumbnail of {} bytes handed over", bytes.len()),
+                None => "none to hand over".to_string(),
+            }
+        ));
+        Ok(picture)
     }
 }
 

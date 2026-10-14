@@ -75,7 +75,8 @@ pub use elevated::run_as_administrator;
 pub use elsewhere::{
     SessionProcess, Vitals, describe_this_computer, errand, errand_code, lock_this_desktop,
     pointer_shape, press, run_as_administrator, runs_in, session_on_screen, somebody_signed_in,
-    start_a_helper, start_at_sign_in, start_in_session, still_running, whoever_this_is,
+    start_a_helper, start_at_sign_in, start_in_session, still_running, wallpaper_on_screen,
+    whoever_this_is,
 };
 #[cfg(windows)]
 pub use inspection::{describe_this_computer, this_computer};
@@ -84,7 +85,7 @@ pub use machine::{Card, Machine, Source, Windows};
 #[cfg(windows)]
 pub use onscreen::{
     SessionProcess, errand, errand_code, lock_this_desktop, runs_in, session_on_screen,
-    somebody_signed_in, start_a_helper, start_in_session, whoever_this_is,
+    somebody_signed_in, start_a_helper, start_in_session, wallpaper_on_screen, whoever_this_is,
 };
 #[cfg(windows)]
 pub use person::{Wallpaper, name_of_the_person, wallpaper};
