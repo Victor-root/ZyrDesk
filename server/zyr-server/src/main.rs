@@ -67,6 +67,13 @@ enum UserAction {
         #[arg(long)]
         password_stdin: bool,
     },
+    /// Gives an account another name, its devices and sign-ins kept.
+    /// The devices connected learn it when they next connect: restart
+    /// the server for them to learn it at once.
+    Rename {
+        username: String,
+        new_name: String,
+    },
     /// Deletes an account and everything that belonged to
     /// it.
     Delete {
@@ -266,6 +273,12 @@ fn user(path: &Path, action: UserAction) -> Result<(), String> {
                 .reset_password(&username, &password)
                 .map_err(refused)?;
             println!("Password of {username} reset. The account is signed out everywhere.");
+        }
+        UserAction::Rename { username, new_name } => {
+            store
+                .rename_account(&username, &new_name)
+                .map_err(refused)?;
+            println!("Account {username} is now {new_name}, with its devices.");
         }
         UserAction::Delete { username } => {
             store.delete_account(&username).map_err(refused)?;

@@ -716,6 +716,23 @@ impl Account {
                     });
                 }
             }
+            Event::Renamed(username) => {
+                let mut held = inner.held.lock().expect("account link");
+                if let Some(held) = held.as_mut() {
+                    let before = std::mem::replace(&mut held.link.username, username);
+                    inner.log.write(&match held.link.write(&inner.path) {
+                        Ok(()) => format!(
+                            "the account {before} is now {} at the server, the link is written again",
+                            held.link.username
+                        ),
+                        Err(e) => format!(
+                            "the account {before} is now {} at the server, and the link could not \
+                             be written: {e}",
+                            held.link.username
+                        ),
+                    });
+                }
+            }
             Event::Revoked => {
                 inner
                     .log

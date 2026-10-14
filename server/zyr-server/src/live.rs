@@ -303,6 +303,7 @@ impl Live {
     async fn welcome(&self, app: &App, bearer: &Bearer) -> Result<FromServer, Refusal> {
         let live = app.live.clone();
         let me = bearer.device.id.clone();
+        let username = bearer.account.username.clone();
         let account = bearer.account.id.clone();
         let renew = bearer.renew;
         let device = bearer.device.clone();
@@ -334,6 +335,7 @@ impl Live {
         Ok(FromServer::Welcome {
             server: api::server_info_of(app),
             me,
+            username,
             devices,
             contacts,
             shares,

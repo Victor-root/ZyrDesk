@@ -58,6 +58,10 @@ pub enum FromServer {
         server: ServerInfo,
         /// This device's own identifier.
         me: String,
+        /// The name of the account, as it stands now: an administrator
+        /// may have changed it since the device was attached.
+        #[serde(default)]
+        username: String,
         devices: Vec<DeviceInfo>,
         contacts: Vec<ContactInfo>,
         shares: Vec<ShareInfo>,
@@ -209,6 +213,7 @@ mod tests {
                     signing_key: key.public(),
                 },
                 me: "d1".into(),
+                username: "camille".into(),
                 devices: vec![device("d1"), device("d2")],
                 contacts: vec![ContactInfo {
                     id: "c1".into(),

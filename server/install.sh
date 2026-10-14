@@ -915,6 +915,40 @@ reconfigure() {
   summary
 }
 
+# Gives an account another name. Its devices keep their link: they learn
+# the new name the next time they connect to the server, which the
+# restart at the end makes happen at once.
+rename_an_account() {
+  load_the_state
+  local accounts=() choice old new said
+  mapfile -t accounts < <(runuser -u "$SERVICE_USER" -- "$BIN" --config "$CONF" user list | awk '{print $1}')
+  if (( ${#accounts[@]} == 0 )); then
+    warn "$(t "Aucun compte sur ce serveur." 'No account on this server.')"
+    return 0
+  fi
+  ask_choice choice "$(t 'Quel compte renommer ?' 'Which account to rename?')" 1 "${accounts[@]}"
+  old=${accounts[choice - 1]}
+  while true; do
+    ask new "$(t "Nouveau nom (3 à 32 lettres, chiffres, points, tirets ou soulignés ; Entrée garde $old)" "New name (3 to 32 letters, digits, dots, dashes or underscores; Enter keeps $old)")" "$old"
+    if [[ $new == "$old" ]]; then
+      info "$(t 'Rien n'"'"'a changé.' 'Nothing changed.')"
+      return 0
+    fi
+    if said=$(runuser -u "$SERVICE_USER" -- "$BIN" --config "$CONF" user rename "$old" "$new" 2>&1); then
+      break
+    fi
+    warn "$said"
+  done
+  ok "$(t "Le compte $old s'appelle maintenant $new, avec ses appareils." "Account $old is now $new, with its devices.")"
+  if [[ $ADMIN_USER == "$old" ]]; then
+    ADMIN_USER=$new
+    save_the_state
+  fi
+  # The devices connected learn the name when they connect again.
+  step "$(t 'Redémarrage, pour que les ordinateurs connectés le sachent' 'Restarting, for the connected computers to know it')" start_the_service
+  step "$(t 'Le serveur répond' 'The server answers')" wait_for_the_server
+}
+
 uninstall() {
   load_the_state
   panel_open "$(t 'Retirer le serveur' 'Remove the server')" "$C_WARNING"
@@ -953,15 +987,17 @@ existing_installation_menu() {
   ask_choice choice "$(t 'Que faire ?' 'What to do?')" 1 \
     "$(t 'Mettre à jour vers la version publiée' 'Update to the published version')" \
     "$(t 'Reconfigurer (les questions, avec les réponses d'"'"'avant)' 'Reconfigure (the questions, with the previous answers)')" \
+    "$(t 'Renommer un compte' 'Rename an account')" \
     "$(t "Afficher l'état" 'Show the state')" \
     "$(t 'Désinstaller' 'Uninstall')" \
     "$(t 'Ne rien faire' 'Do nothing')"
   case "$choice" in
     1) update_the_server ;;
     2) reconfigure ;;
-    3) "$BIN" --config "$CONF" status ;;
-    4) uninstall ;;
-    5) exit 0 ;;
+    3) rename_an_account ;;
+    4) "$BIN" --config "$CONF" status ;;
+    5) uninstall ;;
+    6) exit 0 ;;
   esac
 }
 

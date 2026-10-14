@@ -4521,6 +4521,18 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** L'accueil de la maquette, en clair et en sombre : le bandeau qui salue la personne et porte l'accès distant, la carte de cet ordinateur avec son fond d'écran, les cartes des autres avec leur route et leur délai, les actions rapides, et la page des paramètres et celle d'À propos dans le même style. Ce qui ne marche pas encore est à sa place, grisé, et dit « Bientôt » au survol. Aucun dialogue entre les composants ne change : les deux PC n'ont pas à être mis à jour ensemble pour cela.
 
+## D281. Un compte se renomme sur le serveur, et ses appareils suivent (2026-10-14, pendant MZ)
+
+**Pourquoi.** Victor avait appelé son premier compte « admin » pour essayer, et voulait le renommer sans tout rattacher à nouveau, depuis le script d'installation plutôt qu'en ligne de commande.
+
+**Ce qui est fait.** `zyrdesk-server user rename <nom> <nouveau-nom>` change le nom d'un compte. Tout ce qui est à lui le suit : appareils, jetons, contacts et partages tiennent son identifiant, jamais son nom, donc personne n'est déconnecté. Le nouveau nom obéit aux mêmes règles qu'à la création, et un nom déjà pris est refusé ; le même nom écrit autrement (majuscules) reste le sien. `install.sh`, relancé sur un serveur installé, offre « Renommer un compte » : il liste les comptes, demande le nouveau nom, et redémarre le serveur.
+
+**Comment les appareils l'apprennent.** Le mot d'accueil du canal vivant porte désormais le nom du compte (`username`). Un appareil dont le lien garde un autre nom l'écrit à la place, et la fenêtre le montre. Le redémarrage du script est ce qui fait reconnecter tout de suite les appareils connectés ; sans lui, ils l'apprennent à leur prochaine connexion.
+
+**Le dialogue entre le service et le serveur passe en version 2.** Le serveur et les deux PC se mettent à jour ensemble : un PC plus ancien est refusé par le nouveau serveur, avec la version attendue.
+
+**Ce qui se voit.** Le nouveau nom en bas à gauche de l'accueil, dans « Bonjour … ! » et dans la carte Compte des paramètres, quelques secondes après le renommage.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

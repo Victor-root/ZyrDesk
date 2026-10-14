@@ -95,6 +95,7 @@ zyrdesk-server fingerprint                   # l'empreinte à comparer dans l'ap
 runuser -u zyrdesk -- zyrdesk-server user create <nom> --password-stdin
 runuser -u zyrdesk -- zyrdesk-server user list
 runuser -u zyrdesk -- zyrdesk-server user reset-password <nom> --password-stdin
+runuser -u zyrdesk -- zyrdesk-server user rename <nom> <nouveau-nom>
 runuser -u zyrdesk -- zyrdesk-server user delete <nom>
 runuser -u zyrdesk -- zyrdesk-server invite new          # un code d'invitation
 runuser -u zyrdesk -- zyrdesk-server invite list
@@ -102,7 +103,7 @@ runuser -u zyrdesk -- zyrdesk-server invite revoke <code>
 runuser -u zyrdesk -- zyrdesk-server backup <dossier>    # base, configuration et clés, cohérents
 ```
 
-Un mot de passe se donne sur l'entrée standard, jamais sur la ligne de commande : la commande le demande quand rien ne lui est donné, et `printf '%s\n' 'le mot de passe' | runuser -u zyrdesk -- zyrdesk-server user create victor --password-stdin` le passe depuis un script. Remettre un mot de passe déconnecte le compte partout ; supprimer un compte emporte ses appareils, ses contacts et ses partages.
+Un mot de passe se donne sur l'entrée standard, jamais sur la ligne de commande : la commande le demande quand rien ne lui est donné, et `printf '%s\n' 'le mot de passe' | runuser -u zyrdesk -- zyrdesk-server user create victor --password-stdin` le passe depuis un script. Remettre un mot de passe déconnecte le compte partout ; supprimer un compte emporte ses appareils, ses contacts et ses partages. Renommer un compte garde tout ce qui est à lui, appareils compris : ils apprennent le nouveau nom à leur prochaine connexion au serveur. Le plus simple est de relancer `bash install.sh` et de choisir « Renommer un compte », qui redémarre aussi le serveur pour que les ordinateurs connectés le sachent tout de suite.
 
 Le journal est celui de systemd : `journalctl -u zyrdesk-server -f`. Une ligne par événement, jamais de secret.
 

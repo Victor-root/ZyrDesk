@@ -588,6 +588,42 @@ impl Store {
         })
     }
 
+    /// Gives an account another name. Everything that was its follows:
+    /// devices, tokens, contacts and shares hold its identifier, never
+    /// its name, so nobody is signed out and nothing is attached again.
+    pub fn rename_account(&self, username: &str, new: &str) -> Result<(), Fault> {
+        if !acceptable_username(new) {
+            return Err(Code::InvalidUsername.into());
+        }
+        self.within(|conn| {
+            let account: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM accounts WHERE username = ?1",
+                    params![username],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let Some(account) = account else {
+                return Err(Code::NotFound.into());
+            };
+            // Another account only: the same name written otherwise is
+            // this one, the names being compared without their case.
+            let taken: bool = conn.query_row(
+                "SELECT COUNT(*) > 0 FROM accounts WHERE username = ?1 AND id <> ?2",
+                params![new, account],
+                |row| row.get(0),
+            )?;
+            if taken {
+                return Err(Code::UsernameTaken.into());
+            }
+            conn.execute(
+                "UPDATE accounts SET username = ?1 WHERE id = ?2",
+                params![new, account],
+            )?;
+            Ok(())
+        })
+    }
+
     /// Removes an account and everything that was its.
     pub fn delete_account(&self, username: &str) -> Result<(), Fault> {
         self.within(|conn| {
@@ -1790,6 +1826,36 @@ mod tests {
                 Ok(())
             })
             .unwrap();
+    }
+
+    #[test]
+    fn an_account_renamed_keeps_its_devices_and_its_sign_ins() {
+        let store = store();
+        let first = account(&store, "admin");
+        account(&store, "other");
+        device(&store, &first, "PC");
+        let (_, token) = store.login("admin", PASSWORD, 1_000).unwrap();
+        store.rename_account("admin", "camille").unwrap();
+        let renamed = store.account_of_token(&token.raw, 1_001).unwrap();
+        assert_eq!(
+            (renamed.id.as_str(), renamed.username.as_str()),
+            (first.id.as_str(), "camille")
+        );
+        assert_eq!(store.devices_of(&first.id).unwrap().len(), 1);
+        assert!(store.login("camille", PASSWORD, 1_002).is_ok());
+        assert!(store.login("admin", PASSWORD, 1_002).is_err());
+        // Its own name in other letters is still its own.
+        store.rename_account("camille", "Camille").unwrap();
+        for (from, to, refused) in [
+            ("Camille", "other", Code::UsernameTaken),
+            ("Camille", "a b", Code::InvalidUsername),
+            ("nobody", "someone", Code::NotFound),
+        ] {
+            assert!(
+                matches!(store.rename_account(from, to).unwrap_err(), Fault::Refused(code) if code == refused),
+                "{from} to {to}"
+            );
+        }
     }
 
     #[test]

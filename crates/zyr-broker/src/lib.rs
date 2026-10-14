@@ -30,4 +30,4 @@ pub use ticket::{Grant, Pass, Refusal, Ticket, Verifier, now};
 /// misread. A pair that does not speak the same version is refused at
 /// the first exchange, with the version expected, so the person knows
 /// which of the two to update.
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;

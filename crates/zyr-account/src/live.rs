@@ -172,6 +172,9 @@ pub enum Event {
     /// The server handed a fresh token: the link is to be written again
     /// with it.
     TokenRenewed(String),
+    /// The account goes by another name at the server now: the link is
+    /// to be written again with it.
+    Renamed(String),
     /// This device is no longer of the account: the link is to be
     /// forgotten.
     Revoked,
@@ -354,6 +357,11 @@ async fn serve_once(
             {
                 let _ = events.send(Event::TokenRenewed(token.clone()));
             }
+            if let FromServer::Welcome { username, .. } = &welcome
+                && let Some(renamed) = renamed(&link.username, username)
+            {
+                let _ = events.send(Event::Renamed(renamed));
+            }
             snapshot.lock().expect("account snapshot").apply(&welcome);
         }
         Ok(Some(FromServer::Bye { code })) => {
@@ -523,6 +531,12 @@ async fn say(channel: &mut Channel, said: &FromDevice) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// The account's new name, when the server's is not the one the link
+/// holds. A server too old to say it says nothing, and changes nothing.
+fn renamed(held: &str, told: &str) -> Option<String> {
+    (!told.is_empty() && told != held).then(|| told.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -568,6 +582,7 @@ mod tests {
         snapshot.apply(&FromServer::Welcome {
             server: server.clone(),
             me: "d1".into(),
+            username: "camille".into(),
             devices: vec![device("d1", true), device("d2", false)],
             contacts: vec![],
             shares: vec![share("p1", device("d9", false))],
@@ -642,5 +657,12 @@ mod tests {
         assert_eq!(snapshot.trouble, Some(broken("cut")));
         // The lists stay: that is what the home screen shows in grey.
         assert_eq!(snapshot.devices.len(), 2);
+    }
+
+    #[test]
+    fn only_a_name_the_server_says_and_the_link_lacks_is_a_new_one() {
+        assert_eq!(renamed("admin", "camille").as_deref(), Some("camille"));
+        assert_eq!(renamed("camille", "camille"), None);
+        assert_eq!(renamed("camille", ""), None);
     }
 }
