@@ -421,6 +421,7 @@ pub(crate) async fn out_of_the_tunnel(
 ) -> io::Result<()> {
     loop {
         let received = connection.read_datagram().await.map_err(io::Error::other)?;
+        flow.out_of_the_tunnel();
         let channel = match frame::decode(&received) {
             Ok(frame::Landed::Channel(channel, _)) => channel,
             // Asked for nothing, and its arrival was the whole point.

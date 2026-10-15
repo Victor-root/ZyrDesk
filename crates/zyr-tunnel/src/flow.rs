@@ -9,18 +9,29 @@
 //! what did, how long a datagram waited in this service, and what the
 //! connection measured of the path meanwhile.
 //!
+//! And where a picture is held up, when one is: the longest silence
+//! between two datagrams going into the connection on one computer and
+//! coming out of it on the other, and how late this service woke when
+//! it asked to be woken. A picture that arrives in a burst after a
+//! silence was held up by the service whose clock was late, by the
+//! engine when the silence is already there going in, by the road when
+//! neither.
+//!
 //! Counted with atomics by the pumps as datagrams go by, and taken, then
 //! set back to nought, once a second by a task of its own.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use zyr_proto::log::Log;
 use zyr_transport::{Connection, Traffic};
 
 /// How often a line is written, while anything moves.
 const EVERY: Duration = Duration::from_secs(1);
+
+/// How often the service asks to be woken, to see how late it is.
+const WAKE_EVERY: Duration = Duration::from_millis(5);
 
 /// What one second saw go through.
 #[derive(Debug)]
@@ -39,6 +50,12 @@ pub(crate) struct Flow {
     writing: Timing,
     /// Most bytes waiting for the link at once.
     most_waiting: AtomicU64,
+    /// Between two datagrams handed to the connection, and between two
+    /// coming out of it.
+    silence_in: Silence,
+    silence_out: Silence,
+    /// The most this service woke late, in microseconds.
+    late: AtomicU64,
 }
 
 impl Default for Flow {
@@ -52,6 +69,48 @@ impl Default for Flow {
             waited: Timing::default(),
             writing: Timing::default(),
             most_waiting: AtomicU64::new(0),
+            silence_in: Silence::default(),
+            silence_out: Silence::default(),
+            late: AtomicU64::new(0),
+        }
+    }
+}
+
+/// The longest time without a datagram, in microseconds.
+#[derive(Debug)]
+struct Silence {
+    started: Instant,
+    /// When the last datagram went by, from `started`; none yet at MAX.
+    last: AtomicU64,
+    /// One more than the longest, so that nought says no two went by.
+    longest: AtomicU64,
+}
+
+impl Default for Silence {
+    fn default() -> Self {
+        Self {
+            started: Instant::now(),
+            last: AtomicU64::new(u64::MAX),
+            longest: AtomicU64::new(0),
+        }
+    }
+}
+
+impl Silence {
+    fn heard(&self) {
+        let now = u64::try_from(self.started.elapsed().as_micros()).unwrap_or(u64::MAX - 1);
+        let last = self.last.swap(now, Ordering::Relaxed);
+        if last != u64::MAX {
+            self.longest
+                .fetch_max(now.saturating_sub(last) + 1, Ordering::Relaxed);
+        }
+    }
+
+    /// In milliseconds, set back to nought.
+    fn taken(&self) -> String {
+        match self.longest.swap(0, Ordering::Relaxed) {
+            0 => "-".to_string(),
+            us => format!("{:.1}", (us - 1) as f64 / 1000.0),
         }
     }
 }
@@ -93,6 +152,18 @@ impl Flow {
         self.to_tunnel_bytes
             .fetch_add(bytes as u64, Ordering::Relaxed);
         self.least_room.fetch_min(room as u64, Ordering::Relaxed);
+        self.silence_in.heard();
+    }
+
+    /// A datagram came out of the connection.
+    pub(crate) fn out_of_the_tunnel(&self) {
+        self.silence_out.heard();
+    }
+
+    /// The service woke `late` after the moment it asked for.
+    fn woke(&self, late: Duration) {
+        let us = u64::try_from(late.as_micros()).unwrap_or(u64::MAX);
+        self.late.fetch_max(us, Ordering::Relaxed);
     }
 
     /// `waiting` bytes wait for the link, a datagram just queued.
@@ -127,6 +198,9 @@ impl Flow {
         let waited = self.waited.taken();
         let writes = self.writing.count.load(Ordering::Relaxed);
         let writing = self.writing.taken();
+        let silence_in = self.silence_in.taken();
+        let silence_out = self.silence_out.taken();
+        let late = self.late.swap(0, Ordering::Relaxed);
         if to_tunnel == 0 && to_link == 0 {
             return None;
         }
@@ -146,13 +220,15 @@ impl Flow {
              onto the link {to_link} datagrams, {} KB, having waited here {waited} ms, in \
              {writes} writes of {writing} ms (mean/worst), at most {} KB waiting; the path: round trip \
              {:.1} ms (least {:.1}), {sent} packets sent in {sends} sends, {received} received \
-             in {receives} reads, {} lost",
+             in {receives} reads, {} lost; longest silence into the tunnel {silence_in} ms, out \
+             of it {silence_out} ms; this service woke at most {:.1} ms late",
             to_tunnel_bytes / 1024,
             to_link_bytes / 1024,
             most_waiting / 1024,
             path.round_trip.as_secs_f64() * 1000.0,
             path.least_round_trip.as_secs_f64() * 1000.0,
             path.lost.saturating_sub(before.lost),
+            late as f64 / 1000.0,
         ))
     }
 }
@@ -166,12 +242,19 @@ pub(crate) async fn watch(connection: Connection, flow: Arc<Flow>, log: Log) {
     // The first tick is at once, before anything has had time to go by.
     ticks.tick().await;
     loop {
-        ticks.tick().await;
-        let path = connection.traffic();
-        if let Some(line) = flow.second(&path, &before) {
-            log.debug(&line);
+        let asked = Instant::now() + WAKE_EVERY;
+        tokio::select! {
+            _ = ticks.tick() => {
+                let path = connection.traffic();
+                if let Some(line) = flow.second(&path, &before) {
+                    log.debug(&line);
+                }
+                before = path;
+            }
+            () = tokio::time::sleep_until(asked.into()) => {
+                flow.woke(Instant::now().saturating_duration_since(asked));
+            }
         }
-        before = path;
     }
 }
 
@@ -216,7 +299,8 @@ mod tests {
         assert!(
             line.ends_with(
                 "round trip 12.4 ms (least 9.8), 400 packets sent in 100 sends, 40 received in \
-                 40 reads, 2 lost"
+                 40 reads, 2 lost; longest silence into the tunnel 0.0 ms, out of it - ms; this \
+                 service woke at most 0.0 ms late"
             ),
             "{line}"
         );
