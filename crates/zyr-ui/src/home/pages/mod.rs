@@ -8,6 +8,7 @@
 pub mod about;
 pub mod activity;
 pub mod computers;
+pub mod contacts;
 pub mod home;
 pub mod settings;
 
@@ -124,6 +125,9 @@ fn draw_head(painter: &mut Painter, at: Rect, head: &Head) -> f32 {
 pub enum Control {
     Nothing,
     Switch(Toggle),
+    /// A switch that is not one of the settings: where it stands, and
+    /// what turning it does.
+    Flip(bool, Target),
     /// Sides: their words, the one chosen, whether they can be changed,
     /// and what each one is.
     Sides(Vec<String>, Option<usize>, bool, Vec<Target>),
@@ -210,6 +214,17 @@ pub fn line(
                 Target::Switch(toggle),
             );
         }
+        Control::Flip(on, target) => {
+            painter.switch(
+                (
+                    right - painter.px(SWITCH_SIZE.0),
+                    centre - painter.px(SWITCH_SIZE.1) / 2.0,
+                ),
+                on,
+                true,
+                target,
+            );
+        }
         Control::Sides(words, chosen, enabled, targets) => {
             painter.sides((right, centre), &words, chosen, enabled, |rank| {
                 targets[rank].clone()
@@ -266,7 +281,7 @@ pub fn subheading(painter: &Painter, (left, top, width): (f32, f32, f32), text: 
 fn control_width(painter: &Painter, control: &Control) -> f32 {
     match control {
         Control::Nothing => 0.0,
-        Control::Switch(_) => painter.px(SWITCH_SIZE.0),
+        Control::Switch(_) | Control::Flip(..) => painter.px(SWITCH_SIZE.0),
         Control::Sides(words, ..) => painter.sides_width(words),
         Control::Key(doing) => key_width(painter, *doing),
         Control::Buttons(buttons) => buttons
@@ -281,7 +296,7 @@ fn control_width(painter: &Painter, control: &Control) -> f32 {
 fn control_height(painter: &Painter, control: &Control) -> f32 {
     match control {
         Control::Nothing => 0.0,
-        Control::Switch(_) => painter.px(SWITCH_SIZE.1),
+        Control::Switch(_) | Control::Flip(..) => painter.px(SWITCH_SIZE.1),
         Control::Sides(..) | Control::Key(_) | Control::Buttons(_) => painter.px(34.0),
     }
 }

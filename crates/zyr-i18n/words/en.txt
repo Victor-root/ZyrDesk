@@ -331,7 +331,6 @@ home.no_computer = No computer yet
 home.no_computer_text = The computers on this network appear here automatically, and those of your account once you are signed in.
 home.contacts = Contacts and shared access
 home.invite = Invite a contact
-home.contacts_soon = Sharing between accounts: coming soon
 home.recent_sessions = Recent sessions
 home.quick_actions = Quick actions
 home.action_activity = View activity
@@ -355,6 +354,35 @@ activity.incoming_tip = It controlled this computer
 activity.said = {direction} · {when}
 activity.none = No session yet
 activity.none_text = The sessions this computer opens, and those opened towards it, appear here once they end.
+
+# The page of contacts: the requests, and what each contact may reach.
+contacts.title = Contacts
+contacts.lead = The people you lend your computers to. A contact can do nothing on your computers until you lend them one, computer by computer, and choose what they may do there.
+contacts.no_account = Contacts need an account
+contacts.no_account_text = A contact is someone with an account on the same server as you. Attach this computer to your account first.
+contacts.none = No contact yet
+contacts.none_text = Invite someone by their username. Once they accept, choose which of your computers they may reach, and what they may do there.
+contacts.requests = Requests
+contacts.asks_you = Wants to become your contact
+contacts.waiting = Waiting for their answer
+contacts.accept = Accept
+contacts.decline = Decline
+contacts.withdraw = Withdraw
+contacts.computers = Your computers
+contacts.not_lent = Not lent
+contacts.lent = Lent to {name}, who comes in once someone at this computer says yes
+contacts.lent_unattended = Lent to {name}, who comes in without asking
+contacts.lent_count = computers lent: {count}
+contacts.keyboard = Keyboard
+contacts.mouse = Mouse
+contacts.gamepad = Gamepad
+contacts.unattended = Without asking me
+contacts.unattended_tip = {name} comes in without anyone at this computer saying yes first
+contacts.end = End this contact
+contacts.end_caption = Every computer lent to {name} is taken back.
+contacts.remove = Remove
+contacts.accepted = {username} is now one of your contacts.
+contacts.removed = {username} is no longer one of your contacts.
 
 # Windows, by its edition.
 edition.home = Home
@@ -487,6 +515,14 @@ renaming.title = Rename “{name}”
 renaming.lead = The name shown for this computer in the account, on all of your computers.
 renaming.new_name = New name
 renaming.rename = Rename
+
+# Asking someone to become a contact.
+inviting.title = Invite a contact
+inviting.lead = They receive your request on their computers, and choose whether to accept it. They can do nothing on yours until you lend them one.
+inviting.who = Their username
+inviting.send = Send the request
+inviting.sending = Sending…
+inviting.sent = Request sent to {username}.
 
 # The journal.
 journal.title = Journal

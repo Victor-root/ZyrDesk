@@ -19,7 +19,7 @@ const NEEDED: [Field; 3] = [Field::Server, Field::User, Field::Password];
 
 pub fn shape(painter: &Painter) -> Shape {
     let state = &painter.state;
-    let label = if state.attaching {
+    let label = if state.waiting {
         say!("signin.signing_in")
     } else if state.pinning.is_some() {
         say!("signin.pin")
@@ -35,8 +35,7 @@ pub fn shape(painter: &Painter) -> Shape {
         left: Vec::new(),
         right: vec![
             Action::new(say!("dialog.cancel"), Kind::Quiet, Target::CloseDialog),
-            Action::new(label, Kind::Primary, Target::Confirm)
-                .enabled(filled() && !state.attaching),
+            Action::new(label, Kind::Primary, Target::Confirm).enabled(filled() && !state.waiting),
         ],
     }
 }
@@ -54,7 +53,7 @@ pub fn draw(painter: &mut Painter, at: Rect) -> f32 {
         (left + painter.sides_width(&sides), y + sides_height / 2.0),
         &sides,
         Some(usize::from(sign_up)),
-        !painter.state.attaching,
+        !painter.state.waiting,
         |rank| Target::Side(Pick::SignUp, rank),
     );
     y += sides_height + gap;
@@ -156,7 +155,7 @@ pub fn confirm(app: &App) {
     }
     let (sign_up, pinning) = {
         let state = crate::home::state();
-        if state.attaching {
+        if state.waiting {
             return;
         }
         (state.sign_up, state.pinning.clone())
@@ -174,7 +173,7 @@ pub fn confirm(app: &App) {
     };
     {
         let mut state = crate::home::state();
-        state.attaching = true;
+        state.waiting = true;
         state.trouble = None;
     }
     crate::home::redraw(app);
@@ -184,7 +183,7 @@ pub fn confirm(app: &App) {
         let outcome = crate::shell::desk::attach(request).await;
         let attached = {
             let mut state = crate::home::state();
-            state.attaching = false;
+            state.waiting = false;
             match outcome {
                 Ok(Attached::Done) => true,
                 Ok(Attached::Unpinned(presented)) => {

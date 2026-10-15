@@ -11,9 +11,10 @@
 // compiled and checked, it is simply called by nobody.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use zyr_control::{Account, Answer, Attach, Device, Holdup, Past, Peer, Request};
+use zyr_control::{Account, Answer, Attach, Contact, Device, Holdup, Lent, Past, Peer, Request};
 use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
+use zyr_proto::rights::Rights;
 
 use crate::shell::service;
 
@@ -23,6 +24,14 @@ const TAG: &str = "desk";
 /// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::shell::journal::note_about(TAG, what);
+}
+
+/// Asks the service for something that comes back done or refused.
+async fn done(request: &Request) -> Result<(), Fact> {
+    match service::ask(request).await? {
+        Answer::Done => Ok(()),
+        other => Err(other.unexpected()),
+    }
 }
 
 /// What the home screen shows about this computer.
@@ -261,10 +270,7 @@ pub async fn devices() -> Vec<Device> {
 
 /// Renames a device of the account, at the server.
 pub async fn rename_device(device: String, name: String) -> Result<(), Fact> {
-    match service::ask(&Request::RenameDevice { device, name }).await? {
-        Answer::Done => Ok(()),
-        other => Err(other.unexpected()),
-    }
+    done(&Request::RenameDevice { device, name }).await
 }
 
 /// Revokes a device of the account: it no longer speaks for the account,
@@ -283,23 +289,68 @@ pub async fn revoke_device(device: String) -> Result<(), Fact> {
     }
 }
 
+/// The contacts of the account, and the requests either way.
+pub async fn contacts() -> Vec<Contact> {
+    service::list(&Request::Contacts, |answer| match answer {
+        Answer::Contact(contact) => Some(contact),
+        _ => None,
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// What the account lends its contacts, computer by computer.
+pub async fn lent() -> Vec<Lent> {
+    service::list(&Request::Lent, |answer| match answer {
+        Answer::Lent(lent) => Some(lent),
+        _ => None,
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Asks someone to become a contact, by username.
+pub async fn invite(username: String) -> Result<(), Fact> {
+    done(&Request::Invite { username }).await
+}
+
+/// Says yes or no to someone who asked.
+pub async fn answer_contact(contact: String, accept: bool) -> Result<(), Fact> {
+    done(&Request::AnswerContact { contact, accept }).await
+}
+
+/// Withdraws a request, or ends a contact.
+pub async fn remove_contact(contact: String) -> Result<(), Fact> {
+    done(&Request::RemoveContact { contact }).await
+}
+
+/// Lends a computer of the account to a contact, or changes what the
+/// contact may do on it.
+pub async fn lend(device: String, with: String, rights: Rights) -> Result<(), Fact> {
+    done(&Request::Lend {
+        device,
+        with,
+        rights,
+    })
+    .await
+}
+
+/// Takes back what was lent.
+pub async fn take_back(share: String) -> Result<(), Fact> {
+    done(&Request::TakeBack { share }).await
+}
+
 /// Decides whether this computer accepts being controlled.
 ///
 /// Answers with what to show if it could not be done: a switch that
 /// moved without anything happening behind it would be a lie.
 pub async fn set_hosting(on: bool) -> Result<(), Fact> {
-    match service::ask(&Request::SetHosting { on }).await? {
-        Answer::Done => Ok(()),
-        other => Err(other.unexpected()),
-    }
+    done(&Request::SetHosting { on }).await
 }
 
 /// Decides whether the ZyrDesk of this network are let in on sight.
 pub async fn set_trust(on: bool) -> Result<(), Fact> {
-    match service::ask(&Request::SetTrust { on }).await? {
-        Answer::Done => Ok(()),
-        other => Err(other.unexpected()),
-    }
+    done(&Request::SetTrust { on }).await
 }
 
 /// Decides whether the tunnel's packets carry their congestion mark.
@@ -307,19 +358,13 @@ pub async fn set_trust(on: bool) -> Result<(), Fact> {
 /// The door is reopened on it, which ends a session opened towards this
 /// computer, like the way it serves.
 pub async fn set_ecn(on: bool) -> Result<(), Fact> {
-    match service::ask(&Request::SetEcn { on }).await? {
-        Answer::Done => Ok(()),
-        other => Err(other.unexpected()),
-    }
+    done(&Request::SetEcn { on }).await
 }
 
 /// Decides whether the door listens on the product's own port. Reopens
 /// the door as well.
 pub async fn set_fixed_port(on: bool) -> Result<(), Fact> {
-    match service::ask(&Request::SetFixedPort { on }).await? {
-        Answer::Done => Ok(()),
-        other => Err(other.unexpected()),
-    }
+    done(&Request::SetFixedPort { on }).await
 }
 
 /// Decides whether ZyrDesk comes back on its own with Windows.
@@ -359,10 +404,7 @@ pub async fn set_at_boot(on: bool) -> Result<(), Fact> {
 /// ordinary way wants administrator rights, and a product that asked for
 /// them every time somebody quit would be unusable.
 pub async fn stop_service() -> Result<(), Fact> {
-    match service::ask(&Request::Stop).await? {
-        Answer::Done => Ok(()),
-        other => Err(other.unexpected()),
-    }
+    done(&Request::Stop).await
 }
 
 /// Writes a computer down.

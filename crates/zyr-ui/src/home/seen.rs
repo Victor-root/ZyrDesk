@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use zyr_control::{Account, Device, Past, Peer};
+use zyr_control::{Account, Contact, Device, Lent, Past, Peer};
 use zyr_draw::Picture;
 use zyr_system::{Connectivity, Machine};
 
@@ -72,6 +72,9 @@ pub struct AccountState {
     /// The devices of the account, this computer among them, as the
     /// server last said them.
     pub devices: Vec<Device>,
+    /// Its contacts and the requests either way, and what it lends them.
+    pub contacts: Vec<Contact>,
+    pub lent: Vec<Lent>,
 }
 
 /// This computer's wallpaper, as its card shows it.
@@ -260,12 +263,11 @@ pub async fn again(app: &App) -> bool {
     let history = crate::shell::desk::history().await;
     let settings = crate::shell::settings::settings(app.clone()).await;
     let account = match crate::shell::desk::account().await {
+        Ok(None) => Some(AccountState::default()),
         Ok(link) => Some(AccountState {
-            devices: if link.is_some() {
-                crate::shell::desk::devices().await
-            } else {
-                Vec::new()
-            },
+            devices: crate::shell::desk::devices().await,
+            contacts: crate::shell::desk::contacts().await,
+            lent: crate::shell::desk::lent().await,
             link,
         }),
         Err(_) => None,

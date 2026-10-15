@@ -12,8 +12,8 @@ use zyr_draw::icons::{self, Icon};
 use zyr_draw::{Align, Rect};
 use zyr_i18n::say;
 
-use crate::home::pages::activity;
 use crate::home::pages::computers::{self, seed_of};
+use crate::home::pages::{activity, contacts};
 use crate::home::seen::Seen;
 use crate::home::state::{Page, State, Target, Toggle};
 use crate::home::ui::{Button, Kind, Painter, SWITCH_SIZE, middle, size, square};
@@ -706,7 +706,8 @@ fn bottom(painter: &mut Painter, at: Rect, height: f32) -> f32 {
     let gap = painter.px(GAP);
     let heading = painter.line(painter.subtitle()) + painter.px(UNDER_HEADING);
     // On a narrow page only the quick actions stay, in a row: the lists
-    // beside them are still to come, and the page does not grow for them.
+    // beside them have pages of their own, and the page does not grow for
+    // them.
     if width < painter.px(1100.0) {
         return actions(painter, at, heading, true, height);
     }
@@ -725,65 +726,129 @@ fn bottom(painter: &mut Painter, at: Rect, height: f32) -> f32 {
     heading + height
 }
 
-/// The contacts and what they may do, which is drawn and does not work
-/// yet: sharing between accounts is still to come.
+/// The contacts, as many as the card holds, what each is to this account,
+/// and the way to invite one more.
 fn contacts(painter: &mut Painter, at: Rect, heading: f32) {
-    let colours = painter.colours;
+    let seen = painter.seen;
     painter.heading((at.left, at.top), &say!("home.contacts"), None);
+    see_all(
+        painter,
+        Rect::at(
+            at.left,
+            at.top,
+            size(at).0,
+            heading - painter.px(UNDER_HEADING),
+        ),
+        Page::Contacts,
+    );
     let card = Rect {
         top: at.top + heading,
         ..at
     };
     painter.card(card);
     let inside = painter.px(design::SPACE_5);
-    let row = painter.px(52.0);
-    let invite_top = card.bottom - inside - painter.px(38.0);
-    for rank in 0..3 {
-        let top = card.top + inside + row * rank as f32;
-        if top + row > invite_top {
-            break;
-        }
-        let disc = painter.px(36.0);
-        painter.fill(
-            Rect::at(card.left + inside, top, disc, disc),
-            disc / 2.0,
-            colours.surface_3,
-        );
-        let words = card.left + inside + disc + painter.px(design::SPACE_3);
-        painter.stand_in(Rect::at(
-            words,
-            top + painter.px(6.0),
-            painter.px(120.0),
-            painter.px(10.0),
-        ));
-        painter.stand_in(Rect::at(
-            words,
-            top + painter.px(22.0),
-            painter.px(88.0),
-            painter.px(8.0),
-        ));
-        painter.fill(
-            Rect::at(
-                card.right - inside - painter.px(56.0),
-                top + painter.px(8.0),
-                painter.px(56.0),
-                painter.px(20.0),
-            ),
-            painter.px(6.0),
-            colours.surface_3,
-        );
-    }
+    let button = painter.px(38.0);
     let invite = Rect::at(
         card.left + inside,
-        card.bottom - inside - painter.px(38.0),
+        card.bottom - inside - button,
         size(card).0 - inside * 2.0,
-        painter.px(38.0),
+        button,
     );
-    let radius = painter.px(design::RADIUS_SMALL);
-    painter.fill(invite, radius, colours.accent_tint.faded(0.6));
-    painter.stroke(invite, radius, colours.border);
-    soon_label(painter, invite, &icons::USER_PLUS, &say!("home.invite"));
-    painter.tells(card, say!("home.contacts_soon"));
+    painter.button(
+        invite,
+        Target::Invite,
+        Button::new(&say!("home.invite"), Kind::Quiet).with_icon(&icons::USER_PLUS),
+    );
+    let room = Rect {
+        bottom: invite.top,
+        ..card
+    };
+    let Some(account) = seen
+        .account
+        .as_ref()
+        .filter(|account| account.link.is_some())
+    else {
+        quiet_word(painter, room, &say!("contacts.no_account"));
+        return;
+    };
+    if account.contacts.is_empty() {
+        quiet_word(painter, room, &say!("contacts.none"));
+        return;
+    }
+    let top = painter.px(design::SPACE_2);
+    let row = painter.px(56.0);
+    let fit = ((size(room).1 - top) / row).floor().max(0.0) as usize;
+    for (rank, contact) in account.contacts.iter().take(fit).enumerate() {
+        let line = Rect::at(
+            card.left,
+            card.top + top + row * rank as f32,
+            size(card).0,
+            row,
+        );
+        if rank > 0 {
+            painter.rule(line.left + inside, line.top, size(line).0 - inside * 2.0);
+        }
+        let lent = account
+            .lent
+            .iter()
+            .filter(|lent| lent.with == contact.username)
+            .count();
+        contact_line(
+            painter,
+            line,
+            &contact.username,
+            &contacts::standing_of(contact, lent),
+        );
+    }
+}
+
+/// One contact across `at`: their initials, their name, and what they
+/// are to this account. The whole line leads to the page of contacts.
+fn contact_line(painter: &mut Painter, at: Rect, name: &str, standing: &str) {
+    let colours = painter.colours;
+    let inside = painter.px(design::SPACE_5);
+    let (_, centre) = middle(at);
+    let disc = painter.px(34.0);
+    painter.avatar(
+        Rect::at(at.left + inside, centre - disc / 2.0, disc, disc),
+        &words::initials(name),
+    );
+    let left = at.left + inside + disc + painter.px(design::SPACE_3);
+    let width = (at.right - inside - left).max(0.0);
+    let name_pen = painter.body().in_bold().ellipsized();
+    let caption = painter.caption().ellipsized();
+    let (name_height, caption_height) = (painter.line(name_pen), painter.line(caption));
+    let top = centre - (name_height + caption_height) / 2.0;
+    painter.text(
+        name,
+        name_pen,
+        colours.text,
+        Rect::at(left, top, width, name_height),
+    );
+    painter.text(
+        standing,
+        caption,
+        colours.text_soft,
+        Rect::at(left, top + name_height, width, caption_height),
+    );
+    painter.answers(Target::Nav(Page::Contacts), at);
+}
+
+/// A few words in the middle of a card that has nothing to list.
+fn quiet_word(painter: &Painter, at: Rect, said: &str) {
+    let pen = painter.body().aligned(Align::Centre);
+    let width = size(at).0 - painter.px(design::SPACE_5) * 2.0;
+    let height = painter.height_of(said, pen, width);
+    painter.paragraph(
+        said,
+        pen,
+        painter.colours.text_faint,
+        (
+            at.left + painter.px(design::SPACE_5),
+            middle(at).1 - height / 2.0,
+            width,
+        ),
+    );
 }
 
 /// The sessions that took place lately, as many as the card holds, and
@@ -807,20 +872,7 @@ fn sessions(painter: &mut Painter, at: Rect, heading: f32) {
     };
     painter.card(card);
     if seen.history.is_empty() {
-        let pen = painter.body().aligned(Align::Centre);
-        let width = size(card).0 - painter.px(design::SPACE_5) * 2.0;
-        let said = say!("activity.none");
-        let height = painter.height_of(&said, pen, width);
-        painter.paragraph(
-            &said,
-            pen,
-            painter.colours.text_faint,
-            (
-                card.left + painter.px(design::SPACE_5),
-                middle(card).1 - height / 2.0,
-                width,
-            ),
-        );
+        quiet_word(painter, card, &say!("activity.none"));
         return;
     }
     let inside = painter.px(design::SPACE_2);
@@ -854,25 +906,30 @@ fn actions(painter: &mut Painter, at: Rect, heading: f32, in_a_row: bool, height
     } else {
         (height - gap) / 2.0
     };
-    let tiles: [(&Icon, String, &Icon, Option<Target>); 4] = [
+    let tiles: [(&Icon, String, &Icon, Target); 4] = [
         (
             &icons::COMPUTERS,
             say!("adding.title"),
             &icons::PLUS,
-            Some(Target::AddComputer),
+            Target::AddComputer,
         ),
-        (&icons::USER_PLUS, say!("home.invite"), &icons::PLUS, None),
+        (
+            &icons::USER_PLUS,
+            say!("home.invite"),
+            &icons::PLUS,
+            Target::Invite,
+        ),
         (
             &icons::REPORT,
             say!("home.action_activity"),
             &icons::CHEVRON,
-            Some(Target::Nav(Page::Activity)),
+            Target::Nav(Page::Activity),
         ),
         (
             &icons::SETTINGS,
             say!("home.action_settings"),
             &icons::CHEVRON,
-            Some(Target::Nav(Page::Settings)),
+            Target::Nav(Page::Settings),
         ),
     ];
     for (rank, (icon, label, go, target)) in tiles.into_iter().enumerate() {
@@ -894,20 +951,13 @@ fn quick_action(
     icon: &Icon,
     label: &str,
     go: &Icon,
-    target: Option<Target>,
+    target: Target,
 ) {
     let colours = painter.colours;
-    let live = target.is_some();
-    let hover = target
-        .as_ref()
-        .map_or(0.0, |target| painter.hover_of(target));
+    let hover = painter.hover_of(&target);
     painter.card_lit(at, hover);
     let inside = painter.px(18.0);
-    let ink = if live {
-        colours.text
-    } else {
-        colours.text_faint
-    };
+    let ink = colours.text;
     let big = painter.px(26.0);
     let round = painter.px(32.0);
     let pen = painter.body().in_bold();
@@ -969,50 +1019,11 @@ fn quick_action(
     );
     painter.stroke(button, round / 2.0, colours.border);
     let small = painter.px(16.0);
-    painter.icon(
-        go,
-        square(middle(button), small),
-        if live {
-            colours.text_soft
-        } else {
-            colours.text_faint
-        },
-    );
-    match target {
-        Some(target) => {
-            if painter.focused(&target) {
-                painter.focus_ring(at, painter.px(design::RADIUS));
-            }
-            painter.answers(target, at);
-        }
-        None => painter.tells(at, say!("soon.tip")),
+    painter.icon(go, square(middle(button), small), colours.text_soft);
+    if painter.focused(&target) {
+        painter.focus_ring(at, painter.px(design::RADIUS));
     }
-}
-
-/// A word and its icon, faded, centred in a frame that does not work yet.
-fn soon_label(painter: &Painter, at: Rect, icon: &Icon, label: &str) {
-    let colours = painter.colours;
-    let pen = painter.body().in_bold();
-    let words = painter.width_of(label, pen);
-    let side = painter.px(18.0);
-    let (centre_x, centre_y) = middle(at);
-    let start = centre_x - (words + side + painter.px(design::SPACE_2)) / 2.0;
-    painter.icon(
-        icon,
-        Rect::at(start, centre_y - side / 2.0, side, side),
-        colours.text_faint,
-    );
-    painter.text(
-        label,
-        pen,
-        colours.text_faint,
-        Rect::at(
-            start + side + painter.px(design::SPACE_2),
-            at.top,
-            words + painter.px(2.0),
-            size(at).1,
-        ),
-    );
+    painter.answers(target, at);
 }
 
 /* ---- What the page asks of the switches ----------------------------------- */

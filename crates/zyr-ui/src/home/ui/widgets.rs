@@ -546,12 +546,6 @@ impl Painter<'_> {
         self.fill(Rect::at(left, top, self.px(HAIRLINE), height), 0.0, ink);
     }
 
-    /// A grey bar standing in for a line of text that will come, in
-    /// what is drawn and not working yet.
-    pub fn stand_in(&self, at: Rect) {
-        self.fill(at, size(at).1 / 2.0, self.colours.surface_3);
-    }
-
     /// A section's heading, and how many it holds when that is worth
     /// saying. Gives back the height it takes.
     pub fn heading(&self, (left, top): (f32, f32), text: &str, count: Option<usize>) -> f32 {

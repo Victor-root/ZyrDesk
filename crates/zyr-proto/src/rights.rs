@@ -31,4 +31,58 @@ impl Rights {
         mouse: false,
         unattended: false,
     };
+
+    /// The same, with that one right turned the other way.
+    pub fn toggled(self, right: Right) -> Rights {
+        match right {
+            Right::Keyboard => Rights {
+                keyboard: !self.keyboard,
+                ..self
+            },
+            Right::Mouse => Rights {
+                mouse: !self.mouse,
+                ..self
+            },
+            Right::Unattended => Rights {
+                unattended: !self.unattended,
+                ..self
+            },
+        }
+    }
+}
+
+/// One of the things a visitor may be allowed, on its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Right {
+    Keyboard,
+    Mouse,
+    Unattended,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn turning_one_right_leaves_the_others_as_they_were() {
+        let given = Rights::WATCHING.toggled(Right::Mouse);
+        assert_eq!(
+            given,
+            Rights {
+                keyboard: false,
+                mouse: true,
+                unattended: false
+            }
+        );
+        let given = given.toggled(Right::Unattended).toggled(Right::Mouse);
+        assert_eq!(
+            given,
+            Rights {
+                keyboard: false,
+                mouse: false,
+                unattended: true
+            }
+        );
+        assert!(!Rights::ALL.toggled(Right::Keyboard).keyboard);
+    }
 }

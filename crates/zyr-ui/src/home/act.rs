@@ -11,12 +11,13 @@ use std::time::Instant;
 
 use zyr_i18n::say;
 use zyr_proto::fact::Fact;
+use zyr_proto::rights::Rights;
 use zyr_session::presence::Narrowed;
 
 use crate::home::dialogs;
 use crate::home::pages::settings::{CODECS, DISPLAYS};
 use crate::home::seen;
-use crate::home::state::{Copyable, Dialog, FarJournal, Offer, Page, Pick, Target, Toggle};
+use crate::home::state::{Copyable, Dialog, FarJournal, Lever, Offer, Page, Pick, Target, Toggle};
 use crate::home::ui::fields::{self, Field};
 use crate::shell::app::App;
 use crate::shell::settings::Chosen;
@@ -179,6 +180,21 @@ pub fn act(app: &App, target: Target) {
             }
         }
         Target::Revoke(device) => revoke(app, device),
+        Target::Invite => {
+            let linked = seen::with(|seen| {
+                seen.account
+                    .as_ref()
+                    .is_some_and(|account| account.link.is_some())
+            });
+            if linked {
+                dialogs::open(app, Dialog::Inviting);
+            } else {
+                sign_in(app);
+            }
+        }
+        Target::Answer(contact, accept) => answer(app, contact, accept),
+        Target::RemoveContact(contact) => remove_contact(app, contact),
+        Target::Lend(device, with, lever) => lend(app, device, with, lever),
         Target::OpenJournal => dialogs::open_the_journal(app, None),
         Target::OpenLogs => open_a_folder(app, "logs"),
         Target::Link(link) => {
@@ -471,16 +487,32 @@ fn wake(app: &App, fingerprint: String) {
     });
 }
 
-/// Sends back the computer controlling this one right now.
-fn send_back(app: &App, fingerprint: String) {
+/// Asks the service for a change, off the thread that draws: says what
+/// went wrong if it was refused, the news if it was done, and reads
+/// everything again either way.
+fn change(
+    app: &App,
+    asked: impl std::future::Future<Output = Result<(), Fact>> + Send + 'static,
+    news: Option<String>,
+) {
     let app = app.clone();
     crate::shell::app::spawn(async move {
-        if let Err(reason) = crate::shell::desk::kick(fingerprint).await {
-            crate::home::state().tell_trouble(&reason);
+        match asked.await {
+            Ok(()) => {
+                if let Some(news) = news {
+                    crate::home::state().tell_news(news);
+                }
+            }
+            Err(reason) => crate::home::state().tell_trouble(&reason),
         }
         seen::again(&app).await;
         crate::home::redraw(&app);
     });
+}
+
+/// Sends back the computer controlling this one right now.
+fn send_back(app: &App, fingerprint: String) {
+    change(app, crate::shell::desk::kick(fingerprint), None);
 }
 
 /// Detaches this computer from its account, after a second click.
@@ -489,14 +521,7 @@ fn detach(app: &App) {
         return;
     }
     crate::home::redraw(app);
-    let app = app.clone();
-    crate::shell::app::spawn(async move {
-        if let Err(reason) = crate::shell::desk::detach().await {
-            crate::home::state().tell_trouble(&reason);
-        }
-        seen::again(&app).await;
-        crate::home::redraw(&app);
-    });
+    change(app, crate::shell::desk::detach(), None);
 }
 
 /// Takes a device off the account, after a second click on the same one.
@@ -505,12 +530,116 @@ fn revoke(app: &App, device: String) {
         return;
     }
     crate::home::redraw(app);
+    change(app, crate::shell::desk::revoke_device(device), None);
+}
+
+/// The username behind a contact or a request.
+fn username_of(contact: &str) -> Option<String> {
+    seen::with(|seen| {
+        seen.account.as_ref().and_then(|account| {
+            account
+                .contacts
+                .iter()
+                .find(|known| known.id == contact)
+                .map(|known| known.username.clone())
+        })
+    })
+}
+
+/// Says yes, or no, to someone who asked to become a contact.
+fn answer(app: &App, contact: String, accept: bool) {
+    let news = accept
+        .then(|| username_of(&contact))
+        .flatten()
+        .map(|username| say!("contacts.accepted", username = username));
+    change(
+        app,
+        crate::shell::desk::answer_contact(contact, accept),
+        news,
+    );
+}
+
+/// Withdraws a request at once; ends a contact after a second click,
+/// since everything lent to them goes with it.
+fn remove_contact(app: &App, contact: String) {
+    let accepted = seen::with(|seen| {
+        seen.account.as_ref().is_some_and(|account| {
+            account
+                .contacts
+                .iter()
+                .any(|known| known.id == contact && known.accepted)
+        })
+    });
+    if accepted && !second_click(app, Target::RemoveContact(contact.clone())) {
+        return;
+    }
+    let news = accepted
+        .then(|| username_of(&contact))
+        .flatten()
+        .map(|username| say!("contacts.removed", username = username));
+    crate::home::redraw(app);
+    change(app, crate::shell::desk::remove_contact(contact), news);
+}
+
+/// The share a computer is lent to a contact by, as the service last
+/// said it.
+fn share_of(device: &str, with: &str) -> Option<String> {
+    seen::with(|seen| {
+        seen.account.as_ref().and_then(|account| {
+            account
+                .lent
+                .iter()
+                .find(|lent| lent.device == device && lent.with == with)
+                .map(|lent| lent.share.clone())
+        })
+    })
+}
+
+/// Turns a switch of a computer lent to a contact. It stays where the
+/// hand put it until the service has said it.
+fn lend(app: &App, device: String, with: String, lever: Lever) {
+    let lent = seen::with(|seen| {
+        let state = crate::home::state();
+        crate::home::pages::contacts::lent_now(seen, &state, &device, &with)
+    });
+    let wanted = match (lever, lent) {
+        (Lever::Lent, Some(_)) => None,
+        (Lever::Lent, None) => Some(Rights::WATCHING),
+        (Lever::Right(right), Some(rights)) => Some(rights.toggled(right)),
+        // A right of a computer that is not lent has no switch.
+        (Lever::Right(_), None) => return,
+    };
+    {
+        let mut state = crate::home::state();
+        state
+            .lending
+            .retain(|(lent, to, _)| !(*lent == device && *to == with));
+        state.lending.push((device.clone(), with.clone(), wanted));
+        state.notice = None;
+    }
+    crate::home::redraw(app);
     let app = app.clone();
     crate::shell::app::spawn(async move {
-        if let Err(reason) = crate::shell::desk::revoke_device(device).await {
+        let done = match wanted {
+            Some(rights) => crate::shell::desk::lend(device.clone(), with.clone(), rights).await,
+            None => {
+                // Lent a moment ago, its name may not have come back yet.
+                if share_of(&device, &with).is_none() {
+                    seen::again(&app).await;
+                }
+                match share_of(&device, &with) {
+                    Some(share) => crate::shell::desk::take_back(share).await,
+                    None => Ok(()),
+                }
+            }
+        };
+        if let Err(reason) = done {
             crate::home::state().tell_trouble(&reason);
         }
         seen::again(&app).await;
+        crate::home::state()
+            .lending
+            .retain(|(lent, to, _)| !(*lent == device && *to == with));
         crate::home::redraw(&app);
     });
 }

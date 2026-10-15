@@ -328,7 +328,6 @@ home.no_computer = Aucun ordinateur pour le moment
 home.no_computer_text = Les ordinateurs de ce réseau apparaissent ici automatiquement, ainsi que ceux de votre compte une fois connecté.
 home.contacts = Contacts et accès partagés
 home.invite = Inviter un contact
-home.contacts_soon = Partage entre comptes : bientôt disponible
 home.recent_sessions = Sessions récentes
 home.quick_actions = Actions rapides
 home.action_activity = Voir l'activité
@@ -352,6 +351,35 @@ activity.incoming_tip = Il a contrôlé cet ordinateur
 activity.said = {direction} · {when}
 activity.none = Aucune session pour l'instant
 activity.none_text = Les sessions que cet ordinateur ouvre, et celles qu'on ouvre vers lui, apparaissent ici une fois terminées.
+
+# The page of contacts: the requests, and what each contact may reach.
+contacts.title = Contacts
+contacts.lead = Les personnes à qui vous prêtez vos ordinateurs. Un contact ne peut rien faire sur vos ordinateurs tant que vous ne lui en prêtez pas un, ordinateur par ordinateur, en choisissant ce qu'il peut y faire.
+contacts.no_account = Les contacts demandent un compte
+contacts.no_account_text = Un contact est une personne qui a un compte sur le même serveur que vous. Reliez d'abord cet ordinateur à votre compte.
+contacts.none = Aucun contact pour l'instant
+contacts.none_text = Invitez quelqu'un par son nom d'utilisateur. Une fois qu'il a accepté, choisissez lesquels de vos ordinateurs il peut joindre, et ce qu'il peut y faire.
+contacts.requests = Demandes
+contacts.asks_you = Souhaite devenir votre contact
+contacts.waiting = En attente de sa réponse
+contacts.accept = Accepter
+contacts.decline = Refuser
+contacts.withdraw = Retirer
+contacts.computers = Vos ordinateurs
+contacts.not_lent = Non prêté
+contacts.lent = Prêté à {name}, qui entre une fois que quelqu'un devant cet ordinateur a dit oui
+contacts.lent_unattended = Prêté à {name}, qui entre sans demander
+contacts.lent_count = ordinateurs prêtés : {count}
+contacts.keyboard = Clavier
+contacts.mouse = Souris
+contacts.gamepad = Manette
+contacts.unattended = Sans mon accord
+contacts.unattended_tip = {name} entre sans que personne devant cet ordinateur ait dit oui
+contacts.end = Mettre fin à ce contact
+contacts.end_caption = Tous les ordinateurs prêtés à {name} lui sont repris.
+contacts.remove = Retirer
+contacts.accepted = {username} fait désormais partie de vos contacts.
+contacts.removed = {username} ne fait plus partie de vos contacts.
 
 # Windows, by its edition.
 edition.home = Famille
@@ -484,6 +512,14 @@ renaming.title = Renommer « {name} »
 renaming.lead = Le nom affiché pour cet ordinateur dans le compte, sur tous vos ordinateurs.
 renaming.new_name = Nouveau nom
 renaming.rename = Renommer
+
+# Asking someone to become a contact.
+inviting.title = Inviter un contact
+inviting.lead = La personne reçoit votre demande sur ses ordinateurs, et choisit de l'accepter ou non. Elle ne peut rien faire sur les vôtres tant que vous ne lui en prêtez pas un.
+inviting.who = Son nom d'utilisateur
+inviting.send = Envoyer la demande
+inviting.sending = Envoi…
+inviting.sent = Demande envoyée à {username}.
 
 # The journal.
 journal.title = Journal

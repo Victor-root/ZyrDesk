@@ -10,6 +10,7 @@ use std::time::Instant;
 use zyr_draw::Rect;
 use zyr_draw::motion::Motion;
 use zyr_proto::fact::Fact;
+use zyr_proto::rights::{Right, Rights};
 use zyr_session::presence::Narrowed;
 
 use crate::home::ui::fields::Field;
@@ -21,6 +22,7 @@ use crate::shell::theme::Choice;
 pub enum Page {
     Home,
     Computers,
+    Contacts,
     Activity,
     Settings,
     About,
@@ -77,6 +79,8 @@ pub enum Dialog {
     Journal { of: Option<FarJournal> },
     /// The full text of one of the licences the product is made under.
     Licence(usize),
+    /// Asking someone to become a contact.
+    Inviting,
 }
 
 /// The computer whose journal is open, as it is reached.
@@ -126,6 +130,14 @@ pub enum Offer {
     SendBack,
     /// Forgetting a computer written down by hand.
     Forget,
+}
+
+/// What a switch of a computer lent to a contact turns on or off: the
+/// lending itself, or one thing the contact may do there.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Lever {
+    Lent,
+    Right(Right),
 }
 
 /// What scrolls.
@@ -186,6 +198,14 @@ pub enum Target {
     Detach,
     RenameDevice(String),
     Revoke(String),
+    /// Opens the asking of someone to become a contact.
+    Invite,
+    /// Says yes, or no, to the request of that identifier.
+    Answer(String, bool),
+    /// Withdraws a request, or ends a contact.
+    RemoveContact(String),
+    /// A switch of that computer of the account, lent to that contact.
+    Lend(String, String, Lever),
     OpenJournal,
     OpenLogs,
     /// An address on the web, opened in the browser.
@@ -320,6 +340,9 @@ pub struct State {
     /// Switches pushed that the service has not acknowledged yet: until
     /// it does, the switch stays where the hand put it.
     pub pushed: Vec<(Toggle, bool)>,
+    /// The same for the computers lent: which, to whom, and what was
+    /// asked of it, nothing being taken back.
+    pub lending: Vec<(String, String, Option<Rights>)>,
     /// The button asking for a second click, and since when.
     pub armed: Option<(Target, Instant)>,
     /// The button that has just copied, and since when.
@@ -336,7 +359,8 @@ pub struct State {
     pub sign_up: bool,
     /// The key of a server nobody vouches for, waiting to be compared.
     pub pinning: Option<String>,
-    pub attaching: bool,
+    /// The open dialog is waiting for the service to answer.
+    pub waiting: bool,
 
     /// The open journal, line by line, the names it carries, the sift it
     /// answers once an answer has come, and the sift last asked for.
@@ -381,6 +405,7 @@ impl State {
             lines_across: 0.0,
             held: None,
             pushed: Vec::new(),
+            lending: Vec::new(),
             armed: None,
             copied: None,
             listening: None,
@@ -388,7 +413,7 @@ impl State {
             kept: None,
             sign_up: false,
             pinning: None,
-            attaching: false,
+            waiting: false,
             lines: Vec::new(),
             tags: Vec::new(),
             sift: None,

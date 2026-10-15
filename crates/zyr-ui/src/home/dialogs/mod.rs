@@ -10,6 +10,7 @@
 
 mod adding;
 mod details;
+mod inviting;
 mod journal;
 mod licence;
 mod renaming;
@@ -86,6 +87,7 @@ pub fn fields_of(dialog: &Dialog) -> &'static [Field] {
             Field::Invitation,
         ],
         Dialog::Renaming { .. } => &[Field::NewName],
+        Dialog::Inviting => &[Field::User],
         Dialog::Journal { .. } => &[Field::Sift],
         Dialog::Details | Dialog::Licence(_) => &[],
     }
@@ -109,7 +111,7 @@ pub fn open(app: &App, dialog: Dialog) {
         state.menu = None;
         state.drawer = false;
         state.pinning = None;
-        state.attaching = false;
+        state.waiting = false;
         state.sign_up = false;
     }
     fields::open(
@@ -131,7 +133,7 @@ pub fn close(app: &App) {
         state.trouble = None;
         state.armed = None;
         state.pinning = None;
-        state.attaching = false;
+        state.waiting = false;
     }
     fields::close();
     crate::home::redraw(app);
@@ -145,6 +147,7 @@ pub fn confirm(app: &App) {
         Some(Dialog::Adding) => adding::confirm(app),
         Some(Dialog::SignIn) => signin::confirm(app),
         Some(Dialog::Renaming { .. }) => renaming::confirm(app),
+        Some(Dialog::Inviting) => inviting::confirm(app),
         // Enter in the sift reads again at once, without waiting for
         // the pause after the last letter.
         Some(Dialog::Journal { .. }) => journal::reread(app, After::Show),
@@ -161,6 +164,7 @@ fn shape(painter: &Painter, dialog: &Dialog) -> Shape {
         Dialog::Details => details::shape(painter),
         Dialog::SignIn => signin::shape(painter),
         Dialog::Renaming { name, .. } => renaming::shape(painter, name),
+        Dialog::Inviting => inviting::shape(painter),
         Dialog::Journal { of } => journal::shape(painter, of.as_ref()),
         Dialog::Licence(rank) => licence::shape(*rank),
     }
@@ -172,6 +176,7 @@ fn inside(painter: &mut Painter, dialog: &Dialog, at: Rect, window_height: f32) 
         Dialog::Details => details::draw(painter, at),
         Dialog::SignIn => signin::draw(painter, at),
         Dialog::Renaming { .. } => renaming::draw(painter, at),
+        Dialog::Inviting => inviting::draw(painter, at),
         Dialog::Journal { .. } => journal::draw(painter, at, window_height),
         Dialog::Licence(rank) => licence::draw(painter, at, *rank, window_height),
     }

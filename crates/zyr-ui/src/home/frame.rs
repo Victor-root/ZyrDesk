@@ -35,31 +35,30 @@ const BAR: f32 = 40.0;
 /// How long the hand rests on something before its bubble opens.
 const BUBBLE_WAITS: Duration = Duration::from_millis(450);
 
-/// The pages a bar on the left lists, what each is called, its icon, and
-/// whether it exists yet: those that do not are shown, faded, and say so.
-const NAVIGATION: [(Option<Page>, &str, &Icon); 6] = [
-    (Some(Page::Home), zyr_i18n::key!("nav.home"), &icons::HOME),
+/// The pages a bar on the left lists, what each is called, and its icon.
+const NAVIGATION: [(Page, &str, &Icon); 6] = [
+    (Page::Home, zyr_i18n::key!("nav.home"), &icons::HOME),
     (
-        Some(Page::Computers),
+        Page::Computers,
         zyr_i18n::key!("nav.computers"),
         &icons::COMPUTERS,
     ),
-    (None, zyr_i18n::key!("nav.contacts"), &icons::CONTACTS),
     (
-        Some(Page::Activity),
+        Page::Contacts,
+        zyr_i18n::key!("nav.contacts"),
+        &icons::CONTACTS,
+    ),
+    (
+        Page::Activity,
         zyr_i18n::key!("nav.activity"),
         &icons::ACTIVITY,
     ),
     (
-        Some(Page::Settings),
+        Page::Settings,
         zyr_i18n::key!("nav.settings"),
         &icons::SETTINGS,
     ),
-    (
-        Some(Page::About),
-        zyr_i18n::key!("nav.about"),
-        &icons::ABOUT,
-    ),
+    (Page::About, zyr_i18n::key!("nav.about"), &icons::ABOUT),
 ];
 
 /// Draws the whole window, `width` by `height` real pixels.
@@ -146,6 +145,7 @@ fn page(painter: &mut Painter, at: Rect, narrow: bool) {
                 size(room).1 - painter.px(design::SPACE_2 + design::SPACE_6),
             ),
             Page::Computers => pages::computers::draw(painter, inner),
+            Page::Contacts => pages::contacts::draw(painter, inner),
             Page::Activity => pages::activity::draw(painter, inner),
             Page::Settings => pages::settings::draw(painter, inner),
             Page::About => pages::about::draw(painter, inner),
@@ -601,8 +601,9 @@ fn version(painter: &mut Painter, (left, floor, width): (f32, f32, f32)) -> f32 
     line + below_height
 }
 
-/// One page of the bar on the left.
-fn navigation_item(painter: &mut Painter, at: Rect, page: Option<Page>, label: &str, icon: &Icon) {
+/// One page of the bar on the left, with what waits there for the person
+/// counted beside it.
+fn navigation_item(painter: &mut Painter, at: Rect, page: Page, label: &str, icon: &Icon) {
     let colours = painter.colours;
     let radius = painter.px(10.0);
     let side = painter.px(20.0);
@@ -616,12 +617,6 @@ fn navigation_item(painter: &mut Painter, at: Rect, page: Option<Page>, label: &
     let words = Rect {
         left: icon_at.right + painter.px(design::SPACE_3),
         ..at
-    };
-    let Some(page) = page else {
-        painter.icon(icon, icon_at, colours.text_faint);
-        painter.text(label, painter.body(), colours.text_faint, words);
-        painter.tells(at, say!("soon.tip"));
-        return;
     };
     let target = Target::Nav(page);
     let current = painter.state.page == page;
@@ -655,6 +650,24 @@ fn navigation_item(painter: &mut Painter, at: Rect, page: Option<Page>, label: &
         ink,
         words,
     );
+    let waiting = match page {
+        Page::Contacts => pages::contacts::asking_me(painter.seen),
+        _ => 0,
+    };
+    if waiting > 0 {
+        let count = waiting.to_string();
+        let pen = painter.caption().in_bold().aligned(Align::Centre);
+        let height = painter.px(20.0);
+        let width = (painter.width_of(&count, pen) + painter.px(design::SPACE_3)).max(height);
+        let pill = Rect::at(
+            at.right - painter.px(design::SPACE_3) - width,
+            centre - height / 2.0,
+            width,
+            height,
+        );
+        painter.fill(pill, height / 2.0, colours.accent);
+        painter.text(&count, pen, colours.on_accent, pill);
+    }
     if painter.focused(&target) {
         painter.focus_ring(at, radius);
     }
