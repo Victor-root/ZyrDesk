@@ -74,7 +74,7 @@ Une carte par ordinateur connu (réseau local et compte), ou une ligne en vue li
 | Élément de la carte | État | Note |
 |---|---|---|
 | Fond d'écran de l'ordinateur | Oui | Entier, au format d'un écran (16:9) ([D315](DECISIONS.md)). Celui de l'ordinateur distant, rapporté par chaque session avec lui ([D312](DECISIONS.md)). Avant une première session, une vue des dunes du paysage de ZyrDesk, propre à chaque ordinateur ([D306](DECISIONS.md)). Plus tard : un fond choisi par la personne |
-| Pastille en ligne ou hors ligne | Oui | |
+| Pastille en ligne ou hors ligne | Oui | Devant le nom, pour laisser le fond d'écran libre ([D317](DECISIONS.md)) |
 | Nom, adresse ou « En ligne », compte | Oui | |
 | Étiquette LAN ou Internet, et la latence | Oui | |
 | « Se connecter » | Oui | Ouvre la session |

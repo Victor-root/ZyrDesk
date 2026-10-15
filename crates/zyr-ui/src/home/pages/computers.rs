@@ -330,7 +330,8 @@ impl Shown {
     }
 
     /// Its picture: its wallpaper, as its last session brought it, or a
-    /// view of the dunes until one has; its presence in the corner.
+    /// view of the dunes until one has. Nothing laid over it: its
+    /// presence goes before its name.
     fn picture(&self, painter: &mut Painter, at: Rect, radius: f32) {
         let colours = painter.colours;
         let seen = painter.seen;
@@ -349,19 +350,6 @@ impl Shown {
             (false, Some(tip)) => painter.tells(at, tip),
             (false, None) => {}
         }
-        // One dot in a thin ring of the card's surface, which keeps it
-        // apart from any wallpaper, and no halo: on a picture, a ring of
-        // light around it reads as one more layer.
-        let ink = self.dot(painter);
-        let ring = painter.px(14.0);
-        let ring_at = Rect::at(
-            at.left + painter.px(8.0),
-            at.top + painter.px(8.0),
-            ring,
-            ring,
-        );
-        painter.fill(ring_at, ring / 2.0, colours.surface_1);
-        painter.dot(middle(ring_at), painter.px(9.0), ink, false);
     }
 
     /// The handle a hand moves it by, in `at`, on a backing over a
@@ -486,7 +474,8 @@ fn card(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
     // Under the picture: the name, what is known of it, its tags.
     let left = at.left + inside;
     let mut y = picture.bottom + painter.px(design::SPACE_3);
-    y += name_and_more(painter, seen, peer, (left, y, width)) + painter.px(design::SPACE_2);
+    let dot = shown.dot(painter);
+    y += name_and_more(painter, seen, peer, dot, (left, y, width)) + painter.px(design::SPACE_2);
     tags(
         painter,
         seen,
@@ -549,12 +538,14 @@ fn row(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
     let left = thumbnail.right + painter.px(design::SPACE_4);
     let room = (end - painter.px(design::SPACE_4) - left).max(0.0);
     let words_width = room.min(painter.px(WORDS));
-    let taken =
-        painter.measured(|painter| name_and_more(painter, seen, peer, (left, 0.0, words_width)));
+    let dot = shown.dot(painter);
+    let taken = painter
+        .measured(|painter| name_and_more(painter, seen, peer, dot, (left, 0.0, words_width)));
     name_and_more(
         painter,
         seen,
         peer,
+        dot,
         (left, centre - taken / 2.0, words_width),
     );
     let tags_left = left + words_width + painter.px(design::SPACE_4);
@@ -573,17 +564,27 @@ fn row(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
     }
 }
 
-/// A computer's name, and under it what is known of it. Gives back the
-/// height they take.
+/// A computer's name after the dot of its presence, and under it what is
+/// known of it. Gives back the height they take.
 fn name_and_more(
     painter: &mut Painter,
     seen: &Seen,
     peer: &Peer,
+    dot: Colour,
     (left, top, width): (f32, f32, f32),
 ) -> f32 {
     let colours = painter.colours;
     let name_pen = painter.body().in_bold().ellipsized();
     let name_height = painter.line(name_pen);
+    let diameter = painter.px(9.0);
+    painter.dot(
+        (left + diameter / 2.0, top + name_height / 2.0),
+        diameter,
+        dot,
+        false,
+    );
+    let left = left + diameter + painter.px(design::SPACE_2);
+    let width = width - diameter - painter.px(design::SPACE_2);
     painter.text(
         &peer.name,
         name_pen,
