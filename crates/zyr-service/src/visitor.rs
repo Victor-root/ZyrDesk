@@ -75,7 +75,8 @@ pub fn recognised(machine: &Machine, peer: Fingerprint) -> Option<Visitor> {
 /// What a visitor may do right now.
 #[derive(Clone)]
 pub struct Allowed {
-    contact: bool,
+    /// Whose computer it is, for a contact; nothing for one trusted.
+    contact: Option<String>,
     rights: watch::Receiver<Rights>,
 }
 
@@ -84,9 +85,20 @@ impl Allowed {
     pub fn everything() -> Self {
         let (_, rights) = watch::channel(Rights::ALL);
         Self {
-            contact: false,
+            contact: None,
             rights,
         }
+    }
+
+    /// Whose computer it is, for a contact.
+    pub fn contact(&self) -> Option<&str> {
+        self.contact.as_deref()
+    }
+
+    /// The contact who has to be let in by someone at this computer,
+    /// when it is one that was not lent this computer « without asking ».
+    pub fn waits_for_an_accord(&self) -> Option<&str> {
+        self.contact().filter(|_| !self.now().unattended)
     }
 
     pub fn now(&self) -> Rights {
@@ -96,7 +108,7 @@ impl Allowed {
     /// Refuses what only a trusted computer may ask: this computer's
     /// journal, its picture on the desk, what it has measured.
     pub fn trusted_only(&self) -> Result<(), String> {
-        if self.contact {
+        if self.contact.is_some() {
             return Err("not handed to a contact".to_string());
         }
         Ok(())
@@ -114,7 +126,7 @@ impl Allowed {
     /// What holds back, on the engine's stream, what this visitor may
     /// not send. Nothing to hold back for a trusted computer.
     pub fn sieve(&self) -> Option<Box<dyn Sieve>> {
-        self.contact.then(|| {
+        self.contact.is_some().then(|| {
             Box::new(HeldBack {
                 rights: self.rights.clone(),
                 frames: Frames::new(),
@@ -130,7 +142,7 @@ impl Allowed {
 pub fn lent_to_a_contact(
     account: &Account,
     share: &str,
-) -> Option<(Allowed, String, impl Future<Output = ()> + use<>)> {
+) -> Option<(Allowed, impl Future<Output = ()> + use<>)> {
     let (with, first) = account.lent_under(share)?;
     let (telling, rights) = watch::channel(first);
     let account = account.clone();
@@ -152,10 +164,9 @@ pub fn lent_to_a_contact(
     };
     Some((
         Allowed {
-            contact: true,
+            contact: Some(with),
             rights,
         },
-        with,
         kept_up,
     ))
 }
@@ -299,18 +310,22 @@ mod tests {
     fn a_contact_is_handed_nothing_of_this_computer_and_writes_only_with_the_keyboard() {
         let (telling, rights) = watch::channel(Rights::WATCHING);
         let contact = Allowed {
-            contact: true,
+            contact: Some("ami".to_string()),
             rights,
         };
+        assert_eq!(contact.waits_for_an_accord(), Some("ami"));
         assert!(contact.trusted_only().is_err());
         assert!(contact.with_the_keyboard().is_err());
         assert!(contact.sieve().is_some());
         telling.send_replace(Rights::WATCHING.toggled(zyr_proto::rights::Right::Keyboard));
         assert!(contact.with_the_keyboard().is_ok());
         assert!(contact.trusted_only().is_err());
+        telling.send_replace(Rights::ALL);
+        assert_eq!(contact.waits_for_an_accord(), None);
 
         // A computer trusted may do all of it, and nothing is held back.
         let trusted = Allowed::everything();
+        assert_eq!(trusted.waits_for_an_accord(), None);
         assert!(trusted.trusted_only().is_ok());
         assert!(trusted.with_the_keyboard().is_ok());
         assert!(trusted.sieve().is_none());

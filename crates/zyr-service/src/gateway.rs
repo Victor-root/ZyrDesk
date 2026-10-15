@@ -35,6 +35,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinHandle, JoinSet};
 use zyr_link::{Access, Link, LinkListener};
 use zyr_media::service::{ToEngine, ToService};
+use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::log::Log;
 use zyr_proto::net::{EVERY_INTERFACE, TUNNEL_PORT};
@@ -48,6 +49,7 @@ use zyr_transport::{
 use zyr_tunnel::{Answers, ServiceSide, Tunnel, aside, nudge, service_channel};
 use zyr_win32::with_its_code;
 
+use crate::accord::{self, Answered};
 use crate::engine::{Engine, Film};
 use crate::machine::{Door, Machine};
 use crate::said::{self, Said};
@@ -1251,6 +1253,35 @@ async fn one_session(
             return;
         }
     };
+    // A contact not lent this computer « without asking » waits here for
+    // someone at it to say yes, before anything of the session exists.
+    if let Some(who) = attending.allowed.waits_for_an_accord() {
+        let who = who.to_string();
+        log.write(&format!(
+            "{who} asks to come in from {from}, and the person at this computer is asked"
+        ));
+        let said = tokio::select! {
+            said = door.machine.accord.ask(&who, attending.allowed.now(), accord::WITHIN) => said,
+            _ = closing.wait_for(|closing| *closing) => return,
+            () = connection.closed() => {
+                log.write(&format!("{who} left before anyone here answered"));
+                return;
+            }
+        };
+        let refused = match said {
+            Answered::Yes => {
+                log.write(&format!("{who} was let in by the person at this computer"));
+                None
+            }
+            Answered::No => Some(Fact::new("reach.declined")),
+            Answered::Nothing => Some(Fact::new("reach.unanswered")),
+        };
+        if let Some(refused) = refused {
+            log.write(&format!("{who} was not let in: {refused}"));
+            let _ = opening.refused(&refused.to_string()).await;
+            return;
+        }
+    }
     let serving = opening.serving();
     door.machine.door.media().serving(serving);
     log.write(&format!(
@@ -1357,14 +1388,14 @@ fn whoever_came(connection: &Connection, machine: &Machine, log: &Log) -> Option
     match visitor {
         Some(Visitor::Trusted) => Some(Allowed::everything()),
         Some(Visitor::Contact { share }) => {
-            let Some((allowed, with, kept_up)) =
-                visitor::lent_to_a_contact(&machine.account, &share)
+            let Some((allowed, kept_up)) = visitor::lent_to_a_contact(&machine.account, &share)
             else {
                 log.write(&format!(
                     "{from} came in under share {share}, which no longer stands: sent away"
                 ));
                 return None;
             };
+            let with = allowed.contact().unwrap_or_default().to_string();
             log.write(&format!(
                 "{from} is {with}'s computer, a contact this one is lent to, who may: {:?}",
                 allowed.now()
@@ -1743,6 +1774,7 @@ mod tests {
             neighbours: zyr_lan::Found::new(),
             account: crate::account::Account::at(folder.join("account.conf"), log),
             door: crate::machine::Door::default(),
+            accord: crate::accord::Accord::default(),
         };
         (machine, folder)
     }

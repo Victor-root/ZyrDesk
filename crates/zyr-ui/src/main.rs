@@ -44,6 +44,8 @@ mod home {
     pub fn coming_back(_app: &App, _attempt: u32) {}
     pub fn put_the_opening_away(_app: &App) {}
     pub fn failed(_app: &App, _why: &Fact) {}
+    pub fn knocked(_app: &App, _id: u64, _who: String, _rights: zyr_proto::rights::Rights) {}
+    pub fn no_longer_knocking(_app: &App, _id: u64) {}
 }
 
 // A session, as this program opens it, plays it and dresses its picture:
@@ -53,7 +55,7 @@ mod session;
 use session::floating;
 #[cfg(windows)]
 use shell::win32;
-use shell::{app, icon, journal, main_window, service, shortcuts, theme, tray};
+use shell::{app, icon, journal, knocks, main_window, service, shortcuts, theme, tray};
 
 fn main() {
     // Two ZyrDesk running at once would put two floating buttons on the
@@ -113,6 +115,10 @@ fn main() {
     // to us has to be asked of the system rather than waited for as an
     // ordinary key press.
     shortcuts::listen(app.clone());
+    // A contact waiting at the door is put in front of the person, and
+    // Ctrl+F1 lets them in.
+    knocks::listen(app.clone());
+    knocks::watch(app.clone());
     // And the home screen itself, drawn in the inside of this window.
     // Last: it asks the service what it shows, and the service has just
     // been woken up.

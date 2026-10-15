@@ -19,8 +19,8 @@ pub mod pipe;
 
 pub use client::{ControlError, Service};
 pub use message::{
-    Account, Answer, Attach, Contact, Device, Holdup, Lent, Malformed, OfAccount, PROTOCOL, Past,
-    Peer, Reached, Registering, Request, Session, Standing, Watching, WayId,
+    Account, Answer, Attach, Contact, Device, Holdup, Knock, Lent, Malformed, OfAccount, PROTOCOL,
+    Past, Peer, Reached, Registering, Request, Session, Standing, Watching, WayId,
 };
 pub use pipe::{CHANNEL, Door};
 /// Whether a computer of the account takes sessions: the word its

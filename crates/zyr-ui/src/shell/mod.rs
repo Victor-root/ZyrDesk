@@ -10,6 +10,7 @@ pub mod desk;
 pub mod folders;
 pub mod icon;
 pub mod journal;
+pub mod knocks;
 // The window itself, opened by this program.
 pub mod main_window;
 pub mod service;

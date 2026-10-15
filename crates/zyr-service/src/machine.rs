@@ -129,6 +129,8 @@ pub struct Machine {
     pub neighbours: Found,
     pub account: Account,
     pub door: Door,
+    /// The contacts waiting at the door for someone here to say yes.
+    pub accord: crate::accord::Accord,
 }
 
 impl Machine {
@@ -409,6 +411,7 @@ mod tests {
             neighbours: Found::new(),
             account: Account::at(folder.join("account.conf"), log.clone()),
             door: Door::default(),
+            accord: crate::accord::Accord::default(),
         };
         (machine, log, folder)
     }

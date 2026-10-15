@@ -37,6 +37,7 @@ use std::sync::{LazyLock, Mutex, MutexGuard};
 
 use crate::shell::app::App;
 
+pub use dialogs::{knocked, no_longer_knocking};
 pub use opening::{coming_back, failed, put_the_opening_away, step};
 pub use window::measure_the_screen;
 

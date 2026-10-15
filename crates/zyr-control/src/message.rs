@@ -29,7 +29,7 @@ use zyr_proto::session::{Preferred, WantedScreen};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 39;
+pub const PROTOCOL: u32 = 40;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -347,6 +347,10 @@ pub enum Request {
     },
     /// Takes back what was lent.
     TakeBack { share: String },
+    /// The contacts waiting at the door for someone here to say yes.
+    Knocks,
+    /// Says yes, or no, to one of them.
+    Accord { knock: u64, yes: bool },
 }
 
 impl Request {
@@ -497,6 +501,11 @@ impl Request {
             "take-back" => Ok(Request::TakeBack {
                 share: fields.text("share")?.to_string(),
             }),
+            "knocks" => Ok(Request::Knocks),
+            "accord" => Ok(Request::Accord {
+                knock: fields.parsed("knock")?,
+                yes: fields.flag("yes", false),
+            }),
             other => Err(Malformed(format!("unknown verb {other:?}"))),
         }
     }
@@ -626,6 +635,10 @@ impl fmt::Display for Request {
                 Spelled(rights)
             ),
             Request::TakeBack { share } => write!(f, "take-back share={share}"),
+            Request::Knocks => f.write_str("knocks"),
+            Request::Accord { knock, yes } => {
+                write!(f, "accord knock={knock} yes={}", said(*yes))
+            }
         }
     }
 }
@@ -913,6 +926,20 @@ pub struct Session {
     pub round_trip_ms: u64,
 }
 
+/// A contact's computer waiting at the door for someone at this one to
+/// say yes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Knock {
+    /// What the answer names it by.
+    pub id: u64,
+    /// Whose computer it is, by username.
+    pub who: String,
+    /// What it will be lent once in.
+    pub rights: Rights,
+    /// How long it still waits before it is turned away.
+    pub left: Duration,
+}
+
 /// A computer connected to this one right now, as the service holds it.
 ///
 /// The reverse of [`Session`]: that one is a way this computer opened
@@ -1044,6 +1071,8 @@ pub enum Answer {
     Contact(Contact),
     /// One computer lent to one contact. The list ends on `Done`.
     Lent(Lent),
+    /// One contact waiting at the door. The list ends on `Done`.
+    Knock(Knock),
 }
 
 impl Answer {
@@ -1179,6 +1208,12 @@ impl Answer {
                 accepted: fields.flag("accepted", false),
                 asked_by_me: fields.flag("asked-by-me", false),
                 online: fields.flag("online", false),
+            })),
+            "knock" => Ok(Answer::Knock(Knock {
+                id: fields.parsed("id")?,
+                who: unpacked(fields.text("who")?),
+                rights: fields.rights(),
+                left: Duration::from_secs(fields.parsed("left")?),
             })),
             "lent" => Ok(Answer::Lent(Lent {
                 share: fields.text("share")?.to_string(),
@@ -1338,6 +1373,14 @@ impl fmt::Display for Answer {
                 lent.device,
                 packed(&lent.with),
                 Spelled(&lent.rights)
+            ),
+            Answer::Knock(knock) => write!(
+                f,
+                "knock id={} who={} {} left={}",
+                knock.id,
+                packed(&knock.who),
+                Spelled(&knock.rights),
+                knock.left.as_secs()
             ),
         }
     }
@@ -1693,6 +1736,15 @@ mod tests {
             Request::TakeBack {
                 share: "p1".to_string(),
             },
+            Request::Knocks,
+            Request::Accord {
+                knock: 3,
+                yes: true,
+            },
+            Request::Accord {
+                knock: 4,
+                yes: false,
+            },
         ]
     }
 
@@ -1955,6 +2007,12 @@ mod tests {
                     mouse: true,
                     unattended: false,
                 },
+            }),
+            Answer::Knock(Knock {
+                id: 3,
+                who: "Ami de Victor".to_string(),
+                rights: Rights::WATCHING,
+                left: Duration::from_secs(27),
             }),
         ]
     }

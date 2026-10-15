@@ -81,6 +81,14 @@ pub enum Dialog {
     Licence(usize),
     /// Asking someone to become a contact.
     Inviting,
+    /// A contact waiting at the door for someone here to say yes: what
+    /// the answer names it by, whose computer it is, and what it will be
+    /// able to do once in.
+    Knock {
+        id: u64,
+        who: String,
+        rights: Rights,
+    },
 }
 
 /// The computer whose journal is open, as it is reached.
@@ -206,6 +214,9 @@ pub enum Target {
     RemoveContact(String),
     /// A switch of that computer of the account, lent to that contact.
     Lend(String, String, Lever),
+    /// Says yes, or no, to the contact waiting at the door under that
+    /// number.
+    Accord(u64, bool),
     OpenJournal,
     OpenLogs,
     /// An address on the web, opened in the browser.

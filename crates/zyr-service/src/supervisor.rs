@@ -370,6 +370,7 @@ fn keep_the_door(order: &StopOrder, log: &Log, wiring: Wiring) -> End {
             .unwrap_or_default(),
         account: Account::at(paths::account(), log.clone()),
         door: crate::machine::Door::default(),
+        accord: crate::accord::Accord::default(),
     };
     // The link to an account, when there is one, held from here on: it
     // proves this computer's key to the server, and keeps its channel

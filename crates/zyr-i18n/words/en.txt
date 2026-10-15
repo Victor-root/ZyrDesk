@@ -30,6 +30,9 @@ reach.port_silent = {host} does not answer on port {port}: {detail}
 reach.port_silent_here = {host} does not answer on port {port}: {detail}\n  This computer is visible on this network, so it is the tunnel's port that does not answer, not the machine.\n  Check on {host}, in order: that remote access is enabled, that “Listen on port {port}” is ticked, and that its journal shows “Tunnel: port {port}”.
 reach.silent = {host} does not answer: {detail}
 reach.not_opened = {host} did not open the session: it refused this computer, its fingerprint changed, or its engine did not start.\n  On {host}, check that remote access is enabled, and that “Computers on the local network” is enabled too.\n  Detail: {detail}
+reach.declined = {host} did not let this session in: the person in front of it said no.
+reach.unanswered = nobody in front of {host} said yes within half a minute: the session was not opened.
+accord.gone = This request is no longer waiting: the computer left, or waited too long.
 reach.not_prepared = the connection could not be prepared: {detail}
 reach.unknown_address = address “{host}” not found: {detail}
 way.gone = route {way} no longer exists
@@ -523,6 +526,14 @@ inviting.who = Their username
 inviting.send = Send the request
 inviting.sending = Sending…
 inviting.sent = Request sent to {username}.
+
+# A contact asking to come into this computer.
+knocking.title = {who} wants to connect to this computer
+knocking.watch = They will see and hear this computer, without touching it.
+knocking.keyboard = They will see and hear this computer, and use its keyboard.
+knocking.mouse = They will see and hear this computer, and use its mouse.
+knocking.both = They will see and hear this computer, and use its keyboard and its mouse.
+knocking.how = Ctrl+F1 lets them in from anywhere. Without an answer within half a minute, they are turned away.
 
 # The journal.
 journal.title = Journal

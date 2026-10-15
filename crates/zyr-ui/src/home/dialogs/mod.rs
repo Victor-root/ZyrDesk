@@ -12,6 +12,7 @@ mod adding;
 mod details;
 mod inviting;
 mod journal;
+mod knocking;
 mod licence;
 mod renaming;
 mod signin;
@@ -29,6 +30,7 @@ use crate::shell::app::App;
 
 pub use journal::{After, open as open_the_journal, reread as reread_the_journal};
 pub use journal::{copy as copy_the_journal, empty as empty_the_journal, toggle_tag};
+pub use knocking::{answer as answer_the_knock, knocked, no_longer_knocking};
 
 /// What a dialog says about itself.
 pub struct Shape {
@@ -88,6 +90,7 @@ pub fn fields_of(dialog: &Dialog) -> &'static [Field] {
         ],
         Dialog::Renaming { .. } => &[Field::NewName],
         Dialog::Inviting => &[Field::User],
+        Dialog::Knock { .. } => &[],
         Dialog::Journal { .. } => &[Field::Sift],
         Dialog::Details | Dialog::Licence(_) => &[],
     }
@@ -148,6 +151,7 @@ pub fn confirm(app: &App) {
         Some(Dialog::SignIn) => signin::confirm(app),
         Some(Dialog::Renaming { .. }) => renaming::confirm(app),
         Some(Dialog::Inviting) => inviting::confirm(app),
+        Some(Dialog::Knock { .. }) => knocking::confirm(app),
         // Enter in the sift reads again at once, without waiting for
         // the pause after the last letter.
         Some(Dialog::Journal { .. }) => journal::reread(app, After::Show),
@@ -165,6 +169,7 @@ fn shape(painter: &Painter, dialog: &Dialog) -> Shape {
         Dialog::SignIn => signin::shape(painter),
         Dialog::Renaming { name, .. } => renaming::shape(painter, name),
         Dialog::Inviting => inviting::shape(painter),
+        Dialog::Knock { id, who, .. } => knocking::shape(*id, who),
         Dialog::Journal { of } => journal::shape(painter, of.as_ref()),
         Dialog::Licence(rank) => licence::shape(*rank),
     }
@@ -177,6 +182,7 @@ fn inside(painter: &mut Painter, dialog: &Dialog, at: Rect, window_height: f32) 
         Dialog::SignIn => signin::draw(painter, at),
         Dialog::Renaming { .. } => renaming::draw(painter, at),
         Dialog::Inviting => inviting::draw(painter, at),
+        Dialog::Knock { rights, .. } => knocking::draw(painter, at, *rights),
         Dialog::Journal { .. } => journal::draw(painter, at, window_height),
         Dialog::Licence(rank) => licence::draw(painter, at, *rank, window_height),
     }

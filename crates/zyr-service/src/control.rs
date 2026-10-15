@@ -197,8 +197,23 @@ async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
                 .map(Answer::Lent)
                 .collect(),
         ),
+        Request::Knocks => ended(
+            answering
+                .machine
+                .accord
+                .waiting()
+                .into_iter()
+                .map(Answer::Knock)
+                .collect(),
+        ),
         other => vec![one(other, answering).await],
     }
+}
+
+/// Whether a session was refused by the person at the far computer,
+/// which is an answer and not a road that failed.
+fn said_by_a_person(refused: &Fact) -> bool {
+    matches!(refused.code(), "reach.declined" | "reach.unanswered")
 }
 
 /// What a change asked of the account comes back as.
@@ -461,8 +476,12 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             // a meeting goes through costs nothing next to the person who
             // would otherwise have to ask again themselves for the very
             // same computer.
-            if let Ok(reached) = one_reach(&host, peer, media, only_here, answering).await {
-                return Answer::Reached(reached);
+            match one_reach(&host, peer, media, only_here, answering).await {
+                Ok(reached) => return Answer::Reached(reached),
+                // The person at that computer answered: asking again
+                // would only ask them again.
+                Err(refused) if said_by_a_person(&refused) => return Answer::Refused(refused),
+                Err(_) => {}
             }
             answering.log.write(&format!(
                 "{host}: first attempt did not reach it, trying once more"
@@ -754,6 +773,13 @@ async fn one(request: Request, answering: &Answering) -> Answer {
         Request::TakeBack { share } => {
             done_or_not(answering.machine.account.take_back(&share).await)
         }
+        Request::Accord { knock, yes } => {
+            answering.log.write(&format!(
+                "the person at this computer said {} to knock {knock}",
+                if yes { "yes" } else { "no" }
+            ));
+            done_or_not(answering.machine.accord.answer(knock, yes))
+        }
         // Handled above, where several answers can be given.
         Request::Peers
         | Request::Sessions
@@ -763,7 +789,8 @@ async fn one(request: Request, answering: &Answering) -> Answer {
         | Request::Wake { .. }
         | Request::Devices
         | Request::Contacts
-        | Request::Lent => Answer::Done,
+        | Request::Lent
+        | Request::Knocks => Answer::Done,
     }
 }
 
@@ -808,6 +835,7 @@ mod tests {
                 neighbours: zyr_lan::Found::new(),
                 account: crate::account::Account::at(folder.join("account.conf"), log.clone()),
                 door: crate::machine::Door::default(),
+                accord: crate::accord::Accord::default(),
             };
 
             let desk = Desk::open(
@@ -901,6 +929,7 @@ mod tests {
                 Request::History,
                 Request::Contacts,
                 Request::Lent,
+                Request::Knocks,
             ] {
                 let found = caller.ask_for_a_list(&request).await.unwrap();
                 assert!(found.is_empty(), "on « {request} »: {found:?}");

@@ -27,6 +27,9 @@ reach.port_silent = {host} ne répond pas sur le port {port} : {detail}
 reach.port_silent_here = {host} ne répond pas sur le port {port} : {detail}\n  Cet ordinateur est pourtant visible sur ce réseau : c'est le port du tunnel qui ne répond pas, et non la machine.\n  Vérifiez sur {host}, dans l'ordre : que l'accès distant est activé, que « Écouter sur le port {port} » est coché, et que son journal indique « Tunnel : port {port} ».
 reach.silent = {host} ne répond pas : {detail}
 reach.not_opened = {host} n'a pas ouvert la session : il a refusé cet ordinateur, son empreinte a changé, ou son moteur n'a pas démarré.\n  Sur {host}, vérifiez que l'accès distant est activé, ainsi que l'option « Ordinateurs du réseau local ».\n  Détail : {detail}
+reach.declined = {host} n'a pas laissé entrer cette session : la personne devant lui a dit non.
+reach.unanswered = personne devant {host} n'a dit oui dans la demi-minute : la session ne s'est pas ouverte.
+accord.gone = Cette demande n'attend plus : l'ordinateur est parti, ou a attendu trop longtemps.
 reach.not_prepared = la connexion n'a pas pu être préparée : {detail}
 reach.unknown_address = adresse « {host} » introuvable : {detail}
 way.gone = le chemin {way} n'existe plus
@@ -520,6 +523,14 @@ inviting.who = Son nom d'utilisateur
 inviting.send = Envoyer la demande
 inviting.sending = Envoi…
 inviting.sent = Demande envoyée à {username}.
+
+# A contact asking to come into this computer.
+knocking.title = {who} souhaite se connecter à cet ordinateur
+knocking.watch = Cette personne verra et entendra cet ordinateur, sans pouvoir y toucher.
+knocking.keyboard = Cette personne verra et entendra cet ordinateur, et utilisera son clavier.
+knocking.mouse = Cette personne verra et entendra cet ordinateur, et utilisera sa souris.
+knocking.both = Cette personne verra et entendra cet ordinateur, et utilisera son clavier et sa souris.
+knocking.how = Ctrl+F1 la laisse entrer de n'importe où. Sans réponse dans la demi-minute, elle est refusée.
 
 # The journal.
 journal.title = Journal

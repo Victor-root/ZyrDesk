@@ -11,7 +11,9 @@
 // compiled and checked, it is simply called by nobody.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use zyr_control::{Account, Answer, Attach, Contact, Device, Holdup, Lent, Past, Peer, Request};
+use zyr_control::{
+    Account, Answer, Attach, Contact, Device, Holdup, Knock, Lent, Past, Peer, Request,
+};
 use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::rights::Rights;
@@ -338,6 +340,27 @@ pub async fn lend(device: String, with: String, rights: Rights) -> Result<(), Fa
 /// Takes back what was lent.
 pub async fn take_back(share: String) -> Result<(), Fact> {
     done(&Request::TakeBack { share }).await
+}
+
+/// The contacts waiting at the door for someone here to say yes. None
+/// when the service does not answer: nobody can be waiting at a door
+/// that is not open.
+pub async fn knocks() -> Vec<Knock> {
+    service::list(&Request::Knocks, |answer| match answer {
+        Answer::Knock(knock) => Some(knock),
+        _ => None,
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Says yes, or no, to a contact waiting at the door.
+pub async fn accord(knock: u64, yes: bool) -> Result<(), Fact> {
+    note(&format!(
+        "{} said to knock {knock}",
+        if yes { "yes" } else { "no" }
+    ));
+    done(&Request::Accord { knock, yes }).await
 }
 
 /// Decides whether this computer accepts being controlled.

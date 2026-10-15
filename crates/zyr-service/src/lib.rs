@@ -18,6 +18,7 @@
 //! platform bricks, which answer honestly on any other system. So all of
 //! it is built and tried everywhere.
 
+mod accord;
 mod account;
 mod clipboard;
 mod control;

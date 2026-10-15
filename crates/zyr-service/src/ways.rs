@@ -186,6 +186,21 @@ fn nobody_answered(host: &str, offered_a_relay: bool) -> Fact {
         .with("waited", MEETING_PATIENCE.as_secs())
 }
 
+/// The far computer refused to open the session, and why.
+///
+/// Its person saying no, or nobody there answering, comes as a fact of
+/// its own and is told as such, with the computer's name; anything else
+/// it said is a sentence of its journal, carried as it is.
+fn not_opened(host: &str, refused: &str) -> Fact {
+    match refused.parse::<Fact>().as_ref().map(Fact::code) {
+        Ok("reach.declined") => Fact::new("reach.declined").with("host", host),
+        Ok("reach.unanswered") => Fact::new("reach.unanswered").with("host", host),
+        _ => Fact::new("reach.not_opened")
+            .with("host", host)
+            .with("detail", refused),
+    }
+}
+
 /// Reaching a computer went wrong on this side, before any road was
 /// tried: what did is in the journal's words.
 fn not_prepared(detail: impl fmt::Display) -> Fact {
@@ -726,11 +741,9 @@ impl Ways {
         // judged our certificate, so nothing may be announced as
         // established until this answers. It is answered once the far
         // engine is up.
-        aside::ask_to_open(&connection, media).await.map_err(|e| {
-            Fact::new("reach.not_opened")
-                .with("host", host)
-                .with("detail", e)
-        })?;
+        aside::ask_to_open(&connection, media)
+            .await
+            .map_err(|e| not_opened(host, &e.to_string()))?;
 
         // Who may connect: the system, and whoever is signed in at this
         // computer, exactly who may already drive sessions through the
@@ -1393,6 +1406,21 @@ mod tests {
     use super::*;
 
     use zyr_transport::Marking;
+
+    #[test]
+    fn a_person_saying_no_is_told_as_such_and_anything_else_as_the_far_computer_said_it() {
+        let refused = not_opened("PC-SALON", &Fact::new("reach.declined").to_string());
+        assert_eq!(refused.code(), "reach.declined");
+        assert_eq!(refused.value("host"), Some("PC-SALON"));
+        let refused = not_opened("PC-SALON", &Fact::new("reach.unanswered").to_string());
+        assert_eq!(refused.code(), "reach.unanswered");
+        let refused = not_opened("PC-SALON", "the engine went before its link was made");
+        assert_eq!(refused.code(), "reach.not_opened");
+        assert_eq!(
+            refused.value("detail"),
+            Some("the engine went before its link was made")
+        );
+    }
 
     fn register() -> Register<&'static str> {
         Register::new()

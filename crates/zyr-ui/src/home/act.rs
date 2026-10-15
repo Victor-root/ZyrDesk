@@ -195,6 +195,7 @@ pub fn act(app: &App, target: Target) {
         Target::Answer(contact, accept) => answer(app, contact, accept),
         Target::RemoveContact(contact) => remove_contact(app, contact),
         Target::Lend(device, with, lever) => lend(app, device, with, lever),
+        Target::Accord(knock, yes) => dialogs::answer_the_knock(app, knock, yes),
         Target::OpenJournal => dialogs::open_the_journal(app, None),
         Target::OpenLogs => open_a_folder(app, "logs"),
         Target::Link(link) => {

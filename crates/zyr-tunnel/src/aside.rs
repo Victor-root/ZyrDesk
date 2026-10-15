@@ -88,8 +88,11 @@ use crate::pump;
 /// cadence of a still screen, the pointer drawn into the picture and the
 /// codecs travel between the player and the engine and no longer here.
 /// Version 23 asks for a thumbnail of the far computer's wallpaper, which
-/// its card on the home screen shows from then on.
-pub const VERSION: u32 = 23;
+/// its card on the home screen shows from then on. Version 24 lets a
+/// session refused at its opening say so as a fact rather than a
+/// sentence, when what refused it is the person at the far computer:
+/// they said no, or nobody answered in time.
+pub const VERSION: u32 = 24;
 
 /// Longest question this channel takes.
 ///
