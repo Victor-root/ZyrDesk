@@ -270,6 +270,9 @@ tray.reachable = ZyrDesk : cet ordinateur accepte les connexions
 tray.not_reachable = ZyrDesk : cet ordinateur est injoignable
 tray.open = Ouvrir ZyrDesk
 tray.quit = Quitter
+tray.contact_asks_title = Nouvelle demande de contact
+tray.contact_asks = {username} souhaite devenir votre contact. Ouvrez ZyrDesk pour répondre.
+tray.knock = Appuyez sur Ctrl+F1 pour la laisser entrer, ou répondez dans ZyrDesk.
 
 # The home window: its bar on the left and its bar at the top.
 nav.home = Accueil

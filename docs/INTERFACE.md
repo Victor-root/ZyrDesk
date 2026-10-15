@@ -26,7 +26,7 @@ Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est des
 | Logo ZyrDesk et nom | Oui | |
 | Accueil | Oui | La page de ce plan |
 | Ordinateurs | Oui | Tous les ordinateurs, en grille ou en liste ([D310](DECISIONS.md)) |
-| Contacts | Grisé | Idem |
+| Contacts | Oui | Les demandes, et pour chaque contact un interrupteur par ordinateur ; un chiffre compte les demandes reçues ([D319](DECISIONS.md)) |
 | Activité | Oui | Les sessions terminées, jour par jour ([D311](DECISIONS.md)) |
 | Paramètres | Oui | Les réglages d'aujourd'hui, remis au style de l'accueil |
 | À propos | Oui | Juste sous Paramètres (§8) |
@@ -37,7 +37,7 @@ Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est des
 
 | Élément | État | Note |
 |---|---|---|
-| Recherche « Rechercher un ordinateur… » avec Ctrl+K | Oui | Par le nom ou l'adresse, sur l'accueil et la page « Ordinateurs » ; les contacts s'y ajouteront avec eux |
+| Recherche « Rechercher un ordinateur… » avec Ctrl+K | Oui | Par le nom ou l'adresse, sur l'accueil et la page « Ordinateurs » |
 | Filtre « Tous » | Oui | Tous, en ligne, hors ligne, réseau local, Internet |
 | Vue en grille ou en liste | Oui | Le choix est gardé d'une ouverture à l'autre |
 | Réduire, agrandir, fermer | Oui | Ceux de la barre de titre de Windows (§1) |
@@ -86,11 +86,11 @@ Une carte par ordinateur connu (réseau local et compte), ou une ligne en vue li
 
 | Bloc | État | Note |
 |---|---|---|
-| Contacts et accès partagés, avec les rôles Admin, Contrôle, Lecture | Grisé | Le partage entre comptes est à faire ; la liste reste vide et grisée |
-| « Inviter un contact » | Grisé | |
+| Contacts et accès partagés | Oui | Les contacts et les demandes, chacun avec ce qu'il est au compte ; les rôles de la maquette deviennent des interrupteurs par ordinateur, « Admin » est retiré ([D319](DECISIONS.md)) |
+| « Inviter un contact » | Oui | Par nom d'utilisateur |
 | Sessions récentes : ordinateur, date, durée | Oui | Gardées par le service, dans les deux sens ([D311](DECISIONS.md)) |
 | Action rapide « Ajouter un ordinateur » | Oui | La fenêtre d'aujourd'hui, avec l'empreinte |
-| Action rapide « Inviter un contact » | Grisé | |
+| Action rapide « Inviter un contact » | Oui | |
 | Action rapide « Voir l'activité » | Oui | |
 | Action rapide « Ouvrir les paramètres » | Oui | |
 | Version et compilation | Oui | En bas de la barre de gauche, la compilation sous le numéro ([D293](DECISIONS.md)) |
@@ -106,4 +106,4 @@ Une page à elle, sous Paramètres dans la barre de gauche. Une partie de son co
 
 ## 9. Ce qui vient après l'accueil
 
-La page Contacts, faite une fois l'accueil terminé, dans son style (les pages Ordinateurs et Activité sont faites, [D310](DECISIONS.md), [D311](DECISIONS.md)). Puis, bloc par bloc, les fonctions grisées : chacune qui arrive retire son gris.
+Les pages Ordinateurs, Contacts et Activité sont faites ([D310](DECISIONS.md), [D319](DECISIONS.md), [D311](DECISIONS.md)). Restent, bloc par bloc, les fonctions grisées : chacune qui arrive retire son gris.

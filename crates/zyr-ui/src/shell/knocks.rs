@@ -47,6 +47,12 @@ pub fn watch(app: App) {
             }
             if let (None, Some(knock)) = (shown, waiting.first().cloned()) {
                 note(&format!("{} asks to come in", knock.who));
+                // Said out of the icon too: the window may not be let in
+                // front of what the person is doing.
+                crate::shell::tray::tell(
+                    &zyr_i18n::say!("knocking.title", who = knock.who),
+                    &zyr_i18n::say!("tray.knock"),
+                );
                 shown = Some(knock.id);
                 let held = app.clone();
                 let _ = app.run_on_main_thread(move || {

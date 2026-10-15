@@ -70,10 +70,10 @@ Le moteur ne garde aucun secret : il n'a ni certificat, ni code, ni identifiant 
 
 ## 6. Politiques de confiance (défauts proposés, ajustables)
 
-- Appareils d'un même compte : connexion automatique, sans approbation, parce que c'est le sens d'un compte (D122). L'approbation à chaque session est une option par partage prévue dans le modèle et absente du MVP.
+- Appareils d'un même compte : connexion automatique, sans approbation, parce que c'est le sens d'un compte (D122). Un contact attend qu'une personne devant la machine dise oui, ou Ctrl+F1, sauf si on lui a prêté la machine « Sans mon accord » ; sans réponse dans la demi-minute, il est refusé ([D319](DECISIONS.md)).
 - Session entrante : indicateur visible côté hôte (icône + notification de début de session). Un seul spectateur actif ; une nouvelle connexion propose la reprise (takeover) ou est refusée, selon le réglage.
 - Révocation : depuis n'importe quel appareil connecté au compte, révoquer un appareil perdu ou volé ; le broker pousse la révocation (les services la reçoivent immédiatement) et la vérifie à chaque émission de ticket. Les tickets étant courts, la fenêtre d'exposition après révocation est de l'ordre de la minute.
-- Partage entre comptes : un contact n'ouvre rien ; un partage nomme UNE machine, porte des permissions et une expiration facultative, et se retire d'un clic, session en cours comprise ([SERVER.md](SERVER.md) §5). Le MVP n'en fait respecter que l'accès ; les permissions fines suivront par retenue des entrées dans le tunnel.
+- Partage entre comptes : un contact n'ouvre rien ; un partage nomme UNE machine, porte des permissions et une expiration facultative, et se retire d'un clic, session en cours comprise ([SERVER.md](SERVER.md) §5). La machine prêtée fait respecter les permissions elle-même : le clavier et la souris d'un contact qui ne les a pas sont retenus dans le tunnel avant le moteur, le presse-papiers, les fichiers, Ctrl+Alt+Suppr et le verrouillage demandent le clavier, et le journal, les mesures et le fond d'écran ne lui sont jamais remis ([D319](DECISIONS.md)). Une machine du compte, écrite à la main ou vue sur un réseau local de confiance garde tous les droits, même si c'est aussi celle d'un contact.
 
 ## 7. Modèle de menace (résumé)
 

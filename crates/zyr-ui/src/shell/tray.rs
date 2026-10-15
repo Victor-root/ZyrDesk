@@ -153,10 +153,15 @@ fn icon_data(
     data
 }
 
-/// Writes a word into one of the system's fixed-length fields.
+/// Writes a word into one of the system's fixed-length fields, cut short
+/// when it does not fit: the last place always holds the end.
 #[cfg(windows)]
 fn copy_into(cursor: &mut [u16], text: &str) {
-    for (place, letter) in cursor.iter_mut().zip(text.encode_utf16().chain(Some(0))) {
+    let room = cursor.len().saturating_sub(1);
+    for (place, letter) in cursor[..room]
+        .iter_mut()
+        .zip(text.encode_utf16().chain(Some(0)))
+    {
         *place = letter;
     }
 }
@@ -169,17 +174,63 @@ fn copy_into(cursor: &mut [u16], text: &str) {
 /// be seen.
 const LOOK: std::time::Duration = std::time::Duration::from_secs(3);
 
-/// Keeps the icon saying the truth, for as long as the program runs.
+/// Keeps the icon saying the truth, for as long as the program runs,
+/// and says in a bubble when someone asks to become a contact.
+///
+/// The requests already waiting when the program starts are left to the
+/// count on « Contacts »: a bubble at every start for the same request
+/// would teach the person to ignore bubbles.
 pub fn watch(app: App) {
     crate::shell::app::spawn(async move {
+        let mut asking: Option<Vec<String>> = None;
         loop {
             let standing = crate::shell::desk::standing().await;
             let playing = crate::session::floating::a_session_is_up(&app);
             says(&app, standing.hosting, playing);
+            let now: Vec<(String, String)> = crate::shell::desk::contacts()
+                .await
+                .into_iter()
+                .filter(|contact| !contact.accepted && !contact.asked_by_me)
+                .map(|contact| (contact.id, contact.username))
+                .collect();
+            if let Some(known) = &asking {
+                for (_, username) in now.iter().filter(|(id, _)| !known.contains(id)) {
+                    tell(
+                        &zyr_i18n::say!("tray.contact_asks_title"),
+                        &zyr_i18n::say!("tray.contact_asks", username = username),
+                    );
+                }
+            }
+            asking = Some(now.into_iter().map(|(id, _)| id).collect());
             tokio::time::sleep(LOOK).await;
         }
     });
 }
+
+/// Says something worth interrupting the person for, in a bubble out of
+/// the icon. A click on it opens the window.
+#[cfg(windows)]
+pub fn tell(title: &str, text: &str) {
+    use windows_sys::Win32::UI::Shell::{NIF_INFO, NIIF_INFO, NIM_MODIFY, Shell_NotifyIconW};
+
+    let window = ITS_WINDOW.load(Ordering::Relaxed);
+    if window == 0 {
+        return;
+    }
+    let mut data = icon_data(window as windows_sys::Win32::Foundation::HWND);
+    data.uFlags = NIF_INFO;
+    data.dwInfoFlags = NIIF_INFO;
+    copy_into(&mut data.szInfoTitle, title);
+    copy_into(&mut data.szInfo, text);
+    // SAFETY: a block of ours, with its size written into it as the call
+    // asks, for the icon this program put up.
+    if unsafe { Shell_NotifyIconW(NIM_MODIFY, &data) } == 0 {
+        note(&format!("bubble not shown: {title}"));
+    }
+}
+
+#[cfg(not(windows))]
+pub fn tell(_title: &str, _text: &str) {}
 
 /// Says what this computer is doing, in the icon and in its tooltip.
 ///
@@ -279,13 +330,15 @@ unsafe extern "system" fn answers(
     holding: windows_sys::Win32::Foundation::WPARAM,
     with: windows_sys::Win32::Foundation::LPARAM,
 ) -> windows_sys::Win32::Foundation::LRESULT {
+    use windows_sys::Win32::UI::Shell::NIN_BALLOONUSERCLICK;
     use windows_sys::Win32::UI::WindowsAndMessaging::{DefWindowProcW, WM_LBUTTONUP, WM_RBUTTONUP};
 
     if message == CALLBACK {
         match (with & 0xFFFF) as u32 {
             // The left click opens the window, which everyone expects of
-            // an icon down there; the menu stays on the right button.
-            WM_LBUTTONUP => open(),
+            // an icon down there, and so does a click on a bubble; the
+            // menu stays on the right button.
+            WM_LBUTTONUP | NIN_BALLOONUSERCLICK => open(),
             WM_RBUTTONUP => pop_up_the_menu(window),
             _ => {}
         }
