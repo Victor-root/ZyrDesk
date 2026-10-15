@@ -4864,6 +4864,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Des cartes dégagées, un fond d'écran sans rien dessus, la présence devant le nom, des boutons dans le thème, des champs qui s'éclairent proprement, et le fond d'écran sur la carte presque aussitôt.
 
+## D318. La fenêtre se rouvre agrandie si on l'a laissée agrandie (2026-10-15, pendant MZ)
+
+**Pourquoi.** La fenêtre s'ouvrait toujours à sa taille de départ, même pour quelqu'un qui la garde agrandie : il fallait l'agrandir à chaque ouverture.
+
+**Ce qui est fait.** Chaque fois que la fenêtre passe d'agrandie à normale ou l'inverse, `main_window` l'écrit dans `window.conf` (`maximized = yes` ou `no`), seulement quand l'état change. Rien n'est écrit tant qu'elle est cachée (elle prend sa taille une première fois avant d'être montrée) ni pendant le plein écran d'une session, qui n'est pas une façon de laisser la fenêtre ; en sortir rend l'état d'avant, qui est celui qu'on garde. Au démarrage, l'état est lu avant l'ouverture et la fenêtre se montre agrandie ou non.
+
+**Ce qui se voit.** ZyrDesk se rouvre comme on l'a laissé : agrandi ou à sa taille.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -305,6 +305,14 @@ pub fn chosen_theme() -> PathBuf {
     data_dir().join("theme.conf")
 }
 
+/// Whether ZyrDesk's window was left maximised.
+///
+/// Apart for the same reason as the theme: it says how somebody likes to
+/// look at the window on this machine.
+pub fn window_layout() -> PathBuf {
+    data_dir().join("window.conf")
+}
+
 /// How the computers of the home screen are laid out.
 ///
 /// Apart for the same reason as the theme: it says how somebody likes to
@@ -340,6 +348,7 @@ mod tests {
             floating_button(),
             chosen_theme(),
             home_layout(),
+            window_layout(),
             session_history(),
             far_wallpapers(),
             cards_to_wake(),

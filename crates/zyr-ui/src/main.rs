@@ -84,6 +84,7 @@ fn main() {
     // opens: a window that opened in the wrong theme, even for the
     // length of a beat, would be seen.
     theme::what_was_chosen();
+    main_window::how_it_was_left();
     if let Err(e) = main_window::open(&app) {
         journal::note(&format!("ZyrDesk does not start: {e}"));
         return;
@@ -117,7 +118,7 @@ fn main() {
     // been woken up.
     #[cfg(windows)]
     home::raise(&app);
-    main_window::show();
+    main_window::show_as_it_was_left();
 
     app::run();
 }

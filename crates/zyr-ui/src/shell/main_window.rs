@@ -7,7 +7,8 @@
 //! played out in the messages it receives.
 //!
 //! What this changes, plainly: the frame, full screen, the maximised state
-//! and following the screen are written here, on one page, instead of
+//! and remembering it from one opening to the next, and following the
+//! screen are written here, on one page, instead of
 //! being reproduced by a layer aimed at something else. What a session
 //! needs of it on top of that, `picture` asks by stepping in front of its
 //! messages for the length of the session.
@@ -59,6 +60,9 @@ static HANDLE: AtomicIsize = AtomicIsize::new(0);
 /// moved. The one door into and out of full screen writes it, so it is
 /// right before either question is asked.
 static FULL_SCREEN: AtomicBool = AtomicBool::new(false);
+
+/// Whether it was last left maximised, as written down.
+static LEFT_MAXIMIZED: AtomicBool = AtomicBool::new(false);
 
 /// Where it was and what it looked like before taking the screen.
 ///
@@ -275,6 +279,7 @@ unsafe extern "system" fn answers(
         // since it is what is looked at.
         WM_SIZE => {
             say_whether_it_goes_down_or_up(holding);
+            remember_how_it_is_left(window, holding);
             let (width, height) = ((with & 0xFFFF) as i32, ((with >> 16) & 0xFFFF) as i32);
             lay_out(width, height);
             0
@@ -593,6 +598,68 @@ pub fn set_the_inside(width: u32, height: u32) {
 pub fn set_the_inside(_large: u32, _height: u32) {}
 
 /* ---- Maximising it, giving it the screen ---------------------------- */
+
+/// Reads back whether it was left maximised, once, before it is shown.
+pub fn how_it_was_left() {
+    let Ok(written) = std::fs::read_to_string(zyr_proto::paths::window_layout()) else {
+        return;
+    };
+    let maximized = zyr_proto::files::settings(&written)
+        .any(|(key, value)| key == "maximized" && value == "yes");
+    LEFT_MAXIMIZED.store(maximized, Ordering::Relaxed);
+}
+
+/// Shows it the first time, maximised if that is how it was left.
+#[cfg(windows)]
+pub fn show_as_it_was_left() {
+    if LEFT_MAXIMIZED.load(Ordering::Relaxed) {
+        maximize();
+    } else {
+        show();
+    }
+}
+
+#[cfg(not(windows))]
+pub fn show_as_it_was_left() {}
+
+/// Writes down whether it is now maximised, when that changed.
+///
+/// Only while it is on screen, and not while it takes the whole screen:
+/// it is sized once while still hidden as it opens, and full screen is a
+/// session's, not how somebody leaves the window. Leaving full screen
+/// gives back the state it had before, which is the one to keep.
+#[cfg(windows)]
+fn remember_how_it_is_left(
+    window: windows_sys::Win32::Foundation::HWND,
+    what: windows_sys::Win32::Foundation::WPARAM,
+) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        IsWindowVisible, SIZE_MAXIMIZED, SIZE_RESTORED,
+    };
+
+    let maximized = match what as u32 {
+        SIZE_MAXIMIZED => true,
+        SIZE_RESTORED => false,
+        _ => return,
+    };
+    // SAFETY: a window of ours, whose visibility is asked.
+    let visible = unsafe { IsWindowVisible(window) } != 0;
+    if !visible
+        || holds_the_screen()
+        || LEFT_MAXIMIZED.swap(maximized, Ordering::Relaxed) == maximized
+    {
+        return;
+    }
+    let written = format!(
+        "# Whether ZyrDesk's window was left maximised: yes or no.\n\
+         # Written by ZyrDesk, can be corrected by hand.\n\
+         maximized = {}\n",
+        if maximized { "yes" } else { "no" }
+    );
+    if let Err(e) = zyr_proto::files::replace(&zyr_proto::paths::window_layout(), &written) {
+        note(&format!("whether the window is maximised not kept: {e}"));
+    }
+}
 
 /// Maximises it to what the desktop leaves.
 #[cfg(windows)]
