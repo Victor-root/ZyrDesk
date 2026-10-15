@@ -19,9 +19,10 @@ use zyr_transport::{Connection, RecvStream, SendStream};
 use crate::aside::{self, Answers};
 use crate::channel::StreamChannel;
 use crate::flow::{self, Flow};
-use crate::pump::{self, Counters, Reading};
+use crate::pump::{self, ControlStream, Counters, Reading};
 use crate::queue::DatagramQueue;
 use crate::service::ServiceSide;
+use crate::sieve::Sieve;
 
 /// What this crate's lines are filed under.
 const TAG: &str = "tunnel";
@@ -64,6 +65,9 @@ impl Tunnel {
     /// [`aside::until_a_session_opens`] handed back, and a second opening
     /// is refused.
     ///
+    /// `sieve`, when there is one, takes out of what the player says to
+    /// the engine whatever the far end may not do here.
+    ///
     /// `log` says what it did while it did it, for a stream that goes
     /// quiet without a word. `None` where nobody is watching, a benchmark
     /// or a test.
@@ -74,6 +78,7 @@ impl Tunnel {
         answering: Arc<dyn Answers>,
         engine: Link,
         service: ServiceSide,
+        sieve: Option<Box<dyn Sieve>>,
         log: Option<Log>,
     ) -> Self {
         let log = log.map(|log| log.about(TAG));
@@ -110,7 +115,10 @@ impl Tunnel {
                 };
                 pump::between(
                     engine,
-                    accepted,
+                    ControlStream {
+                        opened: accepted,
+                        sieve,
+                    },
                     &connection,
                     &datagrams,
                     service,
@@ -178,7 +186,10 @@ impl Tunnel {
                 };
                 pump::between(
                     link,
-                    opened,
+                    ControlStream {
+                        opened,
+                        sieve: None,
+                    },
                     &connection,
                     &datagrams,
                     service,

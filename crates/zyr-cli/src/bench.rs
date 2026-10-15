@@ -267,7 +267,9 @@ async fn serve(
     // a service with nothing to say.
     let (side, _) = service_channel();
     opening.opened().await?;
-    Ok(Tunnel::host(connection, answering, accepted?, side, None))
+    Ok(Tunnel::host(
+        connection, answering, accepted?, side, None, None,
+    ))
 }
 
 /// The measuring side: the same trip twice, then the report.

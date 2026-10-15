@@ -20,6 +20,7 @@ use crate::flow::Flow;
 use crate::frame;
 use crate::queue::DatagramQueue;
 use crate::service::ServiceSide;
+use crate::sieve::Sieve;
 
 /// Largest piece of the engine's stream handed over in one frame.
 ///
@@ -164,7 +165,7 @@ pub fn nudge(connection: &Connection) -> io::Result<()> {
 /// is let go of with them.
 pub(crate) async fn between(
     link: zyr_link::Link,
-    engine_stream: impl Future<Output = io::Result<(SendStream, RecvStream)>>,
+    engine_stream: ControlStream<impl Future<Output = io::Result<(SendStream, RecvStream)>>>,
     connection: &Connection,
     datagrams: &DatagramQueue,
     service: ServiceSide,
@@ -184,7 +185,13 @@ pub(crate) async fn between(
         flow,
     );
     let writing = onto_the_link(writer, from_the_stream, datagrams, outgoing, counters, flow);
-    let carrying = along_the_stream(engine_stream, towards_the_link, from_the_link, counters);
+    let carrying = along_the_stream(
+        engine_stream.opened,
+        engine_stream.sieve,
+        towards_the_link,
+        from_the_link,
+        counters,
+    );
     tokio::pin!(reading, writing, carrying);
     tokio::select! {
         // The link before the stream: when both end at once, what the
@@ -200,6 +207,13 @@ pub(crate) async fn between(
         }
         written = &mut writing => written,
     }
+}
+
+/// The engine's stream, as it comes to exist, and the sieve what the far
+/// end says on it goes through, when there is one.
+pub(crate) struct ControlStream<F> {
+    pub(crate) opened: F,
+    pub(crate) sieve: Option<Box<dyn Sieve>>,
 }
 
 /// Waits for what the end that left said last to reach the other end,
@@ -339,6 +353,7 @@ async fn onto_the_link(
 /// the link nothing more is coming.
 async fn along_the_stream(
     engine_stream: impl Future<Output = io::Result<(SendStream, RecvStream)>>,
+    sieve: Option<Box<dyn Sieve>>,
     towards_the_link: mpsc::Sender<Bytes>,
     mut from_the_link: mpsc::Receiver<Bytes>,
     counters: &Counters,
@@ -355,15 +370,16 @@ async fn along_the_stream(
         }
     };
     tokio::select! {
-        read = stream_to_link(receiving, &towards_the_link) => read,
+        read = stream_to_link(receiving, sieve, &towards_the_link) => read,
         written = link_to_stream(sending, first, from_the_link, counters) => written,
     }
 }
 
-/// The far end's control stream, piece by piece, towards the link. Its
-/// end is the far end leaving.
+/// The far end's control stream, piece by piece, towards the link,
+/// through the sieve when there is one. Its end is the far end leaving.
 async fn stream_to_link(
     mut receiving: RecvStream,
+    mut sieve: Option<Box<dyn Sieve>>,
     towards_the_link: &mpsc::Sender<Bytes>,
 ) -> io::Result<()> {
     while let Some(piece) = receiving
@@ -371,8 +387,15 @@ async fn stream_to_link(
         .await
         .map_err(io::Error::other)?
     {
+        let piece = match sieve.as_mut() {
+            Some(sieve) => sieve.sifted(piece.bytes)?,
+            None => piece.bytes,
+        };
+        if piece.is_empty() {
+            continue;
+        }
         towards_the_link
-            .send(piece.bytes)
+            .send(piece)
             .await
             .map_err(|_| io::Error::other("the link closed"))?;
     }

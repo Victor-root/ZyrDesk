@@ -36,7 +36,7 @@ use zyr_account::{
 use zyr_broker::live::{FromDevice, FromServer, Relay};
 use zyr_broker::rest::{Access, ContactStatus, Permission, ShareRequest};
 use zyr_broker::ticket::CLOCK_SKEW;
-use zyr_broker::{Code, Refusal, Verifier, now};
+use zyr_broker::{Code, Grant, Refusal, Verifier, now};
 use zyr_control::{Holdup, WayId};
 use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
@@ -173,8 +173,9 @@ struct Inner {
     started: Mutex<Option<Started>>,
     /// The link and its channel, when there is one.
     held: Mutex<Option<Held>>,
-    /// The computers a ticket let in, each until the ticket expires.
-    admitted: Mutex<Vec<(Fingerprint, u64)>>,
+    /// The computers a ticket let in, each until the ticket expires, and
+    /// under what: as the account's own, or under a share.
+    admitted: Mutex<Vec<(Fingerprint, u64, Grant)>>,
     /// Woken whenever the admissions change, so the door reads them at
     /// once rather than at its next turn.
     changed: Notify,
@@ -372,12 +373,39 @@ impl Account {
 
     /// The computers a ticket let in, and still lets in.
     pub fn admitted(&self) -> Vec<Fingerprint> {
+        self.still_admitted()
+            .iter()
+            .map(|(device, _, _)| *device)
+            .collect()
+    }
+
+    /// Under what a ticket let that computer in, while it still does.
+    pub fn admitted_under(&self, device: Fingerprint) -> Option<Grant> {
+        self.still_admitted()
+            .into_iter()
+            .find(|(known, _, _)| *known == device)
+            .map(|(_, _, grant)| grant)
+    }
+
+    /// The admissions whose ticket still lives, read with the same
+    /// tolerance the ticket was: two honest clocks may differ, and the
+    /// door must not close before the ticket does.
+    fn still_admitted(&self) -> Vec<(Fingerprint, u64, Grant)> {
         let mut admitted = self.0.admitted.lock().expect("admitted by ticket");
         let moment = now();
-        // Read with the same tolerance the ticket was: two honest clocks
-        // may differ, and the door must not close before the ticket does.
-        admitted.retain(|(_, until)| *until + CLOCK_SKEW.as_secs() >= moment);
-        admitted.iter().map(|(device, _)| *device).collect()
+        admitted.retain(|(_, until, _)| *until + CLOCK_SKEW.as_secs() >= moment);
+        admitted.clone()
+    }
+
+    /// To whom this computer is lent under that share, and what they may
+    /// do here, for as long as the share stands.
+    pub fn lent_under(&self, share: &str) -> Option<(String, Rights)> {
+        let snapshot = self.snapshot()?;
+        snapshot
+            .shares
+            .iter()
+            .find(|known| known.id == share)
+            .map(|known| (known.with.clone(), rights_of(&known.permissions)))
     }
 
     /// Waits for the admissions to change.
@@ -949,7 +977,7 @@ impl Account {
                     ));
                     return;
                 }
-                self.admit(start.peer.fingerprint, ticket.expires);
+                self.admit(start.peer.fingerprint, ticket.expires, ticket.grant.clone());
                 inner.log.write(&format!(
                     "{} ({}) is presented by the server for session {}, and may come in for as \
                      long as the ticket lives",
@@ -1071,11 +1099,12 @@ impl Account {
         started.as_ref().and_then(|started| started.door.junction())
     }
 
-    /// Lets that computer in until then, and wakes the door.
-    pub(crate) fn admit(&self, device: Fingerprint, until: u64) {
+    /// Lets that computer in until then, under what the ticket says, and
+    /// wakes the door.
+    pub(crate) fn admit(&self, device: Fingerprint, until: u64, grant: Grant) {
         let mut admitted = self.0.admitted.lock().expect("admitted by ticket");
-        admitted.retain(|(known, _)| *known != device);
-        admitted.push((device, until));
+        admitted.retain(|(known, _, _)| *known != device);
+        admitted.push((device, until, grant));
         self.0.changed.notify_one();
     }
 
@@ -1270,17 +1299,32 @@ mod tests {
         assert!(account.admitted().is_empty());
 
         let moment = now();
-        account.admit(fingerprint(1), moment + 60);
+        account.admit(fingerprint(1), moment + 60, Grant::Owner);
         account.admit(
             fingerprint(2),
             moment.saturating_sub(CLOCK_SKEW.as_secs() + 1),
+            Grant::Owner,
         );
         // The first is still admitted; the second expired longer ago
         // than two honest clocks drift apart.
         assert_eq!(account.admitted(), vec![fingerprint(1)]);
-        // The same computer presented twice only gets in once.
-        account.admit(fingerprint(1), moment + 120);
+        assert_eq!(account.admitted_under(fingerprint(2)), None);
+        // The same computer presented twice only gets in once, under
+        // what the last ticket said.
+        account.admit(
+            fingerprint(1),
+            moment + 120,
+            Grant::Share {
+                id: "p1".to_string(),
+            },
+        );
         assert_eq!(account.admitted(), vec![fingerprint(1)]);
+        assert_eq!(
+            account.admitted_under(fingerprint(1)),
+            Some(Grant::Share {
+                id: "p1".to_string()
+            })
+        );
         let _ = std::fs::remove_dir_all(&folder);
     }
 

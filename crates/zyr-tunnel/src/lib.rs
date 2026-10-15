@@ -8,10 +8,12 @@ pub mod frame;
 pub mod pump;
 pub mod queue;
 pub mod service;
+pub mod sieve;
 pub mod tunnel;
 
 pub use aside::{Answers, Opening, Question, Told};
 pub use channel::{DatagramChannel, StreamChannel};
 pub use pump::{Counters, Reading, nudge};
 pub use service::{ServiceEnd, ServiceSide, service_channel};
+pub use sieve::Sieve;
 pub use tunnel::{Presence, Tunnel};

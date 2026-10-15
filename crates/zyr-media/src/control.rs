@@ -268,7 +268,26 @@ const CEILING: u8 = 12;
 const KEY_EXTENDED: u8 = 1;
 const KEY_DOWN: u8 = 2;
 
+/// What a message of the player acts on, on the computer being watched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Moves {
+    Keyboard,
+    Mouse,
+}
+
 impl ToEngine {
+    /// What a message of that kind acts on, for whoever carries the
+    /// stream and holds back what someone only watching may not send.
+    /// Nothing for a message that acts on neither, letting go of
+    /// everything held included.
+    pub fn moves(kind: u8) -> Option<Moves> {
+        match kind {
+            KEY => Some(Moves::Keyboard),
+            POINTER_AT | POINTER_BY | BUTTON | WHEEL => Some(Moves::Mouse),
+            _ => None,
+        }
+    }
+
     /// Appends the message, framed, to what `out` holds.
     pub fn write(&self, out: &mut Vec<u8>) {
         match self {
@@ -529,6 +548,63 @@ fn framed(out: &mut Vec<u8>, kind: u8, body: impl FnOnce(&mut Vec<u8>)) {
     out[start..start + 2].copy_from_slice(&len.to_le_bytes());
 }
 
+/// Cuts the bytes of the stream, in whatever pieces they come, into whole
+/// messages, left exactly as they are.
+///
+/// For whoever reads the messages, and for whoever only carries them and
+/// has to see their kind go by: a message passed on whole is the message
+/// the far end wrote, a kind this build does not know included.
+///
+/// Feed what the stream gave, then take messages until `None`.
+/// [`WireError::Framing`] is a length out of bounds: the stream no
+/// longer says where messages start, nothing more is read from it, and
+/// it has to be closed.
+#[derive(Default)]
+pub struct Frames {
+    buffer: Vec<u8>,
+    /// Where the bytes not yet read start in `buffer`.
+    start: usize,
+    broken: bool,
+}
+
+impl Frames {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn feed(&mut self, chunk: &[u8]) {
+        if self.broken {
+            return;
+        }
+        self.buffer.drain(..self.start);
+        self.start = 0;
+        self.buffer.extend_from_slice(chunk);
+    }
+
+    /// The next whole message: its kind, and all of it, its length
+    /// included.
+    pub fn next_whole(&mut self) -> Option<Result<(u8, &[u8]), WireError>> {
+        if self.broken {
+            return None;
+        }
+        let at = self.start;
+        let length = self.buffer.get(at..at + 2)?;
+        let len = usize::from(u16::from_le_bytes([length[0], length[1]]));
+        if len == 0 || len > MAX_CONTROL_MESSAGE {
+            self.broken = true;
+            self.buffer = Vec::new();
+            self.start = 0;
+            return Some(Err(WireError::Framing));
+        }
+        let end = at + 2 + len;
+        if self.buffer.len() < end {
+            return None;
+        }
+        self.start = end;
+        Some(Ok((self.buffer[at + 2], &self.buffer[at..end])))
+    }
+}
+
 /// Gathers the bytes of the stream, in whatever pieces they come, and
 /// gives back whole messages.
 ///
@@ -538,10 +614,7 @@ fn framed(out: &mut Vec<u8>, kind: u8, body: impl FnOnce(&mut Vec<u8>)) {
 /// longer says where messages start, nothing more is read from it, and
 /// it has to be closed.
 pub struct ControlReader<M> {
-    buffer: Vec<u8>,
-    /// Where the bytes not yet read start in `buffer`.
-    start: usize,
-    broken: bool,
+    frames: Frames,
     skipped: u64,
     message: PhantomData<fn() -> M>,
 }
@@ -555,21 +628,14 @@ impl<M: ControlMessage> Default for ControlReader<M> {
 impl<M: ControlMessage> ControlReader<M> {
     pub fn new() -> Self {
         Self {
-            buffer: Vec::new(),
-            start: 0,
-            broken: false,
+            frames: Frames::new(),
             skipped: 0,
             message: PhantomData,
         }
     }
 
     pub fn feed(&mut self, chunk: &[u8]) {
-        if self.broken {
-            return;
-        }
-        self.buffer.drain(..self.start);
-        self.start = 0;
-        self.buffer.extend_from_slice(chunk);
+        self.frames.feed(chunk);
     }
 
     /// Messages of a kind this build does not know, passed over.
@@ -583,24 +649,11 @@ impl<M: ControlMessage> Iterator for ControlReader<M> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if self.broken {
-                return None;
-            }
-            let at = self.start;
-            let length = self.buffer.get(at..at + 2)?;
-            let len = usize::from(u16::from_le_bytes([length[0], length[1]]));
-            if len == 0 || len > MAX_CONTROL_MESSAGE {
-                self.broken = true;
-                self.buffer = Vec::new();
-                self.start = 0;
-                return Some(Err(WireError::Framing));
-            }
-            let end = at + 2 + len;
-            if self.buffer.len() < end {
-                return None;
-            }
-            self.start = end;
-            match M::read(self.buffer[at + 2], &self.buffer[at + 3..end]) {
+            let read = match self.frames.next_whole()? {
+                Ok((kind, whole)) => M::read(kind, &whole[3..]),
+                Err(e) => return Some(Err(e)),
+            };
+            match read {
                 Ok(Some(message)) => return Some(Ok(message)),
                 Ok(None) => self.skipped += 1,
                 Err(e) => return Some(Err(e)),
@@ -807,7 +860,75 @@ mod tests {
             read.extend(read_all(&mut reader));
         }
         assert_eq!(read, messages);
-        assert!(reader.buffer.is_empty() || reader.start == reader.buffer.len());
+        assert!(
+            reader.frames.buffer.is_empty() || reader.frames.start == reader.frames.buffer.len()
+        );
+    }
+
+    #[test]
+    fn a_message_cut_whole_is_every_byte_the_far_end_wrote() {
+        let mut bytes = Vec::new();
+        ToEngine::Input(InputEvent::Key {
+            scancode: 30,
+            extended: false,
+            down: true,
+        })
+        .write(&mut bytes);
+        framed(&mut bytes, 200, |out| out.extend_from_slice(&[1, 2, 3]));
+        ToEngine::Bye.write(&mut bytes);
+
+        let mut frames = Frames::new();
+        let mut cut = Vec::new();
+        // One byte at a time, the worst a stream can do.
+        for byte in &bytes {
+            frames.feed(std::slice::from_ref(byte));
+            while let Some(whole) = frames.next_whole() {
+                let (kind, whole) = whole.unwrap();
+                cut.push((kind, whole.to_vec()));
+            }
+        }
+        assert_eq!(
+            cut.iter().map(|(kind, _)| *kind).collect::<Vec<_>>(),
+            [KEY, 200, ENGINE_BYE]
+        );
+        let rejoined: Vec<u8> = cut.iter().flat_map(|(_, whole)| whole.clone()).collect();
+        assert_eq!(rejoined, bytes);
+    }
+
+    #[test]
+    fn what_a_message_acts_on_is_said_by_its_kind() {
+        let kind_of = |message: ToEngine| {
+            let mut bytes = Vec::new();
+            message.write(&mut bytes);
+            bytes[2]
+        };
+        let moves = |message| ToEngine::moves(kind_of(message));
+        assert_eq!(
+            moves(ToEngine::Input(InputEvent::Key {
+                scancode: 1,
+                extended: true,
+                down: false
+            })),
+            Some(Moves::Keyboard)
+        );
+        for mouse in [
+            InputEvent::PointerAt { x: 1, y: 2 },
+            InputEvent::PointerBy { dx: -1, dy: 1 },
+            InputEvent::Button {
+                button: Button::Left,
+                down: true,
+            },
+            InputEvent::Wheel {
+                vertical: 120,
+                horizontal: 0,
+            },
+        ] {
+            assert_eq!(moves(ToEngine::Input(mouse)), Some(Moves::Mouse));
+        }
+        // Letting go of everything held acts on nothing: it is what puts
+        // a computer back the way it was.
+        assert_eq!(moves(ToEngine::Input(InputEvent::ReleaseAll)), None);
+        assert_eq!(moves(ToEngine::Bye), None);
     }
 
     #[test]

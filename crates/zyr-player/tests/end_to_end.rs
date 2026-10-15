@@ -332,7 +332,7 @@ async fn host_side(
     }
     tokio::spawn(hear_the_engine(service.from_link, told));
     opening.opened().await.unwrap();
-    let tunnel = Tunnel::host(connection, answering, link, side, Some(log));
+    let tunnel = Tunnel::host(connection, answering, link, side, None, Some(log));
     (tunnel, service.to_link)
 }
 

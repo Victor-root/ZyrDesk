@@ -52,6 +52,7 @@ use crate::engine::{Engine, Film};
 use crate::machine::{Door, Machine};
 use crate::said::{self, Said};
 use crate::screen::{Call, Own};
+use crate::visitor::{self, Allowed, Visitor};
 
 /// What this module's lines are filed under.
 const TAG: &str = "gateway";
@@ -140,6 +141,8 @@ struct Attending {
     /// Whether the screen this computer grew was already tried for this
     /// session, because the one it films gave nothing.
     tried_the_grown_screen: AtomicBool,
+    /// What whoever is on the other end may do here.
+    allowed: Allowed,
 }
 
 impl Answers for Attending {
@@ -150,6 +153,7 @@ impl Answers for Attending {
     /// This is the service pressing it in its own process, which is the
     /// one thing on this machine Windows will take it from.
     fn secure_attention(&self) -> Result<(), String> {
+        self.allowed.with_the_keyboard()?;
         match zyr_system::press(&self.log) {
             Ok(()) => {
                 self.log.write("Ctrl+Alt+Del pressed for the far computer");
@@ -191,6 +195,7 @@ impl Answers for Attending {
     /// out to the session that owns the screen and comes back, where the
     /// other stays in this process.
     fn lock_the_screen(&self) -> Result<(), String> {
+        self.allowed.with_the_keyboard()?;
         // Said before the order goes out, so the journal carries the
         // moment it was asked as well as the moment it was done. What
         // happens between the two is the picture standing still, and
@@ -325,6 +330,7 @@ impl Answers for Attending {
     /// reading a machine from elsewhere leaves a trace on it, like every
     /// other thing a far computer may ask for here.
     fn journal(&self, sift: &str) -> Result<String, String> {
+        self.allowed.trusted_only()?;
         self.log.write(&format!(
             "a computer asked this one for its journal{}, and it was handed over",
             if sift.is_empty() {
@@ -346,6 +352,7 @@ impl Answers for Attending {
     /// asking for it from here is what spares the walk to this machine
     /// that a remote desktop already exists to spare.
     fn reach_log(&self) -> Result<String, String> {
+        self.allowed.trusted_only()?;
         self.log
             .write("a computer asked this one for what it reaches, and it was handed over");
         match std::fs::read_to_string(paths::reach_log()) {
@@ -364,6 +371,7 @@ impl Answers for Attending {
     /// nothing at all. It is the same order the window uses on its own
     /// machine, and for the same reason.
     fn empty_the_journal(&self) -> Result<(), String> {
+        self.allowed.trusted_only()?;
         let refused = zyr_proto::journal::emptied();
         self.log
             .write("a computer asked this one to empty its journal");
@@ -478,6 +486,7 @@ impl Answers for Attending {
         pushing: Option<zyr_proto::clipboard::Clip>,
         seen: Option<zyr_proto::clipboard::Stamp>,
     ) -> Result<Option<zyr_proto::clipboard::Clip>, String> {
+        self.allowed.with_the_keyboard()?;
         if let Some(coming) = &pushing {
             crate::clipboard::give_it(coming, &self.log)?;
         }
@@ -512,6 +521,7 @@ impl Answers for Attending {
         ),
         String,
     > {
+        self.allowed.with_the_keyboard()?;
         if let Some(piece) = giving
             && let Err(refused) = crate::transfer::take(&piece, &self.log)
         {
@@ -540,6 +550,7 @@ impl Answers for Attending {
     /// A thumbnail of what the desktop of whoever sits at the screen
     /// shows, for the card that stands for this computer over there.
     fn wallpaper(&self) -> Result<Option<Vec<u8>>, String> {
+        self.allowed.trusted_only()?;
         let picture = zyr_system::wallpaper_on_screen()
             .and_then(|path| zyr_draw::thumbnail(&path, THUMBNAIL));
         self.log.write(&format!(
@@ -825,7 +836,7 @@ struct AtTheDoor {
 impl AtTheDoor {
     /// What answers for this computer to one session, with that
     /// session's engine.
-    fn attending(&self, engine: Arc<Engine>) -> Attending {
+    fn attending(&self, engine: Arc<Engine>, allowed: Allowed) -> Attending {
         Attending {
             sessions: self.sessions.clone(),
             machine: self.machine.clone(),
@@ -834,6 +845,7 @@ impl AtTheDoor {
             log: self.log.clone(),
             wanted: Mutex::new(None),
             tried_the_grown_screen: AtomicBool::new(false),
+            allowed,
         }
     }
 }
@@ -1218,7 +1230,12 @@ async fn one_session(
     log: Log,
 ) {
     let from = connection.remote_address();
-    let attending = Arc::new(door.attending(engine.clone()));
+    let Some(allowed) = whoever_came(&connection, &door.machine, &log) else {
+        connection.close();
+        return;
+    };
+    let sieve = allowed.sieve();
+    let attending = Arc::new(door.attending(engine.clone(), allowed));
     let answering: Arc<dyn Answers> = attending.clone();
 
     // Most connections ask a question or two and go; only the first word
@@ -1290,6 +1307,7 @@ async fn one_session(
         answering,
         running.link,
         running.service,
+        sieve,
         Some(log.clone()),
     );
     log.write(&format!(
@@ -1326,6 +1344,53 @@ async fn one_session(
     // server says the session is over. A tunnel gives up half a minute
     // after the last packet, which is long after another session may
     // have taken the same card.
+}
+
+/// What the computer that came in may do here, and for a contact, the
+/// watch that sends it away once its computer is no longer lent to it.
+/// Nothing for a computer none of the ways in names any more.
+fn whoever_came(connection: &Connection, machine: &Machine, log: &Log) -> Option<Allowed> {
+    let from = connection.remote_address();
+    let visitor = connection
+        .peer_fingerprint()
+        .and_then(|peer| visitor::recognised(machine, peer));
+    match visitor {
+        Some(Visitor::Trusted) => Some(Allowed::everything()),
+        Some(Visitor::Contact { share }) => {
+            let Some((allowed, with, kept_up)) =
+                visitor::lent_to_a_contact(&machine.account, &share)
+            else {
+                log.write(&format!(
+                    "{from} came in under share {share}, which no longer stands: sent away"
+                ));
+                return None;
+            };
+            log.write(&format!(
+                "{from} is {with}'s computer, a contact this one is lent to, who may: {:?}",
+                allowed.now()
+            ));
+            let connection = connection.clone();
+            let log = log.clone();
+            tokio::spawn(async move {
+                tokio::select! {
+                    () = kept_up => {
+                        log.write(&format!(
+                            "this computer is no longer lent to {with}: their session ends"
+                        ));
+                        connection.close();
+                    }
+                    () = connection.closed() => {}
+                }
+            });
+            Some(allowed)
+        }
+        None => {
+            log.write(&format!(
+                "{from} came in, and nothing lets it in any more: sent away"
+            ));
+            None
+        }
+    }
 }
 
 /// A session's engine, up and connected.
@@ -1630,17 +1695,10 @@ fn apart(before: &[Fingerprint], now: &[Fingerprint]) -> Vec<String> {
 /// arriving from outside it is let in that way; across the Internet, the
 /// account's ticket is what lets a computer in.
 fn let_in(written: Vec<Fingerprint>, machine: &Machine) -> Vec<Fingerprint> {
-    let seen = if machine.remembered.trust_local_network() {
-        machine
-            .neighbours
-            .peers()
-            .into_iter()
-            .map(|peer| peer.fingerprint)
-            .collect()
-    } else {
-        Vec::new()
-    };
-    joined(joined(written, seen), machine.account.admitted())
+    joined(
+        joined(written, visitor::met_on_a_trusted_network(machine)),
+        machine.account.admitted(),
+    )
 }
 
 /// Two lists of fingerprints as one, without repeats.
@@ -1748,9 +1806,11 @@ mod tests {
         // changes nothing about that.
         let (machine, folder) = machine("ticket");
         machine.remembered.set_trust_local_network(false).unwrap();
-        machine
-            .account
-            .admit(fingerprint(2), zyr_broker::now() + 60);
+        machine.account.admit(
+            fingerprint(2),
+            zyr_broker::now() + 60,
+            zyr_broker::Grant::Owner,
+        );
 
         let devices = let_in(vec![fingerprint(1)], &machine);
         assert_eq!(devices, vec![fingerprint(1), fingerprint(2)]);
@@ -1928,6 +1988,14 @@ mod tests {
         let log = Log::open(&folder.join("service.log")).unwrap();
         let this = Arc::new(Identity::generate().unwrap());
         let far = Identity::generate().unwrap();
+        // Let in as a computer of the account, which may do everything:
+        // the door asks who came in, and the session would be refused
+        // to a computer nothing names.
+        machine.account.admit(
+            far.fingerprint(),
+            zyr_broker::now() + 60,
+            zyr_broker::Grant::Owner,
+        );
         let junction = Junction::bind(
             "127.0.0.1:0".parse().unwrap(),
             this.clone(),

@@ -359,7 +359,14 @@ impl Waiting {
             service.to_link.send(SETUP.to_vec()).await.unwrap();
             let served = opening.serving();
             opening.opened().await.unwrap();
-            let host = Tunnel::host(host_connection, answering, accepted.unwrap(), side, None);
+            let host = Tunnel::host(
+                host_connection,
+                answering,
+                accepted.unwrap(),
+                side,
+                None,
+                None,
+            );
             (host, End::of(engine.unwrap()), service, served)
         };
         let ((host, engine, host_service, served), opened) = before_the_end(async {
