@@ -959,8 +959,14 @@ impl Store {
     }
 
     /// Withdraws a request, or ends a contact, from either side; the
-    /// shares between the two accounts fall with it.
-    pub fn remove_contact(&self, me: &str, contact: &str, now: u64) -> Result<Contact, Fault> {
+    /// shares between the two accounts fall with it, and are returned
+    /// for whoever has to be told.
+    pub fn remove_contact(
+        &self,
+        me: &str,
+        contact: &str,
+        now: u64,
+    ) -> Result<(Contact, Vec<Share>), Fault> {
         self.within(|conn| {
             let standing = contact_by_id(conn, contact)?
                 .filter(|c| c.asker == me || c.asked == me)
@@ -969,12 +975,24 @@ impl Store {
                 "UPDATE contacts SET status = 'removed', answered = ?1 WHERE id = ?2",
                 params![now as i64, contact],
             )?;
+            let between =
+                "revoked IS NULL AND ((owner = ?1 AND grantee = ?2) OR (owner = ?2 AND grantee = ?1))";
+            let fallen = conn
+                .prepare(&format!("SELECT {SHARE_COLUMNS} FROM shares WHERE {between}"))?
+                .query_map(params![standing.asker, standing.asked], read_share)?
+                .collect::<Result<Vec<_>, _>>()?;
             conn.execute(
-                "UPDATE shares SET revoked = ?1 WHERE revoked IS NULL AND \
-                 ((owner = ?2 AND grantee = ?3) OR (owner = ?3 AND grantee = ?2))",
-                params![now as i64, standing.asker, standing.asked],
+                &format!("UPDATE shares SET revoked = ?3 WHERE {between}"),
+                params![standing.asker, standing.asked, now as i64],
             )?;
-            Ok(standing)
+            let fallen = fallen
+                .into_iter()
+                .map(|share| Share {
+                    revoked: Some(now),
+                    ..share
+                })
+                .collect();
+            Ok((standing, fallen))
         })
     }
 
@@ -1037,9 +1055,9 @@ impl Store {
                 .query_row(
                     &format!(
                         "SELECT {SHARE_COLUMNS} FROM shares WHERE device = ?1 AND grantee = ?2 \
-                         AND revoked IS NULL"
+                         AND revoked IS NULL AND (expires IS NULL OR expires > ?3)"
                     ),
-                    params![owned.id, grantee],
+                    params![owned.id, grantee, now as i64],
                     read_share,
                 )
                 .optional()?;
@@ -1643,7 +1661,7 @@ mod tests {
             vec![accepted.clone()]
         );
 
-        let removed = store
+        let (removed, _) = store
             .remove_contact(&victor.id, &accepted.id, 1_003)
             .unwrap();
         assert_eq!(removed.id, accepted.id);
@@ -1740,6 +1758,30 @@ mod tests {
         assert_eq!(removed.revoked, Some(1_400));
         assert!(store.right_to(&laptop, &pc.id, 1_401).is_err());
         assert!(store.remove_share(&friend.id, &share.id, 1_402).is_err());
+
+        // An expired share is not brought back by a new one: what was
+        // told gone stays gone, and the new one starts on its own.
+        let brief = store
+            .give_share(
+                &victor.id,
+                &pc.id,
+                "friend",
+                &[Permission::Connect],
+                Some(1_600),
+                1_500,
+            )
+            .unwrap();
+        let after = store
+            .give_share(
+                &victor.id,
+                &pc.id,
+                "friend",
+                &[Permission::Connect],
+                None,
+                1_700,
+            )
+            .unwrap();
+        assert_ne!(after.id, brief.id);
     }
 
     #[test]
@@ -1752,13 +1794,17 @@ mod tests {
         let share = store
             .give_share(&victor.id, &pc.id, "friend", &Permission::ALL, None, 1_100)
             .unwrap();
-        store
+        let (_, fallen) = store
             .remove_contact(&friend.id, &contact.id, 1_200)
             .unwrap();
         assert_eq!(
             store.share(&share.id).unwrap().unwrap().revoked,
             Some(1_200)
         );
+        // Returned, so that both sides are told and its sessions end.
+        assert_eq!(fallen.len(), 1);
+        assert_eq!(fallen[0].id, share.id);
+        assert_eq!(fallen[0].revoked, Some(1_200));
     }
 
     #[test]

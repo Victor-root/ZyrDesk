@@ -197,23 +197,34 @@ pub struct ContactRequest {
 }
 
 /// What a share lets a contact do on the machine it names.
+///
+/// The machine itself enforces them, session by session: a share only
+/// says what its owner chose.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum Permission {
+    /// Reaching the machine, to see it and hear it.
     Connect,
     Keyboard,
     Mouse,
     Audio,
+    /// Opening a session without the owner's accord, given at the
+    /// machine each time otherwise.
+    Unattended,
+    /// One a newer half knows and this one does not. Read so that the
+    /// rest of the share is, and never granting anything.
+    #[serde(other)]
+    Unknown,
 }
 
 impl Permission {
-    /// All of them, which is what a share carries until the finer ones
-    /// are enforced.
-    pub const ALL: [Permission; 4] = [
+    /// Every one this half knows.
+    pub const ALL: [Permission; 5] = [
         Permission::Connect,
         Permission::Keyboard,
         Permission::Mouse,
         Permission::Audio,
+        Permission::Unattended,
     ];
 }
 
@@ -289,6 +300,22 @@ mod tests {
             [Permission::Connect, Permission::Keyboard]
         );
         assert_eq!(share.expires, None);
+    }
+
+    #[test]
+    fn a_permission_from_a_newer_half_is_read_and_grants_nothing() {
+        let share: ShareRequest = serde_json::from_str(
+            r#"{"device":"d1","with":"friend","permissions":["connect","gamepad","unattended"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            share.permissions,
+            [
+                Permission::Connect,
+                Permission::Unknown,
+                Permission::Unattended
+            ]
+        );
     }
 
     #[test]

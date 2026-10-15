@@ -565,15 +565,10 @@ async fn remove_contact(
 ) -> Result<StatusCode, Refusal> {
     let me = actor.account.id.clone();
     let at = now();
-    let (contact, shares) = blocking(&app.store, move |store| {
-        let contact = store.remove_contact(&me, &id, at)?;
-        // The shares between the two fell with the contact; whoever held
-        // a session under one of them is told.
-        let mut shares = store.shares_of(&contact.asker, at)?;
-        shares.retain(|share| share.owner == contact.asked || share.grantee == contact.asked);
-        Ok((contact, shares))
-    })
-    .await?;
+    // The shares between the two fall with the contact; whoever held a
+    // session under one of them is told.
+    let (contact, shares) =
+        blocking(&app.store, move |store| store.remove_contact(&me, &id, at)).await?;
     for who in [&contact.asker, &contact.asked] {
         app.live.notify_account(
             who,
