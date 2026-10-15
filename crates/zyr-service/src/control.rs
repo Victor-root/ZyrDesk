@@ -179,7 +179,33 @@ async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
                 .map(Answer::Device)
                 .collect(),
         ),
+        Request::Contacts => ended(
+            answering
+                .machine
+                .account
+                .contacts()
+                .into_iter()
+                .map(Answer::Contact)
+                .collect(),
+        ),
+        Request::Lent => ended(
+            answering
+                .machine
+                .account
+                .lent()
+                .into_iter()
+                .map(Answer::Lent)
+                .collect(),
+        ),
         other => vec![one(other, answering).await],
+    }
+}
+
+/// What a change asked of the account comes back as.
+fn done_or_not(done: Result<(), Fact>) -> Answer {
+    match done {
+        Ok(()) => Answer::Done,
+        Err(reason) => Answer::Refused(reason),
     }
 }
 
@@ -700,20 +726,34 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             Err(Attaching::Unpinned(presented)) => Answer::Unpinned { presented },
             Err(Attaching::Refused(reason)) => Answer::Refused(reason),
         },
-        Request::Detach => match answering.machine.account.detach().await {
-            Ok(()) => Answer::Done,
-            Err(reason) => Answer::Refused(reason),
-        },
+        Request::Detach => done_or_not(answering.machine.account.detach().await),
         Request::RenameDevice { device, name } => {
-            match answering.machine.account.rename(&device, &name).await {
-                Ok(()) => Answer::Done,
-                Err(reason) => Answer::Refused(reason),
-            }
+            done_or_not(answering.machine.account.rename(&device, &name).await)
         }
-        Request::RevokeDevice { device } => match answering.machine.account.revoke(&device).await {
-            Ok(()) => Answer::Done,
-            Err(reason) => Answer::Refused(reason),
-        },
+        Request::RevokeDevice { device } => {
+            done_or_not(answering.machine.account.revoke(&device).await)
+        }
+        Request::Invite { username } => {
+            done_or_not(answering.machine.account.invite(&username).await)
+        }
+        Request::AnswerContact { contact, accept } => done_or_not(
+            answering
+                .machine
+                .account
+                .answer_contact(&contact, accept)
+                .await,
+        ),
+        Request::RemoveContact { contact } => {
+            done_or_not(answering.machine.account.remove_contact(&contact).await)
+        }
+        Request::Lend {
+            device,
+            with,
+            rights,
+        } => done_or_not(answering.machine.account.lend(&device, &with, rights).await),
+        Request::TakeBack { share } => {
+            done_or_not(answering.machine.account.take_back(&share).await)
+        }
         // Handled above, where several answers can be given.
         Request::Peers
         | Request::Sessions
@@ -721,7 +761,9 @@ async fn one(request: Request, answering: &Answering) -> Answer {
         | Request::History
         | Request::Wallpaper { .. }
         | Request::Wake { .. }
-        | Request::Devices => Answer::Done,
+        | Request::Devices
+        | Request::Contacts
+        | Request::Lent => Answer::Done,
     }
 }
 
@@ -857,6 +899,8 @@ mod tests {
                 Request::Sessions,
                 Request::Watching,
                 Request::History,
+                Request::Contacts,
+                Request::Lent,
             ] {
                 let found = caller.ask_for_a_list(&request).await.unwrap();
                 assert!(found.is_empty(), "on « {request} »: {found:?}");

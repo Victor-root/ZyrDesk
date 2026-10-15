@@ -33,8 +33,8 @@ use zyr_account::{
     AttachError, Credentials, Event, Link, Live, Registering, Rest, Snapshot, Start, Trust,
     Untrusted,
 };
-use zyr_broker::live::{FromDevice, Relay};
-use zyr_broker::rest::Access;
+use zyr_broker::live::{FromDevice, FromServer, Relay};
+use zyr_broker::rest::{Access, ContactStatus, Permission, ShareRequest};
 use zyr_broker::ticket::CLOCK_SKEW;
 use zyr_broker::{Code, Refusal, Verifier, now};
 use zyr_control::{Holdup, WayId};
@@ -42,6 +42,7 @@ use zyr_proto::fact::Fact;
 use zyr_proto::fingerprint::Fingerprint;
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
+use zyr_proto::rights::Rights;
 use zyr_transport::relay::{Holding, hold_a_branch};
 use zyr_transport::{Identity, Sending};
 
@@ -131,6 +132,33 @@ type Matched = (Start, mpsc::UnboundedReceiver<Vec<SocketAddr>>);
 /// This computer holds no link to an account.
 fn not_attached() -> Fact {
     Fact::new("account.not_attached")
+}
+
+/// What a share says a contact may do, in the product's words.
+///
+/// A permission this half does not know grants nothing here either.
+pub fn rights_of(permissions: &[Permission]) -> Rights {
+    Rights {
+        keyboard: permissions.contains(&Permission::Keyboard),
+        mouse: permissions.contains(&Permission::Mouse),
+        unattended: permissions.contains(&Permission::Unattended),
+    }
+}
+
+/// The other way round. Seeing the computer and hearing it come with
+/// any share: they are what lending a computer is.
+fn permissions_of(rights: Rights) -> Vec<Permission> {
+    let mut permissions = vec![Permission::Connect, Permission::Audio];
+    for (allowed, permission) in [
+        (rights.keyboard, Permission::Keyboard),
+        (rights.mouse, Permission::Mouse),
+        (rights.unattended, Permission::Unattended),
+    ] {
+        if allowed {
+            permissions.push(permission);
+        }
+    }
+    permissions
 }
 
 /// The link, as the service holds it.
@@ -480,6 +508,142 @@ impl Account {
             .log
             .write(&format!("device {device} revoked from the account"));
         Ok(())
+    }
+
+    /// The contacts of the account, and the requests either way.
+    pub fn contacts(&self) -> Vec<zyr_control::Contact> {
+        let Some(snapshot) = self.snapshot() else {
+            return Vec::new();
+        };
+        snapshot
+            .contacts
+            .into_iter()
+            .map(|contact| zyr_control::Contact {
+                id: contact.id,
+                username: contact.username,
+                accepted: contact.status == ContactStatus::Accepted,
+                asked_by_me: contact.asked_by_me,
+                online: contact.online,
+            })
+            .collect()
+    }
+
+    /// What the account lends its contacts: the shares that name one of
+    /// its own computers, the others being lent to it.
+    pub fn lent(&self) -> Vec<zyr_control::Lent> {
+        let Some(snapshot) = self.snapshot() else {
+            return Vec::new();
+        };
+        snapshot
+            .shares
+            .iter()
+            .filter(|share| {
+                snapshot
+                    .devices
+                    .iter()
+                    .any(|device| device.id == share.device.id)
+            })
+            .map(|share| zyr_control::Lent {
+                share: share.id.clone(),
+                device: share.device.id.clone(),
+                with: share.with.clone(),
+                rights: rights_of(&share.permissions),
+            })
+            .collect()
+    }
+
+    /// Asks someone to become a contact.
+    pub async fn invite(&self, username: &str) -> Result<(), Fact> {
+        let (rest, token, _) = self.door()?;
+        let contact = rest
+            .ask_contact(&token, username)
+            .await
+            .map_err(|e| e.fact())?;
+        self.0
+            .log
+            .write(&format!("{username} asked to become a contact"));
+        self.learn(&FromServer::ContactRequested { contact });
+        Ok(())
+    }
+
+    /// Says yes or no to someone who asked.
+    pub async fn answer_contact(&self, contact: &str, accept: bool) -> Result<(), Fact> {
+        let (rest, token, _) = self.door()?;
+        let answered = rest
+            .answer_contact(&token, contact, accept)
+            .await
+            .map_err(|e| e.fact())?;
+        self.0.log.write(&format!(
+            "the request of {} {}",
+            answered.username,
+            if accept { "accepted" } else { "declined" }
+        ));
+        self.learn(&if accept {
+            FromServer::ContactAnswered { contact: answered }
+        } else {
+            FromServer::ContactRemoved {
+                contact: contact.to_string(),
+            }
+        });
+        Ok(())
+    }
+
+    /// Withdraws a request, or ends a contact.
+    pub async fn remove_contact(&self, contact: &str) -> Result<(), Fact> {
+        let (rest, token, _) = self.door()?;
+        rest.remove_contact(&token, contact)
+            .await
+            .map_err(|e| e.fact())?;
+        self.0.log.write(&format!("contact {contact} removed"));
+        self.learn(&FromServer::ContactRemoved {
+            contact: contact.to_string(),
+        });
+        Ok(())
+    }
+
+    /// Lends a computer of the account to a contact, or changes what the
+    /// contact may do on it.
+    pub async fn lend(&self, device: &str, with: &str, rights: Rights) -> Result<(), Fact> {
+        let (rest, token, _) = self.door()?;
+        let share = rest
+            .give_share(
+                &token,
+                &ShareRequest {
+                    device: device.to_string(),
+                    with: with.to_string(),
+                    permissions: permissions_of(rights),
+                    expires: None,
+                },
+            )
+            .await
+            .map_err(|e| e.fact())?;
+        self.0.log.write(&format!(
+            "{} lent to {with}, who may: {rights:?}",
+            share.device.name
+        ));
+        self.learn(&FromServer::ShareGiven { share });
+        Ok(())
+    }
+
+    /// Takes back what was lent.
+    pub async fn take_back(&self, share: &str) -> Result<(), Fact> {
+        let (rest, token, _) = self.door()?;
+        rest.remove_share(&token, share)
+            .await
+            .map_err(|e| e.fact())?;
+        self.0.log.write(&format!("share {share} taken back"));
+        self.learn(&FromServer::ShareRemoved {
+            share: share.to_string(),
+        });
+        Ok(())
+    }
+
+    /// Takes in what an answer of the server said, before the channel
+    /// says it again.
+    fn learn(&self, told: &FromServer) {
+        if let Some(held) = self.0.held.lock().expect("account link").as_ref() {
+            held.live.learn(told);
+        }
     }
 
     /// The server's door, with this device's token and identifier.

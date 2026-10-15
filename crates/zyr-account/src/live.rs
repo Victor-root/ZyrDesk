@@ -222,6 +222,15 @@ impl Live {
         self.snapshot.lock().expect("account snapshot").clone()
     }
 
+    /// Takes in at once what an answer of the server already said.
+    ///
+    /// The channel says it too, a moment later: the window asking again
+    /// right after a change would otherwise see the account as it was.
+    /// Taking the same news twice changes nothing.
+    pub fn learn(&self, told: &FromServer) {
+        self.snapshot.lock().expect("account snapshot").apply(told);
+    }
+
     /// Tells the server whether this device accepts remote access.
     pub fn set_access(&self, access: Access) {
         let _ = self.orders.send(Order::Access(access));

@@ -508,9 +508,17 @@ async fn ask_contact(
         Ok((contact, mine, theirs))
     })
     .await?;
+    // Every device of both accounts is told, the one that asked included:
+    // the request shows on all of them.
     app.live.notify_account(
         &contact.asked,
         zyr_broker::live::FromServer::ContactRequested { contact: theirs },
+    );
+    app.live.notify_account(
+        &contact.asker,
+        zyr_broker::live::FromServer::ContactRequested {
+            contact: mine.clone(),
+        },
     );
     Ok(Json(mine))
 }
@@ -531,14 +539,22 @@ async fn answer_contact(
         Ok((contact, mine, theirs))
     })
     .await?;
-    let told = if accept {
-        zyr_broker::live::FromServer::ContactAnswered { contact: theirs }
+    // Both accounts, every device of each, the one that answered included.
+    let (told_them, told_me) = if accept {
+        (
+            zyr_broker::live::FromServer::ContactAnswered { contact: theirs },
+            zyr_broker::live::FromServer::ContactAnswered {
+                contact: mine.clone(),
+            },
+        )
     } else {
-        zyr_broker::live::FromServer::ContactRemoved {
+        let removed = zyr_broker::live::FromServer::ContactRemoved {
             contact: contact.id.clone(),
-        }
+        };
+        (removed.clone(), removed)
     };
-    app.live.notify_account(&contact.asker, told);
+    app.live.notify_account(&contact.asker, told_them);
+    app.live.notify_account(&contact.asked, told_me);
     Ok(Json(mine))
 }
 

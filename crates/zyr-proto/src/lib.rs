@@ -11,6 +11,7 @@ pub mod machine;
 pub mod net;
 pub mod paths;
 pub mod random;
+pub mod rights;
 pub mod session;
 pub mod sifting;
 

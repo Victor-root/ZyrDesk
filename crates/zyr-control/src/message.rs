@@ -19,6 +19,7 @@ use zyr_proto::clipboard::HowFar;
 use zyr_proto::fact::Fact;
 use zyr_proto::fields::{bytes_packed, bytes_unpacked, packed, unpacked};
 use zyr_proto::fingerprint::Fingerprint;
+use zyr_proto::rights::Rights;
 use zyr_proto::session::{Preferred, WantedScreen};
 
 /// Version of this dialect.
@@ -28,7 +29,7 @@ use zyr_proto::session::{Preferred, WantedScreen};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 38;
+pub const PROTOCOL: u32 = 39;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -326,6 +327,26 @@ pub enum Request {
     /// Revokes one of them: it can no longer speak for the account, and
     /// its sessions close.
     RevokeDevice { device: String },
+    /// The contacts of the account, and the requests either way.
+    Contacts,
+    /// Asks someone to become a contact, by username.
+    Invite { username: String },
+    /// Says yes or no to a request someone made.
+    AnswerContact { contact: String, accept: bool },
+    /// Withdraws a request, or ends a contact: what it was lent goes
+    /// with it.
+    RemoveContact { contact: String },
+    /// What the account lends its contacts, computer by computer.
+    Lent,
+    /// Lends a computer of the account to a contact, or changes what
+    /// the contact may do on it.
+    Lend {
+        device: String,
+        with: String,
+        rights: Rights,
+    },
+    /// Takes back what was lent.
+    TakeBack { share: String },
 }
 
 impl Request {
@@ -456,6 +477,26 @@ impl Request {
             "revoke-device" => Ok(Request::RevokeDevice {
                 device: fields.text("device")?.to_string(),
             }),
+            "contacts" => Ok(Request::Contacts),
+            "invite" => Ok(Request::Invite {
+                username: unpacked(fields.text("username")?),
+            }),
+            "answer-contact" => Ok(Request::AnswerContact {
+                contact: fields.text("contact")?.to_string(),
+                accept: fields.flag("accept", false),
+            }),
+            "remove-contact" => Ok(Request::RemoveContact {
+                contact: fields.text("contact")?.to_string(),
+            }),
+            "lent" => Ok(Request::Lent),
+            "lend" => Ok(Request::Lend {
+                device: fields.text("device")?.to_string(),
+                with: unpacked(fields.text("with")?),
+                rights: fields.rights(),
+            }),
+            "take-back" => Ok(Request::TakeBack {
+                share: fields.text("share")?.to_string(),
+            }),
             other => Err(Malformed(format!("unknown verb {other:?}"))),
         }
     }
@@ -565,7 +606,42 @@ impl fmt::Display for Request {
                 write!(f, "rename-device device={device} name={}", packed(name))
             }
             Request::RevokeDevice { device } => write!(f, "revoke-device device={device}"),
+            Request::Contacts => f.write_str("contacts"),
+            Request::Invite { username } => write!(f, "invite username={}", packed(username)),
+            Request::AnswerContact { contact, accept } => write!(
+                f,
+                "answer-contact contact={contact} accept={}",
+                said(*accept)
+            ),
+            Request::RemoveContact { contact } => write!(f, "remove-contact contact={contact}"),
+            Request::Lent => f.write_str("lent"),
+            Request::Lend {
+                device,
+                with,
+                rights,
+            } => write!(
+                f,
+                "lend device={device} with={} {}",
+                packed(with),
+                Spelled(rights)
+            ),
+            Request::TakeBack { share } => write!(f, "take-back share={share}"),
         }
+    }
+}
+
+/// How what a visitor may do travels: one yes-or-no each.
+struct Spelled<'a>(&'a Rights);
+
+impl fmt::Display for Spelled<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "keyboard={} mouse={} unattended={}",
+            said(self.0.keyboard),
+            said(self.0.mouse),
+            said(self.0.unattended)
+        )
     }
 }
 
@@ -781,6 +857,30 @@ pub struct Device {
     pub last_seen: Option<u64>,
 }
 
+/// Someone the account is in touch with, or asked to be.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Contact {
+    pub id: String,
+    pub username: String,
+    /// Both said yes; otherwise a request still waiting for an answer.
+    pub accepted: bool,
+    /// Whether this account asked, or was asked.
+    pub asked_by_me: bool,
+    /// Whether any computer of theirs is connected to the server.
+    pub online: bool,
+}
+
+/// One computer of the account lent to one contact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lent {
+    pub share: String,
+    /// The computer, by its identifier at the server.
+    pub device: String,
+    /// The contact, by username.
+    pub with: String,
+    pub rights: Rights,
+}
+
 /// A session this computer is holding towards another.
 ///
 /// Described from the service's side, which is the only side that
@@ -940,6 +1040,10 @@ pub enum Answer {
     },
     /// One device of the account. The list ends on `Done`.
     Device(Device),
+    /// One contact or request. The list ends on `Done`.
+    Contact(Contact),
+    /// One computer lent to one contact. The list ends on `Done`.
+    Lent(Lent),
 }
 
 impl Answer {
@@ -1068,6 +1172,19 @@ impl Answer {
                 access: access_read(fields.text("access").unwrap_or_default()),
                 this: fields.flag("this", false),
                 last_seen: fields.parsed("last-seen").ok(),
+            })),
+            "contact" => Ok(Answer::Contact(Contact {
+                id: fields.text("id")?.to_string(),
+                username: unpacked(fields.text("username")?),
+                accepted: fields.flag("accepted", false),
+                asked_by_me: fields.flag("asked-by-me", false),
+                online: fields.flag("online", false),
+            })),
+            "lent" => Ok(Answer::Lent(Lent {
+                share: fields.text("share")?.to_string(),
+                device: fields.text("device")?.to_string(),
+                with: unpacked(fields.text("with")?),
+                rights: fields.rights(),
             })),
             other => Err(Malformed(format!("unknown answer {other:?}"))),
         }
@@ -1205,6 +1322,23 @@ impl fmt::Display for Answer {
                 }
                 Ok(())
             }
+            Answer::Contact(contact) => write!(
+                f,
+                "contact id={} username={} accepted={} asked-by-me={} online={}",
+                contact.id,
+                packed(&contact.username),
+                said(contact.accepted),
+                said(contact.asked_by_me),
+                said(contact.online)
+            ),
+            Answer::Lent(lent) => write!(
+                f,
+                "lent share={} device={} with={} {}",
+                lent.share,
+                lent.device,
+                packed(&lent.with),
+                Spelled(&lent.rights)
+            ),
         }
     }
 }
@@ -1291,6 +1425,15 @@ impl<'a> Fields<'a> {
     /// useful fallback, since an empty filter is no filter at all.
     fn said(&self, key: &str) -> String {
         self.text(key).map(unpacked).unwrap_or_default()
+    }
+
+    /// Reads what a visitor may do. What is not said is not allowed.
+    fn rights(&self) -> Rights {
+        Rights {
+            keyboard: self.flag("keyboard", false),
+            mouse: self.flag("mouse", false),
+            unattended: self.flag("unattended", false),
+        }
     }
 
     /// Reads a whole set of preferences.
@@ -1521,6 +1664,34 @@ mod tests {
             },
             Request::RevokeDevice {
                 device: "d1".to_string(),
+            },
+            Request::Contacts,
+            Request::Invite {
+                username: "Ami de Victor".to_string(),
+            },
+            Request::AnswerContact {
+                contact: "c1".to_string(),
+                accept: true,
+            },
+            Request::AnswerContact {
+                contact: "c2".to_string(),
+                accept: false,
+            },
+            Request::RemoveContact {
+                contact: "c1".to_string(),
+            },
+            Request::Lent,
+            Request::Lend {
+                device: "d1".to_string(),
+                with: "ami".to_string(),
+                rights: Rights {
+                    keyboard: true,
+                    mouse: false,
+                    unattended: true,
+                },
+            },
+            Request::TakeBack {
+                share: "p1".to_string(),
             },
         ]
     }
@@ -1760,6 +1931,30 @@ mod tests {
                 access: Access::Off,
                 this: false,
                 last_seen: Some(1_780_000_000),
+            }),
+            Answer::Contact(Contact {
+                id: "c1".to_string(),
+                username: "Ami de Victor".to_string(),
+                accepted: true,
+                asked_by_me: false,
+                online: true,
+            }),
+            Answer::Contact(Contact {
+                id: "c2".to_string(),
+                username: "autre".to_string(),
+                accepted: false,
+                asked_by_me: true,
+                online: false,
+            }),
+            Answer::Lent(Lent {
+                share: "p1".to_string(),
+                device: "d1".to_string(),
+                with: "Ami de Victor".to_string(),
+                rights: Rights {
+                    keyboard: false,
+                    mouse: true,
+                    unattended: false,
+                },
             }),
         ]
     }

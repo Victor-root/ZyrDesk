@@ -367,7 +367,12 @@ fn in_milliseconds(round_trip: std::time::Duration) -> u32 {
 
 /// Every computer the account names, this one left out: its own, then
 /// those shared with it, each with the username of its owner.
+///
+/// The shares the account gave are in the same list as those it was
+/// given, and name its own computers: those are already there, and were
+/// not shared with it by anyone.
 fn every_device_of(snapshot: &Snapshot) -> impl Iterator<Item = (&DeviceInfo, Option<String>)> {
+    let own = |id: &str| snapshot.devices.iter().any(|device| device.id == id);
     snapshot
         .devices
         .iter()
@@ -377,6 +382,7 @@ fn every_device_of(snapshot: &Snapshot) -> impl Iterator<Item = (&DeviceInfo, Op
             snapshot
                 .shares
                 .iter()
+                .filter(move |share| !own(&share.device.id))
                 .map(|share| (&share.device, Some(share.owner.clone()))),
         )
 }
@@ -486,6 +492,47 @@ mod tests {
         // Without an account, nothing that existed changes.
         let shown = merged(Vec::new(), Vec::new(), None);
         assert!(shown.is_empty());
+    }
+
+    #[test]
+    fn a_computer_the_account_lends_is_still_its_own() {
+        let snapshot = Snapshot {
+            me: Some("d0".to_string()),
+            devices: vec![device("d0", 9, "Moi"), device("d1", 1, "PC du bureau")],
+            shares: vec![
+                zyr_broker::rest::ShareInfo {
+                    id: "p1".to_string(),
+                    device: device("d1", 1, "PC du bureau"),
+                    owner: "victor".to_string(),
+                    with: "ami".to_string(),
+                    permissions: vec![zyr_broker::rest::Permission::Connect],
+                    expires: None,
+                    created: 1,
+                },
+                // Lending this very computer does not make it a card.
+                zyr_broker::rest::ShareInfo {
+                    id: "p2".to_string(),
+                    device: device("d0", 9, "Moi"),
+                    owner: "victor".to_string(),
+                    with: "ami".to_string(),
+                    permissions: vec![zyr_broker::rest::Permission::Connect],
+                    expires: None,
+                    created: 1,
+                },
+            ],
+            ..Snapshot::default()
+        };
+
+        let shown = merged(Vec::new(), Vec::new(), Some(&snapshot));
+        assert_eq!(shown.len(), 1, "{shown:?}");
+        assert_eq!(shown[0].name, "PC du bureau");
+        assert_eq!(
+            shown[0]
+                .account
+                .as_ref()
+                .and_then(|it| it.shared_by.clone()),
+            None
+        );
     }
 
     #[test]
