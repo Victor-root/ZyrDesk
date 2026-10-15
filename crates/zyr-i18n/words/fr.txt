@@ -420,6 +420,7 @@ adding.title = Ajouter un ordinateur
 adding.lead = Uniquement pour un ordinateur qui n'apparaît pas de lui-même. À faire sur les deux ordinateurs : chacun doit connaître l'autre.
 adding.this_computer_lead = À saisir sur l'autre ordinateur, dans son propre « Ajouter un ordinateur ».
 adding.this_address = Adresse de cet ordinateur sur le réseau : {addresses}
+adding.other = L'autre ordinateur
 adding.fingerprint = Empreinte de l'autre ordinateur
 adding.characters = {count} caractères sur {total}
 adding.not_a_fingerprint = Ce n'est pas une empreinte valide : elle ne peut contenir que les chiffres de 0 à 9 et les lettres de a à f.

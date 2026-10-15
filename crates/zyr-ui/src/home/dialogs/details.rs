@@ -13,11 +13,11 @@ use zyr_draw::icons::{self, Icon};
 use zyr_i18n::say;
 use zyr_system::Source;
 
-use super::{Action, Shape, callout, fingerprint};
+use super::{Action, DISC, PADDING, Shape, callout, disc, fingerprint, framed, group_heading};
 use crate::home::pages::home::tone_colour;
 use crate::home::seen::Seen;
 use crate::home::state::Target;
-use crate::home::ui::{Kind, Painter, middle, size, square};
+use crate::home::ui::{Kind, Painter, size};
 use crate::home::words::{self, Tone};
 
 /// One fact of this computer: its icon, its label, and what it says,
@@ -51,10 +51,6 @@ impl Detail {
         }
     }
 }
-
-/// The disc an icon sits in, and the space around a fact in its table.
-const DISC: f32 = 36.0;
-const PADDING: f32 = 16.0;
 
 pub fn shape(_painter: &Painter) -> Shape {
     Shape {
@@ -114,51 +110,18 @@ pub fn draw(painter: &mut Painter, at: Rect) -> f32 {
             continue;
         }
         y += painter.px(design::SPACE_6);
-        y += heading(painter, (left, y, width), icon, &title);
+        y += group_heading(painter, (left, y, width), icon, &title);
         y += painter.px(design::SPACE_3);
         y += table(painter, (left, y, width), &details);
     }
     y - at.top
 }
 
-/// A group's heading: its icon in the accent, and its name.
-fn heading(
-    painter: &mut Painter,
-    (left, top, width): (f32, f32, f32),
-    icon: &Icon,
-    title: &str,
-) -> f32 {
-    let colours = painter.colours;
-    let pen = painter.body().in_bold();
-    let height = painter.line(pen);
-    let mark = painter.px(18.0);
-    painter.icon(
-        icon,
-        Rect::at(left, top + (height - mark) / 2.0, mark, mark),
-        colours.accent,
-    );
-    let words = left + mark + painter.px(design::SPACE_2);
-    painter.text(
-        title,
-        pen,
-        colours.text,
-        Rect::at(words, top, left + width - words, height),
-    );
-    height
-}
-
 /// A group's facts in a framed table, two to a row when the dialog has
 /// the room, a rule between the rows and between the two of a row.
 /// Gives back its height.
-fn table(painter: &mut Painter, (left, top, width): (f32, f32, f32), details: &[Detail]) -> f32 {
-    let colours = painter.colours;
-    let height = painter.measured(|painter| rows(painter, (left, top, width), details));
-    let at = Rect::at(left, top, width, height);
-    let radius = painter.px(design::RADIUS);
-    painter.fill(at, radius, colours.surface_2);
-    painter.stroke(at, radius, colours.border);
-    rows(painter, (left, top, width), details);
-    height
+fn table(painter: &mut Painter, area: (f32, f32, f32), details: &[Detail]) -> f32 {
+    framed(painter, area, |painter, area| rows(painter, area, details))
 }
 
 fn rows(painter: &mut Painter, (left, top, width): (f32, f32, f32), details: &[Detail]) -> f32 {
@@ -195,14 +158,9 @@ fn rows(painter: &mut Painter, (left, top, width): (f32, f32, f32), details: &[D
 fn cell(painter: &mut Painter, (left, top, width): (f32, f32, f32), detail: &Detail) -> f32 {
     let colours = painter.colours;
     let padding = painter.px(PADDING);
-    let disc = painter.px(DISC);
-    let at = Rect::at(left + padding, top + padding, disc, disc);
-    painter.fill(at, disc / 2.0, colours.accent.faded(0.12));
-    painter.icon(
-        detail.icon,
-        square(middle(at), painter.px(18.0)),
-        colours.accent,
-    );
+    let side = painter.px(DISC);
+    let at = Rect::at(left + padding, top + padding, side, side);
+    disc(painter, at, detail.icon);
 
     let words = at.right + painter.px(design::SPACE_3);
     let room = left + width - padding - words;
@@ -241,7 +199,7 @@ fn cell(painter: &mut Painter, (left, top, width): (f32, f32, f32), detail: &Det
             );
         }
     }
-    (y - top + padding).max(disc + padding * 2.0)
+    (y - top + padding).max(side + padding * 2.0)
 }
 
 /// What is known of this computer, in its three groups, what could not

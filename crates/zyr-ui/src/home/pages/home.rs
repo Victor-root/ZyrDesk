@@ -909,31 +909,59 @@ fn quick_action(
         colours.text_faint
     };
     let big = painter.px(26.0);
-    painter.icon(
-        icon,
-        Rect::at(at.left + inside, at.top + inside, big, big),
-        ink,
-    );
+    let round = painter.px(32.0);
     let pen = painter.body().in_bold();
+    let apart = painter.px(design::SPACE_3);
     let words_width = size(at).0 - inside * 2.0;
     let words_height = painter.height_of(label, pen, words_width);
-    painter.paragraph(
-        label,
-        pen,
-        ink,
-        (
-            at.left + inside,
-            at.bottom - inside - words_height,
-            words_width,
-        ),
-    );
-    let round = painter.px(32.0);
-    let button = Rect::at(
-        at.right - inside - round,
-        at.top + painter.px(16.0),
-        round,
-        round,
-    );
+    // The icon above the words when the tile is tall enough for both,
+    // beside them when the page leaves it short.
+    let stacked = size(at).1 >= inside * 2.0 + big + apart + words_height;
+    let (_, centre) = middle(at);
+    let button = if stacked {
+        painter.icon(
+            icon,
+            Rect::at(at.left + inside, at.top + inside, big, big),
+            ink,
+        );
+        painter.paragraph(
+            label,
+            pen,
+            ink,
+            (
+                at.left + inside,
+                at.bottom - inside - words_height,
+                words_width,
+            ),
+        );
+        Rect::at(
+            at.right - inside - round,
+            at.top + painter.px(16.0),
+            round,
+            round,
+        )
+    } else {
+        painter.icon(
+            icon,
+            Rect::at(at.left + inside, centre - big / 2.0, big, big),
+            ink,
+        );
+        let words_left = at.left + inside + big + apart;
+        let words_width = at.right - inside - round - apart - words_left;
+        let words_height = painter.height_of(label, pen, words_width);
+        painter.paragraph(
+            label,
+            pen,
+            ink,
+            (words_left, centre - words_height / 2.0, words_width),
+        );
+        Rect::at(
+            at.right - inside - round,
+            centre - round / 2.0,
+            round,
+            round,
+        )
+    };
     painter.fill(
         button,
         round / 2.0,

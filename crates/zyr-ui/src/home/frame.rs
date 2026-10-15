@@ -456,27 +456,23 @@ fn sidebar(painter: &mut Painter, at: Rect) {
     let mark = painter.px(36.0);
     painter.mark(Rect::at(at.left + edge, at.top + edge, mark, mark));
     let title = painter.title();
+    let name_left = at.left + edge + mark + painter.px(design::SPACE_3);
     painter.text(
         "ZyrDesk",
         title,
         colours.text,
-        Rect::at(
-            at.left + edge + mark + painter.px(design::SPACE_3),
-            at.top + edge,
-            size(at).0,
-            mark,
-        ),
+        Rect::at(name_left, at.top + edge, size(at).0, mark),
     );
-    // What ZyrDesk is, in one line under its name.
+    // What ZyrDesk is, under its name and starting where it starts.
     let tagline = say!("nav.tagline");
     let caption = painter.caption();
-    let tagline_top = at.top + edge + mark + painter.px(design::SPACE_3);
-    let tagline_width = size(at).0 - edge * 2.0;
+    let tagline_top = at.top + edge + mark + painter.px(design::SPACE_2);
+    let tagline_width = at.right - edge - name_left;
     painter.paragraph(
         &tagline,
-        caption.aligned(Align::Centre),
+        caption,
         colours.text_soft,
-        (at.left + edge, tagline_top, tagline_width),
+        (name_left, tagline_top, tagline_width),
     );
 
     // The pages, on a pane of frosted glass.

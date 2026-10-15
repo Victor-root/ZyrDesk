@@ -423,6 +423,7 @@ adding.title = Add a computer
 adding.lead = Only for a computer that does not appear by itself. Do it on both computers: each one must know the other.
 adding.this_computer_lead = Enter this on the other computer, under its own “Add a computer”.
 adding.this_address = This computer's address on the network: {addresses}
+adding.other = The other computer
 adding.fingerprint = Fingerprint of the other computer
 adding.characters = {count} characters out of {total}
 adding.not_a_fingerprint = This is not a valid fingerprint: it may contain only the digits 0 to 9 and the letters a to f.

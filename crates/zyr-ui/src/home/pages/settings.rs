@@ -30,7 +30,7 @@ const WIDEST: f32 = 860.0;
 /// How much larger the page is drawn at most, when the window is wide
 /// enough for it: on a large screen, a page left at its own size reads
 /// small in the middle of the room.
-const LARGEST: f32 = 1.3;
+const LARGEST: f32 = 1.1;
 
 /// The codecs and the ways of showing a session the sides offer, as they
 /// travel and are written down, in the order the sides show them.

@@ -4,18 +4,21 @@
 //! Only for a computer that does not show up by itself, on a network that
 //! drops the announcements. Each of the two has to know the other, so
 //! this computer's own fingerprint and address come first, to be written
-//! on the other one.
+//! on the other one. Laid out as « See the details » is: a callout, then
+//! groups under their heading, each in its frame.
 
 use zyr_draw::Rect;
 use zyr_draw::design;
+use zyr_draw::icons;
 use zyr_i18n::say;
 use zyr_proto::fingerprint::{Fingerprint, WRITTEN_LENGTH};
 
-use super::{Action, Shape, callout, fingerprint, trouble};
-use crate::home::pages::{Control, line, subheading};
+use super::{
+    Action, DISC, PADDING, Shape, callout, disc, fingerprint, framed, group_heading, trouble,
+};
 use crate::home::state::Target;
 use crate::home::ui::fields::{self, Field};
-use crate::home::ui::{Kind, Painter, size};
+use crate::home::ui::{Button, Kind, Painter, size};
 use crate::shell::app::App;
 
 pub fn shape(painter: &Painter) -> Shape {
@@ -24,7 +27,7 @@ pub fn shape(painter: &Painter) -> Shape {
     Shape {
         title: say!("adding.title"),
         lead: Some(say!("adding.lead")),
-        width: 580.0,
+        width: 780.0,
         left: Vec::new(),
         right: vec![
             Action::new(say!("dialog.cancel"), Kind::Quiet, Target::CloseDialog),
@@ -46,7 +49,6 @@ pub fn draw(painter: &mut Painter, at: Rect) -> f32 {
     let seen = painter.seen;
     let colours = painter.colours;
     let (left, width) = (at.left, size(at).0);
-    let gap = painter.px(design::SPACE_4);
     let mut y = at.top;
 
     let own = seen
@@ -96,28 +98,18 @@ pub fn draw(painter: &mut Painter, at: Rect) -> f32 {
             y - top
         },
     );
-    y += gap;
 
-    let hint = fingerprint_hint();
-    y += painter.field(
+    y += painter.px(design::SPACE_6);
+    y += group_heading(
+        painter,
         (left, y, width),
-        Field::Fingerprint,
-        &say!("adding.fingerprint"),
-        hint.as_deref().map(|hint| (hint, colours.warning)),
+        &icons::LAPTOP,
+        &say!("adding.other"),
     );
-    y += gap;
-    y += painter.field(
-        (left, y, width),
-        Field::Address,
-        &say!("adding.address"),
-        Some((&say!("adding.address_hint"), colours.text_soft)),
-    );
-    y += gap;
-    y += painter.field((left, y, width), Field::Name, &say!("adding.name"), None);
+    y += painter.px(design::SPACE_3);
+    y += framed(painter, (left, y, width), the_other);
 
-    // What was written by hand is forgotten where it was written: a card
-    // of the home page is a button as a whole, and its menu is the other
-    // way to it.
+    // What was written by hand is forgotten here, as on its card.
     let written: Vec<(String, String, String)> = seen
         .peers
         .iter()
@@ -131,32 +123,133 @@ pub fn draw(painter: &mut Painter, at: Rect) -> f32 {
         })
         .collect();
     if !written.is_empty() {
-        y += painter.px(design::SPACE_5);
-        y += subheading(painter, (left, y, width), &say!("adding.written"));
-        for (fingerprint, name, host) in written {
-            let forget = Target::Forget(fingerprint);
-            let armed = painter.state.is_armed(&forget);
-            y += line(
-                painter,
-                (left, y, width),
-                None,
-                &name,
-                &host,
-                Control::Buttons(vec![(
-                    if armed {
-                        say!("dialog.confirm")
-                    } else {
-                        say!("computer.forget")
-                    },
-                    if armed { Kind::Warning } else { Kind::Quiet },
-                    forget,
-                    None,
-                )]),
-            );
-        }
+        y += painter.px(design::SPACE_6);
+        y += group_heading(
+            painter,
+            (left, y, width),
+            &icons::COMPUTERS,
+            &say!("adding.written"),
+        );
+        y += painter.px(design::SPACE_3);
+        y += framed(painter, (left, y, width), |painter, (left, top, width)| {
+            let mut y = top;
+            for (fingerprint, name, host) in &written {
+                if y > top {
+                    painter.rule(left, y, width);
+                }
+                y += written_row(painter, (left, y, width), fingerprint, name, host);
+            }
+            y - top
+        });
     }
     y += trouble(painter, (left, y, width));
     y - at.top
+}
+
+/// The other computer's fields, in their frame: its fingerprint across,
+/// its address and its name side by side when there is the room. Gives
+/// back the height they take.
+fn the_other(painter: &mut Painter, (left, top, width): (f32, f32, f32)) -> f32 {
+    let colours = painter.colours;
+    let padding = painter.px(PADDING);
+    let gap = painter.px(design::SPACE_4);
+    let (left, width) = (left + padding, width - padding * 2.0);
+    let mut y = top + padding;
+    let hint = fingerprint_hint();
+    y += painter.field(
+        (left, y, width),
+        Field::Fingerprint,
+        &say!("adding.fingerprint"),
+        hint.as_deref().map(|hint| (hint, colours.warning)),
+    );
+    y += gap;
+    let address_hint = say!("adding.address_hint");
+    let address = |painter: &mut Painter, area| {
+        painter.field(
+            area,
+            Field::Address,
+            &say!("adding.address"),
+            Some((&address_hint, colours.text_soft)),
+        )
+    };
+    let name =
+        |painter: &mut Painter, area| painter.field(area, Field::Name, &say!("adding.name"), None);
+    if width >= painter.px(520.0) {
+        let half = (width - gap) / 2.0;
+        y += address(painter, (left, y, half)).max(name(painter, (left + half + gap, y, half)));
+    } else {
+        y += address(painter, (left, y, width));
+        y += gap;
+        y += name(painter, (left, y, width));
+    }
+    y + padding - top
+}
+
+/// A computer written down by hand: its icon, its name and its address,
+/// and the button that forgets it. Gives back its height.
+fn written_row(
+    painter: &mut Painter,
+    (left, top, width): (f32, f32, f32),
+    fingerprint: &str,
+    name: &str,
+    host: &str,
+) -> f32 {
+    let colours = painter.colours;
+    let padding = painter.px(PADDING);
+    let side = painter.px(DISC);
+    let height = side + padding * 2.0;
+    let centre = top + height / 2.0;
+    disc(
+        painter,
+        Rect::at(left + padding, centre - side / 2.0, side, side),
+        &icons::COMPUTERS,
+    );
+
+    let forget = Target::Forget(fingerprint.to_string());
+    let armed = painter.state.is_armed(&forget);
+    let label = if armed {
+        say!("dialog.confirm")
+    } else {
+        say!("computer.forget")
+    };
+    let button_width = painter.button_width(&label, None);
+    let button_height = painter.px(34.0);
+    let button = Rect::at(
+        left + width - padding - button_width,
+        centre - button_height / 2.0,
+        button_width,
+        button_height,
+    );
+    painter.button(
+        button,
+        forget,
+        Button::new(&label, if armed { Kind::Warning } else { Kind::Quiet }),
+    );
+
+    let words = left + padding + side + painter.px(design::SPACE_3);
+    let room = button.left - painter.px(design::SPACE_4) - words;
+    let name_pen = painter.body().in_bold().ellipsized();
+    let caption = painter.caption().ellipsized();
+    let (name_height, host_height) = (painter.line(name_pen), painter.line(caption));
+    let words_top = centre - (name_height + painter.px(2.0) + host_height) / 2.0;
+    painter.text(
+        name,
+        name_pen,
+        colours.text,
+        Rect::at(words, words_top, room, name_height),
+    );
+    painter.text(
+        host,
+        caption,
+        colours.text_soft,
+        Rect::at(
+            words,
+            words_top + name_height + painter.px(2.0),
+            room,
+            host_height,
+        ),
+    );
+    height
 }
 
 /// The fingerprint written in its field, if it is one. Spaces are let

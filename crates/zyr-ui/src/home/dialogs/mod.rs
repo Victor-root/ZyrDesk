@@ -23,7 +23,7 @@ use zyr_i18n::say;
 use crate::home::frame::VEIL;
 use crate::home::state::{Copyable, Dialog, Scroller, Target};
 use crate::home::ui::fields::{self, Field};
-use crate::home::ui::{Button, Kind, Painter, STEADY, middle, size};
+use crate::home::ui::{Button, Kind, Painter, STEADY, middle, size, square};
 use crate::shell::app::App;
 
 pub use journal::{After, open as open_the_journal, reread as reread_the_journal};
@@ -371,6 +371,62 @@ pub fn callout(
     painter.stroke(at, radius, tint.faded(0.3));
     inside(painter, (left + pad, top + pad, width - pad * 2.0));
     height
+}
+
+/// The disc an icon sits in, and the space around what a group's frame
+/// holds.
+pub const DISC: f32 = 36.0;
+pub const PADDING: f32 = 16.0;
+
+/// A group's heading inside a dialog: its icon in the accent, and its
+/// name. Gives back its height.
+pub fn group_heading(
+    painter: &mut Painter,
+    (left, top, width): (f32, f32, f32),
+    icon: &Icon,
+    title: &str,
+) -> f32 {
+    let colours = painter.colours;
+    let pen = painter.body().in_bold();
+    let height = painter.line(pen);
+    let mark = painter.px(18.0);
+    painter.icon(
+        icon,
+        Rect::at(left, top + (height - mark) / 2.0, mark, mark),
+        colours.accent,
+    );
+    let words = left + mark + painter.px(design::SPACE_2);
+    painter.text(
+        title,
+        pen,
+        colours.text,
+        Rect::at(words, top, left + width - words, height),
+    );
+    height
+}
+
+/// A group's frame inside a dialog, around what `inside` draws from its
+/// top left corner. Gives back the height it takes.
+pub fn framed(
+    painter: &mut Painter,
+    (left, top, width): (f32, f32, f32),
+    inside: impl Fn(&mut Painter, (f32, f32, f32)) -> f32,
+) -> f32 {
+    let colours = painter.colours;
+    let height = painter.measured(|painter| inside(painter, (left, top, width)));
+    let at = Rect::at(left, top, width, height);
+    let radius = painter.px(design::RADIUS);
+    painter.fill(at, radius, colours.surface_2);
+    painter.stroke(at, radius, colours.border);
+    inside(painter, (left, top, width));
+    height
+}
+
+/// An icon in its disc, in the accent, as the facts of a group show it.
+pub fn disc(painter: &Painter, at: Rect, icon: &Icon) {
+    let colours = painter.colours;
+    painter.fill(at, size(at).0 / 2.0, colours.accent.faded(0.12));
+    painter.icon(icon, square(middle(at), painter.px(18.0)), colours.accent);
 }
 
 /// This computer's fingerprint, written so that it reads in groups, and

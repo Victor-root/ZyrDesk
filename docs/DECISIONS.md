@@ -4837,6 +4837,18 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Le fond d'écran d'un ordinateur se voit entier sur sa carte, ses gestes sont sous la main sans ouvrir de menu, et la barre de gauche comme le bloc « Accès distant » se détachent nettement des dunes.
 
+## D316. « Ajouter un ordinateur » comme « Voir les détails », et quatre retouches de l'accueil (2026-10-15, pendant MZ)
+
+**Pourquoi.** La fenêtre « Ajouter un ordinateur » restait une colonne de champs quand « Voir les détails » range tout en groupes encadrés. Les paramètres grandissaient trop sur un grand écran ([D294](#d294-les-paramètres-grandissent-avec-la-fenêtre-2026-10-14-pendant-mz)). Le slogan centré sous la marque ([D293](#d293-la-version-descend-dans-la-barre-de-gauche-2026-10-14-pendant-mz)) partait à gauche du nom. Et les cartes d'ordinateur ayant grandi ([D315](#d315-des-cartes-dordinateur-sans-menu-au-fond-décran-entier-et-un-verre-qui-se-détache-2026-10-15-pendant-mz)), les actions rapides, plus basses, posaient leur texte sur leur icône.
+
+**Ce qui est fait.**
+- « Ajouter un ordinateur » prend la largeur et la forme de « Voir les détails » : l'encadré de cet ordinateur, puis le groupe « L'autre ordinateur », ses champs dans un cadre (l'empreinte en travers, l'adresse et le nom côte à côte), puis le groupe des ordinateurs ajoutés manuellement, chacun avec son icône, son nom, son adresse et « Oublier ». Le titre d'un groupe, son cadre et la pastille d'une icône sont désormais des pièces communes aux fenêtres, au lieu d'être propres aux détails.
+- Les paramètres grandissent au plus d'un dixième, et non plus d'un tiers.
+- Le slogan commence sous le nom « ZyrDesk », aligné à gauche avec lui.
+- Une action rapide trop basse pour mettre son icône au-dessus de ses mots les pose côte à côte, le bouton rond au bout.
+
+**Ce qui se voit.** Deux fenêtres qui se ressemblent, des paramètres à une taille raisonnable, un slogan aligné sur le nom, et des actions rapides lisibles à toutes les hauteurs.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
