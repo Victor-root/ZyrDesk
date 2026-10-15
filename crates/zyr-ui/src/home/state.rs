@@ -12,6 +12,7 @@ use zyr_draw::motion::Motion;
 use zyr_proto::fact::Fact;
 use zyr_session::presence::Narrowed;
 
+use crate::home::ui::fields::Field;
 use crate::shell::shortcuts::Doing;
 use crate::shell::theme::Choice;
 
@@ -166,14 +167,16 @@ pub enum Target {
     Menu(Menu),
     /// What a computer's card offers besides opening a session.
     Offer(String, Offer),
-    /// The search at the top, which a click puts the keyboard in, and the
-    /// cross that empties it.
-    Search,
+    /// A field's frame, which a click puts the keyboard in; and the cross
+    /// that empties the search.
+    Field(Field),
     ClearSearch,
     Narrow(Narrowed),
     /// Empties the search and lifts the filter.
     ShowAll,
     View(View),
+    /// Shows or hides the handles that rearrange the computers.
+    Arrange,
     AddComputer,
     Theme(Choice),
     Side(Pick, usize),
@@ -286,6 +289,8 @@ pub struct State {
     /// The order the computers were put in, by fingerprint, and the card
     /// a hand is moving.
     pub order: Vec<String>,
+    /// Whether the handles that move the computers are shown.
+    pub arranging: bool,
     pub dragging: Option<Dragging>,
 
     /// What the last frame laid down, the last laid on top, and where
@@ -361,6 +366,7 @@ impl State {
             narrowed: Narrowed::All,
             view: View::Grid,
             order: Vec::new(),
+            arranging: false,
             dragging: None,
             hits: Vec::new(),
             pointer: None,

@@ -22,7 +22,8 @@ pub enum Kind {
     /// as the design system's action and fills with the accent when the
     /// hand comes, whether to the button or to its card.
     Action,
-    /// What goes along with the main action: outlined.
+    /// What goes along with the main action: tinted with the accent and
+    /// written in it, rather than outlined in grey.
     Quiet,
     /// What hardly needs a frame: a word, and a background under the
     /// hand.
@@ -165,10 +166,16 @@ impl Painter<'_> {
                     colours.on_accent.mixed_with(colours.on_action, warm),
                     None,
                 ),
+                // Mixed into the surface rather than laid over it, so that
+                // it reads the same over a picture.
                 Kind::Quiet => (
-                    Some(colours.surface_2.mixed_with(colours.surface_1, hover)),
-                    colours.text,
-                    Some(colours.border_strong),
+                    Some(
+                        colours
+                            .accent
+                            .mixed_with(colours.surface_1, 0.1 + 0.08 * hover),
+                    ),
+                    colours.accent,
+                    Some(colours.accent.faded(0.22 + 0.13 * hover)),
                 ),
                 Kind::Ghost => (
                     (hover > 0.0).then(|| colours.surface_3.faded(hover)),

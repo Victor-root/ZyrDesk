@@ -82,7 +82,7 @@ pub fn act(app: &App, target: Target) {
             drop(state);
             crate::home::redraw(app);
         }
-        Target::Search => fields::focus(Field::Search),
+        Target::Field(field) => fields::focus(field),
         // Emptied, the field says so, and the search follows.
         Target::ClearSearch => fields::write(Field::Search, ""),
         Target::Narrow(narrowed) => {
@@ -105,6 +105,12 @@ pub fn act(app: &App, target: Target) {
                 state.order.clone()
             };
             crate::home::arranged::keep(view, order);
+            crate::home::redraw(app);
+        }
+        Target::Arrange => {
+            let mut state = crate::home::state();
+            state.arranging = !state.arranging;
+            drop(state);
             crate::home::redraw(app);
         }
         Target::Offer(fingerprint, offer) => {

@@ -50,7 +50,7 @@ const TAG: &str = "way";
 
 /// How long after a session opens the far computer is asked for its
 /// wallpaper.
-const WALLPAPER_AFTER: Duration = Duration::from_secs(10);
+const WALLPAPER_AFTER: Duration = Duration::from_secs(2);
 
 /// How long a computer presented by the server gets to answer through
 /// one of the addresses named, both sides probing all the while.
@@ -408,8 +408,9 @@ impl Ways {
     fn bring_back_the_wallpaper(&self, way: WayId, peer: Fingerprint) {
         let ways = self.clone();
         tokio::spawn(async move {
-            // Not while the session opens: the far computer is starting
-            // its engine, and reading a large picture can wait.
+            // A moment after the session opened, not during: its first
+            // pictures go first, and a session closed at once still
+            // brings the wallpaper back.
             tokio::time::sleep(WALLPAPER_AFTER).await;
             let Ok(connection) = ways.connection_of(way) else {
                 return;

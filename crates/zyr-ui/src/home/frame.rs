@@ -177,9 +177,9 @@ fn page(painter: &mut Painter, at: Rect, narrow: bool) {
 }
 
 /// The bar at the top of the page: the button that unfolds the bar on
-/// the left in a narrow window, and on the right the search, the filter
-/// and the two views of the computers, then the journal, one click away
-/// from wherever the window is.
+/// the left in a narrow window, and on the right the search, the filter,
+/// the handles that rearrange the computers and their two views, then the
+/// journal, one click away from wherever the window is.
 fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
     let colours = painter.colours;
     let height = size(at).1;
@@ -194,8 +194,8 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
         );
     }
 
-    // From the right: the journal, the views, the filter, then the
-    // search, which takes what is left, within reason.
+    // From the right: the journal, the views and the handles, the
+    // filter, then the search, which takes what is left, within reason.
     let view = height - painter.px(2.0);
     let journal = Rect::at(at.right - view, at.top + painter.px(1.0), view, view);
     let target = Target::OpenJournal;
@@ -227,11 +227,37 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
 
     let list = journal.shifted(-(view + gap * 2.0), 0.0);
     let grid = list.shifted(-(view + painter.px(design::SPACE_2)), 0.0);
-    view_button(painter, grid, View::Grid, (&icons::GRID, say!("bar.grid")));
-    view_button(painter, list, View::List, (&icons::LIST, say!("bar.list")));
-    divider(painter, grid.left - gap);
+    let arrange = grid.shifted(-(view + painter.px(design::SPACE_2)), 0.0);
+    let arranging = painter.state.arranging;
+    bar_toggle(
+        painter,
+        arrange,
+        (Target::Arrange, arranging),
+        (
+            &icons::MOVE,
+            if arranging {
+                say!("bar.arrange_done")
+            } else {
+                say!("bar.arrange")
+            },
+        ),
+    );
+    let chosen = painter.state.view;
+    bar_toggle(
+        painter,
+        grid,
+        (Target::View(View::Grid), chosen == View::Grid),
+        (&icons::GRID, say!("bar.grid")),
+    );
+    bar_toggle(
+        painter,
+        list,
+        (Target::View(View::List), chosen == View::List),
+        (&icons::LIST, say!("bar.list")),
+    );
+    divider(painter, arrange.left - gap);
 
-    let filter = filter(painter, grid.left - gap * 2.0, at);
+    let filter = filter(painter, arrange.left - gap * 2.0, at);
     divider(painter, filter.left - gap);
 
     let floor = at.left + if narrow { height + gap } else { 0.0 };
@@ -246,12 +272,16 @@ fn top_bar(painter: &mut Painter, at: Rect, narrow: bool) {
     );
 }
 
-/// One of the two views of the computers: the one chosen stands out.
-fn view_button(painter: &mut Painter, at: Rect, view: View, (icon, tip): (&Icon, String)) {
+/// A button of the bar that is on or off, like one of the two views of
+/// the computers: the one on stands out.
+fn bar_toggle(
+    painter: &mut Painter,
+    at: Rect,
+    (target, chosen): (Target, bool),
+    (icon, tip): (&Icon, String),
+) {
     let colours = painter.colours;
     let radius = painter.px(design::RADIUS_SMALL + 1.0);
-    let target = Target::View(view);
-    let chosen = painter.state.view == view;
     let hover = painter.hover_of(&target);
     if chosen {
         painter.fill(at, radius, colours.surface_1);
@@ -355,20 +385,12 @@ fn search(painter: &mut Painter, at: Rect) {
     let radius = painter.px(design::RADIUS_SMALL + 1.0);
     let height = size(at).1;
     let (_, centre) = middle(at);
-    let inside = fields::focused() == Some(Field::Search);
-    if inside {
-        painter.fill(
-            at.grown(painter.px(3.0)),
-            radius + painter.px(3.0),
-            colours.accent.faded(0.14),
-        );
-    }
-    painter.fill(at, radius, colours.surface_1);
-    if inside {
-        painter.stroke_of(at, radius, painter.px(1.5), colours.accent);
-    } else {
-        painter.stroke(at, radius, colours.border);
-    }
+    painter.field_frame(
+        at,
+        radius,
+        (colours.surface_1, colours.border),
+        fields::focused() == Some(Field::Search),
+    );
     let glass = painter.px(18.0);
     painter.icon(
         &icons::SEARCH,
@@ -380,7 +402,7 @@ fn search(painter: &mut Painter, at: Rect) {
         ),
         colours.text_soft,
     );
-    painter.answers(Target::Search, at);
+    painter.answers(Target::Field(Field::Search), at);
 
     // On the right, the keys that lead here, or the cross that empties
     // what was searched.
@@ -463,16 +485,18 @@ fn sidebar(painter: &mut Painter, at: Rect) {
         colours.text,
         Rect::at(name_left, at.top + edge, size(at).0, mark),
     );
-    // What ZyrDesk is, under its name and starting where it starts.
+    // What ZyrDesk is, centred under the mark and the name taken
+    // together, as wide as they are.
     let tagline = say!("nav.tagline");
-    let caption = painter.caption();
+    let caption = painter.caption().aligned(Align::Centre);
     let tagline_top = at.top + edge + mark + painter.px(design::SPACE_2);
-    let tagline_width = at.right - edge - name_left;
+    let tagline_left = at.left + edge;
+    let tagline_width = name_left + painter.width_of("ZyrDesk", title) - tagline_left;
     painter.paragraph(
         &tagline,
         caption,
         colours.text_soft,
-        (name_left, tagline_top, tagline_width),
+        (tagline_left, tagline_top, tagline_width),
     );
 
     // The pages, on a pane of frosted glass.

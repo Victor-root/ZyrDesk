@@ -11,13 +11,14 @@ use std::sync::Mutex;
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use zyr_draw::Rect;
-use zyr_draw::design::{self, Colour};
+use zyr_draw::design::{self, Colour, Shadow};
 use zyr_win32::wide;
 
 use super::Painter;
+use crate::home::state::Target;
 
 /// A field, each with its own place.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Field {
     Fingerprint,
     Address,
@@ -514,19 +515,13 @@ impl Painter<'_> {
         let gap = self.px(design::SPACE_2);
         let at = Rect::at(left, top + label_height + gap, width, self.px(FIELD));
         let radius = self.px(design::RADIUS_SMALL);
-        let inside = focused() == Some(field);
-        self.fill(at, radius, colours.surface_2);
-        if inside {
-            self.fill(
-                at.grown(self.px(3.0)),
-                radius + self.px(3.0),
-                colours.accent.faded(0.14),
-            );
-            self.fill(at, radius, colours.surface_2);
-            self.stroke_of(at, radius, self.px(1.5), colours.accent);
-        } else {
-            self.stroke(at, radius, colours.border_strong);
-        }
+        self.field_frame(
+            at,
+            radius,
+            (colours.surface_2, colours.border_strong),
+            focused() == Some(field),
+        );
+        self.answers(Target::Field(field), at);
         let side = self.px(design::SPACE_3);
         self.place(
             field,
@@ -542,6 +537,37 @@ impl Painter<'_> {
             taken += self.paragraph(hint, self.caption(), ink, (left, top + taken, width));
         }
         taken
+    }
+
+    /// A field's frame on its background and within its edge, the edge
+    /// turning to the accent with a soft glow around it while the keyboard
+    /// is in it.
+    pub fn field_frame(
+        &self,
+        at: Rect,
+        radius: f32,
+        (background, edge): (Colour, Colour),
+        inside: bool,
+    ) {
+        let accent = self.colours.accent;
+        if inside {
+            self.shadow(
+                at,
+                radius,
+                Shadow {
+                    across: 0.0,
+                    down: 0.0,
+                    soft: 6.0,
+                    tint: accent.faded(0.35),
+                },
+            );
+        }
+        self.fill(at, radius, background);
+        if inside {
+            self.stroke_of(at, radius, self.px(1.5), accent);
+        } else {
+            self.stroke(at, radius, edge);
+        }
     }
 
     /// Lays the real field across `at`, centred in its height, after this

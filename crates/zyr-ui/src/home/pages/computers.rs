@@ -319,13 +319,13 @@ impl Shown {
         }
     }
 
-    /// The colour of its presence dot, and whether the dot is live.
-    fn dot(&self, painter: &Painter) -> (Colour, bool) {
+    /// The colour of its presence dot.
+    fn dot(&self, painter: &Painter) -> Colour {
         let colours = painter.colours;
         match self.presence {
-            Presence::Ready => (colours.online, true),
-            Presence::Closed { .. } => (colours.warning, false),
-            Presence::Gone | Presence::Unknown => (colours.offline, false),
+            Presence::Ready => colours.online,
+            Presence::Closed { .. } => colours.warning,
+            Presence::Gone | Presence::Unknown => colours.offline,
         }
     }
 
@@ -349,16 +349,19 @@ impl Shown {
             (false, Some(tip)) => painter.tells(at, tip),
             (false, None) => {}
         }
-        let (ink, live) = self.dot(painter);
-        let disc = painter.px(18.0);
-        let disc_at = Rect::at(
-            at.left + painter.px(6.0),
-            at.top + painter.px(6.0),
-            disc,
-            disc,
+        // One dot in a thin ring of the card's surface, which keeps it
+        // apart from any wallpaper, and no halo: on a picture, a ring of
+        // light around it reads as one more layer.
+        let ink = self.dot(painter);
+        let ring = painter.px(14.0);
+        let ring_at = Rect::at(
+            at.left + painter.px(8.0),
+            at.top + painter.px(8.0),
+            ring,
+            ring,
         );
-        painter.fill(disc_at, disc / 2.0, colours.surface_1);
-        painter.dot(middle(disc_at), painter.px(8.0), ink, live);
+        painter.fill(ring_at, ring / 2.0, colours.surface_1);
+        painter.dot(middle(ring_at), painter.px(9.0), ink, false);
     }
 
     /// The handle a hand moves it by, in `at`, on a backing over a
@@ -474,8 +477,11 @@ fn card(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
     let radius = painter.px(design::RADIUS_SMALL + 1.0);
     shown.picture(painter, picture, radius);
 
-    // In the picture's corner, the handle that moves the card.
-    shown.handle(painter, handle_in(painter, View::Grid, at), true);
+    // In the picture's corner, while the computers are being rearranged,
+    // the handle that moves the card.
+    if painter.state.arranging {
+        shown.handle(painter, handle_in(painter, View::Grid, at), true);
+    }
 
     // Under the picture: the name, what is known of it, its tags.
     let left = at.left + inside;
@@ -505,10 +511,15 @@ fn row(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
         painter.answers(shown.connect.clone(), at);
     }
     let (_, centre) = middle(at);
-    let handle = handle_in(painter, View::List, at);
-    shown.handle(painter, handle, false);
+    let thumbnail_left = if painter.state.arranging {
+        let handle = handle_in(painter, View::List, at);
+        shown.handle(painter, handle, false);
+        handle.right + painter.px(4.0)
+    } else {
+        at.left + painter.px(11.0)
+    };
     let thumbnail = Rect::at(
-        handle.right + painter.px(4.0),
+        thumbnail_left,
         centre - painter.px(THUMBNAIL.1) / 2.0,
         painter.px(THUMBNAIL.0),
         painter.px(THUMBNAIL.1),

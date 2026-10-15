@@ -4849,6 +4849,21 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Deux fenêtres qui se ressemblent, des paramètres à une taille raisonnable, un slogan aligné sur le nom, et des actions rapides lisibles à toutes les hauteurs.
 
+## D317. Réorganiser à la demande, boutons teintés, champs qui s'éclairent (2026-10-15, pendant MZ)
+
+**Pourquoi.** Retours de Victor sur l'accueil : les poignées des cartes, toujours là, encombraient ([D314](#d314-réordonner-les-ordinateurs-en-les-faisant-glisser-2026-10-14-pendant-mz)) ; la pastille de présence empilait un disque blanc, un halo et un point ; les boutons secondaires, gris et cerclés, faisaient daté ; le halo d'un champ actif se détachait de son contour ; le pointeur ne devenait pas un curseur de texte sur les champs ; le slogan n'était centré ni sur la marque ni sur le nom ([D316](#d316-ajouter-un-ordinateur-comme-voir-les-détails-et-quatre-retouches-de-laccueil-2026-10-15-pendant-mz)) ; et il fallait rester plus de dix secondes dans une session pour que la carte reçoive le fond d'écran ([D312](#d312-le-vrai-fond-décran-des-autres-ordinateurs-sur-leurs-cartes-2026-10-14-pendant-mz)).
+
+**Ce qui est fait.**
+- Un bouton « Réorganiser » rejoint la barre du haut, à côté des deux vues. Allumé, il fait paraître la poignée de chaque carte ; éteint, ou par Échap, elles disparaissent. Les boutons allumés ou éteints de la barre sont une seule pièce.
+- La pastille de présence sur l'image d'une carte devient un point dans un fin liseré de la couleur de la carte, sans halo.
+- Les boutons secondaires (`Kind::Quiet`) sont teintés du doré et écrits en doré, avec un contour doré léger qui se renforce au survol. Le teint est mêlé à la surface et non posé dessus, pour se lire pareil sur une image.
+- Un champ actif prend un contour doré entouré d'une lueur douce qui en part directement, au lieu d'un anneau séparé. La recherche et les champs des fenêtres partagent ce dessin.
+- Le cadre d'un champ répond à la main : un clic y met le clavier, et le pointeur y devient celui du texte. Au-dessus d'un champ du système, la fenêtre le laisse montrer son propre pointeur.
+- Le slogan est centré, en largeur et dans ses lignes, sous la marque et le nom pris ensemble.
+- Le fond d'écran est demandé deux secondes après l'ouverture d'une session, au lieu de dix : une session courte le rapporte aussi.
+
+**Ce qui se voit.** Des cartes dégagées, une pastille nette, des boutons dans le thème, des champs qui s'éclairent proprement, et le fond d'écran sur la carte presque aussitôt.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

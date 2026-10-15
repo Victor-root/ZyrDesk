@@ -325,6 +325,10 @@ pub fn key_down(key: u32, with: LPARAM) -> bool {
             } else if state.menu.take().is_some() {
                 drop(state);
                 invalidate();
+            } else if state.arranging && state.dialog.is_none() {
+                state.arranging = false;
+                drop(state);
+                invalidate();
             } else if state.dialog.is_some() {
                 drop(state);
                 crate::home::dialogs::close(&app);

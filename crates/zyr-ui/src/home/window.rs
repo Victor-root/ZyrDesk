@@ -229,9 +229,10 @@ unsafe extern "system" fn answer(
     use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         DefWindowProcW, EN_CHANGE, EN_KILLFOCUS, EN_SETFOCUS, HTCLIENT, IDC_ARROW, IDC_HAND,
-        IDC_SIZEALL, KillTimer, LoadCursorW, SetCursor, SetTimer, WM_CAPTURECHANGED, WM_COMMAND,
-        WM_CTLCOLOREDIT, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEHWHEEL,
-        WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETCURSOR, WM_SYSKEYDOWN, WM_TIMER,
+        IDC_IBEAM, IDC_SIZEALL, KillTimer, LoadCursorW, SetCursor, SetTimer, WM_CAPTURECHANGED,
+        WM_COMMAND, WM_CTLCOLOREDIT, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
+        WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETCURSOR, WM_SYSKEYDOWN,
+        WM_TIMER,
     };
 
     match message {
@@ -295,11 +296,15 @@ unsafe extern "system" fn answer(
             // SAFETY: the system's own answer to a key not taken here.
             unsafe { DefWindowProcW(window, message, holding, with) }
         }
-        WM_SETCURSOR if (with as u32 & 0xFFFF) == HTCLIENT => {
+        // Over this window itself only: a field of the system shows its
+        // own pointer, the one for writing.
+        WM_SETCURSOR if (with as u32 & 0xFFFF) == HTCLIENT && holding == window as WPARAM => {
             let shape = {
                 let state = crate::home::state();
                 if state.dragging.is_some() || matches!(state.hovered(), Some(Target::Move(_))) {
                     IDC_SIZEALL
+                } else if matches!(state.hovered(), Some(Target::Field(_))) {
+                    IDC_IBEAM
                 } else if state.hovered().is_some() {
                     IDC_HAND
                 } else {
