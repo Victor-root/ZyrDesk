@@ -138,7 +138,6 @@ pub fn presses(window: HWND, (x, y): (i32, i32)) {
     if let Some((open, _)) = state.menu.clone() {
         let in_the_menu = match (&target, &open) {
             (Some(Target::Menu(menu)), _) => *menu == open,
-            (Some(Target::Offer(fingerprint, _)), Menu::Computer(of)) => fingerprint == of,
             (Some(Target::Narrow(_)), Menu::Filter) => true,
             _ => false,
         };

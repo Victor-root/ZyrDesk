@@ -36,8 +36,6 @@ pub enum View {
 /// A menu open over the page.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Menu {
-    /// What can be done with the computer of this fingerprint.
-    Computer(String),
     /// Which computers stay in view.
     Filter,
 }
@@ -166,6 +164,7 @@ pub enum Target {
     Move(String),
     /// Opens or closes a menu.
     Menu(Menu),
+    /// What a computer's card offers besides opening a session.
     Offer(String, Offer),
     /// The search at the top, which a click puts the keyboard in, and the
     /// cross that empties it.

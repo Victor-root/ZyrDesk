@@ -15,7 +15,7 @@ Règle de ce plan : **tout ce qui est prévu se voit dès le premier jour.** Ce 
 - **Les données séparées du dessin** : ce que l'accueil affiche lui est donné (par le service, le compte, la session) ; le dessin ne va rien chercher lui-même.
 - **Fenêtre étroite** : la barre de gauche se replie derrière un bouton « menu » (trois traits) en haut à gauche ; les rangées de cartes passent à la ligne.
 - **Barre de titre : celle de Windows, comme la fenêtre d'aujourd'hui**, avec ses boutons réduire, agrandir et fermer, et non une barre dessinée par ZyrDesk (contrairement à la maquette). C'est Windows qui la dessine et la colore selon ses propres réglages : la couleur d'accentuation de Windows quand la personne l'a choisie pour les barres de titre, une barre sombre en thème sombre (`shell/main_window.rs` le fait déjà).
-- **Images** : la page est unie. Le bandeau et la barre de gauche sont habillés d'un paysage de dunes fait pour ZyrDesk : sous un soleil voilé en clair, sous la lune en sombre ([D303](DECISIONS.md)) ; dans la barre de gauche, les pages et le pied (la personne, l'état, la version) sont posés sur deux plaques de verre dépoli ([D305](DECISIONS.md)).
+- **Images** : la page est unie. Le bandeau et la barre de gauche sont habillés d'un paysage de dunes fait pour ZyrDesk : sous un soleil voilé en clair, sous la lune en sombre ([D303](DECISIONS.md)) ; dans la barre de gauche, les pages et le pied (la personne, l'état, la version) sont posés sur deux plaques de verre dépoli ([D305](DECISIONS.md)), détachées des dunes par une ombre, un contour et un reflet ([D315](DECISIONS.md)).
 
 Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est dessiné mais attend sa fonction.
 
@@ -73,13 +73,14 @@ Une carte par ordinateur connu (réseau local et compte), ou une ligne en vue li
 
 | Élément de la carte | État | Note |
 |---|---|---|
-| Fond d'écran de l'ordinateur | Oui | Celui de l'ordinateur distant, rapporté par chaque session avec lui ([D312](DECISIONS.md)). Avant une première session, une vue des dunes du paysage de ZyrDesk, propre à chaque ordinateur ([D306](DECISIONS.md)). Plus tard : un fond choisi par la personne |
+| Fond d'écran de l'ordinateur | Oui | Entier, au format d'un écran (16:9) ([D315](DECISIONS.md)). Celui de l'ordinateur distant, rapporté par chaque session avec lui ([D312](DECISIONS.md)). Avant une première session, une vue des dunes du paysage de ZyrDesk, propre à chaque ordinateur ([D306](DECISIONS.md)). Plus tard : un fond choisi par la personne |
 | Pastille en ligne ou hors ligne | Oui | |
 | Nom, adresse ou « En ligne », compte | Oui | |
 | Étiquette LAN ou Internet, et la latence | Oui | |
 | « Se connecter » | Oui | Ouvre la session |
 | « Réveiller » (ordinateur éteint) | Oui | Réveil par le réseau local, une fois sa carte réseau connue ; grisé avant ([D313](DECISIONS.md)) |
 | Poignée pour réordonner les cartes | Oui | Glisser une carte, ou une ligne en vue liste ; l'ordre est gardé ([D314](DECISIONS.md)) |
+| Ce que l'ordinateur offre d'autre | Oui | À côté de « Se connecter », un bouton à icône par geste, nommé au survol : par le réseau local seulement, son journal, mettre fin à sa session, l'oublier. Les deux derniers demandent un second clic ([D315](DECISIONS.md)) |
 
 ## 7. Le bas de la page
 

@@ -399,13 +399,6 @@ pub const ROUND_TRIP: Icon = tabler(&[
     Stroke::SvgPath("M20 6l-3 -3l-3 3"),
 ]);
 
-/// Tabler « dots ».
-pub const MORE: Icon = tabler(&[
-    Stroke::SvgPath("M4 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"),
-    Stroke::SvgPath("M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"),
-    Stroke::SvgPath("M18 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"),
-]);
-
 /// Tabler « user-plus ».
 pub const USER_PLUS: Icon = tabler(&[
     Stroke::SvgPath("M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"),

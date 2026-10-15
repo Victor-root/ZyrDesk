@@ -391,7 +391,6 @@ computer.wake_sent = Le signal de réveil est parti vers {name} : il lui faut un
 computer.wake_unknown = Pour le réveiller, il faut l'avoir vu une fois allumé sur ce réseau
 computer.wallpaper_after_a_session = Son fond d'écran apparaît après une première session
 computer.move = Faites glisser pour réordonner
-computer.more = Plus
 computer.here_only = Se connecter uniquement sur le réseau local
 computer.journal = Voir son journal
 computer.send_back = Mettre fin à sa session

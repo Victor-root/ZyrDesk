@@ -47,6 +47,8 @@ pub struct Button<'b> {
     /// Whether the icon follows the word, as a chevron that leads on
     /// does, rather than coming before it.
     pub icon_after: bool,
+    /// The bubble that names it, for a button that shows only its icon.
+    pub tip: Option<&'b str>,
 }
 
 impl<'b> Button<'b> {
@@ -58,6 +60,7 @@ impl<'b> Button<'b> {
             enabled: true,
             lit: 0.0,
             icon_after: false,
+            tip: None,
         }
     }
 
@@ -82,6 +85,13 @@ impl<'b> Button<'b> {
 
     pub fn lit(self, lit: f32) -> Self {
         Button { lit, ..self }
+    }
+
+    pub fn told(self, tip: &'b str) -> Self {
+        Button {
+            tip: Some(tip),
+            ..self
+        }
     }
 }
 
@@ -131,6 +141,7 @@ impl Painter<'_> {
             enabled,
             lit,
             icon_after,
+            tip,
         } = button;
         let colours = self.colours;
         let radius = self.px(design::RADIUS_SMALL);
@@ -182,7 +193,12 @@ impl Painter<'_> {
         }
         let pen = self.body().in_bold();
         let words = self.width_of(label, pen);
-        let room = icon.map_or(0.0, |_| self.px(ICON + design::SPACE_2));
+        let apart = if label.is_empty() {
+            0.0
+        } else {
+            design::SPACE_2
+        };
+        let room = icon.map_or(0.0, |_| self.px(ICON + apart));
         let (centre_x, centre_y) = middle(at);
         let left = centre_x - (words + room) / 2.0;
         let side = self.px(ICON);
@@ -207,8 +223,11 @@ impl Painter<'_> {
         if self.focused(&target) {
             self.focus_ring(at, radius);
         }
-        if enabled {
-            self.answers(target, at);
+        match (enabled, tip) {
+            (true, Some(tip)) => self.answers_with_tip(target, at, tip.to_string()),
+            (true, None) => self.answers(target, at),
+            (false, Some(tip)) => self.tells(at, tip.to_string()),
+            (false, None) => {}
         }
     }
 

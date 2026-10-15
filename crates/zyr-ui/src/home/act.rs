@@ -108,7 +108,12 @@ pub fn act(app: &App, target: Target) {
             crate::home::redraw(app);
         }
         Target::Offer(fingerprint, offer) => {
-            crate::home::state().menu = None;
+            // Ending a session and forgetting a computer sit right on its
+            // card: one click there must not be enough.
+            let undone = matches!(offer, Offer::SendBack | Offer::Forget);
+            if undone && !second_click(app, Target::Offer(fingerprint.clone(), offer)) {
+                return;
+            }
             crate::home::redraw(app);
             match offer {
                 Offer::HereOnly => connect(app, &fingerprint, true),

@@ -4825,6 +4825,18 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** La poignée marche, sur l'accueil comme sur la page « Ordinateurs », et l'ordre choisi revient à chaque ouverture.
 
+## D315. Des cartes d'ordinateur sans menu, au fond d'écran entier, et un verre qui se détache (2026-10-15, pendant MZ)
+
+**Pourquoi.** Sur les cartes des autres ordinateurs, l'image était bien plus large qu'un écran : le fond d'écran rapporté ([D312](#d312-le-vrai-fond-décran-des-autres-ordinateurs-sur-leurs-cartes-2026-10-14-pendant-mz)) n'y tenait pas entier. Ce que la carte offrait d'autre qu'une session se cachait derrière un menu à trois points. Et les plaques de verre ([D305](#d305-la-barre-de-gauche-range-ses-mots-sur-deux-plaques-de-verre-2026-10-14-pendant-mz)), teintées des couleurs mêmes des dunes, s'y fondaient.
+
+**Ce qui est fait.**
+- L'image d'une carte prend le format d'un écran, 16 sur 9, sur toute la largeur de la carte, et la carte grandit d'autant : la vignette du fond d'écran, faite au même format, s'y voit entière.
+- Le menu à trois points disparaît. Ce qu'il offrait (par le réseau local seulement, son journal, mettre fin à sa session, l'oublier) devient une rangée de boutons à icône à côté de « Se connecter », nommés au survol, et dans la vue liste à gauche de ce bouton. Mettre fin à une session et oublier un ordinateur demandent un second clic, comme les autres gestes qu'on ne défait pas, puisqu'ils ne sont plus qu'à un clic. Le bouton principal ne garde que son icône quand son mot n'a plus la place. Le seul menu qui reste est celui du filtre.
+- Un bouton peut ne porter qu'une icône et une bulle : la pièce commune de `home/ui/` le sait, au lieu d'un bouton de plus dessiné à part. Le « Réveiller » grisé passe par elle aussi.
+- Le verre gagne trois rôles de la charte, dans les deux thèmes : un contour sombre et chaud qui le sépare des dunes (`--glass-edge`, qui était un trait blanc), un reflet clair juste à l'intérieur (`--glass-shine`) et une ombre douce qui le soulève (`--shadow-glass`). Sa teinte est un peu plus dense.
+
+**Ce qui se voit.** Le fond d'écran d'un ordinateur se voit entier sur sa carte, ses gestes sont sous la main sans ouvrir de menu, et la barre de gauche comme le bloc « Accès distant » se détachent nettement des dunes.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

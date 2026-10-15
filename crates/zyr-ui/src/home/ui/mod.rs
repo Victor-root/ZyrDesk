@@ -406,17 +406,22 @@ impl<'a> Painter<'a> {
     }
 
     /// Frosted glass in the rounded `at`, over the scenery laid across
-    /// `behind`: the same scenery, blurred, in its place under the glass,
-    /// the glass's tint, and the light along its edge.
+    /// `behind`: its shadow, the same scenery, blurred, in its place under
+    /// the glass, the glass's tint, its edge and the light just inside.
     pub fn glass(&self, at: Rect, radius: f32, behind: Rect) {
         if self.silent {
             return;
         }
+        // The shadow only under the blurred picture, which hides it: the
+        // tint alone would let it through.
         if let Some(picture) = zyr_draw::scenery::frosted(self.light) {
+            self.shadow(at, radius, self.colours.shadow_glass);
             self.canvas.picture_within(picture, behind, at, radius, 1.0);
         }
         self.fill(at, radius, self.colours.glass);
         self.stroke(at, radius, self.colours.glass_edge);
+        let rim = self.px(1.0);
+        self.stroke(at.grown(-rim), radius - rim, self.colours.glass_shine);
     }
 
     pub fn picture(&self, picture: &Picture, at: Rect, radius: f32) {

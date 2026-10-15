@@ -1,6 +1,6 @@
 //! The computers: their page, and the way both pages show them, as cards
 //! in a grid or rows in a list, narrowed by the search and the filter of
-//! the bar at the top; and the menus that open over them.
+//! the bar at the top; and the filter's menu.
 
 use zyr_control::Peer;
 use zyr_draw::design::{self, Colour};
@@ -11,19 +11,22 @@ use zyr_session::presence::{Narrowed, Presence, Road};
 
 use crate::home::pages::page_title;
 use crate::home::seen::Seen;
-use crate::home::state::{Menu, Offer, Page, State, Target, View};
+use crate::home::state::{Offer, Page, State, Target, View};
 use crate::home::ui::{Button, Kind, Painter, QUICK, STEADY, TAG_HEIGHT, middle, size, square};
 use crate::home::words;
 
-/// A card's height, the gap between cards, and the narrowest and widest a
-/// computer's card is.
-const CARD: f32 = 262.0;
+/// What a card takes under its picture, the gap between cards, and the
+/// narrowest and widest a computer's card is.
+const BELOW_THE_PICTURE: f32 = 158.0;
 const GAP: f32 = 16.0;
 const NARROWEST: f32 = 220.0;
 const WIDEST: f32 = 300.0;
 
-/// A computer's picture on its card.
-const PICTURE: f32 = 104.0;
+/// The margin inside a card, around its picture and under its buttons.
+const INSIDE: f32 = 14.0;
+
+/// The buttons at the foot of a card or at the end of a row.
+const BUTTON: f32 = 38.0;
 
 /// A row of the list, the gap between two, and its picture.
 const ROW: f32 = 76.0;
@@ -84,7 +87,7 @@ pub fn laid(painter: &Painter, width: f32, count: usize) -> (usize, f32, f32, f3
             let columns = fit.min(count.max(1));
             let column =
                 ((width - gap * (columns as f32 - 1.0)) / columns as f32).min(painter.px(WIDEST));
-            (columns, column, painter.px(CARD), gap)
+            (columns, column, card_height(painter, column), gap)
         }
         View::List => (1, width, painter.px(ROW), painter.px(ROW_GAP)),
     }
@@ -104,7 +107,12 @@ pub fn lay(
 ) -> f32 {
     let width = size(at).0;
     if peers.is_empty() {
-        let empty = Rect::at(at.left, at.top, width, painter.px(CARD));
+        let empty = Rect::at(
+            at.left,
+            at.top,
+            width,
+            card_height(painter, painter.px(WIDEST)),
+        );
         return if seen.peers.is_empty() {
             no_computer(painter, empty)
         } else {
@@ -178,6 +186,17 @@ pub fn lay(
     rows * height + (rows - 1.0) * gap
 }
 
+/// The height of a computer's picture on a card that wide: the shape of
+/// a screen, 16 by 9, so that its wallpaper shows whole.
+fn picture_height(painter: &Painter, width: f32) -> f32 {
+    (width - painter.px(INSIDE) * 2.0) * 9.0 / 16.0
+}
+
+/// The height of a card that wide.
+fn card_height(painter: &Painter, width: f32) -> f32 {
+    picture_height(painter, width) + painter.px(BELOW_THE_PICTURE)
+}
+
 /// The card a hand is moving, if it is one of `laid`: its rank there, and
 /// where its corner follows the hand to. `first` is the first place,
 /// which says how large a card is.
@@ -203,8 +222,8 @@ fn handle_in(painter: &Painter, view: View, at: Rect) -> Rect {
         View::Grid => {
             let corner = painter.px(28.0);
             Rect::at(
-                at.right - painter.px(14.0 + 6.0) - corner,
-                at.top + painter.px(14.0 + 6.0),
+                at.right - painter.px(INSIDE + 6.0) - corner,
+                at.top + painter.px(INSIDE + 6.0),
                 corner,
                 corner,
             )
@@ -271,8 +290,8 @@ struct Shown {
     wakeable: bool,
     reachable: bool,
     connect: Target,
-    menu: Target,
-    menu_open: bool,
+    /// What its card offers besides opening a session.
+    offers: Vec<Offer>,
     /// How far the hand being on the way to it has come.
     lit: f32,
 }
@@ -284,12 +303,6 @@ impl Shown {
         let busy = seen.busy(painter.state.opening.is_some());
         let reachable = presence.can_be_reached() && !busy;
         let connect = Target::Connect(fingerprint.clone());
-        let menu = Target::Menu(Menu::Computer(fingerprint.clone()));
-        let menu_open = painter
-            .state
-            .menu
-            .as_ref()
-            .is_some_and(|(open, _)| *open == Menu::Computer(fingerprint.clone()));
         let lit = if reachable {
             painter.hover_of(&connect)
         } else {
@@ -301,8 +314,7 @@ impl Shown {
             presence,
             reachable,
             connect,
-            menu,
-            menu_open,
+            offers: offers(seen, peer, painter.state.opening.is_some()),
             lit,
         }
     }
@@ -369,116 +381,104 @@ impl Shown {
         painter.answers_with_tip(target, at, say!("computer.move"));
     }
 
-    /// The button of its menu in `at`, shown as strongly as `shown`, and
-    /// where its menu opens from while it is open.
-    fn menu_button(&self, painter: &mut Painter, at: Rect, shown: f32) {
-        let colours = painter.colours;
-        if shown > 0.0 {
-            painter.fill(at, painter.px(7.0), colours.surface_1.faded(0.92 * shown));
-            painter.icon(
-                &icons::MORE,
-                square(middle(at), painter.px(16.0)),
-                colours.text_soft.faded(shown),
+    /// What it offers besides opening a session, as buttons that show
+    /// their icon, laid leftwards from `right` on the line from `top`.
+    /// Gives back where they leave off.
+    fn offers(&self, painter: &mut Painter, (right, top): (f32, f32)) -> f32 {
+        let side = painter.px(BUTTON);
+        let gap = painter.px(design::SPACE_2);
+        let mut left = right;
+        for offer in self.offers.iter().rev() {
+            left -= side;
+            let target = Target::Offer(self.fingerprint.clone(), *offer);
+            let armed = painter.state.is_armed(&target);
+            let (tip, icon) = offered(*offer);
+            let tip = if armed { say!("dialog.confirm") } else { tip };
+            let kind = if armed { Kind::Warning } else { Kind::Quiet };
+            painter.button(
+                Rect::at(left, top, side, side),
+                target,
+                Button::new("", kind).with_icon(icon).told(&tip),
             );
+            left -= gap;
         }
-        painter.answers_with_tip(self.menu.clone(), at, say!("computer.more"));
-        if self.menu_open {
-            painter.state.menu = Some((Menu::Computer(self.fingerprint.clone()), at));
-        }
+        left
     }
 
-    /// The way to it at the bottom: « Connect », or « Wake up » for one
-    /// that is gone, faded while its card is not known.
+    /// The way to it: « Connect », or « Wake up » for one that is gone,
+    /// faded while its card is not known. Only its icon where its word
+    /// does not fit.
     fn way_to(&self, painter: &mut Painter, at: Rect) {
-        let colours = painter.colours;
-        if self.presence == Presence::Gone && self.wakeable {
-            let label = say!("computer.wake");
-            painter.button(
-                at,
+        let gone = self.presence == Presence::Gone;
+        let (label, icon, target, kind, enabled) = if gone {
+            (
+                say!("computer.wake"),
+                &icons::POWER,
                 Target::Wake(self.fingerprint.clone()),
-                Button::new(&label, Kind::Quiet).with_icon(&icons::POWER),
-            );
-            return;
-        }
-        if self.presence != Presence::Gone {
-            let label = say!("computer.connect");
-            painter.button(
-                at,
+                Kind::Quiet,
+                self.wakeable,
+            )
+        } else {
+            (
+                say!("computer.connect"),
+                &icons::COMPUTERS,
                 self.connect.clone(),
-                Button::new(&label, Kind::Action)
-                    .with_icon(&icons::COMPUTERS)
-                    .enabled(self.reachable)
-                    .lit(self.lit),
-            );
-            return;
+                Kind::Action,
+                self.reachable,
+            )
+        };
+        let fits = size(at).0 >= painter.button_width(&label, Some(icon));
+        let tip = if gone && !self.wakeable {
+            Some(say!("computer.wake_unknown"))
+        } else {
+            (!fits).then(|| label.clone())
+        };
+        let mut button = Button::new(if fits { &label } else { "" }, kind)
+            .with_icon(icon)
+            .enabled(enabled)
+            .lit(self.lit);
+        if let Some(tip) = &tip {
+            button = button.told(tip);
         }
-        let radius = painter.px(design::RADIUS_SMALL);
-        painter.fill(at, radius, colours.surface_1);
-        painter.stroke(at, radius, colours.border);
-        let label = say!("computer.wake");
-        let pen = painter.body().in_bold();
-        let label_width = painter.width_of(&label, pen);
-        let icon = painter.px(18.0);
-        let (centre_x, centre_y) = middle(at);
-        let start = centre_x - (label_width + icon + painter.px(design::SPACE_2)) / 2.0;
-        painter.icon(
-            &icons::POWER,
-            Rect::at(start, centre_y - icon / 2.0, icon, icon),
-            colours.text_faint,
-        );
-        painter.text(
-            &label,
-            pen,
-            colours.text_faint,
-            Rect::at(
-                start + icon + painter.px(design::SPACE_2),
-                at.top,
-                label_width + painter.px(2.0),
-                size(at).1,
-            ),
-        );
-        painter.tells(at, say!("computer.wake_unknown"));
+        painter.button(at, target, button);
+    }
+}
+
+/// What an offer says of itself, and its icon.
+fn offered(offer: Offer) -> (String, &'static Icon) {
+    match offer {
+        Offer::HereOnly => (say!("computer.here_only"), &icons::LOCAL_NETWORK),
+        Offer::Journal => (say!("computer.journal"), &icons::JOURNAL),
+        Offer::SendBack => (say!("computer.send_back"), &icons::DISCONNECT),
+        Offer::Forget => (say!("computer.forget"), &icons::CROSS),
     }
 }
 
 /// One computer's card: its picture, its presence, its name, the road to
-/// it and how long it takes, and the way to it.
+/// it and how long it takes, the way to it and what else it offers.
 fn card(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
     let shown = Shown::of(painter, seen, peer);
-    let near = painter
-        .hover_of(&shown.menu)
-        .max(shown.lit)
-        .max(f32::from(u8::from(shown.menu_open)));
     painter.card_lit(at, shown.lit);
     if shown.reachable {
         painter.answers(shown.connect.clone(), at);
     }
 
-    let inside = painter.px(14.0);
+    let inside = painter.px(INSIDE);
+    let width = size(at).0 - inside * 2.0;
     let picture = Rect::at(
         at.left + inside,
         at.top + inside,
-        size(at).0 - inside * 2.0,
-        painter.px(PICTURE),
+        width,
+        picture_height(painter, size(at).0),
     );
     let radius = painter.px(design::RADIUS_SMALL + 1.0);
     shown.picture(painter, picture, radius);
 
-    // In the picture's corner, the handle that moves the card, and the
-    // computer's menu.
-    let handle = handle_in(painter, View::Grid, at);
-    shown.handle(painter, handle, true);
-    let more = handle.shifted(-(size(handle).0 + painter.px(6.0)), 0.0);
-    let strength = if near > 0.0 || painter.focused(&shown.menu) {
-        near.max(0.6)
-    } else {
-        0.0
-    };
-    shown.menu_button(painter, more, strength);
+    // In the picture's corner, the handle that moves the card.
+    shown.handle(painter, handle_in(painter, View::Grid, at), true);
 
     // Under the picture: the name, what is known of it, its tags.
     let left = at.left + inside;
-    let width = size(at).0 - inside * 2.0;
     let mut y = picture.bottom + painter.px(design::SPACE_3);
     y += name_and_more(painter, seen, peer, (left, y, width)) + painter.px(design::SPACE_2);
     tags(
@@ -489,15 +489,15 @@ fn card(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
         (left, y, left + width),
     );
 
-    let height = painter.px(38.0);
-    shown.way_to(
-        painter,
-        Rect::at(left, at.bottom - inside - height, width, height),
-    );
+    // At the foot: the way to it, and beside it what else it offers.
+    let height = painter.px(BUTTON);
+    let top = at.bottom - inside - height;
+    let right = shown.offers(painter, (left + width, top));
+    shown.way_to(painter, Rect::at(left, top, right - left, height));
 }
 
 /// One computer's row in the list: its picture, its name and what is
-/// known of it, its tags, its menu and the way to it, across.
+/// known of it, its tags, what it offers and the way to it, across.
 fn row(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
     let shown = Shown::of(painter, seen, peer);
     painter.card_lit(at, shown.lit);
@@ -516,12 +516,12 @@ fn row(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
     let radius = painter.px(design::RADIUS_SMALL);
     shown.picture(painter, thumbnail, radius);
 
-    // From the right: the way to it, then its menu.
+    // From the right: the way to it, then what else it offers.
     let label = say!("computer.connect");
     let button_width = painter
         .button_width(&label, Some(&icons::COMPUTERS))
         .max(painter.px(150.0));
-    let button_height = painter.px(38.0);
+    let button_height = painter.px(BUTTON);
     let edge = painter.px(design::SPACE_4);
     let button = Rect::at(
         at.right - edge - button_width,
@@ -530,17 +530,13 @@ fn row(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
         button_height,
     );
     shown.way_to(painter, button);
-    let corner = painter.px(32.0);
-    let more = Rect::at(
-        button.left - painter.px(design::SPACE_2) - corner,
-        centre - corner / 2.0,
-        corner,
-        corner,
+    let end = shown.offers(
+        painter,
+        (button.left - painter.px(design::SPACE_2), button.top),
     );
-    shown.menu_button(painter, more, 1.0);
 
     let left = thumbnail.right + painter.px(design::SPACE_4);
-    let room = (more.left - painter.px(design::SPACE_4) - left).max(0.0);
+    let room = (end - painter.px(design::SPACE_4) - left).max(0.0);
     let words_width = room.min(painter.px(WORDS));
     let taken =
         painter.measured(|painter| name_and_more(painter, seen, peer, (left, 0.0, words_width)));
@@ -551,7 +547,7 @@ fn row(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
         (left, centre - taken / 2.0, words_width),
     );
     let tags_left = left + words_width + painter.px(design::SPACE_4);
-    if tags_left < more.left {
+    if tags_left < end {
         tags(
             painter,
             seen,
@@ -560,7 +556,7 @@ fn row(painter: &mut Painter, seen: &Seen, peer: &Peer, at: Rect) {
             (
                 tags_left,
                 centre - painter.px(TAG_HEIGHT) / 2.0,
-                more.left - painter.px(design::SPACE_4),
+                end - painter.px(design::SPACE_4),
             ),
         );
     }
@@ -820,9 +816,10 @@ fn nothing_found(painter: &mut Painter, at: Rect) -> f32 {
     )
 }
 
-/* ---- The menus ---------------------------------------------------------- */
+/* ---- The offers and the filter's menu --------------------------------------- */
 
-/// What a computer's menu offers, in the order it shows them.
+/// What a computer's card offers besides opening a session, in the order
+/// it shows them.
 pub fn offers(seen: &Seen, peer: &Peer, opening: bool) -> Vec<Offer> {
     let fingerprint = peer.fingerprint.to_string();
     let mut offers = Vec::new();
@@ -854,13 +851,12 @@ pub fn narrowed_to(narrowed: Narrowed) -> (String, &'static Icon) {
     }
 }
 
-/// One line of a menu: what it does, its words, its icon, its ink, and
-/// whether it is the one chosen.
+/// One line of a menu: what it does, its words, its icon, and whether
+/// it is the one chosen.
 struct Item {
     target: Target,
     label: String,
     icon: &'static Icon,
-    ink: Colour,
     chosen: bool,
 }
 
@@ -870,50 +866,18 @@ pub fn menu(painter: &mut Painter, width: f32, height: f32) {
         return;
     };
     let colours = painter.colours;
-    let items: Vec<Item> = match &open {
-        Menu::Computer(fingerprint) => {
-            let seen = painter.seen;
-            let Some(peer) = seen.peer(fingerprint) else {
-                painter.state.menu = None;
-                return;
-            };
-            offers(seen, peer, painter.state.opening.is_some())
-                .into_iter()
-                .map(|offer| {
-                    let (label, icon) = match offer {
-                        Offer::HereOnly => (say!("computer.here_only"), &icons::LOCAL_NETWORK),
-                        Offer::Journal => (say!("computer.journal"), &icons::JOURNAL),
-                        Offer::SendBack => (say!("computer.send_back"), &icons::DISCONNECT),
-                        Offer::Forget => (say!("computer.forget"), &icons::CROSS),
-                    };
-                    Item {
-                        target: Target::Offer(fingerprint.clone(), offer),
-                        label,
-                        icon,
-                        ink: if offer == Offer::Forget {
-                            colours.warning
-                        } else {
-                            colours.text
-                        },
-                        chosen: false,
-                    }
-                })
-                .collect()
-        }
-        Menu::Filter => Narrowed::ALL
-            .into_iter()
-            .map(|narrowed| {
-                let (label, icon) = narrowed_to(narrowed);
-                Item {
-                    target: Target::Narrow(narrowed),
-                    label,
-                    icon,
-                    ink: colours.text,
-                    chosen: painter.state.narrowed == narrowed,
-                }
-            })
-            .collect(),
-    };
+    let items: Vec<Item> = Narrowed::ALL
+        .into_iter()
+        .map(|narrowed| {
+            let (label, icon) = narrowed_to(narrowed);
+            Item {
+                target: Target::Narrow(narrowed),
+                label,
+                icon,
+                chosen: painter.state.narrowed == narrowed,
+            }
+        })
+        .collect();
     let shown = painter.arriving(&format!("menu {open:?}"), QUICK);
     let row = painter.px(38.0);
     let inside = painter.px(design::SPACE_1 + 2.0);
@@ -932,11 +896,7 @@ pub fn menu(painter: &mut Painter, width: f32, height: f32) {
         + check
         + painter.px(design::SPACE_3 * 2.0 + design::SPACE_4);
     let tall = row * items.len() as f32 + inside * 2.0;
-    let left = match open {
-        Menu::Filter => anchor.left,
-        Menu::Computer(_) => anchor.right - wide,
-    }
-    .clamp(
+    let left = anchor.left.clamp(
         painter.px(design::SPACE_2),
         width - wide - painter.px(design::SPACE_2),
     );
@@ -971,7 +931,7 @@ pub fn menu(painter: &mut Painter, width: f32, height: f32) {
         let ink = if item.chosen {
             colours.accent
         } else {
-            item.ink
+            colours.text
         };
         painter.icon(
             item.icon,
