@@ -4888,6 +4888,20 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Une page Contacts complète, un interrupteur par ordinateur et par contact, un contact qui ne touche que ce qu'on lui a prêté, et une question « Accepter » ou Ctrl+F1 quand il veut entrer.
 
+## D320. Une pause du Wi-Fi n'est pas une route pleine (2026-10-16, pendant MZ)
+
+> Revient sur [D265](#d265-le-débit-suit-ce-que-la-route-porte-2026-10-10-pendant-mz), dont la dernière ligne disait quoi surveiller : « des plafonds sur une route qui portait tout ».
+
+**Le constat.** En réseau local, un portable en Wi-Fi 6 face à un PC en câble, Victor voyait l'image devenir floue, redevenir nette, puis floue encore, en boucle, avec le voyant de connexion allumé. Aucune perte, un signal à 99 %. Le journal le dit : la carte Wi-Fi se tait par moments soixante à soixante-dix millisecondes (« longest silence out of it 62.2 ms », l'aller-retour qui passe de 2 à 8 ms), puis livre d'un bloc les quatre ou cinq images retenues. Chacune a « attendu » plus qu'un intervalle, le lecteur y lisait une route pleine, et le plafond tombait de moitié (de 15 à 7,7 Mb/s), pour remonter de 25 % toutes les deux secondes, une vingtaine de secondes jusqu'au débit choisi, et retomber à la pause suivante. La route, elle, portait tout.
+
+**Ce qui est fait.** Une image qui arrive après la précédente en moins de la moitié du temps qui les a séparées au départ est passée avec elle : la route les a retenues ensemble et lâchées ensemble. Une route pleine les fait passer l'une après l'autre, pas plus vite qu'elles ne partent. Seule la première image retenue compte donc contre la route ; les suivantes, quand elles ont attendu, ne comptent ni pour ni contre, comme celles qui suivent une image clé. C'est la façon dont WebRTC regroupe une rafale après une pause. Une route vraiment pleine reste trouvée pleine, pause ou non : les images qu'elle laisse passer une à une continuent de compter.
+
+**Ce qui se voit.** Plus de flou en boucle sur un Wi-Fi qui marque des pauses sans rien perdre. Le voyant peut encore s'allumer pendant une pause : elle est réelle, et une image arrive en retard.
+
+**Ce qui se lit dans le journal.** La ligne `road` de chaque seconde dit, quand il y en a eu, combien d'images ont été lâchées ensemble après une pause : « road: 57 pictures, the road 9 % full on average and 40 % at worst, 3 more held by a pause and let through together, ... ».
+
+**Les essais.** Une route large qui s'arrête un dixième de seconde chaque seconde ne fait rien tomber, et sa lecture compte les images lâchées ensemble. Une route trop étroite qui marque aussi une pause est toujours trouvée pleine. Rien d'autre ne change : seul le lecteur décide, le dialogue avec l'hôte reste le même.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

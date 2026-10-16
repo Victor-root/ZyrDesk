@@ -18,6 +18,11 @@
 //! pass than the time until the next, and a queue builds. The two clocks
 //! never need to agree, their difference going away with the least.
 //!
+//! A road that pauses is not a full one. A Wi-Fi card scanning or dozing
+//! holds whatever leaves meanwhile, then lets it all through at once: only
+//! the first picture held counts, the others arriving with it say nothing
+//! more (as WebRTC groups a burst after a pause).
+//!
 //! When pictures keep arriving slower than they leave, or several are
 //! lost in a second, the ceiling falls to a little under what actually
 //! arrived; when the road has been calm for a while, it climbs back,
@@ -90,6 +95,12 @@ const KEY_PASSING: Duration = Duration::from_millis(500);
 
 /// Fullness under which the road is calm.
 const CALM_FULLNESS: f64 = 0.85;
+
+/// A picture arriving after the one before in less than this share of the
+/// time between their departures came through with it: the road held both
+/// and let them go together. A full road passes each in turn, no faster
+/// than they leave.
+const TOGETHER: f64 = 0.5;
 
 /// How long what the road bore at its last fall is believed: a road
 /// that was crowded may no longer be.
@@ -177,6 +188,9 @@ pub struct Road {
     /// When the last key frame came, while the pictures behind it still
     /// queue.
     key_passing: Option<Instant>,
+    /// When the picture before left, on the host's clock, and arrived
+    /// whole, on this one.
+    previous: Option<(u32, u64)>,
     /// Bytes arrived, by 10 ms.
     arrived: VecDeque<(Instant, u64)>,
     /// When the first byte arrived: no rate is believed before a whole
@@ -195,6 +209,9 @@ pub struct Road {
     pictures: u32,
     fullness_sum: f64,
     fullness_most: f64,
+    /// The pictures since the last reading held by a pause and let
+    /// through with the one before.
+    together: u32,
 }
 
 /// How the road went since the last reading, for the journal.
@@ -204,6 +221,9 @@ pub struct Reading {
     /// How full the road was, on average and at worst, in percent.
     pub fullness: u32,
     pub fullness_most: u32,
+    /// Pictures held by a pause and let through with the one before, not
+    /// counted in the others.
+    pub together: u32,
     pub arrived_kbps: Option<u32>,
     pub ceiling: Option<u32>,
 }
@@ -215,6 +235,13 @@ impl fmt::Display for Reading {
             "{} pictures, the road {} % full on average and {} % at worst",
             self.pictures, self.fullness, self.fullness_most
         )?;
+        if self.together > 0 {
+            write!(
+                f,
+                ", {} more held by a pause and let through together",
+                self.together
+            )?;
+        }
         if let Some(kbps) = self.arrived_kbps {
             write!(f, ", {kbps} kb/s arrived")?;
         }
@@ -237,6 +264,7 @@ impl Road {
             fullness: VecDeque::new(),
             overfull: 0,
             key_passing: None,
+            previous: None,
             arrived: VecDeque::new(),
             first_arrival: None,
             lost: VecDeque::new(),
@@ -247,6 +275,7 @@ impl Road {
             pictures: 0,
             fullness_sum: 0.0,
             fullness_most: 0.0,
+            together: 0,
         }
     }
 
@@ -289,6 +318,7 @@ impl Road {
     pub fn whole(&mut self, arrival: Arrival) {
         let first = self.delay(arrival.first_us, arrival.sent_us);
         let delay = self.delay(arrival.last_us, arrival.sent_us);
+        let before = self.previous.replace((arrival.sent_us, arrival.last_us));
         let at = arrival.at;
         match self.least.back_mut() {
             Some((second, least)) if at.saturating_duration_since(*second) < SECOND => {
@@ -322,6 +352,14 @@ impl Road {
                 return;
             }
             self.key_passing = None;
+        }
+        // A road that pauses, a Wi-Fi card scanning or dozing, holds every
+        // picture that leaves meanwhile and lets them go together: the
+        // first says how long the pause lasted, the others only repeat
+        // it. A full road would have passed them one by one.
+        if fullness > 1.0 && before.is_some_and(|before| came_with(before, &arrival)) {
+            self.together += 1;
+            return;
         }
         self.overfull = if fullness > 1.0 { self.overfull + 1 } else { 0 };
         self.pictures += 1;
@@ -444,12 +482,14 @@ impl Road {
             pictures: self.pictures,
             fullness: percent(self.fullness_sum / f64::from(self.pictures.max(1))),
             fullness_most: percent(self.fullness_most),
+            together: self.together,
             arrived_kbps: self.arrived_kbps(now),
             ceiling: self.ceiling,
         };
         self.pictures = 0;
         self.fullness_sum = 0.0;
         self.fullness_most = 0.0;
+        self.together = 0;
         reading
     }
 
@@ -500,6 +540,14 @@ const SECOND: Duration = Duration::from_secs(1);
 
 fn interval_of(fps: u16) -> Duration {
     (Duration::from_secs(1) / u32::from(fps.max(1))).max(SHORTEST_INTERVAL)
+}
+
+/// Whether `arrival` came through together with the picture before it,
+/// which left at `sent_us` and arrived whole at `last_us`.
+fn came_with((sent_us, last_us): (u32, u64), arrival: &Arrival) -> bool {
+    let left = arrival.sent_us.wrapping_sub(sent_us) as i32;
+    let came = arrival.last_us.saturating_sub(last_us);
+    left > 0 && (came as f64) < f64::from(left) * TOGETHER
 }
 
 #[cfg(test)]
@@ -571,6 +619,13 @@ mod tests {
             for _ in 0..seconds * u32::from(FPS) {
                 self.picture(link_kbps);
             }
+        }
+
+        /// The link passes nothing for `long` from the next picture on,
+        /// as a Wi-Fi card does while it scans or dozes.
+        fn pause(&mut self, long: Duration) {
+            let next = interval_of(FPS) * self.sent + self.base;
+            self.free_at = self.free_at.max(next) + long;
         }
     }
 
@@ -661,6 +716,30 @@ mod tests {
         });
         simulated.for_seconds(2, 40_000);
         assert_eq!(simulated.ceilings, []);
+    }
+
+    #[test]
+    fn a_road_that_pauses_now_and_then_is_not_a_full_road() {
+        let mut simulated = Simulated::new(20_000);
+        simulated.for_seconds(2, 200_000);
+        for _ in 0..10 {
+            simulated.pause(Duration::from_millis(100));
+            simulated.for_seconds(1, 200_000);
+        }
+        assert_eq!(simulated.ceilings, []);
+        let now = simulated.start + simulated.free_at;
+        assert!(simulated.road.reading(now).together > 0);
+    }
+
+    #[test]
+    fn a_full_road_that_also_pauses_is_still_found_full() {
+        let mut simulated = Simulated::new(40_000);
+        simulated.for_seconds(2, 100_000);
+        simulated.pause(Duration::from_millis(100));
+        simulated.for_seconds(3, 10_000);
+        let (_, first) = simulated.ceilings.first().expect("the ceiling fell");
+        assert!(matches!(first.because, Because::Full { .. }), "{first:?}");
+        assert!(simulated.road.ceiling().unwrap() < 10_000);
     }
 
     #[test]
