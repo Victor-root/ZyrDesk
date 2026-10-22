@@ -4918,6 +4918,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Les essais.** Une route large qui cale chaque seconde puis laisse filer au compte-gouttes ce qu'elle a retenu ne fait rien tomber, et sa lecture dit sa largeur ; sans la largeur, ce même essai faisait tomber le plafond. Une route large qui se rétrécit est trouvée pleine en moins d'une demi-seconde. Les essais de D265 et D320 passent inchangés.
 
+## D322. Le serveur du compte dit s'il répond, en bas de la barre de gauche (2026-10-22, pendant MZ)
+
+**Le constat.** Le serveur de Victor n'était plus à jour depuis le passage aux contacts ([D319](#d319-les-contacts-façon-parsec-réglés-ordinateur-par-ordinateur-2026-10-15-pendant-mz)). Le service ne recevait donc plus la liste des ordinateurs du compte : les ordinateurs éteints avaient disparu de l'accueil, et « Réveiller » avec eux. Rien ne le disait, sauf une ligne dans les paramètres, qu'il fallait aller lire.
+
+**Ce qui est fait.** Sous le nom de la personne, en bas de la barre de gauche, un point précède le nom du serveur : vert quand il répond ; orange, avec « {serveur} est injoignable » en orange, quand il ne répond pas. La bulle au survol dit pourquoi, avec les mêmes mots que les paramètres (« le serveur et cet ordinateur n'ont pas la même version : mettez l'un des deux à jour »). Les deux endroits tirent leur phrase d'une seule aide (`home/words.rs`).
+
+**Ce qui se voit.** On sait d'un coup d'œil, depuis n'importe quelle page, si le compte est en ligne.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

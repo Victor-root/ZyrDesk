@@ -700,6 +700,7 @@ fn person_row(painter: &mut Painter, at: Rect) {
     let body = painter.body().in_bold().ellipsized();
     let caption = painter.caption().ellipsized();
     let (name_height, server_height) = (painter.line(body), painter.line(caption));
+    let mut tip = say!("nav.account_tip");
     match server {
         Some(server) => {
             let top = centre - (name_height + server_height) / 2.0;
@@ -709,11 +710,46 @@ fn person_row(painter: &mut Painter, at: Rect) {
                 colours.text,
                 Rect::at(words_left, top, words_width, name_height),
             );
+            // Whether the server answers, said where the account is shown:
+            // without it, the computers of the account and its contacts are
+            // gone, and nothing else on screen says why.
+            let trouble = painter
+                .seen
+                .account
+                .as_ref()
+                .and_then(|account| account.link.as_ref())
+                .filter(|link| !link.connected)
+                .map(|link| link.trouble.clone());
+            let (said, dot_ink, ink) = match &trouble {
+                None => (server.clone(), colours.online, colours.text_soft),
+                Some(why) => {
+                    tip = words::server_away(&server, why.as_ref());
+                    (
+                        say!("settings.unreachable", server = server),
+                        colours.warning,
+                        colours.warning,
+                    )
+                }
+            };
+            let dot = painter.px(8.0);
+            let line_top = top + name_height;
+            painter.dot(
+                (words_left + dot / 2.0, line_top + server_height / 2.0),
+                dot,
+                dot_ink,
+                false,
+            );
+            let after_dot = dot + painter.px(design::SPACE_2);
             painter.text(
-                &server,
+                &said,
                 caption,
-                colours.text_soft,
-                Rect::at(words_left, top + name_height, words_width, server_height),
+                ink,
+                Rect::at(
+                    words_left + after_dot,
+                    line_top,
+                    (words_width - after_dot).max(0.0),
+                    server_height,
+                ),
             );
         }
         None => painter.text(
@@ -736,7 +772,7 @@ fn person_row(painter: &mut Painter, at: Rect) {
     if painter.focused(&target) {
         painter.focus_ring(at, radius);
     }
-    painter.answers_with_tip(target, at, say!("nav.account_tip"));
+    painter.answers_with_tip(target, at, tip);
 }
 
 /// The bar on the left, unfolded over a narrow window, and the veil

@@ -17,6 +17,19 @@ const MINUTE: u64 = 60;
 const HOUR: u64 = 3600;
 const DAY: u64 = 86_400;
 
+/// An account's server that does not answer: its name, and why when
+/// that is known.
+pub fn server_away(server: &str, why: Option<&zyr_proto::fact::Fact>) -> String {
+    match why {
+        Some(why) => say!(
+            "settings.unreachable_because",
+            server = server,
+            why = zyr_i18n::fact(why).replace('\n', " ")
+        ),
+        None => say!("settings.unreachable", server = server),
+    }
+}
+
 /// How long something has lasted, in words: « 42 min », « 1 h 12 ».
 pub fn duration(seconds: u64) -> String {
     if seconds < MINUTE {

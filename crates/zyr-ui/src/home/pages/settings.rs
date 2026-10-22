@@ -190,14 +190,7 @@ fn account(painter: &mut Painter, at: Rect) -> f32 {
         let state = if link.connected {
             say!("settings.linked", server = server)
         } else {
-            match link.trouble.as_ref() {
-                Some(why) => say!(
-                    "settings.unreachable_because",
-                    server = server,
-                    why = zyr_i18n::fact(why).replace('\n', " ")
-                ),
-                None => say!("settings.unreachable", server = server),
-            }
+            words::server_away(&server, link.trouble.as_ref())
         };
         let armed = painter.state.is_armed(&Target::Detach);
         y += line(
