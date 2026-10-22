@@ -23,6 +23,16 @@
 //! the first picture held counts, the others arriving with it say nothing
 //! more (as WebRTC groups a burst after a pause).
 //!
+//! Nor is a road that stalls now and then, on a wire as much as over the
+//! air: what it held up comes out late for a moment, one picture after
+//! the other, before it catches up. How wide the road is says which it
+//! is. A picture's packets left the host together, so the time between
+//! its first and its last arriving is what the narrowest link took to
+//! pass it (the dispersion of a train of packets, as capacity is measured
+//! from it). A road that passes pictures several times faster than the
+//! stream comes is not the one filling up; a narrow road, or one shared
+//! with other traffic, passes them no faster than what arrives.
+//!
 //! When pictures keep arriving slower than they leave, or several are
 //! lost in a second, the ceiling falls to a little under what actually
 //! arrived; when the road has been calm for a while, it climbs back,
@@ -102,6 +112,26 @@ const CALM_FULLNESS: f64 = 0.85;
 /// than they leave.
 const TOGETHER: f64 = 0.5;
 
+/// How long the width of the road is measured over: long enough for a
+/// stall and what it held up to stay a minority of the pictures, short
+/// enough for a road that narrows to show within a second.
+const WIDTH_OVER: Duration = Duration::from_secs(1);
+
+/// Pictures smaller than this say nothing of the road's width: their few
+/// packets come together whatever the road.
+const WIDTH_BYTES: usize = 16 * 1024;
+
+/// Pictures measured, at the least, before the width is believed.
+const WIDTH_PICTURES: usize = 10;
+
+/// The shortest time a picture is counted as taking to pass: a road too
+/// fast to measure is as wide as this says, not infinitely.
+const WIDTH_SHORTEST: Duration = Duration::from_micros(50);
+
+/// A road passing pictures this many times faster than the stream
+/// arrives is not filled by it: a queue on it waited out a stall.
+const WIDE: f64 = 3.0;
+
 /// How long what the road bore at its last fall is believed: a road
 /// that was crowded may no longer be.
 const BORE_REMEMBERED: Duration = Duration::from_secs(30);
@@ -128,6 +158,8 @@ pub struct Arrival {
     pub last_us: u64,
     /// The same moment, on the monotonic clock.
     pub at: Instant,
+    /// What it weighs.
+    pub bytes: usize,
     /// A key frame, which may be many times the others.
     pub key: bool,
 }
@@ -191,6 +223,9 @@ pub struct Road {
     /// When the picture before left, on the host's clock, and arrived
     /// whole, on this one.
     previous: Option<(u32, u64)>,
+    /// How fast each picture large enough to say passed, in kilobits a
+    /// second, over the last moment.
+    widths: VecDeque<(Instant, u32)>,
     /// Bytes arrived, by 10 ms.
     arrived: VecDeque<(Instant, u64)>,
     /// When the first byte arrived: no rate is believed before a whole
@@ -224,6 +259,8 @@ pub struct Reading {
     /// Pictures held by a pause and let through with the one before, not
     /// counted in the others.
     pub together: u32,
+    /// How fast the road passes a picture, in kilobits a second.
+    pub width_kbps: Option<u32>,
     pub arrived_kbps: Option<u32>,
     pub ceiling: Option<u32>,
 }
@@ -241,6 +278,9 @@ impl fmt::Display for Reading {
                 ", {} more held by a pause and let through together",
                 self.together
             )?;
+        }
+        if let Some(kbps) = self.width_kbps {
+            write!(f, ", pictures passing at {kbps} kb/s")?;
         }
         if let Some(kbps) = self.arrived_kbps {
             write!(f, ", {kbps} kb/s arrived")?;
@@ -265,6 +305,7 @@ impl Road {
             overfull: 0,
             key_passing: None,
             previous: None,
+            widths: VecDeque::new(),
             arrived: VecDeque::new(),
             first_arrival: None,
             lost: VecDeque::new(),
@@ -320,6 +361,7 @@ impl Road {
         let delay = self.delay(arrival.last_us, arrival.sent_us);
         let before = self.previous.replace((arrival.sent_us, arrival.last_us));
         let at = arrival.at;
+        self.passed(&arrival);
         match self.least.back_mut() {
             Some((second, least)) if at.saturating_duration_since(*second) < SECOND => {
                 *least = (*least).min(first);
@@ -375,6 +417,48 @@ impl Road {
         }
     }
 
+    /// Notes how fast the road passed that picture, when it is large
+    /// enough to say.
+    fn passed(&mut self, arrival: &Arrival) {
+        if arrival.bytes >= WIDTH_BYTES {
+            let passing = Duration::from_micros(arrival.last_us.saturating_sub(arrival.first_us))
+                .max(WIDTH_SHORTEST);
+            let kbps = arrival.bytes as f64 * 8.0 / (passing.as_secs_f64() * 1000.0);
+            self.widths
+                .push_back((arrival.at, kbps.min(f64::from(u32::MAX)) as u32));
+        }
+        while self
+            .widths
+            .front()
+            .is_some_and(|(when, _)| arrival.at.saturating_duration_since(*when) > WIDTH_OVER)
+        {
+            self.widths.pop_front();
+        }
+    }
+
+    /// How fast the road passes a picture at `now`, the middle of what
+    /// the last moment's pictures said, once enough have.
+    fn width_kbps(&self, now: Instant) -> Option<u32> {
+        let mut widths: Vec<u32> = self
+            .widths
+            .iter()
+            .filter(|(when, _)| now.saturating_duration_since(*when) <= WIDTH_OVER)
+            .map(|(_, kbps)| *kbps)
+            .collect();
+        if widths.len() < WIDTH_PICTURES {
+            return None;
+        }
+        let middle = widths.len() / 2;
+        Some(*widths.select_nth_unstable(middle).1)
+    }
+
+    /// Whether the road passes pictures far faster than `arrived_kbps`
+    /// come.
+    fn wide(&self, arrived_kbps: u32, now: Instant) -> bool {
+        self.width_kbps(now)
+            .is_some_and(|width| f64::from(width) >= f64::from(arrived_kbps) * WIDE)
+    }
+
     /// From `sent_us` on the host's clock to `here_us` on this one, in
     /// microseconds from the first delay seen.
     fn delay(&mut self, here_us: u64, sent_us: u32) -> i64 {
@@ -400,7 +484,10 @@ impl Road {
         let arrived_kbps = self.arrived_kbps(now)?;
         let smoothed = self.smoothed_fullness();
         let fullness = smoothed.unwrap_or(0.0);
-        let full = self.overfull >= OVERFULL_PICTURES && fullness > 1.0;
+        // A road passing pictures far faster than the stream comes is not
+        // what filled up: the queue waited out a stall.
+        let full =
+            self.overfull >= OVERFULL_PICTURES && fullness > 1.0 && !self.wide(arrived_kbps, now);
         let lost = self.lost.len();
         let crowded = if full {
             Some(Because::Full { fullness })
@@ -483,6 +570,7 @@ impl Road {
             fullness: percent(self.fullness_sum / f64::from(self.pictures.max(1))),
             fullness_most: percent(self.fullness_most),
             together: self.together,
+            width_kbps: self.width_kbps(now),
             arrived_kbps: self.arrived_kbps(now),
             ceiling: self.ceiling,
         };
@@ -609,6 +697,7 @@ mod tests {
                 last_us: self.free_at.as_micros() as u64,
                 at: arrived,
                 key: false,
+                bytes: bytes as usize,
             });
             if let Some(ceiling) = self.road.decide(arrived) {
                 self.ceilings.push((self.sent, ceiling));
@@ -713,6 +802,7 @@ mod tests {
             last_us: simulated.free_at.as_micros() as u64,
             at: simulated.start + simulated.free_at,
             key: true,
+            bytes: 10 * 20_000 * 1000 / 8 / usize::from(FPS),
         });
         simulated.for_seconds(2, 40_000);
         assert_eq!(simulated.ceilings, []);
@@ -729,6 +819,39 @@ mod tests {
         assert_eq!(simulated.ceilings, []);
         let now = simulated.start + simulated.free_at;
         assert!(simulated.road.reading(now).together > 0);
+    }
+
+    #[test]
+    fn a_wide_road_that_stalls_and_lets_what_it_held_trickle_out_is_not_full() {
+        let mut simulated = Simulated::new(40_000);
+        simulated.for_seconds(2, 1_000_000);
+        for _ in 0..10 {
+            simulated.pause(Duration::from_millis(100));
+            for _ in 0..12 {
+                simulated.picture(45_000);
+            }
+            simulated.for_seconds(1, 1_000_000);
+        }
+        assert_eq!(simulated.ceilings, []);
+        let now = simulated.start + simulated.free_at;
+        let width = simulated.road.reading(now).width_kbps.expect("a width");
+        assert!(width > 500_000, "{width} kb/s");
+    }
+
+    #[test]
+    fn a_wide_road_that_narrows_is_found_full_within_half_a_second() {
+        let mut simulated = Simulated::new(40_000);
+        simulated.for_seconds(2, 1_000_000);
+        let narrowed = simulated.sent;
+        simulated.for_seconds(3, 20_000);
+        let (when, fell) = simulated.ceilings[0];
+        assert!(matches!(fell.because, Because::Full { .. }), "{fell:?}");
+        assert!(
+            when - narrowed <= u32::from(FPS) / 2,
+            "{} pictures before the first fall",
+            when - narrowed
+        );
+        assert!(simulated.road.ceiling().unwrap() < 20_000);
     }
 
     #[test]
@@ -755,6 +878,7 @@ mod tests {
                 last_us: u64::from(n) * 16_667 + 10_000,
                 at,
                 key: false,
+                bytes: 40_000,
             });
         }
         let at = start + Duration::from_secs(1);

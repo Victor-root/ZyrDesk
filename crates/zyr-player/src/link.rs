@@ -582,12 +582,14 @@ impl Session {
                 first,
                 last,
                 key,
+                bytes,
             } => self.road.whole(Arrival {
                 sent_us,
                 first_us: self.clock.micros(first),
                 last_us: self.clock.micros(last),
                 at: last,
                 key,
+                bytes,
             }),
             Crossed::Lost(at) => self.road.lost(at),
         }

@@ -4902,6 +4902,22 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Les essais.** Une route large qui s'arrête un dixième de seconde chaque seconde ne fait rien tomber, et sa lecture compte les images lâchées ensemble. Une route trop étroite qui marque aussi une pause est toujours trouvée pleine. Rien d'autre ne change : seul le lecteur décide, le dialogue avec l'hôte reste le même.
 
+## D321. Une route large qui cale n'est pas une route pleine (2026-10-22, pendant MZ)
+
+> Complète [D320](#d320-une-pause-du-wi-fi-nest-pas-une-route-pleine-2026-10-16-pendant-mz), qui ne couvrait que la pause franche.
+
+**Le constat.** En réseau local, les deux PC en câble, l'image devenait floue par à-coups et le voyant de connexion restait allumé. Aucune perte, une carte à un gigabit. Le journal du lecteur le dit : plusieurs fois par seconde, l'arrivée cale trente à cent millisecondes, puis ce qui a été retenu arrive au compte-gouttes, une image toutes les dix à vingt millisecondes, avant de rattraper d'un coup. D320 ne reconnaissait que la rafale franche après une pause ; ici les images arrivent l'une après l'autre, chacune en retard, et le lecteur lisait une route pleine (« 211 % »), alors qu'il arrivait plus que le débit choisi. Le plafond tombait, remontait deux secondes plus tard, retombait. Et chaque changement de débit coûte une image clé à l'encodeur NVIDIA (FFmpeg le relance à chaque fois, D265), serrée dans la place d'une image ordinaire : c'est elle, floue, qu'on voyait à chaque à-coup.
+
+**Ce qui est fait.** Le lecteur mesure aussi la largeur de la route. Les paquets d'une image partent ensemble de l'hôte ; le temps entre le premier et le dernier arrivé est ce que le lien le plus étroit a mis à la faire passer (la dispersion d'un train de paquets, qui sert ailleurs à mesurer la capacité d'un chemin). Pour chaque image d'au moins 16 Kio, cette vitesse est notée ; la largeur est la médiane de la dernière seconde, crue à partir de dix images. Une route qui passe les images au moins trois fois plus vite que le flux n'arrive n'est pas celle qui déborde : ce qui y attend a attendu un calage, et le plafond ne bouge pas. Une route étroite, ou partagée avec d'autres, fait passer les images à peu près au rythme où elles arrivent, et la chute se décide comme avant. Les pertes font toujours tomber le plafond, quelle que soit la largeur.
+
+**Ce que ça coûte.** Une route très large qui se rétrécit d'un coup est reconnue un peu plus tard : le temps que les images lentes deviennent la majorité de la seconde. Sur une route cinquante fois plus large que le flux qui tombe à la moitié du débit, la première chute vient au bout de vingt et une images, un tiers de seconde.
+
+**Ce qui reste.** Les calages eux-mêmes. Ils sont réels, et ce sont eux qui allument le voyant : des images arrivent en retard. Leur origine n'est pas encore établie, entre le service de l'hôte, la route et la réception du client ; le journal du service de l'ordinateur regardé, qui le dirait, ne portait pas ses propres lignes dans le relevé de ce jour.
+
+**Ce qui se lit dans le journal.** La ligne `road` du lecteur dit la largeur : « ..., pictures passing at 750000 kb/s, 42500 kb/s arrived, ... ». Une route lue pleine à son pire mais large ne fait plus bouger le plafond.
+
+**Les essais.** Une route large qui cale chaque seconde puis laisse filer au compte-gouttes ce qu'elle a retenu ne fait rien tomber, et sa lecture dit sa largeur ; sans la largeur, ce même essai faisait tomber le plafond. Une route large qui se rétrécit est trouvée pleine en moins d'une demi-seconde. Les essais de D265 et D320 passent inchangés.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

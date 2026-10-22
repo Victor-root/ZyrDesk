@@ -99,12 +99,14 @@ impl fmt::Display for Because {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Crossed {
     /// It arrived whole: when the host handed it over, on the host's
-    /// clock, and when its first and last packets came here.
+    /// clock, when its first and last packets came here, and what it
+    /// weighs.
     Whole {
         sent_us: u32,
         first: Instant,
         last: Instant,
         key: bool,
+        bytes: usize,
     },
     /// It was lost, given up at that moment.
     Lost(Instant),
@@ -592,6 +594,7 @@ impl<P: Presenter> Video<P> {
                         first: frame.first_packet,
                         last: frame.last_packet,
                         key: frame.key,
+                        bytes: frame.data.len(),
                     }));
                     if let Some(picture) = self.decode(&frame, now) {
                         let ready = Ready {
