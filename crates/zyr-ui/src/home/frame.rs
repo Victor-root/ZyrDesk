@@ -474,24 +474,27 @@ fn sidebar(painter: &mut Painter, at: Rect) {
         colours.border,
     );
 
+    // The mark and the name, centred in the bar, and what ZyrDesk is
+    // centred under them, as wide as they are.
     let edge = painter.px(design::SPACE_5);
     let mark = painter.px(36.0);
-    painter.mark(Rect::at(at.left + edge, at.top + edge, mark, mark));
     let title = painter.title();
-    let name_left = at.left + edge + mark + painter.px(design::SPACE_3);
+    let gap = painter.px(design::SPACE_3);
+    let block = mark + gap + painter.width_of("ZyrDesk", title);
+    let block_left = at.left + ((size(at).0 - block) / 2.0).max(edge);
+    painter.mark(Rect::at(block_left, at.top + edge, mark, mark));
+    let name_left = block_left + mark + gap;
     painter.text(
         "ZyrDesk",
         title,
         colours.text,
         Rect::at(name_left, at.top + edge, size(at).0, mark),
     );
-    // What ZyrDesk is, centred under the mark and the name taken
-    // together, as wide as they are.
     let tagline = say!("nav.tagline");
     let caption = painter.caption().aligned(Align::Centre);
     let tagline_top = at.top + edge + mark + painter.px(design::SPACE_2);
-    let tagline_left = at.left + edge;
-    let tagline_width = name_left + painter.width_of("ZyrDesk", title) - tagline_left;
+    let tagline_left = block_left;
+    let tagline_width = block;
     painter.paragraph(
         &tagline,
         caption,
@@ -712,7 +715,8 @@ fn person_row(painter: &mut Painter, at: Rect) {
             );
             // Whether the server answers, said where the account is shown:
             // without it, the computers of the account and its contacts are
-            // gone, and nothing else on screen says why.
+            // gone, and nothing else on screen says why. A dot on the
+            // initials, so the line below keeps its whole width.
             let trouble = painter
                 .seen
                 .account
@@ -724,32 +728,19 @@ fn person_row(painter: &mut Painter, at: Rect) {
                 None => (server.clone(), colours.online, colours.text_soft),
                 Some(why) => {
                     tip = words::server_away(&server, why.as_ref());
-                    (
-                        say!("settings.unreachable", server = server),
-                        colours.warning,
-                        colours.warning,
-                    )
+                    (say!("nav.server_offline"), colours.warning, colours.warning)
                 }
             };
-            let dot = painter.px(8.0);
-            let line_top = top + name_height;
-            painter.dot(
-                (words_left + dot / 2.0, line_top + server_height / 2.0),
-                dot,
-                dot_ink,
-                false,
-            );
-            let after_dot = dot + painter.px(design::SPACE_2);
+            let dot = painter.px(10.0);
+            let ring = painter.px(2.0);
+            let spot = (avatar.right - dot / 2.0, avatar.bottom - dot / 2.0);
+            painter.dot(spot, dot + ring * 2.0, colours.surface_1, false);
+            painter.dot(spot, dot, dot_ink, false);
             painter.text(
                 &said,
                 caption,
                 ink,
-                Rect::at(
-                    words_left + after_dot,
-                    line_top,
-                    (words_width - after_dot).max(0.0),
-                    server_height,
-                ),
+                Rect::at(words_left, top + name_height, words_width, server_height),
             );
         }
         None => painter.text(

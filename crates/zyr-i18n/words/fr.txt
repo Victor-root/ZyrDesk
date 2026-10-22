@@ -284,6 +284,7 @@ nav.about = À propos
 nav.tagline = Le bureau à distance open source.
 nav.open_menu = Ouvrir le menu
 nav.account_tip = Votre compte
+nav.server_offline = Hors ligne
 nav.up_to_date = Tout est à jour
 bar.search = Rechercher un ordinateur…
 bar.search_keys = Ctrl K

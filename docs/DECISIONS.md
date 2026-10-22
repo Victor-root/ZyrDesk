@@ -4926,6 +4926,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** On sait d'un coup d'œil, depuis n'importe quelle page, si le compte est en ligne.
 
+## D323. Le point du serveur sur les initiales, et l'en-tête de la barre centré (2026-10-22, pendant MZ)
+
+> Retouche [D322](#d322-le-serveur-du-compte-dit-sil-répond-en-bas-de-la-barre-de-gauche-2026-10-22-pendant-mz) le jour même.
+
+**Ce qui est fait.** Le point devant le nom du serveur prenait la place du nom, coupé (« ZyrDesk-VRO… »). Il passe sur les initiales, en bas à droite, détaché par un anneau de la couleur du fond, et la ligne sous le nom retrouve toute sa largeur : le nom du serveur quand il répond, « Hors ligne » en orange quand il ne répond pas (« injoignable » en entier ne tenait pas), la raison restant dans la bulle. En haut de la barre de gauche, le logo, le nom et le slogan forment un bloc centré sur la largeur de la barre, au lieu de partir du bord gauche.
+
+**Ce qui se voit.** Un nom de serveur entier, un point d'état comme sur une messagerie, et un en-tête au milieu de la barre.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

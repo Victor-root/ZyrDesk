@@ -30,7 +30,7 @@ Légende des tableaux : **Oui** marche dès le premier jour ; **Grisé** est des
 | Activité | Oui | Les sessions terminées, jour par jour ([D311](DECISIONS.md)) |
 | Paramètres | Oui | Les réglages d'aujourd'hui, remis au style de l'accueil |
 | À propos | Oui | Juste sous Paramètres (§8) |
-| En bas : la personne (initiales, nom, adresse du compte) | Oui | Sans compte : le nom de la session Windows, sans adresse. Avec un compte, un point dit si le serveur répond : vert, il répond ; orange, « injoignable », et la bulle dit pourquoi ([D322](DECISIONS.md)) |
+| En bas : la personne (initiales, nom, adresse du compte) | Oui | Sans compte : le nom de la session Windows, sans adresse. Avec un compte, un point sur les initiales dit si le serveur répond : vert, il répond, et le nom du serveur est dessous ; orange, « Hors ligne » à sa place, et la bulle dit pourquoi ([D322](DECISIONS.md), [D323](DECISIONS.md)) |
 | En bas : « Tout est à jour » | Grisé | Attend les mises à jour automatiques |
 
 ## 3. Barre du haut

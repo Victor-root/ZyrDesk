@@ -287,6 +287,7 @@ nav.about = About
 nav.tagline = Open-source remote desktop.
 nav.open_menu = Open the menu
 nav.account_tip = Your account
+nav.server_offline = Offline
 nav.up_to_date = Everything is up to date
 bar.search = Search for a computer…
 bar.search_keys = Ctrl K
