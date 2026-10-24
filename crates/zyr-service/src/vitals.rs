@@ -4,8 +4,9 @@
 //! network, the far computer or this one, and every measurement the
 //! service takes of the tunnel says what the tunnel did. What says what
 //! this computer was doing at that second is written beside them: how
-//! busy it was and with what, what the system counted of UDP and IP, and
-//! what the network card that reaches the far computer carried and lost.
+//! busy it was and with what, what the system counted of UDP and IP,
+//! what the network card that reaches the far computer carried and lost,
+//! and which programs kept which engines of the graphics cards busy.
 //! Held on both sides, since a picture is made on one computer and shown
 //! on the other. What the computer is, which no second changes, is said
 //! once before them.

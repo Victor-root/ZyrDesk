@@ -1,11 +1,13 @@
 //! This computer's own counters, read from Windows a second at a time.
 //!
 //! How busy the processors are and which programs keep them busy, what
-//! the system counted of UDP and IP, and what the network card that
-//! reaches the far computer has carried and lost. What they gained
-//! between two readings is worked out and worded in `counted.rs`.
+//! the system counted of UDP and IP, what the network card that reaches
+//! the far computer has carried and lost, and how busy each program kept
+//! each engine of the graphics cards. What they gained between two
+//! readings is worked out and worded in `counted.rs`.
 
 use std::net::IpAddr;
+use std::ptr;
 use std::time::Instant;
 
 use windows_sys::Win32::Foundation::{FILETIME, INVALID_HANDLE_VALUE};
@@ -20,20 +22,31 @@ use windows_sys::Win32::Networking::WinSock::{
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
+use windows_sys::Win32::System::Performance::{
+    PDH_CSTATUS_NEW_DATA, PDH_CSTATUS_VALID_DATA, PDH_FMT_COUNTERVALUE_ITEM_W, PDH_FMT_DOUBLE,
+    PDH_HCOUNTER, PDH_HQUERY, PDH_MORE_DATA, PdhAddEnglishCounterW, PdhCloseQuery,
+    PdhCollectQueryData, PdhGetFormattedCounterArrayW, PdhOpenQueryW,
+};
 use windows_sys::Win32::System::Threading::{
     GetCurrentThread, GetProcessTimes, GetSystemTimes, OpenProcess,
     PROCESS_QUERY_LIMITED_INFORMATION, SetThreadPriority, THREAD_PRIORITY_LOWEST,
 };
-use zyr_win32::{Handle, read_wide};
+use zyr_win32::{Handle, read_wide, wide};
 
-use crate::counted::{Card, Carried, Cpu, Ip, Kind, Program, Raw, Udp};
+use crate::counted::{Card, Carried, Cpu, EngineUse, Ip, Kind, Program, Raw, Udp};
 
 /// What a card says its speed is when it does not know.
 const UNKNOWN_SPEED: u64 = u64::MAX;
 
+/// The counter the Task Manager reads for the graphics cards: one
+/// instance for each program and each engine it uses.
+const ENGINES: &str = "\\GPU Engine(*)\\Utilization Percentage";
+
 /// The computer's own counters, read a second at a time.
 pub struct Vitals {
     before: Option<Raw>,
+    /// Missing on a Windows without the graphics cards' counters.
+    engines: Option<Engines>,
 }
 
 impl Vitals {
@@ -47,7 +60,10 @@ impl Vitals {
         // SAFETY: the pseudo-handle of the calling thread, which needs no
         // closing.
         unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST) };
-        Some(Self { before: None })
+        Some(Self {
+            before: None,
+            engines: Engines::open(),
+        })
     }
 
     /// What the counters gained since the last reading, told for the
@@ -64,6 +80,7 @@ impl Vitals {
             udp: udp(),
             ip: ip(),
             card: peer.and_then(card_towards),
+            engines: self.engines.as_ref().map(Engines::read).unwrap_or_default(),
         };
         let told = self
             .before
@@ -71,6 +88,110 @@ impl Vitals {
             .map(|before| now.since(before).to_string());
         self.before = Some(now);
         told
+    }
+}
+
+/// The graphics cards' engines, as the performance counters say how busy
+/// each program keeps them. Windows works the share out between two
+/// readings of the query: the first one gives nothing.
+struct Engines {
+    query: PDH_HQUERY,
+    counter: PDH_HCOUNTER,
+}
+
+impl Engines {
+    fn open() -> Option<Self> {
+        let mut query = ptr::null_mut();
+        // SAFETY: a slot of ours for the query, live counters asked for.
+        if unsafe { PdhOpenQueryW(ptr::null(), 0, &mut query) } != 0 {
+            return None;
+        }
+        // Closed by its guard if the counter is refused.
+        let mut engines = Self {
+            query,
+            counter: ptr::null_mut(),
+        };
+        let path = wide(ENGINES);
+        // SAFETY: the query is live, the path ends with a nought, and the
+        // slot for the counter is ours.
+        let added =
+            unsafe { PdhAddEnglishCounterW(engines.query, path.as_ptr(), 0, &mut engines.counter) };
+        (added == 0).then_some(engines)
+    }
+
+    /// Each program's share of each engine it used since the last reading,
+    /// the engines it left idle aside.
+    fn read(&self) -> Vec<EngineUse> {
+        // SAFETY: a live query.
+        if unsafe { PdhCollectQueryData(self.query) } != 0 {
+            return Vec::new();
+        }
+        let (mut bytes, mut count) = (0u32, 0u32);
+        // SAFETY: a live counter, asked how much room its values take.
+        let asked = unsafe {
+            PdhGetFormattedCounterArrayW(
+                self.counter,
+                PDH_FMT_DOUBLE,
+                &mut bytes,
+                &mut count,
+                ptr::null_mut(),
+            )
+        };
+        if asked != PDH_MORE_DATA {
+            return Vec::new();
+        }
+        // Words of eight bytes, for the values' alignment.
+        let mut buffer = vec![0u64; (bytes as usize).div_ceil(8)];
+        // SAFETY: a buffer of ours, of the size the counter asked for.
+        let read = unsafe {
+            PdhGetFormattedCounterArrayW(
+                self.counter,
+                PDH_FMT_DOUBLE,
+                &mut bytes,
+                &mut count,
+                buffer.as_mut_ptr().cast(),
+            )
+        };
+        if read != 0 {
+            return Vec::new();
+        }
+        // SAFETY: the counter wrote `count` items at the start of the
+        // buffer, and the names they point to further in it.
+        let items = unsafe {
+            std::slice::from_raw_parts(
+                buffer.as_ptr().cast::<PDH_FMT_COUNTERVALUE_ITEM_W>(),
+                count as usize,
+            )
+        };
+        items
+            .iter()
+            .filter(|item| {
+                matches!(
+                    item.FmtValue.CStatus,
+                    PDH_CSTATUS_VALID_DATA | PDH_CSTATUS_NEW_DATA
+                )
+            })
+            .filter_map(|item| {
+                // SAFETY: the value was asked for as a double.
+                let percent = unsafe { item.FmtValue.Anonymous.doubleValue } as f32;
+                if percent <= 0.0 || item.szName.is_null() {
+                    return None;
+                }
+                // SAFETY: a name ending with a nought, in the buffer.
+                let name = unsafe {
+                    let length = (0..).take_while(|&at| *item.szName.add(at) != 0).count();
+                    read_wide(std::slice::from_raw_parts(item.szName, length))
+                };
+                EngineUse::from_counter(&name, percent)
+            })
+            .collect()
+    }
+}
+
+impl Drop for Engines {
+    fn drop(&mut self) {
+        // SAFETY: the query opened here, with its counter, closed once.
+        unsafe { PdhCloseQuery(self.query) };
     }
 }
 

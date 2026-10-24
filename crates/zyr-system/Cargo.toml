@@ -40,6 +40,8 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_Environment",
     "Win32_System_JobObjects",
     "Win32_System_LibraryLoader",
+    # How busy each program keeps each engine of the graphics cards.
+    "Win32_System_Performance",
     # The power plan and whether the mains is on.
     "Win32_System_Power",
     "Win32_System_Registry",

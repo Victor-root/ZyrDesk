@@ -4934,6 +4934,16 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Un nom de serveur entier, un point d'état comme sur une messagerie, et un en-tête au milieu de la barre.
 
+## D324. La ligne `vitals` dit qui occupe la carte graphique (2026-10-24, pendant MZ)
+
+> Complète la ligne de chaque seconde décrite plus haut (tri `vitals`).
+
+**Le constat.** Pendant une session, le Gestionnaire des tâches de l'ordinateur regardé montrait la partie 3D de sa carte graphique occupée à plus de 90 %, au nom du moteur hôte. Le dessin que le moteur demande à la carte se mesure pourtant en centièmes de milliseconde par image, et l'encodage a sa partie à lui (« Video Encode »). Le journal ne disait rien de la carte : ni quelle partie était occupée, ni par quel programme.
+
+**Ce qui est fait.** La ligne `vitals` de chaque seconde dit aussi, pour chaque partie de chaque carte graphique occupée au moins 2 % du temps, combien elle l'a été, et par quels programmes (jusqu'à quatre, au moins 2 % chacun, avec leur numéro). Ce sont les compteurs que lit le Gestionnaire des tâches (« GPU Engine », « Utilization Percentage »), lus par le service, sur le fil qui lit déjà le reste, à la plus basse priorité. Windows fait lui-même le calcul entre deux lectures. Un Windows sans ces compteurs n'écrit simplement pas cette partie.
+
+**Ce qui se voit.** Rien à l'écran. À la fin de la ligne `vitals` : « ; graphics engines 3D 94 % (zyrdeskd.exe (2210) 93 %), VideoEncode 9 % (zyrdeskd.exe (2210) 9 %) ».
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

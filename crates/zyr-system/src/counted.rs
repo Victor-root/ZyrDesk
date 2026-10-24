@@ -9,6 +9,12 @@
 //! is what they gained; the arithmetic and the words are here, and can be
 //! tried on any system, while reading the counters is Windows' own
 //! (`reading.rs`).
+//!
+//! The graphics card's engines are the exception: Windows works out
+//! itself how busy each program kept each engine between two readings,
+//! as the Task Manager shows it, and that share is taken as it comes.
+//! Which program keeps the card busy, and on which engine (drawing,
+//! encoding, copying), cannot be told from the processor alone.
 
 use std::fmt;
 use std::time::{Duration, Instant};
@@ -35,6 +41,9 @@ pub struct Raw {
     pub udp: Option<Udp>,
     pub ip: Option<Ip>,
     pub card: Option<Card>,
+    /// How busy each program kept each engine of the graphics cards, over
+    /// the time since the reading before.
+    pub engines: Vec<EngineUse>,
 }
 
 /// What the processors have spent since the computer started, in hundreds
@@ -100,6 +109,35 @@ pub struct Carried {
     pub packets: u64,
     pub discarded: u64,
     pub errors: u64,
+}
+
+/// How busy a program kept one engine of a graphics card, as a
+/// percentage of the time.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EngineUse {
+    pub id: u32,
+    /// Which engine of which card, the same for every program using it.
+    pub engine: String,
+    /// What the engine does, as Windows names it: `3D`, `VideoEncode`,
+    /// `Copy`...
+    pub kind: String,
+    pub percent: f32,
+}
+
+impl EngineUse {
+    /// One program's share of one engine, from the name Windows gives it
+    /// among its counters: `pid_1234_luid_0x00000000_0x0000D1A6_phys_0_
+    /// eng_0_engtype_3D`. Nothing for a name of any other shape.
+    pub fn from_counter(name: &str, percent: f32) -> Option<Self> {
+        let (id, rest) = name.strip_prefix("pid_")?.split_once('_')?;
+        let (engine, kind) = rest.split_once("_engtype_")?;
+        Some(Self {
+            id: id.parse().ok()?,
+            engine: engine.to_string(),
+            kind: kind.to_string(),
+            percent,
+        })
+    }
 }
 
 /// What sort of card it is, as far as it matters here.
@@ -173,6 +211,7 @@ impl Raw {
                     received: now.received.gained_since(&before.received),
                     sent: now.sent.gained_since(&before.sent),
                 }),
+            engines: busiest_engines(&self.engines, &self.programs),
         }
     }
 }
@@ -222,6 +261,48 @@ fn busiest(now: &[Program], before: &[Program], elapsed: Duration) -> Vec<Busy> 
     busy
 }
 
+/// The engines of the graphics cards that were kept busy, busiest first,
+/// each with the programs that kept it busy the most.
+fn busiest_engines(uses: &[EngineUse], programs: &[Program]) -> Vec<EngineBusy> {
+    let mut engines: Vec<EngineBusy> = Vec::new();
+    for used in uses {
+        let name = programs
+            .iter()
+            .find(|program| program.id == used.id)
+            .map_or_else(|| "a program".to_string(), |program| program.name.clone());
+        let busy = Busy {
+            id: used.id,
+            name,
+            percent: used.percent,
+        };
+        match engines
+            .iter_mut()
+            .find(|engine| engine.engine == used.engine)
+        {
+            Some(engine) => {
+                engine.percent += used.percent;
+                engine.busiest.push(busy);
+            }
+            None => engines.push(EngineBusy {
+                engine: used.engine.clone(),
+                kind: used.kind.clone(),
+                percent: used.percent,
+                busiest: vec![busy],
+            }),
+        }
+    }
+    engines.retain(|engine| engine.percent >= LEAST_PERCENT);
+    for engine in &mut engines {
+        engine.busiest.retain(|busy| busy.percent >= LEAST_PERCENT);
+        engine
+            .busiest
+            .sort_by(|a, b| b.percent.total_cmp(&a.percent));
+        engine.busiest.truncate(MOST_PROGRAMS);
+    }
+    engines.sort_by(|a, b| b.percent.total_cmp(&a.percent));
+    engines
+}
+
 /// What the counters gained between two readings.
 #[derive(Debug, Clone)]
 pub struct Report {
@@ -232,9 +313,21 @@ pub struct Report {
     pub udp: Option<UdpGained>,
     pub ip: Option<IpGained>,
     pub card: Option<CardGained>,
+    pub engines: Vec<EngineBusy>,
 }
 
-/// A program and how much of one processor it used, as a percentage.
+/// An engine of a graphics card, how busy all programs together kept it,
+/// and the programs that kept it the busiest.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EngineBusy {
+    pub engine: String,
+    pub kind: String,
+    pub percent: f32,
+    pub busiest: Vec<Busy>,
+}
+
+/// A program and how much of one processor, or of one engine, it used, as
+/// a percentage.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Busy {
     pub id: u32,
@@ -269,8 +362,8 @@ pub struct CardGained {
 }
 
 /// `over 1.0 s: the computer 23 % busy, most of a processor used by
-/// zyrdeskd.exe (2210) 14 %, ...; UDP ...; IP ...; card ...`: one line,
-/// and only what could be read.
+/// zyrdeskd.exe (2210) 14 %, ...; UDP ...; IP ...; card ...; graphics
+/// engines ...`: one line, and only what could be read.
 impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "over {:.1} s", self.elapsed.as_secs_f32())?;
@@ -320,6 +413,26 @@ impl fmt::Display for Report {
                 card.sent.discarded,
                 card.sent.errors,
             )?;
+        }
+        if !self.engines.is_empty() {
+            let engines: Vec<String> = self
+                .engines
+                .iter()
+                .map(|engine| {
+                    let busiest: Vec<String> = engine
+                        .busiest
+                        .iter()
+                        .map(|busy| format!("{} ({}) {:.0} %", busy.name, busy.id, busy.percent))
+                        .collect();
+                    format!(
+                        "{} {:.0} % ({})",
+                        engine.kind,
+                        engine.percent,
+                        busiest.join(", ")
+                    )
+                })
+                .collect();
+            write!(f, "; graphics engines {}", engines.join(", "))?;
         }
         Ok(())
     }
@@ -388,6 +501,7 @@ mod tests {
                 not_reassembled: 0,
             }),
             card: Some(card("Ethernet", 2318 * seconds, 3 * seconds)),
+            engines: Vec::new(),
         }
     }
 
@@ -454,8 +568,71 @@ mod tests {
             udp: None,
             ip: None,
             card: None,
+            engines: Vec::new(),
         };
         assert_eq!(bare(1).since(&bare(0)).to_string(), "over 1.0 s");
+    }
+
+    fn engine_use(id: u32, engine: &str, kind: &str, percent: f32) -> EngineUse {
+        EngineUse {
+            id,
+            engine: engine.to_string(),
+            kind: kind.to_string(),
+            percent,
+        }
+    }
+
+    #[test]
+    fn a_program_s_share_of_an_engine_is_read_from_the_counter_s_name() {
+        assert_eq!(
+            EngineUse::from_counter(
+                "pid_2210_luid_0x00000000_0x0000D1A6_phys_0_eng_0_engtype_3D",
+                93.5
+            ),
+            Some(engine_use(
+                2210,
+                "luid_0x00000000_0x0000D1A6_phys_0_eng_0",
+                "3D",
+                93.5
+            ))
+        );
+        assert_eq!(
+            EngineUse::from_counter(
+                "pid_4_luid_0x00000000_0x0000D1A6_phys_0_eng_3_engtype_VideoEncode",
+                9.0
+            )
+            .map(|used| used.kind),
+            Some("VideoEncode".to_string())
+        );
+        assert_eq!(EngineUse::from_counter("_Total", 1.0), None);
+        assert_eq!(
+            EngineUse::from_counter("pid_x_luid_0_engtype_3D", 1.0),
+            None
+        );
+        assert_eq!(EngineUse::from_counter("pid_12_luid_0_eng_0", 1.0), None);
+    }
+
+    #[test]
+    fn the_graphics_engines_are_told_busiest_first_with_the_programs_that_kept_them_busy() {
+        let at = Instant::now();
+        let before = reading(at, 1);
+        let mut now = reading(at, 2);
+        let card = "luid_0x00000000_0x0000D1A6_phys_0";
+        now.engines = vec![
+            engine_use(10, &format!("{card}_eng_0"), "3D", 93.0),
+            engine_use(20, &format!("{card}_eng_0"), "3D", 1.0),
+            engine_use(99, &format!("{card}_eng_0"), "3D", 3.0),
+            engine_use(10, &format!("{card}_eng_3"), "VideoEncode", 9.0),
+            engine_use(10, &format!("{card}_eng_5"), "Copy", 0.5),
+        ];
+        let line = now.since(&before).to_string();
+        assert!(
+            line.ends_with(
+                "; graphics engines 3D 97 % (zyrdeskd.exe (10) 93 %, a program (99) 3 %), \
+                 VideoEncode 9 % (zyrdeskd.exe (10) 9 %)"
+            ),
+            "{line}"
+        );
     }
 
     #[test]
