@@ -878,10 +878,18 @@ impl Screen for DuplicatedScreen {
         let Some(duplication) = duplication else {
             return self.recover(until);
         };
-        let timeout = until
-            .saturating_duration_since(Instant::now())
-            .as_millis()
-            .min(u128::from(u32::MAX)) as u32;
+        // The duplication waits in whole milliseconds. Less than one left
+        // is waited as one: rounded down to nought, it had the last
+        // millisecond before each picture spent asking the screen over
+        // and over, thousands of times a second. A new image still ends
+        // the wait at once; only a picture due with none, a repeat or one
+        // held, goes up to a millisecond late.
+        let left = until.saturating_duration_since(Instant::now());
+        let timeout = if left.is_zero() {
+            0
+        } else {
+            left.as_millis().clamp(1, u128::from(u32::MAX)) as u32
+        };
         let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
         let mut resource = None;
         // SAFETY: plain out values; the frame acquired is released below

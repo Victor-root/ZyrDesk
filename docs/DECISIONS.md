@@ -4944,6 +4944,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Rien à l'écran. À la fin de la ligne `vitals` : « ; graphics engines 3D 94 % (zyrdeskd.exe (2210) 93 %), VideoEncode 9 % (zyrdeskd.exe (2210) 9 %) ».
 
+## D325. Le moteur hôte attend l'écran sans le harceler (2026-10-24, pendant MZ)
+
+**Le constat.** Le journal du moteur hôte comptait chaque seconde plus de 8 000 attentes de l'écran qui ne donnaient rien (« 8088 waits gave nothing »), pour soixante images. L'attente de Windows (la duplication du bureau) se compte en millisecondes entières, et le moteur arrondissait vers le bas ce qui restait avant l'image suivante : sous une milliseconde, il ne restait rien, et le moteur redemandait l'écran sans attendre, en boucle, jusqu'à l'heure de l'image. Une centaine d'appels pour rien avant chaque image, quelques pourcents d'un cœur, et le premier suspect des plus de 90 % de 3D que le Gestionnaire des tâches mettait au nom du moteur ([D324](#d324-la-ligne-vitals-dit-qui-occupe-la-carte-graphique-2026-10-24-pendant-mz)).
+
+**Ce qui est fait.** Moins d'une milliseconde restante s'attend comme une milliseconde. Une image nouvelle de l'écran met toujours fin à l'attente aussitôt : elle part sans un instant de plus. Seule une image qui part sans nouveauté de l'écran (une image renvoyée à l'identique, ou une image retenue par la cadence) peut partir jusqu'à une milliseconde plus tard qu'avant ; la cadence se compte sur l'heure prévue, pas sur l'heure de départ, et ce retard ne s'additionne pas.
+
+**Ce qui se voit.** Rien à l'écran. Dans le journal `pace`, quelques centaines d'attentes vides par seconde au lieu de milliers, et des images renvoyées un peu moins ponctuelles (« repeats ... ms late »). La ligne `vitals` dit si la partie 3D de la carte retombe.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
