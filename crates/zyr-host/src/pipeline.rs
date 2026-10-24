@@ -1060,7 +1060,9 @@ impl Pipeline {
         };
         let draw_pointer = streaming.wanted.draw_pointer;
         self.look_at_new_screens(now);
+        let watching = Instant::now();
         let waited = self.screen.wait(until);
+        self.timeline.watched(watching.elapsed());
         if matches!(waited, Ok(Captured::Image { .. } | Captured::Pointer)) {
             self.given = Given::Something;
         }

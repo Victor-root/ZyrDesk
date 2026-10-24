@@ -4952,6 +4952,18 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Rien à l'écran. Dans le journal `pace`, quelques centaines d'attentes vides par seconde au lieu de milliers, et des images renvoyées un peu moins ponctuelles (« repeats ... ms late »). La ligne `vitals` dit si la partie 3D de la carte retombe.
 
+## D326. Le moteur hôte dit combien de temps il attend l'écran (2026-10-24, pendant MZ)
+
+> Fait suite à [D325](#d325-le-moteur-hôte-attend-lécran-sans-le-harceler-2026-10-24-pendant-mz), dont le suspect est écarté.
+
+**Le constat.** Après D325, le moteur hôte ne demande plus l'écran que cent cinquante fois par seconde au lieu de huit mille, et prend moins de processeur. La partie 3D de la carte, elle, reste occupée de 90 à 96 % à son nom (ligne `vitals`, D324), alors que ses deux passes de dessin par image ne coûtent presque rien. La boucle n'était donc pas la cause.
+
+**La piste.** Entre deux images, le moteur passe presque tout son temps dans l'attente de Windows (la duplication du bureau), qui rend la main à la prochaine image de l'écran. Si Windows compte cette attente comme du travail 3D, la part 3D du moteur doit suivre le temps passé à attendre, image ou pas, et non ce qu'il dessine.
+
+**Ce qui est fait.** La ligne `capture` de chaque seconde (tri `pace`) dit le temps passé à attendre l'écran : « ..., 0 pointer only, 870 ms spent waiting on the screen; encoder: ... ». Mise en regard de la part 3D de la ligne `vitals` de la même seconde, elle confirme ou écarte la piste avant de toucher à la façon d'attendre.
+
+**Ce qui se voit.** Rien à l'écran.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

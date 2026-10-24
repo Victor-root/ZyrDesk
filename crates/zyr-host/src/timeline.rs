@@ -150,6 +150,9 @@ struct Second {
     folded: u32,
     /// Waits on the screen that gave nothing.
     nothing: u32,
+    /// How long this thread spent waiting on the screen, whatever the
+    /// waits gave.
+    watching: Duration,
     /// Images held for the cadence and replaced by a newer one.
     replaced: u32,
     /// Pictures the packets could not be cut from, being too large.
@@ -217,6 +220,11 @@ impl Timeline {
     pub(crate) fn nothing(&mut self, now: Instant) {
         self.touch(now);
         self.second.nothing += 1;
+    }
+
+    /// The screen was waited on that long, whatever the wait gave.
+    pub(crate) fn watched(&mut self, how_long: Duration) {
+        self.second.watching += how_long;
     }
 
     /// An image held for the cadence was replaced by a newer one.
@@ -414,7 +422,8 @@ impl Timeline {
         let [opening, player, hole, own] = second.key_because;
         format!(
             "{frames}: capture: {} images, {} more updates of the screen folded into them, {} \
-             waits gave nothing, {} pointer only; encoder: {made:.2} Mb/s made{asked}, {} \
+             waits gave nothing, {} pointer only, {} ms spent waiting on the screen; encoder: \
+             {made:.2} Mb/s made{asked}, {} \
              encodes gave no packet yet, {} packets came together with another; {} held images \
              replaced by newer ones, {} pictures too large to cut; key frames: {opening} opening \
              a stream, {player} asked by the player, {hole} closing a hole, {own} of the \
@@ -423,6 +432,7 @@ impl Timeline {
             second.folded,
             second.nothing,
             second.pointer_only,
+            second.watching.as_millis(),
             second.kept,
             second.together,
             second.replaced,
@@ -606,6 +616,8 @@ mod tests {
         }
         timeline.nothing(at + Duration::from_millis(200));
         timeline.nothing(at + Duration::from_millis(300));
+        timeline.watched(Duration::from_micros(412_600));
+        timeline.watched(Duration::from_micros(300_500));
         timeline.replaced(at + Duration::from_millis(400));
         timeline.too_large(at + Duration::from_millis(500));
         timeline.write();
@@ -614,7 +626,8 @@ mod tests {
         assert!(
             said.contains(
                 "stream 1 frames 0-59: capture: 60 images, 18 more updates of the screen folded \
-                 into them, 2 waits gave nothing, 0 pointer only; encoder: 19.88 Mb/s made \
+                 into them, 2 waits gave nothing, 0 pointer only, 713 ms spent waiting on the \
+                 screen; encoder: 19.88 Mb/s made \
                  against 16.54 asked of it and 20.00 on the wire, 1 encodes gave no packet yet, \
                  1 packets came together with another; 1 held images replaced by newer ones, 1 \
                  pictures too large to cut; key frames: 1 opening a stream, 1 asked by the \
