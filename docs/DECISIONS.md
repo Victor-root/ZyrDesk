@@ -4964,6 +4964,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Rien à l'écran.
 
+## D327. Une attente de l'écran qui n'attend pas ne fige plus la session (2026-10-25, pendant MZ)
+
+**Le constat.** En réseau local, la session se figeait régulièrement et il fallait se déconnecter pour repartir. Le journal du lecteur le dit : les images arrivent toutes, entières, et sont décodées, mais plus aucune n'est affichée (« shown 0 », toutes remplacées par la suivante). Juste avant, le fil qui date les rafraîchissements de l'écran écrivait « one every 0.000 ms, 10332899 passed over unwoken » : l'attente de Windows (`WaitForVBlank`) rendait la main sans attendre, des millions de fois par seconde. Tant que la fenêtre passait par le compositeur, ce fil ne servait pas et rien ne se voyait ; dès qu'elle est passée directement à l'écran, le lecteur a pris ce rafraîchissement de durée nulle pour l'écran, et aucune image n'est plus jamais arrivée à son heure.
+
+**Ce qui est fait.** Un réveil moins d'une milliseconde après le précédent n'est pas un rafraîchissement : il n'est pas compté. Huit d'affilée et l'écran est lâché, ses rafraîchissements tus, le lecteur affichant alors les images comme lorsqu'il ne connaît pas l'écran ; le fil réessaie un dixième de seconde plus tard, comme quand l'attente échoue.
+
+**Ce qui se voit.** La session ne se fige plus dans ce cas. Dans le journal (tri `picture`), la ligne des rafraîchissements compte les réveils qui n'ont pas attendu (« ..., 0 wakes that did not wait »), et une ligne dit quand l'écran est lâché pour cette raison.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

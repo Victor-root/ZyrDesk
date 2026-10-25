@@ -10,6 +10,12 @@
 //! the middle of the newest steps from one wake to the next, each over
 //! the refreshes it spans: a wake late enough to miss a refresh moves
 //! neither the length nor the count.
+//!
+//! The wait sometimes returns without waiting, again and again, which
+//! made a refresh last no time at all and the pictures never come due:
+//! the session froze. A wake sooner than any screen refreshes is not a
+//! refresh; a run of them and the screen is let go of, its refreshes
+//! untold, until it can be timed again.
 
 use std::collections::VecDeque;
 use std::ffi::c_void;
@@ -37,6 +43,14 @@ const STEPS_LEAST: usize = 8;
 /// How long the thread waits before it looks for the screen again, when
 /// none can be waited on.
 const AGAIN_AFTER: Duration = Duration::from_millis(100);
+
+/// No screen refreshes sooner than this after the last refresh: a wake
+/// that soon is a wait that did not wait.
+const SHORTEST: Duration = Duration::from_millis(1);
+
+/// Wakes in a row that did not wait, after which the screen is taken for
+/// one that cannot be timed.
+const UNWAITED_AT_MOST: u32 = 8;
 
 /// A refresh of the screen: its number since the thread started on this
 /// screen, when it was, and how long one lasts.
@@ -94,6 +108,7 @@ fn run(window: isize, latest: &Mutex<Option<Refresh>>, stop: &AtomicBool, log: &
     let mut watched: Option<(HMONITOR, IDXGIOutput)> = None;
     let mut clock = Clock::default();
     let mut refused = Seldom::default();
+    let mut unwaited = Seldom::default();
     while !stop.load(Ordering::Relaxed) {
         // SAFETY: any window handle gets an answer, the nearest screen.
         let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
@@ -115,6 +130,17 @@ fn run(window: isize, latest: &Mutex<Option<Refresh>>, stop: &AtomicBool, log: &
                 }
                 if let Some(line) = clock.second(now) {
                     log.debug(&line);
+                }
+                if clock.waits_for_nothing() {
+                    unwaited.note(log, now, |times| {
+                        format!(
+                            "the screen's refreshes cannot be timed: WaitForVBlank returns \
+                             without waiting ({times} since last said)"
+                        )
+                    });
+                    watched = None;
+                    *lock(latest) = None;
+                    std::thread::sleep(AGAIN_AFTER);
                 }
             }
             Err(e) => {
@@ -182,6 +208,10 @@ struct Clock {
     /// How far each wake was from where the rhythm put its refresh.
     off: Spread,
     missed: u32,
+    /// Wakes that came sooner than any refresh: in a row, and over the
+    /// second.
+    hurried: u32,
+    unwaited: u32,
 }
 
 impl Clock {
@@ -189,8 +219,15 @@ impl Clock {
     /// refresh's length is known.
     fn woke(&mut self, at: Instant) -> Option<Refresh> {
         self.seconds.started(at);
-        if let Some(last) = self.last.replace(at) {
+        if let Some(last) = self.last {
             let step = at.saturating_duration_since(last);
+            if step < SHORTEST {
+                self.hurried += 1;
+                self.unwaited += 1;
+                return None;
+            }
+            self.hurried = 0;
+            self.last = Some(at);
             let spans = self.period.map_or(1, |period| {
                 (step.as_secs_f64() / period.as_secs_f64()).round().max(1.0) as u32
             });
@@ -208,12 +245,20 @@ impl Clock {
                 sorted.sort_unstable();
                 self.period = Some(sorted[sorted.len() / 2]);
             }
+        } else {
+            self.last = Some(at);
         }
         Some(Refresh {
             count: self.count,
             at,
             period: self.period?,
         })
+    }
+
+    /// Whether the wait has stopped waiting: too many wakes in a row came
+    /// sooner than any refresh.
+    fn waits_for_nothing(&self) -> bool {
+        self.hurried >= UNWAITED_AT_MOST
     }
 
     /// What the last second timed, once it is over.
@@ -223,13 +268,15 @@ impl Clock {
         }
         let line = format!(
             "refreshes: one every {:.3} ms, woken {} ms off the rhythm (median/95th/worst), \
-             {} passed over unwoken",
+             {} passed over unwoken, {} wakes that did not wait",
             self.period.map_or(0.0, ms),
             self.off,
-            self.missed
+            self.missed,
+            self.unwaited
         );
         self.off.clear();
         self.missed = 0;
+        self.unwaited = 0;
         Some(line)
     }
 }
@@ -280,5 +327,37 @@ mod tests {
             last = clock.woke(start + SIXTY_HZ * n + late);
         }
         assert_eq!(last.unwrap().period, SIXTY_HZ);
+    }
+
+    #[test]
+    fn a_wait_that_does_not_wait_is_not_a_refresh() {
+        let mut clock = Clock::default();
+        let start = Instant::now();
+        for n in 0..20u32 {
+            clock.woke(start + SIXTY_HZ * n);
+        }
+        let last = start + SIXTY_HZ * 19;
+        for n in 1..UNWAITED_AT_MOST {
+            assert_eq!(clock.woke(last + Duration::from_micros(u64::from(n))), None);
+            assert!(!clock.waits_for_nothing());
+        }
+        let refresh = clock.woke(start + SIXTY_HZ * 20).unwrap();
+        assert_eq!(refresh.period, SIXTY_HZ);
+        assert_eq!(refresh.count, 20);
+        assert_eq!(clock.missed, 0);
+    }
+
+    #[test]
+    fn a_run_of_waits_that_do_not_wait_lets_the_screen_go() {
+        let mut clock = Clock::default();
+        let start = Instant::now();
+        for n in 0..20u32 {
+            clock.woke(start + SIXTY_HZ * n);
+        }
+        let last = start + SIXTY_HZ * 19;
+        for n in 1..=UNWAITED_AT_MOST {
+            clock.woke(last + Duration::from_micros(u64::from(n)));
+        }
+        assert!(clock.waits_for_nothing());
     }
 }
