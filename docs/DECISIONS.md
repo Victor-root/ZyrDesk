@@ -4972,6 +4972,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** La session ne se fige plus dans ce cas. Dans le journal (tri `picture`), la ligne des rafraîchissements compte les réveils qui n'ont pas attendu (« ..., 0 wakes that did not wait »), et une ligne dit quand l'écran est lâché pour cette raison.
 
+## D328. La ligne `vitals` dit ce qu'est la carte réseau, d'après son pilote (2026-10-25, pendant MZ)
+
+**Le constat.** Sur les deux ordinateurs, la ligne `vitals` nommait « VROOT » la carte qui portait une session en réseau local, une carte virtuelle (type 53) annoncée à 100 Gb/s, alors que le VPN de ce nom est coupé depuis des mois selon son propriétaire. Le nom d'une carte est choisi par la personne ; il ne dit pas si c'est une carte réelle, un tunnel ou un commutateur virtuel.
+
+**Ce qui est fait.** La ligne dit aussi ce que le pilote dit de la carte : « card VROOT (WireGuard Tunnel, type 53, 100000 Mb/s, up) ».
+
+**Ce qui se voit.** Rien à l'écran. Dans le journal, tri `vitals`, on sait par quelle carte passe vraiment une session.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

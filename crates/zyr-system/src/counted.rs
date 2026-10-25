@@ -94,6 +94,9 @@ pub struct Ip {
 #[derive(Debug, Clone)]
 pub struct Card {
     pub name: String,
+    /// What the card is, as its driver says: a name chosen by the person
+    /// tells nothing of whether a card is real or a tunnel's.
+    pub driver: String,
     pub kind: Kind,
     /// The speed the link negotiated, in bits a second, when it says.
     pub speed: Option<u64>,
@@ -205,6 +208,7 @@ impl Raw {
                 .filter(|(now, before)| now.name == before.name)
                 .map(|(now, before)| CardGained {
                     name: now.name.clone(),
+                    driver: now.driver.clone(),
                     kind: now.kind,
                     speed: now.speed,
                     up: now.up,
@@ -354,6 +358,7 @@ pub struct IpGained {
 #[derive(Debug, Clone)]
 pub struct CardGained {
     pub name: String,
+    pub driver: String,
     pub kind: Kind,
     pub speed: Option<u64>,
     pub up: bool,
@@ -395,9 +400,10 @@ impl fmt::Display for Report {
         if let Some(card) = &self.card {
             write!(
                 f,
-                "; card {} ({}, {}, {}): in {} KB, {} packets, {} discarded, {} errors; out {} KB, \
-                 {} packets, {} discarded, {} errors",
+                "; card {} ({}, {}, {}, {}): in {} KB, {} packets, {} discarded, {} errors; out \
+                 {} KB, {} packets, {} discarded, {} errors",
                 card.name,
+                card.driver,
                 card.kind,
                 match card.speed {
                     Some(bits) => format!("{} Mb/s", bits / 1_000_000),
@@ -445,6 +451,7 @@ mod tests {
     fn card(name: &str, received: u64, discarded: u64) -> Card {
         Card {
             name: name.to_string(),
+            driver: "Intel(R) Ethernet Controller I225-V".to_string(),
             kind: Kind::Ethernet,
             speed: Some(1_000_000_000),
             up: true,
@@ -514,7 +521,7 @@ mod tests {
             "over 1.0 s, the computer 30 % busy, of one processor zyrdeskd.exe (10) 150 %, \
              chrome.exe (20) 30 %; UDP 2318 datagrams in, 7 of them failed and 0 unclaimed, 55 \
              out; IP 2400 packets in, 0 discarded in and 0 out, 0 not reassembled; card Ethernet \
-             (Ethernet, 1000 Mb/s, up): in 2263 KB, 2318 packets, 3 discarded, 0 errors; out 0 \
+             (Intel(R) Ethernet Controller I225-V, Ethernet, 1000 Mb/s, up): in 2263 KB, 2318 packets, 3 discarded, 0 errors; out 0 \
              KB, 0 packets, 0 discarded, 0 errors"
         );
     }
@@ -651,6 +658,9 @@ mod tests {
         now.card.as_mut().unwrap().speed = None;
         now.card.as_mut().unwrap().up = false;
         let line = now.since(&reading(at, 1)).to_string();
-        assert!(line.contains("(Ethernet, speed unknown, down)"), "{line}");
+        assert!(
+            line.contains("I225-V, Ethernet, speed unknown, down)"),
+            "{line}"
+        );
     }
 }

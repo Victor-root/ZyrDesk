@@ -350,6 +350,7 @@ fn card_towards(peer: IpAddr) -> Option<Card> {
     }
     Some(Card {
         name: read_wide(&row.Alias),
+        driver: read_wide(&row.Description),
         kind: Kind::of_type(row.Type),
         speed: Some(row.ReceiveLinkSpeed).filter(|speed| *speed != UNKNOWN_SPEED && *speed != 0),
         up: row.OperStatus == IfOperStatusUp,
