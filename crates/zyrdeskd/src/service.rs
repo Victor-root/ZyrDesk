@@ -89,36 +89,11 @@ fn service_main(_arguments: Vec<OsString>) {
         // to start at all than to run mute and invisible.
         Err(_) => return,
     };
-    say_what_fells_it();
+    crate::say_what_fells_it(paths::service_log(), TAG);
 
     if let Err(e) = hold_the_service(&log) {
         log.write(&format!("the service stopped on an error: {e}"));
     }
-}
-
-/// Writes down every panic of the service, wherever it happens.
-///
-/// A service has no console: what Rust says of a panic goes to an error
-/// stream nobody reads, so a service felled by one leaves a journal that
-/// simply stops, and a task felled by one goes just as quietly while the
-/// rest carries on without it. Written through a journal opened for the
-/// occasion, so that it is said even when the panic comes while the
-/// service's own journal is being written.
-fn say_what_fells_it() {
-    let before = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |panic| {
-        if let Ok(log) = Log::open(&paths::service_log()) {
-            let place = panic
-                .location()
-                .map_or_else(|| "an unknown place".to_string(), ToString::to_string);
-            log.about(TAG).write(&format!(
-                "panicked in thread {} at {place}: {}",
-                std::thread::current().name().unwrap_or("unnamed"),
-                panic.payload_as_str().unwrap_or("no message"),
-            ));
-        }
-        before(panic);
-    }));
 }
 
 fn hold_the_service(log: &Log) -> ServiceResult<()> {

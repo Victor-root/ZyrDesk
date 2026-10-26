@@ -71,8 +71,12 @@ fn main() -> ExitCode {
             // With the system's own account, it films, encodes and plays
             // what the far computer types, over the link the service named.
             StartedFor::Serving(link) => {
-                match Log::open(&zyr_proto::paths::logs_dir().join("engine.log")) {
-                    Ok(log) => zyr_host::serve(&link, log),
+                let journal = zyr_proto::paths::logs_dir().join("engine.log");
+                match Log::open(&journal) {
+                    Ok(log) => {
+                        say_what_fells_it(journal, "engine");
+                        zyr_host::serve(&link, log)
+                    }
                     // Nothing to say it in: the console, which the service
                     // has pointed at a file of its own, is all that is left.
                     Err(e) => failure("the engine could not open its journal", e),
@@ -206,6 +210,21 @@ fn noted(what: &str) {
         log.about(crate::service::TAG)
             .write(&format!("{what}, {}", zyr_proto::version_line()));
     }
+}
+
+/// From now on, what fells this program is written in `journal`, under
+/// `tag`.
+///
+/// Nobody reads what the service or an engine says on its console, so a
+/// panic or a fault there used to leave a journal that simply stops. The
+/// journal is opened again for each line, so that it is said even when
+/// the program falls while its own journal is being written.
+fn say_what_fells_it(journal: std::path::PathBuf, tag: &'static str) {
+    zyr_system::tell_what_fells_it(move |what| {
+        if let Ok(log) = Log::open(&journal) {
+            log.about(tag).write(what);
+        }
+    });
 }
 
 /// Outside Windows the service has no purpose: there is no service

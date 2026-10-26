@@ -14,7 +14,8 @@
 //! has carried and lost; and saying what the computer is, how far its
 //! network reaches, who sits at it and what their desktop shows, and
 //! what time its clock says; and the card a neighbour on the network
-//! answers with.
+//! answers with. And what fells a program, panic or fault, told before it
+//! goes.
 //!
 //! And what gets a program running at all: with no console flashing up,
 //! with administrator rights asked of the person, or when the person
@@ -39,6 +40,7 @@ mod counted;
 mod elevated;
 #[cfg(not(windows))]
 mod elsewhere;
+mod felled;
 #[cfg(windows)]
 mod inspection;
 #[cfg(any(windows, test))]
@@ -81,6 +83,7 @@ pub use elsewhere::{
     somebody_signed_in, start_a_helper, start_at_sign_in, start_in_session, still_running,
     wallpaper_on_screen, whoever_this_is,
 };
+pub use felled::tell_what_fells_it;
 #[cfg(windows)]
 pub use inspection::{describe_this_computer, this_computer};
 #[cfg(windows)]

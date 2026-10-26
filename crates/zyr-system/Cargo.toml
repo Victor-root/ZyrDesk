@@ -35,6 +35,10 @@ windows-sys = { version = "0.61.2", features = [
     # The shell asked to run a program with administrator rights expects
     # COM on the thread that asks.
     "Win32_System_Com",
+    # What fells a program: the fault Windows catches, and the stack
+    # that led there.
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Kernel",
     # Every program running, for how much of the processor each one uses.
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Environment",

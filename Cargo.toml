@@ -64,6 +64,15 @@ clap = { version = "4.6.7", features = ["derive"] }
 [profile.release]
 lto = "thin"
 strip = "symbols"
+# The functions and lines of the code, for whoever keeps them.
+debug = "line-tables-only"
+
+# The service and the engines keep them, in a .pdb beside the program
+# under Windows: what fells one of them is then written down with the
+# function and the line it happened at, and the program itself stays the
+# same size. Stripped, Windows is not even given the .pdb.
+[profile.release.package.zyrdeskd]
+strip = "none"
 
 # The development profile is for trying things out, where we recompile
 # often and only the half that moves is ours. Our crates therefore stay

@@ -4980,13 +4980,13 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Rien à l'écran. Dans le journal, tri `vitals`, on sait par quelle carte passe vraiment une session.
 
-## D329. Le service écrit dans son journal ce qui le fait paniquer (2026-10-26, pendant MZ)
+## D329. Le service et le moteur écrivent dans leur journal ce qui les fait tomber (2026-10-26, pendant MZ)
 
-**Le constat.** En pleine session, le service de l'hôte s'est arrêté net : plus d'image, l'ordinateur parti du réseau local puis du serveur, son moteur arrêté au même instant, et il a fallu remettre le service en route. Son journal ne dit rien : pas de ligne d'arrêt, et le redémarrage trouve un bureau laissé « par une exécution qui n'a pas fini ». Un service n'a pas de console : ce que Rust dit d'une panique part sur une sortie que personne ne lit.
+**Le constat.** En pleine session, le service de l'hôte s'est arrêté net : plus d'image, l'ordinateur parti du réseau local puis du serveur, son moteur arrêté au même instant, et il a fallu remettre le service en route. Son journal ne dit rien : pas de ligne d'arrêt, et le redémarrage trouve un bureau laissé « par une exécution qui n'a pas fini ». L'Observateur d'événements de Windows dit ce qui s'est passé : une faute d'accès mémoire (0xc0000005) dans `ntdll.dll`, après 29 heures de marche. Il ne dit pas d'où venait l'appel. Un service n'a pas de console : ce que Rust dit d'une panique part sur une sortie que personne ne lit, et une faute que Windows attrape ne laisse que cette ligne-là.
 
-**Ce qui est fait.** Le service pose, dès son départ, un crochet qui écrit chaque panique dans son journal, avec le fil, l'endroit du code et le message, par un journal ouvert pour l'occasion, puis laisse faire le comportement habituel. Une tâche qui panique sans faire tomber le service est dite de la même façon.
+**Ce qui est fait.** `zyr-system` (`felled.rs`) prend, pour qui le demande, chaque panique et chaque faute que rien ne traite, et les dit en lignes avant de laisser le programme finir comme il l'aurait fait (Windows garde son propre rapport). Pour une faute : son code, le module et l'endroit où elle a eu lieu, ce qui a été touché ; pour les deux : la pile, en modules et décalages, puis en fonctions et lignes. Le service et chaque moteur le demandent, chacun dans son journal, rouvert pour chaque ligne afin que rien ne dépende de l'état du programme qui tombe. La version finale garde les lignes du code (`debug = "line-tables-only"`) ; `zyrdeskd` n'est pas dépouillé, et Windows pose son `.pdb` à côté du programme, sans le grossir. Les autres programmes restent dépouillés comme avant.
 
-**Ce qui se voit.** Rien à l'écran. Dans le journal, tri `service`, une ligne « panicked in thread ... at ...: ... ». Si le service tombe encore sans cette ligne, ce n'est pas une panique : l'Observateur d'événements de Windows (journal Application) dit alors ce qui l'a arrêté.
+**Ce qui se voit.** Rien à l'écran. Dans le journal, tri `service` ou `engine` : « panicked in thread ... at ... », ou « fault 0xc0000005 in thread ... at ntdll.dll+0x..., writing 0x... », puis « its stack then: ... » et « and as functions: ... ». Un programme dont le tas est déjà abîmé peut tomber à nouveau en écrivant ces lignes : il finit alors comme avant, sans elles.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
