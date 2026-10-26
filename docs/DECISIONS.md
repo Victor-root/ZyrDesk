@@ -4980,6 +4980,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Rien à l'écran. Dans le journal, tri `vitals`, on sait par quelle carte passe vraiment une session.
 
+## D329. Le service écrit dans son journal ce qui le fait paniquer (2026-10-26, pendant MZ)
+
+**Le constat.** En pleine session, le service de l'hôte s'est arrêté net : plus d'image, l'ordinateur parti du réseau local puis du serveur, son moteur arrêté au même instant, et il a fallu remettre le service en route. Son journal ne dit rien : pas de ligne d'arrêt, et le redémarrage trouve un bureau laissé « par une exécution qui n'a pas fini ». Un service n'a pas de console : ce que Rust dit d'une panique part sur une sortie que personne ne lit.
+
+**Ce qui est fait.** Le service pose, dès son départ, un crochet qui écrit chaque panique dans son journal, avec le fil, l'endroit du code et le message, par un journal ouvert pour l'occasion, puis laisse faire le comportement habituel. Une tâche qui panique sans faire tomber le service est dite de la même façon.
+
+**Ce qui se voit.** Rien à l'écran. Dans le journal, tri `service`, une ligne « panicked in thread ... at ...: ... ». Si le service tombe encore sans cette ligne, ce n'est pas une panique : l'Observateur d'événements de Windows (journal Application) dit alors ce qui l'a arrêté.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
