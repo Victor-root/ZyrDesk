@@ -442,6 +442,7 @@ fn offered(offer: Offer) -> (String, &'static Icon) {
         Offer::Journal => (say!("computer.journal"), &icons::JOURNAL),
         Offer::SendBack => (say!("computer.send_back"), &icons::DISCONNECT),
         Offer::Forget => (say!("computer.forget"), &icons::CROSS),
+        Offer::Revoke => (say!("computer.revoke"), &icons::LOGOUT),
     }
 }
 
@@ -848,6 +849,9 @@ pub fn offers(seen: &Seen, peer: &Peer, opening: bool) -> Vec<Offer> {
     }
     if peer.written {
         offers.push(Offer::Forget);
+    }
+    if seen.device_of(peer).is_some_and(|device| !device.this) {
+        offers.push(Offer::Revoke);
     }
     offers
 }

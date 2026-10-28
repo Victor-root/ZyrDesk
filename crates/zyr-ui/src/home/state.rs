@@ -138,6 +138,8 @@ pub enum Offer {
     SendBack,
     /// Forgetting a computer written down by hand.
     Forget,
+    /// Taking a computer of the account off it.
+    Revoke,
 }
 
 /// What a switch of a computer lent to a contact turns on or off: the

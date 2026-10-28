@@ -435,6 +435,7 @@ computer.here_only = Connect over the local network only
 computer.journal = View its journal
 computer.send_back = End its session
 computer.forget = Forget
+computer.revoke = Revoke from the account
 computer.forgotten = {name} has been forgotten.
 
 # What every dialog says the same way.

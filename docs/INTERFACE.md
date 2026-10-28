@@ -80,7 +80,7 @@ Une carte par ordinateur connu (réseau local et compte), ou une ligne en vue li
 | « Se connecter » | Oui | Ouvre la session |
 | « Réveiller » (ordinateur éteint) | Oui | Réveil par le réseau local, une fois sa carte réseau connue ; grisé avant ([D313](DECISIONS.md)) |
 | Poignée pour réordonner les cartes | Oui | Visible seulement quand « Réorganiser » est allumé dans la barre du haut ; glisser une carte, ou une ligne en vue liste ; l'ordre est gardé ([D314](DECISIONS.md), [D317](DECISIONS.md)) |
-| Ce que l'ordinateur offre d'autre | Oui | À côté de « Se connecter », un bouton à icône par geste, nommé au survol : par le réseau local seulement, son journal, mettre fin à sa session, l'oublier. Les deux derniers demandent un second clic ([D315](DECISIONS.md)) |
+| Ce que l'ordinateur offre d'autre | Oui | À côté de « Se connecter », un bouton à icône par geste, nommé au survol : par le réseau local seulement, son journal, mettre fin à sa session, l'oublier, le révoquer du compte. Les trois derniers demandent un second clic ([D315](DECISIONS.md), [D330](DECISIONS.md)) |
 
 ## 7. Le bas de la page
 

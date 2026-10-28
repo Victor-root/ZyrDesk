@@ -4988,6 +4988,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Rien à l'écran. Dans le journal, tri `service` ou `engine` : « panicked in thread ... at ... », ou « fault 0xc0000005 in thread ... at ntdll.dll+0x..., writing 0x... », puis « its stack then: ... » et « and as functions: ... ». Un programme dont le tas est déjà abîmé peut tomber à nouveau en écrivant ces lignes : il finit alors comme avant, sans elles.
 
+## D330. Un ordinateur du compte se révoque depuis sa carte (2026-10-28, pendant MZ)
+
+**Le constat.** Révoquer un ordinateur du compte demandait d'aller dans les Paramètres, onglet Compte, et d'y retrouver la bonne ligne parmi les appareils, alors que l'ordinateur est déjà là, avec sa carte, dans la page Ordinateurs.
+
+**Ce qui est fait.** La carte (et la ligne de la liste) d'un ordinateur qui fait partie du compte offre « Révoquer du compte », un bouton à icône parmi ceux qui sont à côté de « Se connecter ». Comme mettre fin à une session ou oublier un ordinateur, il demande un second clic (D315). C'est la même demande au service que depuis les Paramètres, qui la gardent. Cet ordinateur-ci n'a pas de carte et ne se révoque donc pas de là.
+
+**Ce qui se voit.** Sur la carte d'un ordinateur du compte, une icône de sortie ; au survol « Révoquer du compte », au premier clic « Confirmer », au second l'ordinateur quitte le compte.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

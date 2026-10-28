@@ -115,9 +115,10 @@ pub fn act(app: &App, target: Target) {
             crate::home::redraw(app);
         }
         Target::Offer(fingerprint, offer) => {
-            // Ending a session and forgetting a computer sit right on its
-            // card: one click there must not be enough.
-            let undone = matches!(offer, Offer::SendBack | Offer::Forget);
+            // Ending a session, forgetting a computer and taking it off the
+            // account sit right on its card: one click there must not be
+            // enough.
+            let undone = matches!(offer, Offer::SendBack | Offer::Forget | Offer::Revoke);
             if undone && !second_click(app, Target::Offer(fingerprint.clone(), offer)) {
                 return;
             }
@@ -138,6 +139,16 @@ pub fn act(app: &App, target: Target) {
                 }
                 Offer::SendBack => send_back(app, fingerprint),
                 Offer::Forget => forget(app, fingerprint),
+                Offer::Revoke => {
+                    let device = seen::with(|seen| {
+                        seen.peer(&fingerprint)
+                            .and_then(|peer| seen.device_of(peer))
+                            .map(|device| device.id.clone())
+                    });
+                    if let Some(device) = device {
+                        revoke(app, device);
+                    }
+                }
             }
         }
         Target::AddComputer => dialogs::open(app, Dialog::Adding),
@@ -179,7 +190,12 @@ pub fn act(app: &App, target: Target) {
                 rename(app, device, name);
             }
         }
-        Target::Revoke(device) => revoke(app, device),
+        Target::Revoke(device) => {
+            if second_click(app, Target::Revoke(device.clone())) {
+                crate::home::redraw(app);
+                revoke(app, device);
+            }
+        }
         Target::Invite => {
             let linked = seen::with(|seen| {
                 seen.account
@@ -525,12 +541,8 @@ fn detach(app: &App) {
     change(app, crate::shell::desk::detach(), None);
 }
 
-/// Takes a device off the account, after a second click on the same one.
+/// Takes a device off the account, the second click having been made.
 fn revoke(app: &App, device: String) {
-    if !second_click(app, Target::Revoke(device.clone())) {
-        return;
-    }
-    crate::home::redraw(app);
     change(app, crate::shell::desk::revoke_device(device), None);
 }
 

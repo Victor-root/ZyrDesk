@@ -432,6 +432,7 @@ computer.here_only = Se connecter uniquement sur le réseau local
 computer.journal = Voir son journal
 computer.send_back = Mettre fin à sa session
 computer.forget = Oublier
+computer.revoke = Révoquer du compte
 computer.forgotten = {name} a été oublié.
 
 # What every dialog says the same way.

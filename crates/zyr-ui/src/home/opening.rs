@@ -21,7 +21,7 @@ use crate::shell::app::App;
 /// The mark above, and the thread that goes back and forth: its size, and
 /// the share of it the moving piece covers.
 const MARK: f32 = 64.0;
-const THREAD: (f32, f32) = (280.0, 4.0);
+const THREAD: (f32, f32) = (280.0, 6.0);
 const PIECE: f32 = 0.38;
 
 /// How long the piece takes to go across, one way.
@@ -93,15 +93,15 @@ pub fn draw(painter: &mut Painter, width: f32, height: f32) {
     painter.fill(track, thread_height / 2.0, colours.surface_3.faded(shown));
     let part = since.elapsed().as_secs_f32() / ACROSS.as_secs_f32();
     let along = part.fract() * (1.0 + PIECE * 2.0) - PIECE;
-    let piece = Rect::at(
-        track.left + along * thread_width,
-        y,
-        thread_width * PIECE,
-        thread_height,
-    );
-    painter.clipped(track, |painter| {
-        painter.fill(piece, thread_height / 2.0, colours.accent.faded(shown))
-    });
+    // Shortened at the ends of the thread rather than cut off there, so
+    // that it stays rounded at both ends all the way across.
+    let left = (track.left + along * thread_width).max(track.left);
+    let right = (track.left + (along + PIECE) * thread_width).min(track.right);
+    if right > left {
+        let piece = Rect::at(left, y, right - left, thread_height);
+        let radius = (thread_height / 2.0).min((right - left) / 2.0);
+        painter.fill(piece, radius, colours.accent.faded(shown));
+    }
     painter.state.motion.keep_going();
     y += thread_height + gap;
 
