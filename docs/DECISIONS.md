@@ -4996,6 +4996,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Sur la carte d'un ordinateur du compte, une icône de sortie ; au survol « Révoquer du compte », au premier clic « Confirmer », au second l'ordinateur quitte le compte.
 
+## D331. La barre d'ouverture arrondie de bout en bout, et les mots des chiffres du menu sur une ligne (2026-10-28, pendant MZ)
+
+**Le constat.** Pendant l'ouverture d'une session, le morceau doré qui va et vient sur le fil était coupé net aux deux bouts du fil, carré au lieu d'arrondi, et le fil, de 4 px, était trop fin pour que ses bouts arrondis se voient. Dans le menu du bouton flottant, « Encodage distant » ne tenait pas dans sa colonne de 78 px : le mot passait sur deux lignes et sa seconde ligne tombait sur le chiffre.
+
+**Ce qui est fait.** Le morceau raccourcit en arrivant au bout du fil au lieu d'y être coupé, et reste arrondi à ses deux bouts tout du long ; le fil passe à 6 px. Chaque colonne des chiffres du menu prend au moins 78 px, et la largeur de son mot quand il est plus large ; la carte s'élargit d'autant.
+
+**Ce qui se voit.** Une barre d'ouverture entièrement arrondie, fil et morceau. Dans le menu, « Encodage distant » sur une ligne, au-dessus de « 2.52 ms ».
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

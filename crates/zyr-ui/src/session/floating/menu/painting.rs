@@ -462,10 +462,12 @@ impl Painter<'_> {
         let edge = design::SPACE_2 * scale;
         let top = at.top + edge;
         let bar = READINGS_BAR.lock().expect("menu's readings");
-        for (rank, reading) in READINGS.iter().enumerate() {
-            let left =
-                at.left + edge + rank as f32 * (layout::READING + layout::BETWEEN_READINGS) * scale;
-            let column = layout::READING * scale;
+        let mut left = at.left + edge;
+        for ((rank, reading), column) in READINGS
+            .iter()
+            .enumerate()
+            .zip(layout::reading_columns(canvas, scale))
+        {
             canvas.draw_text(
                 &zyr_i18n::text(reading.label),
                 Pen::of(design::CAPTION * scale),
@@ -483,6 +485,7 @@ impl Painter<'_> {
                     load(&BODY_HEIGHT),
                 ),
             );
+            left += column + layout::BETWEEN_READINGS * scale;
         }
         if !bar.stream.is_empty() {
             canvas.draw_text(

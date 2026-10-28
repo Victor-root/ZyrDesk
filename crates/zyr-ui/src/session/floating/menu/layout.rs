@@ -15,8 +15,8 @@ pub(super) const ICON: f32 = 18.0;
 pub(super) const AFTER_THE_LABEL: f32 = 24.0;
 /// The thickness of a separating stroke, and that of a border.
 pub(super) const HAIRLINE: f32 = 1.0;
-/// The width each reading keeps whatever its number, so that the bar
-/// does not breathe in time with the figures.
+/// The width each reading keeps at least, whatever its number, so that
+/// the bar does not breathe in time with the figures.
 pub(super) const READING: f32 = 78.0;
 /// What separates two readings, and what separates their word
 /// from their number.
@@ -67,6 +67,21 @@ fn card_width(scale: f32) -> f32 {
     load(&CARD_WIDTH).max(design::SPACE_2 * 2.0 * scale)
 }
 
+/// How wide each reading's column is: [`READING`], or its word when the
+/// word is wider, which then stays on one line over its number instead of
+/// running into it.
+pub(super) fn reading_columns(canvas: &Canvas, scale: f32) -> [f32; 4] {
+    READINGS.map(|reading| {
+        canvas
+            .width_of(
+                &zyr_i18n::text(reading.label),
+                Pen::of(design::CAPTION * scale),
+            )
+            .ceil()
+            .max(READING * scale)
+    })
+}
+
 /// The same, measured. Stored afterwards, because the layout asks
 /// for it again at every frame and measuring text costs.
 pub(super) fn measure_the_card(canvas: &Canvas, scale: f32) {
@@ -75,7 +90,8 @@ pub(super) fn measure_the_card(canvas: &Canvas, scale: f32) {
     for line in &LINES {
         width = width.max(match line {
             Line::Measures => {
-                (READING * 4.0 + BETWEEN_READINGS * 3.0 + design::SPACE_2 * 2.0) * scale
+                reading_columns(canvas, scale).iter().sum::<f32>()
+                    + (BETWEEN_READINGS * 3.0 + design::SPACE_2 * 2.0) * scale
             }
             // Wrapped to the width the other lines decide: a refusal is
             // a sentence, and a card as wide as a sentence would be a
