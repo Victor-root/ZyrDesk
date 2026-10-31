@@ -5012,6 +5012,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Rien à l'écran. Dans le journal du service, une ligne « stopped taking lines » ou « a thread fell while it held this journal » quand cela arrive, avec la raison donnée par Windows, et les lignes du service qui reprennent. Cela ne corrige pas encore la chute : cela dit ce qui l'annonce.
 
+## D333. Ce qui fait tomber un programme est dit sans demander de mémoire (2026-10-31, pendant MZ)
+
+**Le constat.** Le service d'un hôte est retombé après 52 heures de marche, d'une faute d'accès mémoire dans `ntdll.dll` (0xc0000005), à un autre endroit que la fois d'avant. Le programme qui est tombé portait déjà le filtre de D329, et le journal n'en a gardé aucune ligne. Ce filtre composait chaque ligne en demandant de la mémoire au tas, et rouvrait le journal pour chacune, ce qui en demande aussi. Or une faute dans `ntdll`, à des endroits qui changent, est la marque d'un tas déjà abîmé : la première demande refait tomber le programme avant qu'il ait rien dit.
+
+**Ce qui est fait.** `Log::last_words` écrit une ligne sans rien demander au tas : elle est composée dans une place fixe (`Room`, 8 Ko au plus, coupée au-delà sur une lettre entière) et passe par un fichier déjà ouvert, sans être raccourci ni rouvert. Le fichier n'est attendu qu'un instant, puisque le fil qui tombe peut être celui qui le tient. Le service et chaque moteur ouvrent, dès leur départ, un journal à part pour cela seul, au lieu de le rouvrir à chaque ligne comme le disait D329. Le filtre compose dans une place fixe la faute (son code, le numéro du fil, le module et le décalage, ce qui a été touché) puis la pile en modules et décalages. Il les écrit avant la seule étape qui demande de la mémoire, la pile en fonctions, qui vient en dernier et nomme aussi le fil. Si le tas est cassé, c'est elle seule qui manque.
+
+**Ce qui se voit.** Rien à l'écran. Dans le journal, après une chute : « fault 0xc0000005 in thread 1234 at ntdll.dll+0x..., reading 0x... », puis « its stack then: ... », puis, si le programme tient jusque-là, « and as functions, in thread ...: ... ».
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

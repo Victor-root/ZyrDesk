@@ -74,7 +74,7 @@ fn main() -> ExitCode {
                 let journal = zyr_proto::paths::logs_dir().join("engine.log");
                 match Log::open(&journal) {
                     Ok(log) => {
-                        say_what_fells_it(journal, "engine");
+                        say_what_fells_it(&journal, "engine");
                         zyr_host::serve(&link, log)
                     }
                     // Nothing to say it in: the console, which the service
@@ -217,14 +217,15 @@ fn noted(what: &str) {
 ///
 /// Nobody reads what the service or an engine says on its console, so a
 /// panic or a fault there used to leave a journal that simply stops. The
-/// journal is opened again for each line, so that it is said even when
-/// the program falls while its own journal is being written.
-fn say_what_fells_it(journal: std::path::PathBuf, tag: &'static str) {
-    zyr_system::tell_what_fells_it(move |what| {
-        if let Ok(log) = Log::open(&journal) {
-            log.about(tag).write(what);
-        }
-    });
+/// journal is opened here, once, and kept apart for this alone: opening
+/// a file asks for memory, which a falling program may no longer have,
+/// and what fells it is written without asking for any.
+fn say_what_fells_it(journal: &std::path::Path, tag: &'static str) {
+    let Ok(log) = Log::open(journal) else {
+        return;
+    };
+    let log = log.about(tag);
+    zyr_system::tell_what_fells_it(move |what| log.last_words(what));
 }
 
 /// Outside Windows the service has no purpose: there is no service

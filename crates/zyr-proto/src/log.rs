@@ -49,7 +49,7 @@
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::time::{Duration, Instant};
 
 use time::OffsetDateTime;
@@ -190,6 +190,43 @@ impl Log {
         self.said(HUNTS, message);
     }
 
+    /// Writes one line without asking for any memory to do it.
+    ///
+    /// What a falling program says. One whose heap is already broken
+    /// falls a second time at the first thing it asks of it, before it
+    /// has said a word. The line is put together in room of its own, cut
+    /// at [`LAST_WORDS`] bytes, and written through the file already
+    /// open, neither trimmed nor opened again. Only a file that takes
+    /// nothing has it written the ordinary way, which may ask for memory:
+    /// there is nothing left to lose by then.
+    ///
+    /// The file is waited for a moment and no more, since the thread
+    /// falling may be the one holding it.
+    pub fn last_words(&self, message: &str) {
+        let mut line = Room::<LAST_WORDS>::new();
+        let _ = OffsetDateTime::now_utc().format_into(&mut line, TIMESTAMP);
+        let _ = write!(line, " {SAYS} [{}] {message}", self.tag);
+        let Some(mut file) = self.held_for_a_moment() else {
+            return;
+        };
+        if put_whole(&mut file, line.ended()).is_err() {
+            drop(file);
+            self.write(message);
+        }
+    }
+
+    /// The open file, when it can be had within a moment.
+    fn held_for_a_moment(&self) -> Option<MutexGuard<'_, File>> {
+        for _ in 0..MOMENT_IN_MS {
+            match self.held.file.try_lock() {
+                Ok(file) => return Some(file),
+                Err(TryLockError::Poisoned(fallen)) => return Some(fallen.into_inner()),
+                Err(TryLockError::WouldBlock) => std::thread::sleep(Duration::from_millis(1)),
+            }
+        }
+        None
+    }
+
     /// Puts one line down, in whichever voice.
     fn said(&self, voice: char, message: &str) {
         // Nothing below can fall while it holds the file, so a lock left
@@ -264,9 +301,75 @@ fn opened(path: &Path) -> io::Result<File> {
 /// written in several pieces can have one of theirs land in the middle.
 fn put_down(file: &mut File, line: &str) -> io::Result<()> {
     let _ = trimmed(file);
+    put_whole(file, line.as_bytes())
+}
+
+/// The same, untrimmed: trimming asks for memory.
+fn put_whole(file: &mut File, line: &[u8]) -> io::Result<()> {
     file.seek(SeekFrom::End(0))?;
-    file.write_all(line.as_bytes())?;
+    file.write_all(line)?;
     file.flush()
+}
+
+/// How long last words can be, their date and tag included. A stack, on
+/// one line, fits with room to spare.
+pub const LAST_WORDS: usize = 8 * 1024;
+
+/// How long last words wait for the file, in milliseconds.
+const MOMENT_IN_MS: u32 = 200;
+
+/// Room of a fixed size to put a line together in, without asking for
+/// memory.
+///
+/// What does not fit is cut off. One byte is always kept back for the end
+/// of the line.
+pub struct Room<const N: usize> {
+    room: [u8; N],
+    length: usize,
+}
+
+impl<const N: usize> Room<N> {
+    pub fn new() -> Self {
+        Self {
+            room: [0; N],
+            length: 0,
+        }
+    }
+
+    /// What was put in, as text, cut back to its last whole letter.
+    pub fn as_str(&self) -> &str {
+        let put = &self.room[..self.length];
+        match std::str::from_utf8(put) {
+            Ok(text) => text,
+            Err(e) => std::str::from_utf8(&put[..e.valid_up_to()]).unwrap_or_default(),
+        }
+    }
+
+    /// The same, ending the line, as it is written.
+    fn ended(&mut self) -> &[u8] {
+        self.length = self.as_str().len();
+        self.room[self.length] = b'\n';
+        &self.room[..=self.length]
+    }
+}
+
+impl<const N: usize> Default for Room<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const N: usize> Write for Room<N> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let taken = bytes.len().min(N.saturating_sub(1) - self.length);
+        self.room[self.length..self.length + taken].copy_from_slice(&bytes[..taken]);
+        self.length += taken;
+        Ok(taken)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Cuts the log back once it has grown past reason, keeping its end.
@@ -558,5 +661,61 @@ mod tests {
         assert!(lines[2].ends_with("and still"), "{}", lines[2]);
 
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn last_words_are_one_whole_line_with_their_date_voice_and_tag() {
+        let path = fresh_path("last-words");
+        let log = Log::open(&path).unwrap().about("service");
+        log.write("before");
+        log.last_words("fault 0xc0000005 in thread 7 at ntdll.dll+0x1234");
+        log.write("after");
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = contents.lines().collect();
+        assert_eq!(lines.len(), 3, "{contents}");
+        // Dated exactly as the lines written the ordinary way are.
+        assert_eq!(
+            lines[1].find(" I [service] "),
+            Some(now().len()),
+            "{}",
+            lines[1]
+        );
+        assert!(
+            lines[1].ends_with(" I [service] fault 0xc0000005 in thread 7 at ntdll.dll+0x1234"),
+            "{}",
+            lines[1]
+        );
+
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn last_words_too_long_for_their_room_are_cut_on_a_whole_letter_and_end_the_line() {
+        let path = fresh_path("long-last-words");
+        let log = Log::open(&path).unwrap();
+        log.last_words(&"é".repeat(LAST_WORDS));
+        log.write("after");
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = contents.lines().collect();
+        assert_eq!(lines.len(), 2, "{} bytes", contents.len());
+        assert!(lines[0].len() < LAST_WORDS, "{}", lines[0].len());
+        assert!(lines[0].ends_with('é'));
+        assert!(lines[1].ends_with("after"), "{}", lines[1]);
+
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_room_keeps_what_fits_and_gives_back_whole_letters() {
+        let mut room = Room::<6>::new();
+        let _ = write!(room, "aé");
+        assert_eq!(room.as_str(), "aé");
+        // Five bytes fit, one being kept for the end of the line: the
+        // second « é » is cut in half and left out.
+        let _ = write!(room, "éé");
+        assert_eq!(room.as_str(), "aéé");
+        assert_eq!(room.ended(), "aéé\n".as_bytes());
     }
 }

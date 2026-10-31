@@ -89,7 +89,7 @@ fn service_main(_arguments: Vec<OsString>) {
         // to start at all than to run mute and invisible.
         Err(_) => return,
     };
-    crate::say_what_fells_it(paths::service_log(), TAG);
+    crate::say_what_fells_it(&paths::service_log(), TAG);
 
     if let Err(e) = hold_the_service(&log) {
         log.write(&format!("the service stopped on an error: {e}"));

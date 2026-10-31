@@ -66,6 +66,7 @@ fn functions() -> String {
 #[cfg(windows)]
 mod mechanism {
     use std::ffi::c_void;
+    use std::io::Write;
 
     use windows_sys::Win32::Foundation::{EXCEPTION_ACCESS_VIOLATION, HMODULE};
     use windows_sys::Win32::System::Diagnostics::Debug::{
@@ -75,6 +76,8 @@ mod mechanism {
         GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
         GetModuleFileNameW, GetModuleHandleExW,
     };
+    use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+    use zyr_proto::log::Room;
 
     use super::{TOLD, functions, this_thread};
 
@@ -85,6 +88,9 @@ mod mechanism {
     /// Frames read off the stack at most.
     const FRAMES: u32 = 48;
 
+    /// How long a line about a fault can be.
+    const LINE: usize = 4096;
+
     pub fn watch_for_faults() {
         // SAFETY: a filter of ours, which never fails to return.
         unsafe { SetUnhandledExceptionFilter(Some(faulted)) };
@@ -92,6 +98,12 @@ mod mechanism {
 
     /// Called by Windows, on the faulting thread, for a fault nothing
     /// handled.
+    ///
+    /// The fault and the stack are put together in room of their own and
+    /// said before anything asks the heap for memory: a heap broken
+    /// already is the likeliest reason for being here, and asking it for
+    /// more fells the program again before it has said a word. Only the
+    /// functions, which cannot be named without memory, come last.
     unsafe extern "system" fn faulted(pointers: *const EXCEPTION_POINTERS) -> i32 {
         let Some(say) = TOLD.get() else {
             return LET_IT_GO_ON;
@@ -104,23 +116,44 @@ mod mechanism {
                 .and_then(|pointers| pointers.ExceptionRecord.as_ref())
         };
         if let Some(record) = record {
-            say(&format!(
-                "fault 0x{:08x} in thread {} at {}{}",
-                record.ExceptionCode as u32,
-                this_thread(),
-                where_in(record.ExceptionAddress),
-                touched(record),
-            ));
+            let mut line = Room::<LINE>::new();
+            // SAFETY: no argument, and a number back.
+            let thread = unsafe { GetCurrentThreadId() };
+            let _ = write!(
+                line,
+                "fault 0x{:08x} in thread {thread} at ",
+                record.ExceptionCode as u32
+            );
+            where_in(&mut line, record.ExceptionAddress);
+            touched(&mut line, record);
+            say(line.as_str());
         }
-        say(&format!("its stack then: {}", modules()));
-        say(&format!("and as functions: {}", functions()));
+        let mut frames = [std::ptr::null_mut::<c_void>(); FRAMES as usize];
+        // SAFETY: room for as many frames as asked for, no hash wanted.
+        let found = unsafe {
+            RtlCaptureStackBackTrace(0, FRAMES, frames.as_mut_ptr(), std::ptr::null_mut())
+        };
+        let mut line = Room::<LINE>::new();
+        let _ = write!(line, "its stack then: ");
+        for (at, &frame) in frames[..usize::from(found)].iter().enumerate() {
+            if at > 0 {
+                let _ = write!(line, " | ");
+            }
+            where_in(&mut line, frame);
+        }
+        say(line.as_str());
+        say(&format!(
+            "and as functions, in thread {}: {}",
+            this_thread(),
+            functions()
+        ));
         LET_IT_GO_ON
     }
 
     /// For an access violation, what was touched and how.
-    fn touched(record: &EXCEPTION_RECORD) -> String {
+    fn touched(line: &mut impl Write, record: &EXCEPTION_RECORD) {
         if record.ExceptionCode != EXCEPTION_ACCESS_VIOLATION || record.NumberParameters < 2 {
-            return String::new();
+            return;
         }
         let how = match record.ExceptionInformation[0] {
             0 => "reading",
@@ -128,25 +161,11 @@ mod mechanism {
             8 => "running",
             _ => "touching",
         };
-        format!(", {how} 0x{:x}", record.ExceptionInformation[1])
+        let _ = write!(line, ", {how} 0x{:x}", record.ExceptionInformation[1]);
     }
 
-    /// The stack as modules and offsets, on one line.
-    fn modules() -> String {
-        let mut frames = [std::ptr::null_mut::<c_void>(); FRAMES as usize];
-        // SAFETY: room for as many frames as asked for, no hash wanted.
-        let found = unsafe {
-            RtlCaptureStackBackTrace(0, FRAMES, frames.as_mut_ptr(), std::ptr::null_mut())
-        };
-        frames[..usize::from(found)]
-            .iter()
-            .map(|&frame| where_in(frame))
-            .collect::<Vec<_>>()
-            .join(" | ")
-    }
-
-    /// An address as the module it lies in and how far into it.
-    fn where_in(address: *mut c_void) -> String {
+    /// An address, as the module it lies in and how far into it.
+    pub(super) fn where_in(line: &mut impl Write, address: *mut c_void) {
         let mut module: HMODULE = std::ptr::null_mut();
         // SAFETY: the address is only looked up, the module's count left
         // alone, and the slot for it is ours.
@@ -159,15 +178,22 @@ mod mechanism {
             )
         };
         if found == 0 {
-            return format!("0x{:x}", address as usize);
+            let _ = write!(line, "0x{:x}", address as usize);
+            return;
         }
         let mut path = [0u16; 260];
         // SAFETY: a module just found, and room of ours said in full.
         let length = unsafe { GetModuleFileNameW(module, path.as_mut_ptr(), path.len() as u32) };
-        let path = String::from_utf16_lossy(&path[..length as usize]);
-        let name = path.rsplit('\\').next().unwrap_or(&path);
+        let path = &path[..(length as usize).min(path.len())];
+        let name = path
+            .iter()
+            .rposition(|&letter| letter == u16::from(b'\\'))
+            .map_or(path, |at| &path[at + 1..]);
+        for letter in char::decode_utf16(name.iter().copied()) {
+            let _ = write!(line, "{}", letter.unwrap_or(char::REPLACEMENT_CHARACTER));
+        }
         // A module is loaded at the address its handle is.
-        format!("{name}+0x{:x}", address as usize - module as usize)
+        let _ = write!(line, "+0x{:x}", address as usize - module as usize);
     }
 }
 
@@ -211,6 +237,21 @@ mod tests {
         assert!(
             told[panicked + 1].starts_with("its stack then: "),
             "{told:?}"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_place_in_this_program_is_said_as_its_module_and_how_far_into_it() {
+        let mut line = zyr_proto::log::Room::<256>::new();
+        let place: fn() = a_place_in_this_program_is_said_as_its_module_and_how_far_into_it;
+        mechanism::where_in(&mut line, place as *mut std::ffi::c_void);
+        let program = std::env::current_exe().unwrap();
+        let program = program.file_name().unwrap().to_string_lossy();
+        assert!(
+            line.as_str().starts_with(&format!("{program}+0x")),
+            "{}",
+            line.as_str()
         );
     }
 }
