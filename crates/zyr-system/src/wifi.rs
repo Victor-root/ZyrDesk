@@ -25,7 +25,11 @@
 //! switches to a program that is not an administrator, and the service
 //! runs as the system. The Wi-Fi library is looked for at run time, since
 //! a Windows Server without its wireless service has none, and a service
-//! linked to it would not even start there.
+//! linked to it would not even start there. Once found, it stays loaded:
+//! Windows does not promise that a library has let go of everything it
+//! set up for a handle once that handle is closed, and a library taken
+//! out from under its own threads at the end of every session could fell
+//! the program long afterwards.
 //!
 //! While a session is open the same handle also listens, and looks. A
 //! card that leaves its network, moves to another access point or looks
@@ -70,7 +74,7 @@ mod mechanism {
     use std::time::{Duration, Instant};
 
     use windows_sys::Win32::Foundation::{
-        ERROR_SERVICE_NOT_ACTIVE, ERROR_SUCCESS, FreeLibrary, HANDLE, HMODULE,
+        ERROR_SERVICE_NOT_ACTIVE, ERROR_SUCCESS, HANDLE, HMODULE,
     };
     use windows_sys::Win32::NetworkManagement::WiFi::{
         L2_NOTIFICATION_DATA, WLAN_API_VERSION_2_0, WLAN_CONNECTION_ATTRIBUTES,
@@ -281,7 +285,7 @@ mod mechanism {
     /// A handle on the Wi-Fi service, for as long as a session is open:
     /// what was asked through it holds while it stays open.
     struct Asking {
-        wlan: Wlan,
+        wlan: &'static Wlan,
         handle: HANDLE,
         /// The access point each card was last seen on.
         access_points: Vec<(GUID, [u8; 6])>,
@@ -292,7 +296,7 @@ mod mechanism {
         /// every card connected now. None, and the journal says why, when
         /// nothing can be asked.
         fn start(log: &Log) -> Option<Self> {
-            let wlan = Wlan::load()
+            let wlan = Wlan::loaded()
                 .inspect_err(|e| {
                     log.write(&format!(
                         "the Wi-Fi could not be asked to put the session first: {e}"
@@ -616,9 +620,8 @@ mod mechanism {
         *mut u32,
     ) -> u32;
 
-    /// `wlanapi.dll`, loaded, and what this takes from it.
+    /// What this takes from `wlanapi.dll`, loaded for the program's life.
     struct Wlan {
-        library: HMODULE,
         open_handle: OpenHandle,
         close_handle: CloseHandle,
         enum_interfaces: EnumInterfaces,
@@ -629,9 +632,19 @@ mod mechanism {
     }
 
     impl Wlan {
+        /// The library, looked for the first time it is wanted and kept
+        /// from then on, or why there is none.
+        fn loaded() -> Result<&'static Self, String> {
+            static LOADED: OnceLock<Result<Wlan, String>> = OnceLock::new();
+            LOADED
+                .get_or_init(Self::load)
+                .as_ref()
+                .map_err(Clone::clone)
+        }
+
         fn load() -> Result<Self, String> {
             // SAFETY: a library of the system's own, looked for in System32
-            // alone.
+            // alone. It is never freed.
             let library = unsafe {
                 LoadLibraryExW(
                     w!("wlanapi.dll"),
@@ -646,9 +659,8 @@ mod mechanism {
                 ));
             }
             // SAFETY: each function's own type, as wlanapi.h declares it.
-            let found = unsafe {
-                Ok::<_, String>(Self {
-                    library,
+            unsafe {
+                Ok(Self {
                     open_handle: function(library, c"WlanOpenHandle")?,
                     close_handle: function(library, c"WlanCloseHandle")?,
                     enum_interfaces: function(library, c"WlanEnumInterfaces")?,
@@ -657,19 +669,7 @@ mod mechanism {
                     query_interface: function(library, c"WlanQueryInterface")?,
                     register_notification: function(library, c"WlanRegisterNotification")?,
                 })
-            };
-            if found.is_err() {
-                // SAFETY: loaded above, and nothing of it is used.
-                unsafe { FreeLibrary(library) };
             }
-            found
-        }
-    }
-
-    impl Drop for Wlan {
-        fn drop(&mut self) {
-            // SAFETY: loaded in `load`, and not used after.
-            unsafe { FreeLibrary(self.library) };
         }
     }
 

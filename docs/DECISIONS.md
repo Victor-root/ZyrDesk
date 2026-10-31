@@ -5020,6 +5020,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Rien à l'écran. Dans le journal, après une chute : « fault 0xc0000005 in thread 1234 at ntdll.dll+0x..., reading 0x... », puis « its stack then: ... », puis, si le programme tient jusque-là, « and as functions, in thread ...: ... ».
 
+## D334. La bibliothèque Wi-Fi reste chargée une fois trouvée (2026-10-31, pendant MZ)
+
+**Le constat.** Une relecture de tout le code du service qui parle directement à Windows, à la recherche de ce qui abîme sa mémoire au fil des jours (D332, D333), n'a trouvé aucun défaut certain. Elle a relevé un seul suspect. `wlanapi.dll` était chargée à l'ouverture de la première session et déchargée à la fin de la dernière, après un abonnement aux nouvelles des cartes. L'ordre de fermeture est juste, mais Windows ne promet pas qu'une bibliothèque a tout lâché de ce qu'elle a mis en place pour une poignée une fois celle-ci fermée. Un reste de son travail touchant une bibliothèque partie ferait tomber le service bien plus tard, dans `ntdll`, à un endroit chaque fois différent. C'est le seul code du service qui charge et décharge une bibliothèque en boucle. Au passage, le déchargement prévu quand une fonction manque ne pouvait jamais avoir lieu.
+
+**Ce qui est fait.** La bibliothèque est cherchée la première fois qu'on en a besoin, puis gardée pour toute la vie du programme, comme celles de `connectivity.rs` et `attention.rs`. Une poignée reste ouverte le temps des sessions, puis se ferme comme avant.
+
+**Ce qui se voit.** Rien. C'est une précaution, pas une cause démontrée.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
