@@ -48,7 +48,7 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -101,7 +101,7 @@ pub const HUNTS: char = 'D';
 /// place as the supervisor, and their lines interleave in order.
 #[derive(Debug, Clone)]
 pub struct Log {
-    file: Arc<Mutex<File>>,
+    held: Arc<Held>,
     /// What lines written through this copy are filed under.
     ///
     /// On the copy and not on the call, which is the whole of what makes
@@ -111,26 +111,31 @@ pub struct Log {
     tag: &'static str,
 }
 
+/// The one open file every copy writes through, and where it lives.
+///
+/// Where it lives is kept for the day the open file stops taking lines.
+/// A host's service once went on for hours with every line of its own
+/// lost, while the helpers it started, each opening the same file afresh,
+/// still landed theirs in it: from that file alone, the service seemed to
+/// have nothing to say. It is opened again from there instead, and says
+/// why it had to be.
+#[derive(Debug)]
+struct Held {
+    path: PathBuf,
+    file: Mutex<File>,
+}
+
 impl Log {
     /// Opens the log, creating its folder if needed.
-    ///
-    /// Read and write, not the system's own append. Appending is what
-    /// every write does, but done by seeking to the end under the lock
-    /// rather than by the file's mode: an append-only file on Windows
-    /// may not be cut shorter, and trimming is exactly that. One handle
-    /// behind one lock keeps the lines in order all the same.
     pub fn open(path: &Path) -> io::Result<Self> {
         if let Some(folder) = path.parent() {
             std::fs::create_dir_all(folder)?;
         }
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(path)?;
         Ok(Self {
-            file: Arc::new(Mutex::new(file)),
+            held: Arc::new(Held {
+                path: path.to_path_buf(),
+                file: Mutex::new(opened(path)?),
+            }),
             tag: OTHERWISE,
         })
     }
@@ -146,7 +151,7 @@ impl Log {
     /// chances to spell it differently.
     pub fn about(&self, tag: &'static str) -> Self {
         Self {
-            file: Arc::clone(&self.file),
+            held: Arc::clone(&self.held),
             tag,
         }
     }
@@ -169,7 +174,8 @@ impl Log {
     /// then land at the new top rather than at a remembered place.
     ///
     /// Never fails: a log that refuses to write must not stop the
-    /// service it is watching.
+    /// service it is watching. Nor falls silent, for as long as the file
+    /// can still be opened: one that stops taking lines is opened again.
     pub fn write(&self, message: &str) {
         self.said(SAYS, message);
     }
@@ -186,14 +192,81 @@ impl Log {
 
     /// Puts one line down, in whichever voice.
     fn said(&self, voice: char, message: &str) {
-        let Ok(mut file) = self.file.lock() else {
+        // Nothing below can fall while it holds the file, so a lock left
+        // by a thread that fell says something is badly wrong elsewhere
+        // in the program. That is said, and the journal goes on: it is
+        // exactly when a journal is wanted.
+        let mut file = self.held.file.lock().unwrap_or_else(|fallen| {
+            self.held.file.clear_poison();
+            let mut file = fallen.into_inner();
+            let _ = put_down(
+                &mut file,
+                &self.line(
+                    SAYS,
+                    "a thread fell while it held this journal, which goes on",
+                ),
+            );
+            file
+        });
+        let line = self.line(voice, message);
+        if let Err(why) = put_down(&mut file, &line) {
+            self.open_again(&mut file, &why, &line);
+        }
+    }
+
+    /// One whole line, as it is written.
+    fn line(&self, voice: char, message: &str) -> String {
+        format!("{} {voice} [{}] {message}\n", now(), self.tag)
+    }
+
+    /// Takes a fresh opening of the file in place of one that stopped
+    /// taking lines, and says so in it, once that fresh one has shown it
+    /// takes them.
+    fn open_again(&self, file: &mut File, why: &io::Error, line: &str) {
+        let Ok(mut fresh) = opened(&self.held.path) else {
             return;
         };
-        let _ = trimmed(&mut file);
-        let _ = file.seek(SeekFrom::End(0));
-        let _ = writeln!(file, "{} {voice} [{}] {message}", now(), self.tag);
-        let _ = file.flush();
+        let told = self.line(
+            SAYS,
+            &format!("the journal's open file stopped taking lines ({why}), and was opened again"),
+        );
+        if put_down(&mut fresh, &told)
+            .and_then(|()| put_down(&mut fresh, line))
+            .is_ok()
+        {
+            // Let go of without being closed: a handle that stopped
+            // working may by now be the number of something else in this
+            // program, and closing it would close that.
+            std::mem::forget(std::mem::replace(file, fresh));
+        }
     }
+}
+
+/// The file, opened for the journal.
+///
+/// Read and write, not the system's own append. Appending is what every
+/// write does, but done by seeking to the end under the lock rather than
+/// by the file's mode: an append-only file on Windows may not be cut
+/// shorter, and trimming is exactly that. One handle behind one lock
+/// keeps the lines in order all the same.
+fn opened(path: &Path) -> io::Result<File> {
+    OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(path)
+}
+
+/// Writes one whole line at the end of the file.
+///
+/// In one piece: other programs write into the same file, and a line
+/// written in several pieces can have one of theirs land in the middle.
+fn put_down(file: &mut File, line: &str) -> io::Result<()> {
+    let _ = trimmed(file);
+    file.seek(SeekFrom::End(0))?;
+    file.write_all(line.as_bytes())?;
+    file.flush()
 }
 
 /// Cuts the log back once it has grown past reason, keeping its end.
@@ -406,7 +479,7 @@ mod tests {
         // Grown past the limit through the file directly: getting
         // there line by line would take up most of the test.
         {
-            let mut file = log.file.lock().unwrap();
+            let mut file = log.held.file.lock().unwrap();
             let line = format!("{} filler of no interest\n", now());
             let block = line.repeat(1_000);
             let times = (AT_MOST / block.len() as u64) + 2;
@@ -431,6 +504,58 @@ mod tests {
         // boundary.
         let second = contents.lines().nth(1).unwrap();
         assert!(second.starts_with(char::is_numeric), "{second}");
+
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_journal_whose_file_stops_taking_lines_opens_it_again_and_says_why() {
+        let path = fresh_path("opened-again");
+        let log = Log::open(&path).unwrap();
+        log.write("before");
+        // A file that takes no line, in place of the one opened: what a
+        // handle that stopped working looks like from here.
+        *log.held.file.lock().unwrap() = File::open(&path).unwrap();
+
+        log.write("after");
+        log.write("and on");
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = contents.lines().collect();
+        assert_eq!(lines.len(), 4, "{contents}");
+        assert!(lines[0].ends_with("before"), "{}", lines[0]);
+        assert!(
+            lines[1].contains("stopped taking lines (") && lines[1].ends_with("opened again"),
+            "{}",
+            lines[1]
+        );
+        assert!(lines[2].ends_with("after"), "{}", lines[2]);
+        assert!(lines[3].ends_with("and on"), "{}", lines[3]);
+
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_journal_left_by_a_thread_that_fell_says_so_once_and_goes_on() {
+        let path = fresh_path("fallen");
+        let log = Log::open(&path).unwrap();
+        let held = Arc::clone(&log.held);
+        let fell = std::thread::spawn(move || {
+            let _holding = held.file.lock().unwrap();
+            panic!("fell while holding the journal");
+        })
+        .join();
+        assert!(fell.is_err());
+
+        log.write("still here");
+        log.write("and still");
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = contents.lines().collect();
+        assert_eq!(lines.len(), 3, "{contents}");
+        assert!(lines[0].contains("a thread fell"), "{}", lines[0]);
+        assert!(lines[1].ends_with("still here"), "{}", lines[1]);
+        assert!(lines[2].ends_with("and still"), "{}", lines[2]);
 
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }

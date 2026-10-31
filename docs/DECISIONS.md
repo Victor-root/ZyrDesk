@@ -5004,6 +5004,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Une barre d'ouverture entièrement arrondie, fil et morceau. Dans le menu, « Encodage distant » sur une ligne, au-dessus de « 2.52 ms ».
 
+## D332. Un journal qui ne prend plus ses lignes se rouvre et dit pourquoi (2026-10-31, pendant MZ)
+
+**Le constat.** Trois fois, sur deux hôtes, le service a passé des heures de session sans qu'une seule de ses lignes arrive dans son journal : ni `tunnel`, ni `vitals`, ni la demande de journal venue de l'autre ordinateur, alors que l'image passait parfaitement et que les aides qu'il lance (presse-papiers, bureau), qui ouvrent le même fichier chacune de leur côté, y écrivaient les leurs. Deux de ces trois fois, le service est ensuite tombé (D329), sans que ses lignes de chute n'apparaissent. Le journal ne disait pas pourquoi il se taisait : une écriture refusée était ignorée, et un verrou laissé par un fil tombé taisait toutes les suivantes.
+
+**Ce qui est fait.** `Log` garde le chemin de son fichier. Une ligne que le fichier ouvert refuse fait rouvrir le fichier par ce chemin ; la nouvelle ouverture dit d'abord « the journal's open file stopped taking lines (raison), and was opened again », puis la ligne, et c'est par elle que tout passe ensuite. L'ancienne poignée est lâchée sans être fermée : si elle a cessé de marcher, son numéro est peut-être déjà celui d'autre chose dans le programme. Un verrou laissé par un fil tombé est dit une fois, et le journal continue. Chaque ligne part en un seul morceau, pour qu'une ligne d'un autre programme ne tombe plus au milieu.
+
+**Ce qui se voit.** Rien à l'écran. Dans le journal du service, une ligne « stopped taking lines » ou « a thread fell while it held this journal » quand cela arrive, avec la raison donnée par Windows, et les lignes du service qui reprennent. Cela ne corrige pas encore la chute : cela dit ce qui l'annonce.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
