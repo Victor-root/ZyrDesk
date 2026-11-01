@@ -5036,6 +5036,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Dans le journal, une section de plus : en temps normal, une ligne « --- service starting --- » par démarrage ; après une chute de ce genre, la phrase de Rust, par exemple « memory allocation of ... bytes failed » ou « has overflowed its stack ». Le cas du tas abîmé ne dit rien ici ; l'Observateur d'événements le nomme (0xc0000374).
 
+## D336. Le travail du service a sa propre pile, et ses derniers mots n'en demandent presque pas (2026-11-01, pendant MZ)
+
+**Le constat.** Les symboles publics de Microsoft placent les trois chutes du service dans `ntdll.dll`, chaque fois dans ce qui gère une faute ou la pile : `RtlpUnwindPrologue`, `RtlDispatchException` et `_alloca_probe`. C'est la marque d'une pile épuisée : Windows tombe en traitant la faute, faute de place pour la traiter, et rien de ce qui devait la dire (le filtre de D333, la phrase de Rust de D335) n'a la place de tourner. Le fil sur lequel Windows appelle le service n'est pas créé par Rust : sa pile est celle par défaut du programme, un mégaoctet, et rien n'y est gardé en réserve pour dire qu'elle déborde. Les fils créés par Rust gardent 20 Ko en réserve. Le filtre de D333 en demandait davantage à lui seul, avec ses trois places de 4 et 8 Ko.
+
+**Ce qui est fait.** Le travail du service (`zyr_service::run`) tourne sur un fil créé pour lui, `zyrdeskd-service`, avec une pile de 8 Mo, réservée et prise au fur et à mesure. Si elle déborde quand même, Rust nomme le fil dans la console du service. `Log::last_words` n'assemble plus sa ligne : il écrit l'en-tête, les mots puis la fin de ligne, chacun depuis l'endroit où il se trouve, sans limite de longueur. Le filtre se contente de places de 512 et 2048 octets. Après un débordement de pile, il ne nomme plus les fonctions, ce qui demande trop de place.
+
+**Ce qui se voit.** Rien à l'écran. Si la pile du travail du service était trop petite, les chutes cessent. Sinon, la prochaine laisse dans la console du service « thread '...' has overflowed its stack », et dans son journal « fault 0xc00000fd ... » suivi de la pile, ce qui nomme ce qui s'empile. La cause exacte n'est pas encore démontrée.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

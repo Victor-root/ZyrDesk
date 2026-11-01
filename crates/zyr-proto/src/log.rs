@@ -190,26 +190,31 @@ impl Log {
         self.said(HUNTS, message);
     }
 
-    /// Writes one line without asking for any memory to do it.
+    /// Writes one line without asking for memory, and with next to no
+    /// room on the stack.
     ///
     /// What a falling program says. One whose heap is already broken
     /// falls a second time at the first thing it asks of it, before it
-    /// has said a word. The line is put together in room of its own, cut
-    /// at [`LAST_WORDS`] bytes, and written through the file already
-    /// open, neither trimmed nor opened again. Only a file that takes
-    /// nothing has it written the ordinary way, which may ask for memory:
-    /// there is nothing left to lose by then.
+    /// has said a word, and one whose stack ran out has only the little
+    /// Windows keeps back for saying so. The line goes in three pieces
+    /// straight from where they are, its opening, the words and its end,
+    /// through the file already open, neither trimmed nor opened again.
+    /// Only a file that takes nothing has it written the ordinary way,
+    /// which may ask for memory: there is nothing left to lose by then.
     ///
     /// The file is waited for a moment and no more, since the thread
     /// falling may be the one holding it.
     pub fn last_words(&self, message: &str) {
-        let mut line = Room::<LAST_WORDS>::new();
-        let _ = OffsetDateTime::now_utc().format_into(&mut line, TIMESTAMP);
-        let _ = write!(line, " {SAYS} [{}] {message}", self.tag);
+        let mut opening = Room::<OPENING>::new();
+        let _ = OffsetDateTime::now_utc().format_into(&mut opening, TIMESTAMP);
+        let _ = write!(opening, " {SAYS} [{}] ", self.tag);
         let Some(mut file) = self.held_for_a_moment() else {
             return;
         };
-        if put_whole(&mut file, line.ended()).is_err() {
+        let put = [opening.as_str().as_bytes(), message.as_bytes(), b"\n"]
+            .into_iter()
+            .try_for_each(|piece| put_whole(&mut file, piece));
+        if put.is_err() {
             drop(file);
             self.write(message);
         }
@@ -311,9 +316,8 @@ fn put_whole(file: &mut File, line: &[u8]) -> io::Result<()> {
     file.flush()
 }
 
-/// How long last words can be, their date and tag included. A stack, on
-/// one line, fits with room to spare.
-pub const LAST_WORDS: usize = 8 * 1024;
+/// How long the opening of a line can be, its date and tag included.
+const OPENING: usize = 64;
 
 /// How long last words wait for the file, in milliseconds.
 const MOMENT_IN_MS: u32 = 200;
@@ -321,8 +325,7 @@ const MOMENT_IN_MS: u32 = 200;
 /// Room of a fixed size to put a line together in, without asking for
 /// memory.
 ///
-/// What does not fit is cut off. One byte is always kept back for the end
-/// of the line.
+/// What does not fit is cut off.
 pub struct Room<const N: usize> {
     room: [u8; N],
     length: usize,
@@ -344,13 +347,6 @@ impl<const N: usize> Room<N> {
             Err(e) => std::str::from_utf8(&put[..e.valid_up_to()]).unwrap_or_default(),
         }
     }
-
-    /// The same, ending the line, as it is written.
-    fn ended(&mut self) -> &[u8] {
-        self.length = self.as_str().len();
-        self.room[self.length] = b'\n';
-        &self.room[..=self.length]
-    }
 }
 
 impl<const N: usize> Default for Room<N> {
@@ -361,7 +357,7 @@ impl<const N: usize> Default for Room<N> {
 
 impl<const N: usize> Write for Room<N> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        let taken = bytes.len().min(N.saturating_sub(1) - self.length);
+        let taken = bytes.len().min(N - self.length);
         self.room[self.length..self.length + taken].copy_from_slice(&bytes[..taken]);
         self.length += taken;
         Ok(taken)
@@ -691,17 +687,17 @@ mod tests {
     }
 
     #[test]
-    fn last_words_too_long_for_their_room_are_cut_on_a_whole_letter_and_end_the_line() {
+    fn last_words_of_any_length_are_one_whole_line() {
         let path = fresh_path("long-last-words");
         let log = Log::open(&path).unwrap();
-        log.last_words(&"é".repeat(LAST_WORDS));
+        let long = "é".repeat(10_000);
+        log.last_words(&long);
         log.write("after");
 
         let contents = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = contents.lines().collect();
         assert_eq!(lines.len(), 2, "{} bytes", contents.len());
-        assert!(lines[0].len() < LAST_WORDS, "{}", lines[0].len());
-        assert!(lines[0].ends_with('é'));
+        assert!(lines[0].ends_with(&format!("] {long}")));
         assert!(lines[1].ends_with("after"), "{}", lines[1]);
 
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
@@ -712,10 +708,8 @@ mod tests {
         let mut room = Room::<6>::new();
         let _ = write!(room, "aé");
         assert_eq!(room.as_str(), "aé");
-        // Five bytes fit, one being kept for the end of the line: the
-        // second « é » is cut in half and left out.
-        let _ = write!(room, "éé");
+        // Six bytes fit: the third « é » is cut in half and left out.
+        let _ = write!(room, "ééé");
         assert_eq!(room.as_str(), "aéé");
-        assert_eq!(room.ended(), "aéé\n".as_bytes());
     }
 }

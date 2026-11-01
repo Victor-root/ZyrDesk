@@ -53,6 +53,11 @@ pub const SERVICE_ARGUMENT: &str = "--run-as-service";
 /// Where what the service says on its console goes, beside its journal.
 const CONSOLE: &str = "service-console.log";
 
+/// The stack the service's work runs on: eight times the megabyte of the
+/// thread Windows calls a service on. Only reserved, and used as it is
+/// needed.
+const STACK: usize = 8 * 1024 * 1024;
+
 /// Time given to the service to stop before it is removed anyway.
 const STOP_DELAY: Duration = Duration::from_secs(30);
 
@@ -170,7 +175,7 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     zyr_system::let_it_be_pressed(Some(log));
     say_how_the_networks_are_classed(log);
 
-    let end = zyr_service::run(&order, log, WIRING);
+    let end = on_a_stack_of_its_own(|| zyr_service::run(&order, log, WIRING), log);
     log.write(&format!("service stopped: {}", reason(end)));
 
     // A service that gives up has to tell Windows so, rather than
@@ -182,6 +187,33 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     };
     handle.set_service_status(announcement(ServiceState::Stopped, exit))?;
     Ok(())
+}
+
+/// Runs the service's work on a thread whose stack this program chose.
+///
+/// The thread Windows calls the service on is not one Rust started: its
+/// stack is the program's default, a megabyte, and nothing is kept back
+/// on it for saying the stack ran out. Three falls of this service died inside
+/// Windows' own handling of a fault, at places that only touch the stack,
+/// with nothing said. On a thread of its own, the work has room, and a
+/// stack that runs out all the same is named by Rust on the service's
+/// console.
+fn on_a_stack_of_its_own(work: impl FnOnce() -> End + Send, log: &Log) -> End {
+    std::thread::scope(|scope| {
+        match std::thread::Builder::new()
+            .name("zyrdeskd-service".to_string())
+            .stack_size(STACK)
+            .spawn_scoped(scope, work)
+        {
+            Ok(running) => running
+                .join()
+                .unwrap_or_else(|fell| std::panic::resume_unwind(fell)),
+            Err(e) => {
+                log.write(&format!("no thread of its own for the service's work: {e}"));
+                End::NoRuntime
+            }
+        }
+    })
 }
 
 fn reason(end: End) -> &'static str {

@@ -86,7 +86,9 @@ mod mechanism {
     use std::os::windows::io::IntoRawHandle;
     use std::path::Path;
 
-    use windows_sys::Win32::Foundation::{EXCEPTION_ACCESS_VIOLATION, HMODULE};
+    use windows_sys::Win32::Foundation::{
+        EXCEPTION_ACCESS_VIOLATION, EXCEPTION_STACK_OVERFLOW, HMODULE,
+    };
     use windows_sys::Win32::System::Console::{STD_ERROR_HANDLE, SetStdHandle};
     use windows_sys::Win32::System::Diagnostics::Debug::{
         EXCEPTION_POINTERS, EXCEPTION_RECORD, RtlCaptureStackBackTrace, SetUnhandledExceptionFilter,
@@ -107,8 +109,11 @@ mod mechanism {
     /// Frames read off the stack at most.
     const FRAMES: u32 = 48;
 
-    /// How long a line about a fault can be.
-    const LINE: usize = 4096;
+    /// How long the line saying the fault can be, and the one saying the
+    /// stack: a module's name is at most a path long, and each frame of
+    /// the stack takes some forty letters.
+    const FAULT_LINE: usize = 512;
+    const STACK_LINE: usize = 2048;
 
     pub fn watch_for_faults() {
         // SAFETY: a filter of ours, which never fails to return.
@@ -134,9 +139,16 @@ mod mechanism {
     ///
     /// The fault and the stack are put together in room of their own and
     /// said before anything asks the heap for memory: a heap broken
-    /// already is the likeliest reason for being here, and asking it for
+    /// already is one likely reason for being here, and asking it for
     /// more fells the program again before it has said a word. Only the
     /// functions, which cannot be named without memory, come last.
+    ///
+    /// Little room on the stack, too. A stack that ran out leaves only the
+    /// few kilobytes kept back for saying so, part of them spent
+    /// before this is even called, and three faults in a row fell this
+    /// service inside Windows' own handling of a fault, with nothing said.
+    /// After that fault the functions are not named at all: naming them
+    /// takes more room than there is.
     unsafe extern "system" fn faulted(pointers: *const EXCEPTION_POINTERS) -> i32 {
         let Some(say) = TOLD.get() else {
             return LET_IT_GO_ON;
@@ -149,7 +161,7 @@ mod mechanism {
                 .and_then(|pointers| pointers.ExceptionRecord.as_ref())
         };
         if let Some(record) = record {
-            let mut line = Room::<LINE>::new();
+            let mut line = Room::<FAULT_LINE>::new();
             // SAFETY: no argument, and a number back.
             let thread = unsafe { GetCurrentThreadId() };
             let _ = write!(
@@ -166,7 +178,7 @@ mod mechanism {
         let found = unsafe {
             RtlCaptureStackBackTrace(0, FRAMES, frames.as_mut_ptr(), std::ptr::null_mut())
         };
-        let mut line = Room::<LINE>::new();
+        let mut line = Room::<STACK_LINE>::new();
         let _ = write!(line, "its stack then: ");
         for (at, &frame) in frames[..usize::from(found)].iter().enumerate() {
             if at > 0 {
@@ -175,6 +187,9 @@ mod mechanism {
             where_in(&mut line, frame);
         }
         say(line.as_str());
+        if record.is_some_and(|record| record.ExceptionCode == EXCEPTION_STACK_OVERFLOW) {
+            return LET_IT_GO_ON;
+        }
         say(&format!(
             "and as functions, in thread {}: {}",
             this_thread(),
