@@ -839,7 +839,7 @@ fn job_object() -> io::Result<Handle> {
 ///
 /// A file that cannot be written to is not a reason to refuse to start a
 /// program: it will make its own.
-fn mark_where_this_run_begins(console: &Path, starting: &str) {
+pub(crate) fn mark_where_this_run_begins(console: &Path, starting: &str) {
     if let Ok(kept) = zyr_proto::log::Log::open(console) {
         kept.write(starting);
     }

@@ -75,11 +75,13 @@ const KEPT_WHEN_ASKED: usize = 500;
 
 /// The files gathered, in the order they are read.
 ///
-/// The host engine writes two: its own journal, and what its console
-/// says, which is where a crash leaves its last words. The player writes
-/// into the journal of the program it plays in.
-const FILES: [(&str, &str); 4] = [
+/// The service and the host engine write two each: their own journal,
+/// and what their console says, which is where Rust leaves its last
+/// words when it ends a program by itself. The player writes into the
+/// journal of the program it plays in.
+const FILES: [(&str, &str); 5] = [
     ("service.log", "The service"),
+    ("service-console.log", "The service's console"),
     ("engine.log", "The host engine"),
     ("engine-console.log", "The host engine's console"),
     ("interface.log", "The window"),
@@ -637,8 +639,8 @@ mod tests {
         let mut lines = text.lines();
         assert_eq!(lines.next().unwrap(), crate::version_line());
         assert!(lines.next().unwrap().starts_with("Computer"), "{text}");
-        // And the four files are there, named, even the ones this
-        // computer has never written.
+        // And every file is there, named, even the ones this computer
+        // has never written.
         for (file, what) in FILES {
             assert!(text.contains(&format!("--- {what} ({file}) ---")), "{text}");
         }

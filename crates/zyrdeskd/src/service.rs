@@ -50,6 +50,9 @@ const DESCRIPTION: &str = "Makes this computer reachable remotely, even before a
 /// from.
 pub const SERVICE_ARGUMENT: &str = "--run-as-service";
 
+/// Where what the service says on its console goes, beside its journal.
+const CONSOLE: &str = "service-console.log";
+
 /// Time given to the service to stop before it is removed anyway.
 const STOP_DELAY: Duration = Duration::from_secs(30);
 
@@ -90,6 +93,13 @@ fn service_main(_arguments: Vec<OsString>) {
         Err(_) => return,
     };
     crate::say_what_fells_it(&paths::service_log(), TAG);
+    if let Err(e) =
+        zyr_system::console_into(&paths::logs_dir().join(CONSOLE), "--- service starting ---")
+    {
+        log.write(&format!(
+            "what the service says on its console goes nowhere: {e}"
+        ));
+    }
 
     if let Err(e) = hold_the_service(&log) {
         log.write(&format!("the service stopped on an error: {e}"));

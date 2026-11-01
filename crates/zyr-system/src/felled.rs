@@ -11,6 +11,8 @@
 //! even in a build without its symbols, and as functions and lines when
 //! the build's symbols lie beside the program.
 
+use std::io;
+use std::path::Path;
 use std::sync::OnceLock;
 
 /// Whoever is told what fells the program.
@@ -45,6 +47,19 @@ pub fn tell_what_fells_it(say: impl Fn(&str) + Send + Sync + 'static) {
     mechanism::watch_for_faults();
 }
 
+/// From now on, what this program says on its console lands at the end
+/// of that file, after a line marking where this run begins.
+///
+/// Rust says a few last things there and nowhere else, and says them just
+/// before it ends a program without a panic or a fault: memory it could
+/// not have, a stack run out of room, its own runtime giving up. A
+/// program started by the system has no console, and they go to nobody.
+/// An engine is handed a file for it when it is started; a program
+/// nobody starts that way sets up its own here.
+pub fn console_into(console: &Path, starting: &str) -> io::Result<()> {
+    mechanism::console_into(console, starting)
+}
+
 /// The thread being felled, by its name when it has one.
 fn this_thread() -> String {
     let thread = std::thread::current();
@@ -66,9 +81,13 @@ fn functions() -> String {
 #[cfg(windows)]
 mod mechanism {
     use std::ffi::c_void;
-    use std::io::Write;
+    use std::fs::OpenOptions;
+    use std::io::{self, Write};
+    use std::os::windows::io::IntoRawHandle;
+    use std::path::Path;
 
     use windows_sys::Win32::Foundation::{EXCEPTION_ACCESS_VIOLATION, HMODULE};
+    use windows_sys::Win32::System::Console::{STD_ERROR_HANDLE, SetStdHandle};
     use windows_sys::Win32::System::Diagnostics::Debug::{
         EXCEPTION_POINTERS, EXCEPTION_RECORD, RtlCaptureStackBackTrace, SetUnhandledExceptionFilter,
     };
@@ -94,6 +113,20 @@ mod mechanism {
     pub fn watch_for_faults() {
         // SAFETY: a filter of ours, which never fails to return.
         unsafe { SetUnhandledExceptionFilter(Some(faulted)) };
+    }
+
+    pub fn console_into(console: &Path, starting: &str) -> io::Result<()> {
+        crate::onscreen::mark_where_this_run_begins(console, starting);
+        // Appended to, whatever the program's own idea of where it is,
+        // like the engine's.
+        let file = OpenOptions::new().append(true).create(true).open(console)?;
+        // Kept open for as long as the program runs: it is its console.
+        let handle = file.into_raw_handle();
+        // SAFETY: a handle of ours, open, and never closed from here on.
+        if unsafe { SetStdHandle(STD_ERROR_HANDLE, handle) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
     }
 
     /// Called by Windows, on the faulting thread, for a fault nothing
@@ -199,9 +232,20 @@ mod mechanism {
 
 #[cfg(not(windows))]
 mod mechanism {
+    use std::io;
+    use std::path::Path;
+
     /// Faults outside Windows end the program with the system's own word,
     /// on a console that is read.
     pub fn watch_for_faults() {}
+
+    /// Nothing of the product runs here without a console.
+    pub fn console_into(_console: &Path, _starting: &str) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "this is not Windows: every program here keeps its console",
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -238,6 +282,32 @@ mod tests {
             told[panicked + 1].starts_with("its stack then: "),
             "{told:?}"
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn what_is_said_on_the_console_lands_in_its_file_after_the_mark_of_the_run() {
+        use std::io::Write;
+        use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE, SetStdHandle};
+
+        let console = std::env::temp_dir().join(format!(
+            "zyr-system-console-{}.log",
+            zyr_proto::random::alphanumeric_string(8)
+        ));
+        // SAFETY: no argument, and a handle back that is only kept.
+        let before = unsafe { GetStdHandle(STD_ERROR_HANDLE) };
+        console_into(&console, "--- run starting ---").unwrap();
+        let said = std::io::stderr().write_all(b"said on the console\n");
+        // SAFETY: the handle this process had before, put back.
+        unsafe { SetStdHandle(STD_ERROR_HANDLE, before) };
+        said.unwrap();
+
+        let written = std::fs::read_to_string(&console).unwrap();
+        let lines: Vec<&str> = written.lines().collect();
+        assert_eq!(lines.len(), 2, "{written}");
+        assert!(lines[0].ends_with("--- run starting ---"), "{}", lines[0]);
+        assert_eq!(lines[1], "said on the console");
+        let _ = std::fs::remove_file(&console);
     }
 
     #[cfg(windows)]

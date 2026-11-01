@@ -5028,6 +5028,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Rien. C'est une précaution, pas une cause démontrée.
 
+## D335. Le service a sa console, dans un fichier (2026-11-01, pendant MZ)
+
+**Le constat.** Le service d'un hôte est retombé en pleine session, cette fois avec un journal qui écrivait normalement jusqu'au bout : à la dernière seconde, tout le service s'est figé près de 370 ms, puis plus rien. Ni « panicked », ni « fault » : le filtre de D333, qui n'a pourtant plus besoin de mémoire, n'a pas été appelé. Un programme peut finir sans passer par lui. Rust l'arrête de lui-même quand la mémoire lui est refusée, quand une pile déborde, ou quand son propre fonctionnement renonce. Windows l'arrête de même quand il trouve son tas abîmé. Dans les trois premiers cas, Rust dit une dernière phrase, sur la console et nulle part ailleurs. Le moteur a la sienne dans `engine-console.log` depuis longtemps ; le service, démarré par Windows, n'en a aucune, et ces mots partaient dans le vide.
+
+**Ce qui est fait.** `zyr-system` (`felled.rs`) fait aboutir, pour le programme qui le demande, sa sortie d'erreur à la fin d'un fichier, après une ligne qui marque le début de cette exécution, comme pour le moteur. Le service le demande à son départ, dans `service-console.log`, à côté de son journal. Le journal le rassemble avec les autres, sous « The service's console », et « Vider » le vide avec eux.
+
+**Ce qui se voit.** Dans le journal, une section de plus : en temps normal, une ligne « --- service starting --- » par démarrage ; après une chute de ce genre, la phrase de Rust, par exemple « memory allocation of ... bytes failed » ou « has overflowed its stack ». Le cas du tas abîmé ne dit rien ici ; l'Observateur d'événements le nomme (0xc0000374).
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

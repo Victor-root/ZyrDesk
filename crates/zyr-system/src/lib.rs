@@ -83,7 +83,7 @@ pub use elsewhere::{
     somebody_signed_in, start_a_helper, start_at_sign_in, start_in_session, still_running,
     wallpaper_on_screen, whoever_this_is,
 };
-pub use felled::tell_what_fells_it;
+pub use felled::{console_into, tell_what_fells_it};
 #[cfg(windows)]
 pub use inspection::{describe_this_computer, this_computer};
 #[cfg(windows)]
