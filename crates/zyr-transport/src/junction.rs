@@ -1128,6 +1128,19 @@ impl Junction {
         }
     }
 
+    /// Nobody is expected any more: the door this junction stands for
+    /// was closed, and lets no session in.
+    ///
+    /// What waits on an expectation, a branch of relay first of all,
+    /// holds a copy of this junction, and with it the socket and its
+    /// port. Left expecting, a closed door kept its port for as long as
+    /// any of them waited, and the door opened again found it taken.
+    pub fn forget_everyone(&self) {
+        let mut table = self.inner.table.lock().expect("junction table");
+        table.expected.clear();
+        table.by_real.clear();
+    }
+
     /// Whether that card is still held for that session.
     ///
     /// For whoever keeps something alive alongside a session and has to
@@ -1342,9 +1355,14 @@ impl Inner {
             let mut table = self.table.lock().expect("junction table");
             let mut gone = Vec::new();
             for (card, expected) in table.expected.iter_mut() {
-                if expected.paths.is_empty()
-                    && now.duration_since(expected.answered_at) > EXPECTATION_LIFE
-                {
+                // Whether or not a road is still held: the last one is
+                // never given up, so that a session always has a road to
+                // send on, and a computer that never came, or went for
+                // good, would otherwise be probed for as long as the
+                // service runs, its branch of relay and this socket kept
+                // with it. Every road that answers renews the life, so a
+                // session alive is never touched by this.
+                if now.duration_since(expected.answered_at) > EXPECTATION_LIFE {
                     gone.push(*card);
                     continue;
                 }
@@ -2509,6 +2527,52 @@ mod tests {
         let silent = tokio::net::UdpSocket::bind(local()).await.unwrap();
         let seen = junction.ask_the_mirror(silent.local_addr().unwrap()).await;
         assert_eq!(seen, None);
+    }
+
+    #[tokio::test]
+    async fn a_junction_that_forgets_everyone_holds_no_session_open() {
+        let junction = junction(&Arc::new(Identity::generate().unwrap()));
+        let peer = Identity::generate().unwrap().fingerprint();
+        let card = junction.expect(peer, "s1");
+        assert!(junction.still_expects(card, "s1"));
+        junction.forget_everyone();
+        assert!(!junction.still_expects(card, "s1"));
+    }
+
+    #[tokio::test]
+    async fn a_computer_whose_last_road_went_silent_is_forgotten_after_its_life() {
+        // The last road is never given up, and the expectation used to
+        // wait for it to be: a laptop that never came was probed for
+        // minutes on end, its branch of relay keeping the door's port.
+        let junction = junction(&Arc::new(Identity::generate().unwrap()));
+        let peer = Identity::generate().unwrap().fingerprint();
+        let card = junction.expect(peer, "s1");
+        let start = Instant::now();
+        {
+            let mut table = junction.inner.table.lock().unwrap();
+            let expected = table.expected.get_mut(&card).unwrap();
+            let number = expected.number(start);
+            assert!(expected.answered(
+                direct("10.0.0.1:47000"),
+                number,
+                Duration::from_millis(5),
+                start
+            ));
+        }
+        junction
+            .inner
+            .tick(start + EXPECTATION_LIFE - Duration::from_secs(1));
+        assert!(
+            junction.still_expects(card, "s1"),
+            "forgotten while its road had answered within its life"
+        );
+        junction
+            .inner
+            .tick(start + EXPECTATION_LIFE + Duration::from_secs(1));
+        assert!(
+            !junction.still_expects(card, "s1"),
+            "still expected long after its last road went silent"
+        );
     }
 
     /// An expectation with nothing in it, for the bookkeeping tests.

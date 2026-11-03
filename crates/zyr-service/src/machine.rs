@@ -92,8 +92,13 @@ impl Door {
         *self.junction.lock().expect("door") = Some(junction);
     }
 
+    /// The door is closed, and the sessions it was expecting with it:
+    /// what waits on one holds the junction's port, which the door
+    /// opened again needs back.
     pub fn closed(&self) {
-        *self.junction.lock().expect("door") = None;
+        if let Some(junction) = self.junction.lock().expect("door").take() {
+            junction.forget_everyone();
+        }
     }
 
     /// The junction of the open door, or nothing while it is closed.

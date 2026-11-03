@@ -5044,6 +5044,14 @@ L'interface ne décide rien. Où en est un ordinateur et par quelle route on le 
 
 **Ce qui se voit.** Rien à l'écran. Si la pile du travail du service était trop petite, les chutes cessent. Sinon, la prochaine laisse dans la console du service « thread '...' has overflowed its stack », et dans son journal « fault 0xc00000fd ... » suivi de la pile, ce qui nomme ce qui s'empile. La cause exacte n'est pas encore démontrée.
 
+## D337. Une porte fermée lâche les sessions qu'elle attendait, et une attente sans réponse finit (2026-11-03, pendant MZ)
+
+**Le constat.** Au démarrage d'un hôte, l'accès à distance est resté sur « démarrage en cours » : toutes les cinq secondes, le tunnel ne s'ouvrait pas, son port étant « déjà utilisé » (10048). Deux demandes de session du portable, arrivées pendant que la porte était ouverte, attendaient toujours le portable, avec des centaines de sondes sans réponse. Pour attendre une session, l'aiguilleur garde une branche de relais, et cette branche tient une copie de l'aiguilleur, donc de sa socket et de son port. La porte s'est fermée (ZyrDesk n'était pas encore à l'écran), mais les deux attentes ont gardé le port, et la porte n'a jamais pu se rouvrir. Deux défauts se cumulaient. Fermer la porte n'oubliait pas les sessions qu'elle attendait. Et une attente ne finissait que lorsqu'elle n'avait plus aucune route, alors que la dernière route n'est jamais abandonnée, pour qu'une session ait toujours de quoi envoyer : un ordinateur qui n'est jamais venu restait attendu tant que le service tournait.
+
+**Ce qui est fait.** La porte qui se ferme fait oublier à son aiguilleur tous ceux qu'il attendait (`Junction::forget_everyone`), ce qui met fin aux branches de relais et rend le port. Une attente finit deux minutes après la dernière réponse d'une de ses routes, qu'il lui reste une route ou non. La patience de D130 ne change pas : chaque réponse la renouvelle, et une session vivante n'est jamais touchée.
+
+**Ce qui se voit.** L'accès à distance s'ouvre dès que ZyrDesk est à l'écran, même après des tentatives de connexion restées sans suite. Le journal ne se remplit plus de sondes vers un ordinateur qui n'est jamais venu.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
